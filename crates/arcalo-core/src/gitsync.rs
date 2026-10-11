@@ -374,6 +374,22 @@ fn sync_tree_as(src: &Path, dst: &Path, apply: bool, companion: bool) -> Result<
     Ok(ch)
 }
 
+/// A symbolic link (never followed by the sync: a server could point one at any file here).
+fn is_link(p: &Path) -> bool {
+    fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// What a plain file holds, as a SHA-256 hex digest; `None` when there is no plain file (missing,
+/// a folder, a link).
+pub fn content_id(p: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    if !fs::symlink_metadata(p).ok()?.is_file() {
+        return None;
+    }
+    let bytes = fs::read(p).ok()?;
+    Some(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
+}
+
 fn same_file(a: &Path, b: &Path) -> Result<bool> {
     let (ma, mb) = (fs::metadata(a)?, fs::metadata(b)?);
     if !mb.is_file() || ma.len() != mb.len() {
@@ -448,6 +464,10 @@ fn sync_dir(src: &Path, dst: &Path, keep: Option<&[String]>, apply: bool, ch: &m
 
     for (name, is_dir) in &entries {
         let (from, to) = (src.join(name), dst.join(name));
+        // A link in the working tree (committed by someone else) is never written through.
+        if apply && is_link(&to) {
+            remove_path(&to)?;
+        }
         if *is_dir {
             if to.exists() && !to.is_dir() {
                 ch.removed += 1;
@@ -515,6 +535,10 @@ fn adopt_tree(
             let Some(name_s) = name.to_str() else { continue };
             let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
             let (from, to) = (src.join(&name), dst.join(&name));
+            // A link in the working tree is never read or written through.
+            if is_link(&to) {
+                remove_path(&to)?;
+            }
             if is_dir {
                 if to.exists() && !to.is_dir() {
                     remove_path(&to)?;
@@ -669,6 +693,9 @@ fn relink_text(path: &str, text: &str, names: &[(String, String)]) -> (String, V
 /// server's after a fresh start, else the last synced one).
 fn write_settings_file(repo: &Path, ours: &str) -> Result<()> {
     let path = repo.join(crate::settings_sync::FILE);
+    if is_link(&path) {
+        remove_path(&path)?;
+    }
     let there = fs::read_to_string(&path).ok();
     let merged = crate::settings_sync::merge_text(there.as_deref(), ours);
     if there.as_deref() != Some(merged.as_str()) {
@@ -1172,10 +1199,20 @@ pub struct SyncOutcome {
     /// the shell to rename here too.
     #[serde(default, skip_serializing)]
     pub renamed_files: Vec<FileRename>,
-    /// Files of the attachments folder (repository paths) the server changed and this computer did
-    /// not (a drawing saved again there), for the shell to take over in place of its own copy.
+    /// Files of the attachments folder the server changed and this computer did not (a drawing
+    /// saved again there), for the shell to take over in place of its own copy.
     #[serde(default, skip_serializing)]
-    pub pulled_files: Vec<String>,
+    pub pulled_files: Vec<PulledFile>,
+}
+
+/// A file of the attachments folder only the server changed ([`SyncOutcome::pulled_files`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PulledFile {
+    /// Repository path (`attachments/<name>`).
+    pub path: String,
+    /// This computer's file when it was pulled ([`content_id`]; `None`: it had none). Only a file
+    /// still like that is replaced; one changed here since stays (and is uploaded).
+    pub mine: Option<String>,
 }
 
 /// Both computers added or changed a file of one name in the attachments folder, with different
@@ -1230,6 +1267,11 @@ fn ensure_repo(git: &Git, repo: &Path, url: &str, branch: &str) -> Result<()> {
     fs::create_dir_all(repo)?;
     if !repo.join(".git").exists() {
         git.check(Some(repo), &["init", "-q"])?;
+    }
+    // Links from the server are checked out as plain files holding the link's text, never as
+    // links to files of this device.
+    if git.run(Some(repo), &["config", "core.symlinks"])?.stdout.trim() != "false" {
+        git.check(Some(repo), &["config", "core.symlinks", "false"])?;
     }
     let head_ref = format!("refs/heads/{branch}");
     let current = git.run(Some(repo), &["symbolic-ref", "-q", "HEAD"])?;
@@ -1298,35 +1340,65 @@ struct Waiting {
     renamed: Vec<FileRename>,
     /// See [`SyncOutcome::pulled_files`].
     #[serde(default)]
-    files: Vec<String>,
+    files: Vec<PulledFile>,
 }
 
 fn pending_file(repo: &Path) -> PathBuf {
     repo.join(".git").join(PENDING_FILE)
 }
 
-fn read_waiting(repo: &Path) -> Vec<Waiting> {
-    fs::read(pending_file(repo)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+/// The recorded pulls; `Err` when the file is there but cannot be read as such (damaged).
+fn read_waiting(repo: &Path) -> std::result::Result<Vec<Waiting>, ()> {
+    match fs::read(pending_file(repo)) {
+        Ok(b) => serde_json::from_slice(&b).map_err(|_| ()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
+        Err(_) => Err(()),
+    }
 }
 
-/// Writes the waiting pulls through to the disk (none: the file goes).
+/// Writes the waiting pulls (none: the file goes): only on a change, through a temporary file
+/// that is synced and then renamed, so the file is never seen half written.
 fn write_waiting(repo: &Path, all: &[Waiting]) -> Result<()> {
     if all.is_empty() {
         taken_over(repo);
         return Ok(());
     }
-    let mut f = fs::File::create(pending_file(repo))?;
-    std::io::Write::write_all(&mut f, &serde_json::to_vec(all)?)?;
-    f.sync_all()?;
+    let text = serde_json::to_vec(all)?;
+    let path = pending_file(repo);
+    if fs::read(&path).ok().as_deref() == Some(text.as_slice()) {
+        return Ok(());
+    }
+    let tmp = path.with_extension("json.tmp");
+    {
+        let mut f = fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut f, &text)?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, &path)?;
+    // The rename itself (where folders can be opened, as on Linux and Android).
+    if let Ok(dir) = fs::File::open(repo.join(".git")) {
+        let _ = dir.sync_all();
+    }
     Ok(())
 }
 
 /// Adds the pull `w`, or completes the one recorded from the same commit.
 fn record_waiting(repo: &Path, w: Waiting) -> Result<()> {
-    let mut all = read_waiting(repo);
+    // A damaged file was replaced by this sync already (see [`waiting_pulls`]).
+    let mut all = read_waiting(repo).unwrap_or_default();
     match all.iter_mut().find(|e| e.from == w.from && e.adopt == w.adopt) {
         Some(e) => *e = w,
         None => all.push(w),
+    }
+    write_waiting(repo, &all)
+}
+
+/// The user decided a conflict of `path`: a recorded pull no longer brings the server's text of
+/// it back over the decision.
+pub fn decided(repo: &Path, path: &str) -> Result<()> {
+    let Ok(mut all) = read_waiting(repo) else { return Ok(()) };
+    for w in &mut all {
+        w.changes.retain(|c| c.path != path);
     }
     write_waiting(repo, &all)
 }
@@ -1355,47 +1427,86 @@ fn fold_changes(into: &mut Vec<RemoteChange>, fresh: Vec<RemoteChange>) {
     }
 }
 
-/// The pulls of earlier syncs the pages have not taken over (see [`PENDING_FILE`]), together;
-/// `true` when a fresh working tree has to adopt the server's state again. Pulls that never
-/// happened or belong to other history are dropped from the file.
-fn waiting_pulls(git: &Git, repo: &Path) -> Result<(Waiting, bool)> {
-    let all = read_waiting(repo);
+/// The pulls of earlier syncs the pages have not taken over (see [`PENDING_FILE`]), together,
+/// written back as one; `Some(commit)` when the sync has to adopt that commit again (from a clean
+/// working tree). Pulls that never happened or belong to other history are dropped. A damaged
+/// file names nothing reliably: the sync then adopts HEAD again, which deletes nothing on the
+/// server and turns every note that differs into a conflict.
+fn waiting_pulls(git: &Git, repo: &Path) -> Result<(Waiting, Option<String>)> {
     let mut out = Waiting::default();
+    let Some(head) = rev(git, repo, "HEAD")? else { return Ok((out, None)) };
+    let Ok(all) = read_waiting(repo) else {
+        tracing::warn!(source = "git", "record of waiting pulls damaged: the server's state is adopted again");
+        write_waiting(repo, &[Waiting { from: head.clone(), adopt: true, ..Default::default() }])?;
+        return Ok((out, Some(head)));
+    };
     if all.is_empty() {
-        return Ok((out, false));
+        return Ok((out, None));
     }
-    let head = rev(git, repo, "HEAD")?;
-    let mut readopt = false;
+    let mut readopt = None;
     let mut kept = Vec::new();
     for w in all {
-        if head.as_deref() == Some(w.from.as_str()) {
+        if head == w.from {
             // HEAD never moved on: nothing was pulled (an adoption is done again).
             if w.adopt {
-                readopt = true;
-                kept.push(Waiting { changes: vec![], renamed: vec![], files: vec![], ..w });
+                readopt = Some(w.from.clone());
+                kept.push(Waiting { from: w.from, adopt: true, ..Default::default() });
             }
             continue;
         }
-        if head.is_none() || !git.run(Some(repo), &["merge-base", "--is-ancestor", &w.from, "HEAD"])?.ok {
+        if !git.run(Some(repo), &["merge-base", "--is-ancestor", &w.from, "HEAD"])?.ok {
             // Another branch or history: nothing to compare with.
             continue;
         }
-        fold_changes(&mut out.changes, w.changes.clone());
-        for r in &w.renamed {
+        if out.from.is_empty() {
+            out.from = w.from;
+        }
+        fold_changes(&mut out.changes, w.changes);
+        for r in w.renamed {
             if !out.renamed.iter().any(|x| x.to == r.to) {
-                out.renamed.push(r.clone());
+                out.renamed.push(r);
             }
         }
-        for f in &w.files {
-            if !out.files.contains(f) {
-                out.files.push(f.clone());
+        for f in w.files {
+            // The first record of a file names this side's file before any of these pulls.
+            if !out.files.iter().any(|x| x.path == f.path) {
+                out.files.push(f);
             }
         }
-        kept.push(w);
+    }
+    out.changes.sort_by(|a, b| a.path.cmp(&b.path));
+    if !out.from.is_empty() {
+        kept.push(out.clone());
     }
     write_waiting(repo, &kept)?;
-    out.changes.sort_by(|a, b| a.path.cmp(&b.path));
     Ok((out, readopt))
+}
+
+/// Removes what is in the working tree but not in commit `rev` (`.git` stays).
+fn clean_untracked(git: &Git, repo: &Path, rev: &str) -> Result<()> {
+    fn walk(dir: &Path, rel: &str, tracked: &BTreeSet<String>) -> Result<()> {
+        for e in fs::read_dir(dir)? {
+            let e = e?;
+            let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+            if rel.is_empty() && is_git_dir(&name) {
+                continue;
+            }
+            let path = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let ft = e.file_type()?;
+            if ft.is_dir() {
+                walk(&e.path(), &path, tracked)?;
+                if fs::read_dir(e.path())?.next().is_none() {
+                    fs::remove_dir(e.path())?;
+                }
+            } else if !tracked.contains(&path) {
+                fs::remove_file(e.path())?;
+            }
+        }
+        Ok(())
+    }
+    let listed = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", rev])?;
+    let tracked: BTreeSet<String> = listed.split('\0').filter(|p| !p.is_empty()).map(str::to_owned).collect();
+    walk(repo, "", &tracked)
 }
 
 /// Makes the working tree hold `path` as HEAD has it, when HEAD has it.
@@ -1483,16 +1594,19 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         }
     }
     // Pulls of earlier syncs the pages have not taken over (see [`PENDING_FILE`]).
-    let (waiting, readopt) = if adopted { (Waiting::default(), false) } else { waiting_pulls(git, repo)? };
-    if readopt {
+    let (waiting, readopt) = if adopted { (Waiting::default(), None) } else { waiting_pulls(git, repo)? };
+    if let Some(start) = readopt {
+        // From the server's state as adopted, not from what the ended sync left in the tree.
+        git.check(Some(repo), &["reset", "-q", "--hard", &start])?;
+        clean_untracked(git, repo, &start)?;
         adopted = true;
-        adopting = rev(git, repo, "HEAD")?;
+        adopting = Some(start);
     }
 
     // This computer's files renamed because the server has another file of that name.
     let mut renamed: Vec<FileRename>;
     // Files of the attachments folder only the server changed.
-    let mut files: Vec<String> = Vec::new();
+    let mut files: Vec<PulledFile> = Vec::new();
     let mut pulled: Vec<RemoteChange> = {
         // The mirror is read in one complete state (no swap in between).
         let _swap = crate::mirror::hold_swaps();
@@ -1509,8 +1623,11 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             // Until taken over, the server's files of the attachments folder stay as they are there.
             if let Some(tip) = &adopting {
                 let listed = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", tip])?;
-                let server_files: Vec<String> =
-                    listed.split('\0').filter(|p| attachment_name(p).is_some()).map(str::to_owned).collect();
+                let server_files: Vec<PulledFile> = listed
+                    .split('\0')
+                    .filter(|p| attachment_name(p).is_some())
+                    .map(|p| PulledFile { path: p.to_owned(), mine: content_id(&req.source.join(p)) })
+                    .collect();
                 let w = Waiting {
                     from: tip.clone(),
                     adopt: true,
@@ -1541,11 +1658,15 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
                     keep_heads(git, repo, note)?;
                 }
             }
-            for path in &waiting.files {
-                keep_heads(git, repo, path)?;
+            // The server's files of the attachments folder, while this side's are as they were at
+            // the pull; one changed here since stays this side's (and is uploaded).
+            for f in waiting.files {
+                if content_id(&req.source.join(&f.path)) == f.mine {
+                    keep_heads(git, repo, &f.path)?;
+                    files.push(f);
+                }
             }
             renamed = waiting.renamed;
-            files = waiting.files;
             recovered
         }
     };
@@ -1601,7 +1722,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
                 fallback: bool,
                 remote_changes: Vec<RemoteChange>,
                 renamed_files,
-                pulled_files: Vec<String>| {
+                pulled_files: Vec<PulledFile>| {
         let pulled = remote_changes.len();
         let conflicts = remote_changes.iter().filter(|c| c.conflict).count();
         let message = match (committed, fallback) {
@@ -1680,7 +1801,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let merged = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
         renamed.extend(merged.renamed);
         for f in merged.files {
-            if !files.contains(&f) {
+            if !files.iter().any(|x| x.path == f.path) {
                 files.push(f);
             }
         }
@@ -2036,7 +2157,7 @@ fn server_notes(git: &Git, repo: &Path, base: &str, theirs: &str) -> Result<Vec<
 struct Merged {
     changes: Vec<RemoteChange>,
     renamed: Vec<FileRename>,
-    files: Vec<String>,
+    files: Vec<PulledFile>,
 }
 
 /// Merges the server's commit `theirs` into `ours` (both descend from `base`), see [`sync`].
@@ -2078,7 +2199,8 @@ fn merge_remote(
         let changes = server_notes(git, repo, base, theirs)?;
         for path in remote.iter().filter(|p| attachment_name(p).is_some()) {
             if blob_id(git, repo, theirs, path)?.is_some() {
-                files.push(path.clone());
+                // The working tree still holds this side's state.
+                files.push(PulledFile { path: path.clone(), mine: content_id(&repo.join(path)) });
             }
         }
         let w = Waiting { from: ours.to_owned(), changes: changes.clone(), files: files.clone(), ..Default::default() };
@@ -2168,7 +2290,7 @@ fn merge_remote(
             if note {
                 changes.push(pulled(path)?);
             } else if attachment_name(path).is_some() && blob_id(git, repo, theirs, path)?.is_some() {
-                files.push(path.clone());
+                files.push(PulledFile { path: path.clone(), mine: content_id(&repo.join(path)) });
             }
             take_path(git, repo, theirs, path)?;
             continue;
@@ -3739,7 +3861,7 @@ mod safety_tests {
             }
         }
         for f in &out.pulled_files {
-            fs::copy(repo.join(f), mirror.join(f)).unwrap();
+            fs::copy(repo.join(&f.path), mirror.join(&f.path)).unwrap();
         }
         taken_over(&repo);
     }
@@ -3978,6 +4100,8 @@ mod safety_tests {
             // Until the shell took it over, every sync brings it again.
             let once_more = http_sync(&base, "b", &url, companion).unwrap();
             assert_eq!(theirs_of(&once_more), [("Notiz.md", Some("zwei von A\n"))]);
+            // However often it waits, it stays one record.
+            assert_eq!(read_waiting(&repo_b).unwrap().len(), 1);
             put(&b.join("Notiz.md"), "zwei von A\n");
             taken_over(&repo_b);
             let quiet = http_sync(&base, "b", &url, companion).unwrap();
@@ -4180,15 +4304,120 @@ mod safety_tests {
         r.sync("a").unwrap();
         // b without changes (fast-forward) and with a change of its own (merge).
         let ff = r.sync("b").unwrap();
-        assert_eq!(ff.pulled_files, ["attachments/Skizze.png"], "{ff:?}");
+        assert_eq!(
+            ff.pulled_files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["attachments/Skizze.png"],
+            "{ff:?}"
+        );
         put(&b.join("attachments/Skizze.png"), "PNG zwei");
         taken_over(&r.base.join("b").join(REPO_DIR));
         put(&a.join("attachments/Skizze.png"), "PNG drei");
         r.sync("a").unwrap();
         put(&b.join("Andere.md"), "von B\n");
         let merged = r.sync("b").unwrap();
-        assert_eq!(merged.pulled_files, ["attachments/Skizze.png"], "{merged:?}");
+        assert_eq!(
+            merged.pulled_files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+            ["attachments/Skizze.png"],
+            "{merged:?}"
+        );
         let show = |p: &str| sh(&r.base.join("remote.git"), &["show", &format!("main:{p}")]);
         assert_eq!(show("attachments/Skizze.png"), "PNG drei");
+    }
+
+    /// A record of waiting pulls that is damaged (cut off) names nothing reliably: the sync adopts
+    /// the server's state again instead of uploading the mirror over the server's change.
+    #[test]
+    fn a_damaged_record_never_uploads_over_the_servers_change() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("review-damaged");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&b.join("Notiz.md"), "eins\n");
+        taken_over(&repo_b);
+        put(&a.join("Notiz.md"), "von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Andere.md"), "von B\n");
+        let first = r.sync("b").unwrap();
+        assert_eq!(first.remote_changes.len(), 1, "{first:?}");
+        let text = fs::read(pending_file(&repo_b)).unwrap();
+        fs::write(pending_file(&repo_b), &text[..text.len() / 2]).unwrap();
+        r.sync("b").unwrap();
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "von A\n");
+    }
+
+    /// The first sync ended inside the adoption (after the reset): the adoption is done again from
+    /// the server's state, not from what the ended sync left in the working tree.
+    #[test]
+    fn an_adoption_done_again_starts_from_the_servers_state() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("review-readopt");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "vom Desktop\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        put(&b.join("Handy.md"), "alt\n");
+        fs::create_dir_all(&repo_b).unwrap();
+        sh(&repo_b, &["init", "-q"]);
+        sh(&repo_b, &["remote", "add", "origin", &r.settings.remote_url]);
+        sh(&repo_b, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        sh(&repo_b, &["fetch", "-q", "origin", "+refs/heads/main:refs/remotes/origin/main"]);
+        let tip = sh(&repo_b, &["rev-parse", "origin/main"]).trim().to_owned();
+        record_waiting(&repo_b, Waiting { from: tip, adopt: true, ..Default::default() }).unwrap();
+        sh(&repo_b, &["reset", "-q", "--hard", "origin/main"]);
+        fs::copy(b.join("Handy.md"), repo_b.join("Handy.md")).unwrap();
+        put(&b.join("Handy.md"), "neu\n");
+        let out = r.sync("b").unwrap();
+        assert!(out.remote_changes.iter().all(|c| c.path != "Handy.md"), "{out:?}");
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Handy.md"]), "neu\n");
+    }
+
+    /// A link the server holds (someone committed one) is checked out as a plain file with the
+    /// link's text, never as a link to a file of this device, and nothing is written through it.
+    #[cfg(unix)]
+    #[test]
+    fn links_from_the_server_are_never_followed() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("links");
+        let secret = r.base.join("geheim.txt");
+        fs::write(&secret, "privater Schluessel").unwrap();
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        let w = r.base.join("evil");
+        sh(&r.base, &["clone", "-q", "-b", "main", r.settings.remote_url.as_str(), w.to_str().unwrap()]);
+        fs::create_dir_all(w.join("attachments")).unwrap();
+        std::os::unix::fs::symlink(&secret, w.join("attachments/Skizze.png")).unwrap();
+        std::os::unix::fs::symlink(&secret, w.join("Link.md")).unwrap();
+        sh(&w, &["add", "-A"]);
+        sh(&w, &["commit", "-qm", "links"]);
+        sh(&w, &["push", "-q", "origin", "HEAD:main"]);
+        // A new device adopts it, a known one pulls it.
+        let b = r.mirror("b");
+        mark(&b);
+        let out_b = r.sync("b").unwrap();
+        put(&a.join("Andere.md"), "zwei\n");
+        let out_a = r.sync("a").unwrap();
+        for (pc, out) in [("a", &out_a), ("b", &out_b)] {
+            let repo = r.base.join(pc).join(REPO_DIR);
+            for p in ["attachments/Skizze.png", "Link.md"] {
+                assert!(!is_link(&repo.join(p)), "{pc}: {p} is a link");
+            }
+            assert!(out.remote_changes.iter().all(|c| c.theirs.as_deref() != Some("privater Schluessel")), "{out:?}");
+        }
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "privater Schluessel");
     }
 }

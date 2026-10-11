@@ -1810,6 +1810,8 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
         Ok(mut p) => {
+            // Anything not taken over here keeps the pull waiting for the next sync.
+            let mut complete = true;
             // Files of one name that differ here and there: this computer's takes its new name
             // before the server's comes in under the old one (below), its notes link to it.
             if !out.renamed_files.is_empty() {
@@ -1834,7 +1836,10 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                             }
                         }
                     }
-                    Err(e) => devlog::warn("git", format!("files of the same name not renamed here: {e}")),
+                    Err(e) => {
+                        complete = false;
+                        devlog::warn("git", format!("files of the same name not renamed here: {e}"));
+                    }
                 }
             }
             // For the start page's „Per Git-Sync geändert“.
@@ -1880,7 +1885,7 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                 );
             }
             let _ = app.emit("gitsync://pulled", &p);
-            files_taken
+            complete && files_taken
         }
         Err(e) => {
             devlog::error("git", format!("taking over the server's notes failed: {e}"));

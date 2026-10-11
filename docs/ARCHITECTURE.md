@@ -154,13 +154,21 @@ page, on a blocking thread).
   taken over yet (the app ended after it, the push after a merge failed, taking over failed) is not committed away: before a
   pull moves HEAD (the reset of an adoption, a merge commit, a fast-forward) the sync records it in
   `.git/arcalo-pull-pending.json` (fsynced): the HEAD it started from and what it returns (the changes with their conflict
-  flags, the renamed files, the attachments only the server changed). The shell removes the file after `take_over_pulled`
-  (`gitsync::taken_over`); a sync with nothing to return removes it too. A later sync returns a recorded pull again once HEAD
-  moved on from its start (`waiting_pulls`; changes the mirror already holds are left out), keeps the files of those notes,
-  of the renamed files and of the server's attachments as HEAD has them, and adopts again when an adoption never got past its
-  reset; a pull whose HEAD never moved, or on other history, is dropped from the file. Attachments only the server changed
-  (`SyncOutcome.pulled_files`) replace this side's copy (`syncmerge::take_over_files`); a copy that fails keeps the pull
-  waiting. A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). A rejected push
+  flags, the renamed files, the attachments only the server changed with this side's content id at the pull). The file is
+  written only on a change, through a synced temporary file and a rename. The shell removes it after `take_over_pulled`
+  (`gitsync::taken_over`; a failed rename or file copy keeps it); a sync with nothing to return removes it too. A later sync
+  returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
+  mirror already holds are left out), keeps the files of those notes and of the renamed files as HEAD has them, and the
+  server's attachments while this side's file is still the one recorded (one changed here since stays this side's and is
+  uploaded). A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
+  done again from a clean working tree at the server's commit (reset, untracked files removed); a record that cannot be read
+  does the same with HEAD, which deletes nothing on the server and turns differing notes into conflicts. Deciding a conflict
+  (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
+  only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
+  (`syncmerge::take_over_files`). Links are never followed: the working tree has `core.symlinks=false` (a link from the
+  server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
+  are copied only when they are plain files on both sides. A companion's first sync fetches the newest commit only
+  (`--depth 1`; the history holds every database copy). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the

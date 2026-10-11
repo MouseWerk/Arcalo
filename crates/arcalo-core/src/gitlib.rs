@@ -214,6 +214,25 @@ fn dispatch(
             Ok(true)
         }
         "rev-parse" => rev_parse(&open(cwd)?, &p, out),
+        "config" => {
+            // Only the working tree's own configuration: `config <key>` and `config <key> <value>`.
+            let repo = open(cwd)?;
+            match p.words.as_slice() {
+                [key] => match repo.config()?.open_level(git2::ConfigLevel::Local)?.get_string(key) {
+                    Ok(v) => {
+                        let _ = writeln!(out, "{v}");
+                        Ok(true)
+                    }
+                    Err(e) if e.code() == ErrorCode::NotFound => Ok(false),
+                    Err(e) => Err(e),
+                },
+                [key, value] => {
+                    repo.config()?.open_level(git2::ConfigLevel::Local)?.set_str(key, value)?;
+                    Ok(true)
+                }
+                _ => Err(err("config: unsupported arguments")),
+            }
+        }
         "symbolic-ref" => {
             let repo = open(cwd)?;
             match p.words.as_slice() {

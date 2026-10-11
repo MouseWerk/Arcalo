@@ -581,14 +581,16 @@ async fn close_and_sync(
         let state = app.state::<AppState>();
         {
             let db = state.db();
-            if !live(&db)?.iter().any(|c| c.page_id == page_id) {
+            let Some(path) = live(&db)?.into_iter().find(|c| c.page_id == page_id).map(|c| c.path) else {
                 return Err(no_conflict());
-            }
+            };
             db.atomic(|| {
                 decide(&db)?;
                 let rest: Vec<Conflict> = load(&db).into_iter().filter(|c| c.page_id != page_id).collect();
                 store(&db, &rest)
             })?;
+            // The decision wins over a pull still waiting to be taken over.
+            gitsync::decided(&state.git_repo_dir(), &path)?;
         }
         let _ = app.emit("gitsync://conflicts", ());
         let gs = state.settings().git_sync;
@@ -607,21 +609,26 @@ async fn close_and_sync(
 }
 
 /// Takes over the files of the attachments folder a sync brought: the ones this computer does not
-/// have, and `changed` (repository paths), the ones only the server changed (a drawing saved
-/// again there), in place of this computer's older copy.
-pub fn take_over_files(repo: &std::path::Path, dst: &std::path::Path, changed: &[String]) -> Result<()> {
+/// have, and the ones only the server changed (a drawing saved again there) in place of this
+/// computer's copy, as long as that is still the one the sync saw (a file changed here since
+/// stays, and the next sync uploads it). Links are never followed, on either side.
+pub fn take_over_files(repo: &std::path::Path, dst: &std::path::Path, changed: &[gitsync::PulledFile]) -> Result<()> {
     let src = repo.join(arcalo_core::attachments::DIR_NAME);
     if !src.is_dir() {
         return Ok(());
     }
     crate::copy_new_attachments(&src, dst)?;
-    for path in changed {
-        let Some(name) = path.strip_prefix(&format!("{}/", arcalo_core::attachments::DIR_NAME)) else { continue };
+    let plain = |p: &std::path::Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
+    for f in changed {
+        let Some(name) = f.path.strip_prefix(&format!("{}/", arcalo_core::attachments::DIR_NAME)) else { continue };
         if name.contains(['/', '\\']) || name.starts_with('.') {
             continue;
         }
         let (from, to) = (src.join(name), dst.join(name));
-        if !from.is_file() || std::fs::read(&from).ok() == std::fs::read(&to).ok() {
+        if !plain(&from) || (to.exists() && !plain(&to)) || gitsync::content_id(&to) != f.mine {
+            continue;
+        }
+        if gitsync::content_id(&from) == gitsync::content_id(&to) {
             continue;
         }
         let tmp = dst.join(format!(".{name}.part"));
@@ -1270,36 +1277,44 @@ mod tests {
         assert!(text == "von B\n" && out.conflicts.contains(&on_b), "B's edit replaced: {text:?}, {out:?}");
     }
 
-    /// A file of the attachments folder the other computer changed (a drawing saved again) is
-    /// taken over here and stays on the server with the next syncs; new files come too, and a
-    /// file this computer has with other content is not overwritten when the server did not
-    /// change it.
-    #[test]
-    fn a_file_the_other_computer_changed_reaches_this_one() {
-        use arcalo_core::gitsync::{Git, GitSyncSettings, SyncOutcome, SyncRequest};
-        use std::process::Command;
-        if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
-            return;
+    /// Two computers on one bare remote with attachments folders: `run` is a sync and what the
+    /// shell does with its outcome (`take_over_pulled`), `sync_only` a sync that ended before it.
+    struct Rv {
+        base: std::path::PathBuf,
+        settings: gitsync::GitSyncSettings,
+    }
+
+    impl Rv {
+        fn new(name: &str) -> Rv {
+            let base = std::env::temp_dir().join(format!("arcalo-rv-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&base);
+            std::fs::create_dir_all(&base).unwrap();
+            let bare = base.join("remote.git");
+            let made = std::process::Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status();
+            assert!(made.unwrap().success());
+            let settings = gitsync::GitSyncSettings {
+                enabled: true,
+                remote_url: bare.display().to_string(),
+                ..Default::default()
+            };
+            Rv { base, settings }
         }
-        let base = std::env::temp_dir().join(format!("arcalo-server-file-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-        let bare = base.join("remote.git");
-        assert!(Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap().success());
-        let settings = GitSyncSettings { enabled: true, remote_url: bare.display().to_string(), ..Default::default() };
-        let files = |pc: &str| base.join(pc).join("attachments");
-        // A sync and what the shell does with its outcome (`take_over_pulled`).
-        let run = |db: &Database, pc: &str| -> SyncOutcome {
-            let dir = base.join(pc);
-            std::fs::create_dir_all(files(pc)).unwrap();
-            arcalo_core::mirror::write_mirror(db, &dir.join("mirror"), &files(pc), &Local).unwrap();
-            let out = arcalo_core::gitsync::sync(
-                &Git::new(None, &settings.remote_url),
-                &SyncRequest {
+
+        fn files(&self, pc: &str) -> std::path::PathBuf {
+            self.base.join(pc).join("attachments")
+        }
+
+        fn sync_only(&self, db: &Database, pc: &str) -> SyncOutcome {
+            let dir = self.base.join(pc);
+            std::fs::create_dir_all(self.files(pc)).unwrap();
+            arcalo_core::mirror::write_mirror(db, &dir.join("mirror"), &self.files(pc), &Local).unwrap();
+            gitsync::sync(
+                &gitsync::Git::new(None, &self.settings.remote_url),
+                &gitsync::SyncRequest {
                     repo: &dir.join("git-sync"),
                     source: &dir.join("mirror"),
                     database: None,
-                    settings: &settings,
+                    settings: &self.settings,
                     host: pc,
                     now: Local::now(),
                     hold: &hold_paths(db),
@@ -1308,28 +1323,175 @@ mod tests {
                     companion: false,
                 },
             )
-            .unwrap();
+            .unwrap()
+        }
+
+        fn run(&self, db: &Database, pc: &str) -> SyncOutcome {
+            let out = self.sync_only(db, pc);
+            let repo = self.base.join(pc).join("git-sync");
             apply(db, &out.remote_changes, Local::now()).unwrap();
-            take_over_files(&dir.join("git-sync"), &files(pc), &out.pulled_files).unwrap();
-            arcalo_core::gitsync::taken_over(&dir.join("git-sync"));
+            apply_file_renames(db, &self.files(pc), &repo, &out.renamed_files, Local::now()).unwrap();
+            take_over_files(&repo, &self.files(pc), &out.pulled_files).unwrap();
+            gitsync::taken_over(&repo);
             out
-        };
+        }
+
+        /// The server's file `path`.
+        fn server(&self, path: &str) -> String {
+            let out = std::process::Command::new("git")
+                .args(["show", &format!("main:{path}")])
+                .current_dir(self.base.join("remote.git"))
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        }
+    }
+
+    impl Drop for Rv {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn git_available() -> bool {
+        std::process::Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success())
+    }
+
+    /// Two computers with one page that embeds `Skizze.png` („PNG eins“), both synced.
+    fn with_drawing(r: &Rv) -> (Database, Database) {
         let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
-        std::fs::create_dir_all(files("a")).unwrap();
-        std::fs::write(files("a").join("Skizze.png"), "PNG eins").unwrap();
+        std::fs::create_dir_all(r.files("a")).unwrap();
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG eins").unwrap();
         let p = a.create_page(None, "Notiz", None).unwrap();
         a.save_page_content(p.id, "![[Skizze.png]]").unwrap();
-        run(&a, "a");
-        run(&b, "b");
-        assert_eq!(std::fs::read_to_string(files("b").join("Skizze.png")).unwrap(), "PNG eins");
-        std::fs::write(files("a").join("Skizze.png"), "PNG zwei").unwrap();
-        run(&a, "a");
-        run(&b, "b");
-        assert_eq!(std::fs::read_to_string(files("b").join("Skizze.png")).unwrap(), "PNG zwei");
-        run(&b, "b");
-        let server =
-            Command::new("git").args(["show", "main:attachments/Skizze.png"]).current_dir(&bare).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&server.stdout), "PNG zwei");
-        let _ = std::fs::remove_dir_all(&base);
+        r.run(&a, "a");
+        r.run(&b, "b");
+        (a, b)
+    }
+
+    /// A file of the attachments folder the other computer changed (a drawing saved again) is
+    /// taken over here and stays on the server with the next syncs.
+    #[test]
+    fn a_file_the_other_computer_changed_reaches_this_one() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("server-file");
+        let (a, b) = with_drawing(&r);
+        assert_eq!(std::fs::read_to_string(r.files("b").join("Skizze.png")).unwrap(), "PNG eins");
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG zwei").unwrap();
+        r.run(&a, "a");
+        r.run(&b, "b");
+        assert_eq!(std::fs::read_to_string(r.files("b").join("Skizze.png")).unwrap(), "PNG zwei");
+        r.run(&b, "b");
+        assert_eq!(r.server("attachments/Skizze.png"), "PNG zwei");
+    }
+
+    /// The pull of a changed file ended before the take-over and the file was saved again here
+    /// meanwhile: this computer's newer file is neither replaced nor lost.
+    #[test]
+    fn a_local_file_edited_after_an_ended_pull_is_never_dropped() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("localfile");
+        let (a, b) = with_drawing(&r);
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG von A").unwrap();
+        r.run(&a, "a");
+        let out = r.sync_only(&b, "b");
+        assert_eq!(out.pulled_files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), ["attachments/Skizze.png"]);
+        std::fs::write(r.files("b").join("Skizze.png"), "PNG von B").unwrap();
+        r.run(&b, "b");
+        r.run(&b, "b");
+        let kept_here = std::fs::read_dir(r.files("b"))
+            .unwrap()
+            .flatten()
+            .any(|e| std::fs::read(e.path()).ok().as_deref() == Some(b"PNG von B".as_slice()));
+        let on_server = r.server("attachments/Skizze.png") == "PNG von B";
+        assert!(kept_here || on_server, "B's edit of the file is gone");
+        assert!(kept_here && on_server, "here: {kept_here}, server: {on_server}");
+    }
+
+    /// A server that holds a link in the attachments folder (to a private key, say) never makes
+    /// this computer copy, keep or upload the linked file's content.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_file_from_the_server_is_never_followed() {
+        use std::process::Command;
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("symlink");
+        let secret = r.base.join("geheim.txt");
+        std::fs::write(&secret, "privater Schluessel").unwrap();
+        let (_a, b) = with_drawing(&r);
+        let w = r.base.join("evil");
+        let git = |args: &[&str], dir: &std::path::Path| {
+            let ok = Command::new("git")
+                .args(["-c", "user.name=x", "-c", "user.email=x@x"])
+                .args(args)
+                .current_dir(dir)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "{args:?}");
+        };
+        git(&["clone", "-q", "-b", "main", r.base.join("remote.git").to_str().unwrap(), w.to_str().unwrap()], &r.base);
+        std::fs::remove_file(w.join("attachments/Skizze.png")).unwrap();
+        std::os::unix::fs::symlink(&secret, w.join("attachments/Skizze.png")).unwrap();
+        git(&["commit", "-qam", "link"], &w);
+        git(&["push", "-q", "origin", "HEAD:main"], &w);
+        r.run(&b, "b");
+        let here = std::fs::read_to_string(r.files("b").join("Skizze.png")).unwrap_or_default();
+        git(&["pull", "-q", "origin", "main"], &w);
+        git(&["rm", "-q", "attachments/Skizze.png"], &w);
+        git(&["commit", "-qm", "weg"], &w);
+        git(&["push", "-q", "origin", "HEAD:main"], &w);
+        r.run(&b, "b");
+        r.run(&b, "b");
+        let uploaded = r.server("attachments/Skizze.png");
+        assert!(
+            here != "privater Schluessel" && uploaded != "privater Schluessel",
+            "here: {here:?}, server: {uploaded:?}"
+        );
+        let repo = r.base.join("b").join("git-sync");
+        assert!(
+            !std::fs::symlink_metadata(repo.join("attachments/Skizze.png")).is_ok_and(|m| m.file_type().is_symlink())
+        );
+    }
+
+    /// A conflict decided while the pull that brought it still waits for the take-over (copying a
+    /// file keeps failing): the decision is uploaded, not the server's text again.
+    #[test]
+    fn a_decision_wins_over_a_pull_still_waiting() {
+        let Some(pcs) = Pcs::new("decided") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let p = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(p.id, "eins\n").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Notiz").unwrap().unwrap().id;
+        a.save_page_content(p.id, "von A\n").unwrap();
+        pcs.sync(&a, "a");
+        b.save_page_content(on_b, "von B\n").unwrap();
+        let dir = pcs.base.join("b");
+        arcalo_core::mirror::write_mirror(&b, &dir.join("mirror"), &dir.join("attachments"), &Local).unwrap();
+        // The notes are taken over (the conflict recorded), the take-over as a whole is not.
+        let first = pcs.push("b", &dir.join("mirror"), &hold_paths(&b));
+        let pulled = apply(&b, &first, Local::now()).unwrap();
+        assert!(pulled.conflicts.contains(&on_b));
+        // „Meine behalten“.
+        let path = live(&b).unwrap()[0].path.clone();
+        store(&b, &[]).unwrap();
+        gitsync::decided(&dir.join("git-sync"), &path).unwrap();
+        arcalo_core::mirror::write_mirror(&b, &dir.join("mirror"), &dir.join("attachments"), &Local).unwrap();
+        pcs.push("b", &dir.join("mirror"), &hold_paths(&b));
+        let server = std::process::Command::new("git")
+            .args(["show", "main:Notiz.md"])
+            .current_dir(pcs.base.join("remote.git"))
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&server.stdout), "von B\n");
     }
 }
