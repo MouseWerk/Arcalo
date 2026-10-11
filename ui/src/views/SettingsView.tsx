@@ -47,6 +47,7 @@ import { BookOpen, Bug, FolderTree, LockKeyhole, MessageSquareText } from "lucid
 import { openDocs, openIssueForm } from "../components/Help";
 import { SecuritySection } from "./settings/SecuritySection";
 import { BriefingSection } from "./settings/BriefingSection";
+import { CommandLineGroup } from "./settings/CommandLineGroup";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
 import { NavButtons } from "../components/ViewHeader";
@@ -1580,6 +1581,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           </Select>
         </Row>
       </Group>
+      <CommandLineGroup />
     </>
   );
 }

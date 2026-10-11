@@ -3,6 +3,7 @@
 // must simply not break the app.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
@@ -63,6 +64,27 @@ test("Desktop settings section shows the switches", async () => {
   await app.keys(["Control", "Shift", "k"]);
   await app.browser.waitUntil(async () => (await sc.getValue()) === "Ctrl+Shift+K", { timeoutMsg: "shortcut not recorded" });
   await app.shot("settings-desktop");
+});
+
+test("Befehlszeile: Linux shows where the program is and changes nothing", async () => {
+  const info = await app.invoke("cli_path_info");
+  assert.equal(info.platform, "linux");
+  assert.equal(info.changeable, false);
+  // The test build is not on the PATH (a .deb install is: /usr/bin/arcalo).
+  assert.equal(info.state, "off");
+  assert.equal(info.program, fs.realpathSync(process.env.ARCALO_APP));
+  await assert.rejects(app.invoke("cli_path_set", { enabled: true }), /Paket/);
+  const group = await app.waitFor('.set-group[data-group="Befehlszeile"]');
+  // The path is shortened in the middle when it does not fit; the full one is its tooltip.
+  await app.browser.waitUntil(async () => (await (await group.$(".path-text")).getAttribute("title")) === info.program, {
+    timeoutMsg: "program path not shown",
+  });
+  const text = await group.getText();
+  assert.match(text, /Befehl „arcalo“ im Terminal/);
+  assert.match(text, /Nicht im PATH/);
+  assert.equal(await (await group.$('[role="switch"]')).isExisting(), false);
+  await group.scrollIntoView();
+  await app.shot("settings-desktop-cli");
 });
 
 test("the capture UI (#capture) submits with Enter", async () => {

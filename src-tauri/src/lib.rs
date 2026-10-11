@@ -19,6 +19,8 @@ mod briefing;
 mod calsync;
 mod canvas;
 mod chats;
+#[cfg(desktop)]
+mod cmdpath;
 mod dashboard;
 mod dayreview;
 #[cfg_attr(mobile, path = "mobile/desktop.rs")]
@@ -4426,6 +4428,10 @@ struct StartupOptions {
 #[cfg(desktop)]
 pub fn command_line() -> Option<std::process::ExitCode> {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    // The installer puts the program folder on the user's Path (installer/hooks.nsh).
+    if args.get(1).is_some_and(|a| a == cmdpath::INTERNAL_ARG) {
+        return Some(cmdpath::internal(&args[2..]));
+    }
     if !arcalo_cli::is_command_line(&args) {
         return None;
     }
@@ -5126,6 +5132,8 @@ pub fn run() {
             attachment_open,
             desktop::desktop_info,
             desktop::autostart_set,
+            cmdpath::cli_path_info,
+            cmdpath::cli_path_set,
             chats::chat_list,
             chats::chat_get,
             chats::chat_create,

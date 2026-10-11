@@ -742,6 +742,22 @@ export interface DesktopInfo {
   /** The Microsoft Store build: autostart is the package's startup task. */
   store?: boolean;
 }
+/** The command `arcalo` in a terminal (`cmdpath.rs`, Settings → Desktop). */
+export interface CliPathInfo {
+  platform: "windows" | "macos" | "linux";
+  /** The program a terminal command starts. */
+  program: string;
+  /** What goes on the PATH: the program folder (Windows) or the link (macOS). */
+  entry?: string | null;
+  /** `elsewhere`: the macOS link names another program; `managed`: the Store alias. */
+  state: "on" | "off" | "elsewhere" | "managed";
+  /** Where the link of another program points. */
+  other?: string | null;
+  /** The switch can change it. */
+  changeable: boolean;
+  /** Why it cannot, in the UI language. */
+  note?: string | null;
+}
 export interface CaptureOutcome {
   appended: { page_id: number; tasks: number; notes: number; title: string; created: boolean } | null;
   bookings: LogOutcome[];

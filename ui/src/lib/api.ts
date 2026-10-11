@@ -359,6 +359,10 @@ export const api = {
   // desktop
   desktopInfo: () => call<T.DesktopInfo>("desktop_info"),
   setAutostart: (enabled: boolean) => call<T.DesktopInfo>("autostart_set", { enabled }),
+  /** Whether `arcalo` works in a terminal. */
+  cliPathInfo: () => call<T.CliPathInfo>("cli_path_info"),
+  /** Puts `arcalo` on the PATH or takes it off (macOS: after the password prompt). */
+  setCliPath: (enabled: boolean) => call<T.CliPathInfo>("cli_path_set", { enabled }),
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
   /** What closing the main window does (macOS: always hide; elsewhere „close to tray“). */

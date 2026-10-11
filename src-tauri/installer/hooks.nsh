@@ -34,6 +34,17 @@
 ;
 ; Running these steps again finds nothing left to do (the old keys and files are gone after the
 ; first run).
+;
+; 1.18: the command line (docs/cli.md). The program folder goes onto the user's Path
+; (HKCU\Environment, never the machine's) on install and update, once, and leaves it on
+; uninstall (not when the uninstaller runs for an update). The installed program does that
+; itself (`arcalo.exe --internal-path add|remove`, src-tauri/src/cmdpath.rs): it reads and writes
+; the raw registry value, so its type (REG_EXPAND_SZ) and every other entry stay exactly as they
+; are at any length, finds the folder in any spelling (case, trailing backslash, %LOCALAPPDATA%)
+; and tells Explorer (WM_SETTINGCHANGE), so every new terminal finds `arcalo`. NSIS strings end
+; at 1024 characters, and Windows PowerShell's [Environment] functions expand %VARIABLES% and
+; write REG_SZ, so neither is used. An Annalo folder updated in place is the program folder; one
+; left behind for a folder picked in the setup loses its entry.
 
 ; The program file and identifier of 1.14 and earlier.
 !define OLD_EXE "annalo.exe"
@@ -52,6 +63,18 @@ Var AnnaloDir
 Var AnnaloExe
 ; 1 when an Annalo 1.6 uninstall entry or registry key was found.
 Var AnnaloFound
+
+; Starts the installed program to change the user's Path: `action` is add or remove, `dir` a
+; quoted folder or "" (the program's own). A failure is logged and does not stop the setup.
+!macro UserPath action dir
+  ClearErrors
+  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --internal-path ${action} ${dir}' $R0
+  ${If} ${Errors}
+    DetailPrint "The user Path was not changed (${action}): the program did not start"
+  ${ElseIf} $R0 <> 0
+    DetailPrint "The user Path was not changed (${action}): exit code $R0"
+  ${EndIf}
+!macroend
 
 ; Points `shortcut` at the new program file when it names `old` and stamps the new
 ; AppUserModelID on it when it points at the new program file.
@@ -160,6 +183,8 @@ Var AnnaloFound
       Delete "$AnnaloDir\$AnnaloExe"
       Delete "$AnnaloDir\uninstall.exe"
       RMDir $AnnaloDir
+      ; Its folder on the user's Path (entered by hand) names no program any more.
+      !insertmacro UserPath remove '"$AnnaloDir"'
     ${EndIf}
 
     ${If} $AnnaloDir != ""
@@ -210,6 +235,18 @@ Var AnnaloFound
     DeleteRegKey SHCTX "${V16_UNINSTKEY}"
     DeleteRegKey SHCTX "${V16_MANUPRODUCTKEY}"
     DeleteRegKey /ifempty SHCTX "${V16_MANUKEY}"
+  ${EndIf}
+
+  ; ---- 1.18: the command line `arcalo` in every new terminal
+  DetailPrint "Adding the program folder to the user Path"
+  !insertmacro UserPath add ""
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  ; The program folder leaves the user's Path, while the program is still there to do it. An
+  ; update keeps it (the new version is installed into the same folder).
+  ${If} $UpdateMode <> 1
+    !insertmacro UserPath remove ""
   ${EndIf}
 !macroend
 
