@@ -766,7 +766,12 @@ mod tests {
                     companion: false,
                 },
             )?;
-            apply(db, &out.remote_changes, Local::now())
+            let pulled = apply(db, &out.remote_changes, Local::now());
+            // As the shell: the pages hold the pulled notes.
+            if pulled.is_ok() {
+                arcalo_core::gitsync::taken_over(&dir.join("git-sync"));
+            }
+            pulled
         };
         let live_titles = |db: &Database| {
             let mut t: Vec<String> =
@@ -847,7 +852,10 @@ mod tests {
             std::fs::create_dir_all(&files).unwrap();
             let own = dir.join("mirror");
             arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
-            apply(db, &self.push(pc, &own, &hold_paths(db)), Local::now()).unwrap()
+            let pulled = apply(db, &self.push(pc, &own, &hold_paths(db)), Local::now()).unwrap();
+            // As the shell: the pages hold the pulled notes.
+            gitsync::taken_over(&dir.join("git-sync"));
+            pulled
         }
 
         /// Syncs the mirror folder `source` as computer `pc`; the server's changes.
@@ -1123,6 +1131,7 @@ mod tests {
             .unwrap();
             apply(db, &out.remote_changes, Local::now()).unwrap();
             apply_file_renames(db, &files(pc), &dir.join("git-sync"), &out.renamed_files, Local::now()).unwrap();
+            arcalo_core::gitsync::taken_over(&dir.join("git-sync"));
             for e in std::fs::read_dir(dir.join("git-sync/attachments")).into_iter().flatten().flatten() {
                 if !files(pc).join(e.file_name()).exists() {
                     std::fs::copy(e.path(), files(pc).join(e.file_name())).unwrap();

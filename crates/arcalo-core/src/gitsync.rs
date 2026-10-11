@@ -35,6 +35,10 @@ use crate::error::{Error, Result};
 #[path = "gitlib.rs"]
 pub mod gitlib;
 
+#[cfg(test)]
+#[path = "gitserve.rs"]
+pub(crate) mod gitserve;
+
 /// Working tree of the sync, inside the data folder.
 pub const REPO_DIR: &str = "git-sync";
 /// Name of the database copy in the repository.
@@ -208,6 +212,17 @@ pub fn check_url(url: &str) -> Result<()> {
 fn is_http(url: &str) -> bool {
     let l = url.trim().to_ascii_lowercase();
     l.starts_with("https://") || l.starts_with("http://")
+}
+
+/// An SSH address: `ssh://…` or git's short form `user@host:path` (a Windows drive `C:\…` is a
+/// local path).
+#[cfg_attr(not(feature = "embedded-git"), allow(dead_code))]
+fn needs_ssh(url: &str) -> bool {
+    let l = url.trim().to_ascii_lowercase();
+    if l.starts_with("ssh://") || l.starts_with("git+ssh://") || l.starts_with("ssh+git://") {
+        return true;
+    }
+    !l.contains("://") && l.split_once(':').is_some_and(|(host, _)| host.len() > 1 && !host.contains(['/', '\\']))
 }
 
 // ------------------------------------------------------------ pure helpers
@@ -864,6 +879,35 @@ impl Git {
         self.token.as_deref()
     }
 
+    /// From what age a lock file in the working tree is left over ([`remove_stale_locks`]). The
+    /// program may still run after a timeout; the built-in git runs in the app's own process and
+    /// only while the sync holds its lock, so any lock found then was left by an app that was ended
+    /// (on a phone: swiped away or stopped by Android in the middle of a sync).
+    pub fn stale_lock_age(&self) -> Duration {
+        #[cfg(feature = "embedded-git")]
+        if self.embedded {
+            return Duration::ZERO;
+        }
+        self.timeout
+    }
+
+    /// The built-in git (the phone's) has no SSH: such an address gets a message that says what
+    /// to enter instead of libgit2's „unsupported URL protocol“.
+    fn reachable(&self, url: &str) -> Result<()> {
+        #[cfg(feature = "embedded-git")]
+        if self.embedded && needs_ssh(url) {
+            return Err(Error::State(
+                tr!(
+                    "Auf dem Telefon geht nur eine HTTPS-Adresse mit Zugangstoken, kein SSH. Trage die HTTPS-Adresse des Repositorys ein.",
+                    "The phone supports HTTPS addresses with an access token only, no SSH. Enter the repository's HTTPS address."
+                )
+                .into(),
+            ));
+        }
+        let _ = url;
+        Ok(())
+    }
+
     /// The command for `args`; the token only ever travels in the environment.
     pub fn command(&self, cwd: Option<&Path>, args: &[&str]) -> Command {
         let mut cmd = Command::new(&self.program);
@@ -998,6 +1042,7 @@ impl Git {
     /// Branch names on the remote (checks URL and credentials).
     pub fn ls_remote(&self, url: &str) -> Result<Vec<String>> {
         check_url(url)?;
+        self.reachable(url)?;
         let out = self.check(Some(&std::env::temp_dir()), &["ls-remote", "--heads", url])?;
         Ok(out
             .lines()
@@ -1010,6 +1055,7 @@ impl Git {
     /// Shallow clone of `url` (optionally one branch) into `dest`, which must not exist.
     pub fn clone_shallow(&self, url: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
         check_url(url)?;
+        self.reachable(url)?;
         let dest_s = dest
             .to_str()
             .ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", dest.display())))?;
@@ -1210,13 +1256,102 @@ fn fetch(git: &Git, repo: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// [`fetch`] of the newest commit only: the first sync of a companion device, which needs the
+/// server's state, not its history (each synced database copy of the desktop is in it).
+fn fetch_tip(git: &Git, repo: &Path, branch: &str) -> Result<()> {
+    let spec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    git.check(Some(repo), &["fetch", "-q", "--depth", "1", "origin", &spec])?;
+    Ok(())
+}
+
 fn rejected(out: &GitOutput) -> bool {
     let l = out.stderr.to_ascii_lowercase();
     l.contains("rejected") || l.contains("non-fast-forward") || l.contains("fetch first")
 }
 
+/// In `.git`: the working tree holds notes from the server that the pages here have not taken
+/// over yet. Written before a sync brings the server's state in (adopting it in a fresh working
+/// tree, a merge, a fast-forward) and removed once the shell took the pulled notes over
+/// ([`taken_over`]). A sync that finds it (the app was ended in between, the push after a merge
+/// failed, taking the notes over failed) returns those notes again instead of committing the
+/// mirror over them, which would undo the server's changes.
+const PENDING_FILE: &str = "arcalo-pull-pending";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Pending {
+    /// A fresh working tree took over the server's commit ([`adopt_tree`]): its notes.
+    Adopt(String),
+    /// The last commit whose notes the pages here hold.
+    Since(String),
+}
+
+fn pending_file(repo: &Path) -> PathBuf {
+    repo.join(".git").join(PENDING_FILE)
+}
+
+fn is_object_id(id: &str) -> bool {
+    id.len() >= 40 && id.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// One line each: `adopt <commit>` or `<commit>`.
+fn read_pending(repo: &Path) -> Vec<Pending> {
+    let text = fs::read_to_string(pending_file(repo)).unwrap_or_default();
+    text.lines()
+        .filter_map(|l| match l.trim().split_once(' ') {
+            Some(("adopt", id)) if is_object_id(id) => Some(Pending::Adopt(id.to_owned())),
+            None if is_object_id(l.trim()) => Some(Pending::Since(l.trim().to_owned())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Records `p` unless one of its kind is there already: that one still names what the pages
+/// hold. Written through to the disk, so it survives the app being ended right after.
+fn mark_pending(repo: &Path, p: &Pending) -> Result<()> {
+    let mut all = read_pending(repo);
+    if all.iter().any(|x| std::mem::discriminant(x) == std::mem::discriminant(p)) {
+        return Ok(());
+    }
+    all.push(p.clone());
+    let text: String = all
+        .iter()
+        .map(|x| match x {
+            Pending::Adopt(id) => format!("adopt {id}\n"),
+            Pending::Since(id) => format!("{id}\n"),
+        })
+        .collect();
+    let mut f = fs::File::create(pending_file(repo))?;
+    std::io::Write::write_all(&mut f, text.as_bytes())?;
+    f.sync_all()?;
+    Ok(())
+}
+
+/// The pages hold what the last sync pulled (or it pulled nothing): the next sync starts from
+/// the mirror again (see [`PENDING_FILE`]).
+pub fn taken_over(repo: &Path) {
+    let _ = fs::remove_file(pending_file(repo));
+}
+
+/// A merge that was not finished (the app was ended in between, an error after `git merge`)
+/// leaves its state behind; the next commit would then be a merge commit that claims the
+/// server's state while holding the mirror's. Dropped before anything else.
+fn abort_merge(git: &Git, repo: &Path) -> Result<()> {
+    if repo.join(".git").join("MERGE_HEAD").exists() {
+        git.check(Some(repo), &["reset", "-q"])?;
+    }
+    Ok(())
+}
+
 /// One full sync: tree, commit (if anything changed), push.
 pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
+    let out = sync_once(git, req)?;
+    if out.remote_changes.is_empty() && out.renamed_files.is_empty() {
+        taken_over(req.repo);
+    }
+    Ok(out)
+}
+
+fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     let s = normalize(req.settings)?;
     if s.remote_url.is_empty() {
         return Err(Error::State(
@@ -1242,9 +1377,11 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         )));
     }
     git.version()?;
+    git.reachable(&s.remote_url)?;
     let repo = req.repo;
     let branch = s.branch.as_str();
     ensure_repo(git, repo, &s.remote_url, branch)?;
+    abort_merge(git, repo)?;
 
     // A fresh working tree continues the remote's history when it was written by this
     // sync (new computer, reinstall); foreign history is never adopted. Adopting merges:
@@ -1252,14 +1389,25 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     let mut tip = remote_tip(git, repo, branch)?;
     let mut adopted = false;
     if tip.is_some() && !has_head(git, repo)? {
-        fetch(git, repo, branch)?;
+        // A companion never looks into the history (no restore there): the newest state is enough.
+        if req.companion {
+            fetch_tip(git, repo, branch)?
+        } else {
+            fetch(git, repo, branch)?
+        }
         let remote_ref = format!("origin/{branch}");
         let attrs = git.run(Some(repo), &["show", &format!("{remote_ref}:{ATTRIBUTES_FILE}")])?;
         if attrs.ok && (attrs.stdout.starts_with(MARKER) || attrs.stdout.starts_with(LEGACY_MARKER)) {
+            let adopted_tip = rev(git, repo, &remote_ref)?.unwrap_or_default();
+            taken_over(repo);
+            mark_pending(repo, &Pending::Adopt(adopted_tip))?;
             git.check(Some(repo), &["reset", "-q", "--hard", &remote_ref])?;
             adopted = true;
         }
     }
+    // A sync that ended before the pages took the server's notes over (see [`PENDING_FILE`]):
+    // those the mirror does not hold yet come back, as the server has them.
+    let (waiting, files) = if adopted { (vec![], vec![]) } else { waiting_notes(git, repo)? };
 
     // This computer's files renamed because the server has another file of that name.
     let mut renamed: Vec<FileRename> = Vec::new();
@@ -1278,8 +1426,18 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             renamed = files;
             changes
         } else {
+            let recovered = still_waiting(req.source, waiting)?;
             prepare_tree_as(req.source, repo, req.database, req.companion)?;
-            vec![]
+            for c in &recovered {
+                for path in std::iter::once(&c.path).chain(c.from.as_ref()) {
+                    take_path(git, repo, "HEAD", path)?;
+                }
+            }
+            // Files the server brought for those notes (attachments) that are not here yet.
+            for path in files.iter().filter(|f| !req.source.join(f).exists()) {
+                take_path(git, repo, "HEAD", path)?;
+            }
+            recovered
         }
     };
     if has_head(git, repo)? {
@@ -1403,6 +1561,7 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let Some(theirs) = tip.clone() else { break };
         let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
         let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
+        mark_pending(repo, &Pending::Since(ours.clone()))?;
         let (fresh, files) = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
         renamed.extend(files);
         // A path pulled twice keeps the newest server state, and stays a conflict once it was one;
@@ -1714,6 +1873,124 @@ fn relink_notes(
     Ok(out)
 }
 
+/// What a sync that ended early pulled (see [`PENDING_FILE`]): the notes, and the files of the
+/// attachments folder that came from the server.
+fn waiting_notes(git: &Git, repo: &Path) -> Result<(Vec<RemoteChange>, Vec<String>)> {
+    let pending = read_pending(repo);
+    let mut notes: Vec<RemoteChange> = Vec::new();
+    let mut files: BTreeSet<String> = BTreeSet::new();
+    if pending.is_empty() {
+        return Ok((notes, vec![]));
+    }
+    let Some(head) = rev(git, repo, "HEAD")? else { return Ok((notes, vec![])) };
+    let attachment = |p: &str| attachment_name(p).is_some();
+    // The adopted notes first: the pages here never held the server's text of them.
+    let mut ordered = pending.clone();
+    ordered.sort_by_key(|p| matches!(p, Pending::Since(_)));
+    for p in ordered {
+        let (Pending::Adopt(from) | Pending::Since(from)) = &p;
+        if *from != head && !git.run(Some(repo), &["merge-base", "--is-ancestor", from, "HEAD"])?.ok {
+            // Another branch or history: nothing to compare with.
+            continue;
+        }
+        let found = match &p {
+            Pending::Since(since) if *since == head => vec![],
+            Pending::Since(since) => {
+                files.extend(changed_paths(git, repo, since, "HEAD")?.into_iter().filter(|f| attachment(f)));
+                server_notes(git, repo, since, "HEAD")?
+            }
+            Pending::Adopt(tip) => {
+                // The server's notes as they are now; this side's text decides in [`still_waiting`].
+                let listed = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", tip])?;
+                let mut found = Vec::new();
+                for path in listed.split('\0').filter(|p| !p.is_empty()) {
+                    if attachment(path) {
+                        files.insert(path.to_owned());
+                    }
+                    if !is_note(path) || path == README_FILE {
+                        continue;
+                    }
+                    let Some(theirs) = blob_text(git, repo, "HEAD", path)? else { continue };
+                    found.push(RemoteChange {
+                        path: path.to_owned(),
+                        from: None,
+                        base: None,
+                        mine: None,
+                        theirs: Some(theirs),
+                        conflict: false,
+                    });
+                }
+                found
+            }
+        };
+        for c in found {
+            if !notes.iter().any(|n| n.path == c.path || n.from.as_ref() == Some(&c.path)) {
+                notes.push(c);
+            }
+        }
+    }
+    notes.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok((notes, files.into_iter().collect()))
+}
+
+/// The waiting notes (see [`waiting_notes`]) the mirror does not hold yet: a page that took the
+/// server's text over is done. After adopting, a note this side has with other text is a
+/// conflict, as in [`adopt_tree`].
+fn still_waiting(source: &Path, waiting: Vec<RemoteChange>) -> Result<Vec<RemoteChange>> {
+    let mut out = Vec::new();
+    for mut c in waiting {
+        let here = match fs::read(source.join(&c.path)) {
+            Ok(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.into()),
+        };
+        if here == c.theirs {
+            continue;
+        }
+        if c.base.is_none() && c.from.is_none() && c.mine.is_none() && here.is_some() {
+            c.conflict = true;
+            c.mine = here;
+        }
+        out.push(c);
+    }
+    Ok(out)
+}
+
+/// The notes that changed from `base` to `theirs`, as the server's changes to a side that still
+/// holds `base` (moves and renames with their old path).
+fn server_notes(git: &Git, repo: &Path, base: &str, theirs: &str) -> Result<Vec<RemoteChange>> {
+    let remote = changed_paths(git, repo, base, theirs)?;
+    let renames = note_renames(git, repo, base, theirs)?;
+    let mut changes = Vec::new();
+    let mut handled = BTreeSet::new();
+    for (old, new) in &renames {
+        let text = blob_text(git, repo, base, old)?;
+        changes.push(RemoteChange {
+            path: new.clone(),
+            from: Some(old.clone()),
+            base: text.clone(),
+            mine: text,
+            theirs: blob_text(git, repo, theirs, new)?,
+            conflict: false,
+        });
+        handled.extend([old.clone(), new.clone()]);
+    }
+    for path in remote.iter().filter(|p| is_note(p) && !handled.contains(*p)) {
+        let old = blob_text(git, repo, base, path)?;
+        let new = blob_text(git, repo, theirs, path)?;
+        changes.push(RemoteChange {
+            path: path.clone(),
+            from: None,
+            base: old.clone(),
+            mine: old,
+            theirs: new,
+            conflict: false,
+        });
+    }
+    changes.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(changes)
+}
+
 /// Merges the server's commit `theirs` into `ours` (both descend from `base`), see [`sync`].
 /// Returns the notes the server changed, moved or brought back, and this computer's files renamed
 /// because the server has another file of the same name ([`FileRename`]).
@@ -1747,16 +2024,8 @@ fn merge_remote(
     let mut changes = Vec::new();
     if base == ours {
         // Nothing new here: the server's state is taken as it is.
-        let mut handled = BTreeSet::new();
-        for (old, new) in &renames {
-            changes.push(moved(old, new)?);
-            handled.extend([old.clone(), new.clone()]);
-        }
-        for path in remote.iter().filter(|p| is_note(p) && !handled.contains(*p)) {
-            changes.push(pulled(path)?);
-        }
+        let changes = server_notes(git, repo, base, theirs)?;
         git.check(Some(repo), &["reset", "-q", "--hard", theirs])?;
-        changes.sort_by(|a, b| a.path.cmp(&b.path));
         return Ok((changes, vec![]));
     }
     let local = changed_paths(git, repo, base, ours)?;
@@ -2153,6 +2422,8 @@ pub fn advance_to_server(git: &Git, req: &SyncRequest) -> Result<()> {
     if has_head(git, req.repo)? {
         catch_up(git, req.repo, &s.branch)?;
     }
+    // The restored state replaces the server's on purpose: nothing waits to be pulled.
+    taken_over(req.repo);
     Ok(())
 }
 
@@ -2326,6 +2597,12 @@ mod tests {
             assert!(check_branch(bad).is_err(), "{bad}");
         }
         assert!(check_url("--upload-pack=evil").is_err());
+        for ssh in ["git@github.com:me/x.git", "ssh://git@host/x.git", "Git+SSH://host/x", "me@host:x"] {
+            assert!(needs_ssh(ssh), "{ssh}");
+        }
+        for other in ["https://github.com/me/x.git", "http://h/x", "/srv/x.git", "C:\\Repos\\x", "file:///srv/x", "x"] {
+            assert!(!needs_ssh(other), "{other}");
+        }
         let s = GitSyncSettings {
             remote_url: " https://x/y.git ".into(),
             branch: " ".into(),
@@ -2573,6 +2850,7 @@ mod tests {
         put("a", "Ordner/Andere.md", "von B\n");
         put("a", "Neu.md", "neu von B\n");
         fs::remove_file(base.join("a/mirror/Weg.md")).unwrap();
+        taken_over(&base.join("a/git-sync"));
         let hold = vec!["Notiz.md".to_owned(), "../ausserhalb.md".to_owned()];
         let held = run("a", &hold);
         assert!(!held.committed, "{held:?}");
@@ -3012,6 +3290,8 @@ mod safety_tests {
             ]
         );
         assert!(out.remote_changes.iter().all(|c| !c.conflict && c.mine == c.base));
+        // The shell took the moves over (its pages keep their paths in this test).
+        taken_over(&r.base.join("b").join(REPO_DIR));
 
         // „Aufräumen“: the rest into year/month folders at once; b has a change of its own (merge).
         let folder = "Tagesnotizen/2026/10 – Oktober";
@@ -3550,5 +3830,179 @@ mod safety_tests {
         assert_eq!(server_file(&r, &format!("attachments/{pdf}")), "PDF von B");
         assert_eq!(fs::read_to_string(a.join(format!("attachments/{pdf}"))).unwrap(), "PDF von B");
         assert_eq!(fs::read_to_string(b.join("attachments/Bericht.pdf")).unwrap(), "PDF von A");
+    }
+
+    /// A sync over HTTP from the mirror of `pc` below `base` (as the phone or a computer), signed
+    /// in with the token `geheim`.
+    fn http_sync(base: &Path, pc: &str, url: &str, companion: bool) -> Result<SyncOutcome> {
+        let settings = GitSyncSettings { enabled: true, remote_url: url.into(), ..Default::default() };
+        sync(
+            &Git::new(Some("geheim".into()), url),
+            &SyncRequest {
+                repo: &base.join(pc).join(REPO_DIR),
+                source: &base.join(pc).join("mirror"),
+                database: None,
+                settings: &settings,
+                host: pc,
+                now: Local::now(),
+                hold: &[],
+                allow_deletions: false,
+                settings_file: None,
+                companion,
+            },
+        )
+    }
+
+    fn theirs_of(out: &SyncOutcome) -> Vec<(&str, Option<&str>)> {
+        out.remote_changes.iter().map(|c| (c.path.as_str(), c.theirs.as_deref())).collect()
+    }
+
+    /// The push after a merge fails (the connection drops on the way, the phone goes offline):
+    /// the merged notes never reached the pages here. The next sync brings them again instead of
+    /// uploading the mirror over them, which undid the other computer's changes on the server.
+    #[test]
+    fn a_push_that_fails_after_a_merge_never_undoes_the_servers_changes() {
+        if !git_available() {
+            return;
+        }
+        for companion in [false, true] {
+            let base = tmp(&format!("pushfail-{companion}"));
+            let root = base.join("srv");
+            fs::create_dir_all(&root).unwrap();
+            let bare = gitserve::bare(&root, "notes.git");
+            let server = gitserve::GitServer::start(&root, Some("geheim"));
+            let url = server.url("notes.git");
+            let (a, b) = (base.join("a/mirror"), base.join("b/mirror"));
+            let repo_b = base.join("b").join(REPO_DIR);
+            mark(&a);
+            put(&a.join("Notiz.md"), "eins\n");
+            http_sync(&base, "a", &url, false).unwrap();
+            mark(&b);
+            let first = http_sync(&base, "b", &url, companion).unwrap();
+            assert_eq!(theirs_of(&first), [("Notiz.md", Some("eins\n"))]);
+            // The phone fetched the server's newest commit only, not its history.
+            assert_eq!(repo_b.join(".git/shallow").exists(), companion);
+            // B's shell took the note over.
+            put(&b.join("Notiz.md"), "eins\n");
+            taken_over(&repo_b);
+
+            put(&a.join("Notiz.md"), "zwei von A\n");
+            http_sync(&base, "a", &url, false).unwrap();
+            put(&b.join("Andere.md"), "von B\n");
+            server.fail_push.store(true, std::sync::atomic::Ordering::SeqCst);
+            assert!(http_sync(&base, "b", &url, companion).is_err());
+            server.fail_push.store(false, std::sync::atomic::Ordering::SeqCst);
+            let seen = server.seen();
+            let failed =
+                |s: &gitserve::Seen| s.status == 500 && s.method == "POST" && s.target.ends_with("/git-receive-pack");
+            assert!(seen.iter().any(failed), "{seen:?}");
+
+            // B's pages never got A's text: it comes again and stays on the server.
+            let again = http_sync(&base, "b", &url, companion).unwrap();
+            assert_eq!(theirs_of(&again), [("Notiz.md", Some("zwei von A\n"))], "{companion}");
+            assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "zwei von A\n", "{companion}");
+            assert_eq!(sh(&bare, &["show", "main:Andere.md"]), "von B\n");
+            // Until the shell took it over, every sync brings it again.
+            let once_more = http_sync(&base, "b", &url, companion).unwrap();
+            assert_eq!(theirs_of(&once_more), [("Notiz.md", Some("zwei von A\n"))]);
+            put(&b.join("Notiz.md"), "zwei von A\n");
+            taken_over(&repo_b);
+            let quiet = http_sync(&base, "b", &url, companion).unwrap();
+            assert!(quiet.remote_changes.is_empty() && !quiet.committed, "{quiet:?}");
+            assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "zwei von A\n");
+            assert!(!pending_file(&repo_b).exists());
+            // Signed in on every request that was let through.
+            let seen = server.seen();
+            assert!(seen.iter().filter(|s| s.status != 401).all(|s| s.authorization.is_some()), "{seen:?}");
+            // At most one sign-in challenge per request let through: no loop of refused requests.
+            assert!(server.refused() <= seen.iter().filter(|s| s.status != 401).count(), "{seen:?}");
+            drop(server);
+            let _ = fs::remove_dir_all(&base);
+        }
+    }
+
+    /// The app was ended after the pull and before the pages took the server's notes over (the
+    /// first sync of a new device, and a later one): the next sync brings them again. A note
+    /// edited here meanwhile keeps what the pages held as `mine`, so it becomes a conflict there.
+    #[test]
+    fn notes_pulled_by_a_sync_that_was_ended_come_again() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("ended");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        for i in 0..4 {
+            put(&a.join(format!("Notiz {i}.md")), &format!("Text {i}\n"));
+        }
+        r.sync("a").unwrap();
+        mark(&b);
+        put(&b.join("Handy.md"), "vom Handy\n");
+        let first = r.sync("b").unwrap();
+        assert_eq!(first.remote_changes.len(), 4);
+        // Ended: B's pages never got the four notes. The next sync adopts again: nothing is
+        // deleted on the server, the notes come again.
+        let again = r.sync("b").unwrap();
+        assert_eq!(again.remote_changes.len(), 4, "{again:?}");
+        let tree = r.tree();
+        assert!(tree.contains(&"Notiz 3.md".to_owned()) && tree.contains(&"Handy.md".to_owned()), "{tree:?}");
+        for i in 0..4 {
+            put(&b.join(format!("Notiz {i}.md")), &format!("Text {i}\n"));
+        }
+        taken_over(&repo_b);
+        assert!(r.sync("b").unwrap().remote_changes.is_empty());
+
+        // A later pull (a fast-forward) ended the same way, with a note edited here meanwhile.
+        put(&a.join("Notiz 1.md"), "Text 1 von A\n");
+        put(&a.join("Notiz 2.md"), "Text 2 von A\n");
+        r.sync("a").unwrap();
+        let ff = r.sync("b").unwrap();
+        assert_eq!(ff.remote_changes.len(), 2);
+        put(&b.join("Notiz 2.md"), "Text 2 vom Handy\n");
+        let again = r.sync("b").unwrap();
+        let got: Vec<(&str, Option<&str>, Option<&str>)> =
+            again.remote_changes.iter().map(|c| (c.path.as_str(), c.mine.as_deref(), c.theirs.as_deref())).collect();
+        assert_eq!(
+            got,
+            [
+                ("Notiz 1.md", Some("Text 1\n"), Some("Text 1 von A\n")),
+                ("Notiz 2.md", Some("Text 2\n"), Some("Text 2 von A\n"))
+            ]
+        );
+        let server = |p: &str| sh(&r.base.join("remote.git"), &["show", &format!("main:{p}")]);
+        assert_eq!(server("Notiz 1.md"), "Text 1 von A\n");
+        assert_eq!(server("Notiz 2.md"), "Text 2 von A\n");
+    }
+
+    /// The app was ended during a merge (`git merge` ran, no commit yet): the next sync drops
+    /// the merge instead of committing the mirror as a merge that claims the server's state.
+    #[test]
+    fn an_unfinished_merge_is_dropped_before_the_next_sync() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("unfinished");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&b.join("Notiz.md"), "eins\n");
+        taken_over(&repo_b);
+        put(&a.join("Notiz.md"), "zwei von A\n");
+        r.sync("a").unwrap();
+        sh(&repo_b, &["fetch", "-q", "origin", "+refs/heads/main:refs/remotes/origin/main"]);
+        sh(&repo_b, &["merge", "-q", "--no-ff", "--no-commit", "-s", "ours", "origin/main"]);
+        assert!(repo_b.join(".git/MERGE_HEAD").exists());
+        put(&b.join("Andere.md"), "von B\n");
+        let out = r.sync("b").unwrap();
+        let server = |p: &str| sh(&r.base.join("remote.git"), &["show", &format!("main:{p}")]);
+        assert_eq!(server("Notiz.md"), "zwei von A\n");
+        assert_eq!(server("Andere.md"), "von B\n");
+        assert_eq!(theirs_of(&out), [("Notiz.md", Some("zwei von A\n"))]);
+        assert!(!repo_b.join(".git/MERGE_HEAD").exists());
     }
 }

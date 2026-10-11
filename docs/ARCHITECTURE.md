@@ -149,7 +149,13 @@ page, on a blocking thread).
   `blocked_deletions` and Settings → Sicherung offers „Löschungen übertragen“ (`git_sync_now` with `allowDeletions`, after a
   confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
   (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
-  before a sync (`remove_stale_locks`, logged). A rejected push
+  before a sync (`remove_stale_locks`, logged; with the built-in git every lock found then, `Git::stale_lock_age`: it runs in
+  the app's process). A merge left unfinished (`MERGE_HEAD`) is dropped first (`abort_merge`). Server notes the pages have
+  not taken over yet (the app ended after the pull, the push after a merge failed, taking over failed) are never committed
+  away: before a sync brings the server's state in it writes `.git/arcalo-pull-pending` (`adopt <commit>` or the last commit
+  the pages hold, fsynced), the shell removes it after `take_over_pulled` (`gitsync::taken_over`), and a sync that finds it
+  returns those notes again (`waiting_notes`, minus what the mirror already holds) with their files as the server has them.
+  A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the

@@ -336,7 +336,11 @@ impl SecretStore {
                     .or_else(|| self.file.get(&self.account, &self.field).ok().flatten())
             }
             #[cfg(target_os = "android")]
-            Kind::Keystore => crate::mobile::keystore::get(&self.account).ok().flatten(),
+            // A Keystore that cannot be read is logged: the sync would only say the sign-in failed.
+            Kind::Keystore => crate::mobile::keystore::get(&self.account).unwrap_or_else(|e| {
+                crate::devlog::warn("secrets", format!("Android Keystore not read ({}): {e}", self.account));
+                None
+            }),
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
             _ => None,
         }

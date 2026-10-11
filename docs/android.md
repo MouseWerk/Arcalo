@@ -59,8 +59,9 @@ cannot be read on the phone (its key stays on the desktop); it is skipped with a
    your name and e-mail for the commits, paste the token and tap „Token speichern“. The token goes into the
    Android Keystore (an AES key that never leaves it encrypts the token; only the encrypted value is kept in
    the app's private storage).
-4. „Verbindung testen“ checks the URL and the token. „Jetzt synchronisieren“ clones the repository: the
-   desktop's notes appear as pages, the Netzpläne and meetings are taken over.
+4. „Verbindung testen“ checks the URL and the token. „Jetzt synchronisieren“ takes over the repository's
+   newest state (not its history, which holds every database copy the desktop synced): the desktop's notes
+   appear as pages, the Netzpläne and meetings are taken over.
 5. Switch on „Automatisch synchronisieren“: the app syncs when it starts, every 15 minutes while it is open
    and when it comes back to the front (at most every two minutes).
 
@@ -69,6 +70,12 @@ repository until you decide. The phone shows it under Einstellungen → Konflikt
 changes do not overlap, else „Überall meine“, „Überall andere“ or „Beide behalten“; spot by spot works on
 the desktop. Many deletions at once are held back until you confirm („Löschungen übertragen“), as on the
 desktop.
+
+A sync that Android ends in the middle (the app swiped away or stopped in the background), or one whose upload
+fails after it took the desktop's changes, loses nothing: the next sync brings the desktop's changes again
+instead of uploading the phone's older state over them, and git's lock files of an ended sync are removed at
+once. A note being edited on the phone while a sync takes the desktop's text of it over keeps both: the
+editor saves against the text it started from, and the two are merged.
 
 ## How it is built
 
