@@ -262,13 +262,21 @@ export function NoteEditor({
     const mergesBefore = merges.current;
     // Saves run one after another so an older one never lands last.
     const p: Promise<void> = (saving.current ?? Promise.resolve())
-      .then(() => api.savePage(doc.id, md))
+      // With the page as this editor knew it: a change made elsewhere since is merged, not overwritten.
+      .then(() => api.savePage(doc.id, md, base.current))
       .then((saved) => {
         failed.current = false;
+        const stored = saved.merged ?? md;
         if (merges.current === mergesBefore) base.current = md;
-        cb.current.onSaved({ ...saved, content: md });
+        cb.current.onSaved({ ...saved, content: stored });
         // Other panes showing the same page pick up the new content.
-        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: stored, from: instance.current } }));
+        // Merged with a change made elsewhere (the command line, a task ticked off): shown here too,
+        // with what was typed since this save started.
+        if (saved.merged !== undefined && !editor.isDestroyed) {
+          base.current = md;
+          absorb(editor, saved.merged);
+        }
         if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");
       })
       .catch((e) => {

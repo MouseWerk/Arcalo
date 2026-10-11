@@ -47,6 +47,8 @@ export interface SavedPage {
   updated_at: string;
   tags: string[];
   unresolved_links: string[];
+  /** Stored instead of the text sent: the page had changed since the editor's base, both changes merged. */
+  merged?: string;
 }
 export interface CollectionRow extends Page {
   /** The frontmatter block with its `---` lines (the views derive the cells from it). */

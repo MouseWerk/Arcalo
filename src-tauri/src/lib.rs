@@ -388,13 +388,15 @@ fn page_embed(
 }
 
 /// Saves a page. Returns tags, unresolved links and the new time only: the caller has the
-/// content, and a save does not change the page's backlinks.
+/// content, and a save does not change the page's backlinks. `base`: the page as the editor last
+/// knew it; when it changed meanwhile (the command line, a task ticked off elsewhere) both
+/// changes are kept and the merged text is returned (`SavedPage::merged`).
 #[tauri::command(async)]
-fn page_save(state: State<AppState>, id: i64, content: String) -> Result<SavedPage> {
+fn page_save(state: State<AppState>, id: i64, content: String, base: Option<String>) -> Result<SavedPage> {
     if let Some(e) = simulated_disk_full(&state.data_dir) {
         return Err(e);
     }
-    state.db().save_page(id, &content)
+    state.db().save_page_from(id, &content, base.as_deref())
 }
 
 /// Test builds: while the file `test-disk-full` is in the data folder, page saves fail as on a

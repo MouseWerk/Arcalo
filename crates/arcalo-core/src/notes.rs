@@ -54,6 +54,10 @@ pub struct SavedPage {
     pub tags: Vec<String>,
     /// Outgoing links whose target page does not exist yet.
     pub unresolved_links: Vec<String>,
+    /// The text stored instead of the one sent: the page had changed since the editor's base
+    /// (see [`Database::save_page_from`]), and both changes were merged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged: Option<String>,
 }
 
 // ------------------------------------------------------------------ parsing
@@ -321,6 +325,37 @@ impl Database {
             updated_at,
             tags: self.page_tags(id)?,
             unresolved_links: self.unresolved_links(self.outgoing_links(id, content)?)?,
+            merged: None,
+        })
+    }
+
+    /// Saves an editor's text `content`, which started from `base` (the page as the editor last
+    /// knew it). When the stored page changed meanwhile (another pane, a task ticked off in the
+    /// task view, a booking's chip, the command line), the other change is not overwritten: the
+    /// three-way merge of `base`, `content` and the stored text is saved instead ([`crate::merge`];
+    /// where both changed the same block differently, both versions stay, this side's first, as
+    /// the editors merge each other's edits) and returned in [`SavedPage::merged`]. A canvas, and
+    /// a save without `base`, are stored as sent.
+    pub fn save_page_from(&self, id: i64, content: &str, base: Option<&str>) -> Result<SavedPage> {
+        self.atomic(|| {
+            let stored: Option<String> =
+                self.conn().query_row("SELECT content FROM pages WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+            let stored = stored.ok_or_else(|| Error::not_found("page", id.to_string()))?;
+            let merged = match base {
+                Some(b) if stored != b && stored != content && !self.is_canvas(id)? => {
+                    Some(crate::merge::merge3(Some(b), content, &stored).resolve(|_, mine, theirs| {
+                        if mine.is_empty() || mine.ends_with('\n') {
+                            format!("{mine}{theirs}")
+                        } else {
+                            format!("{mine}\n{theirs}")
+                        }
+                    }))
+                }
+                _ => None,
+            };
+            let mut saved = self.save_page(id, merged.as_deref().unwrap_or(content))?;
+            saved.merged = merged.filter(|m| m != content);
+            Ok(saved)
         })
     }
 
@@ -778,6 +813,32 @@ pub fn clean_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_editor_save_keeps_a_change_made_since_its_base() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Seite", None).unwrap();
+        let base = "# Titel\n\nAbsatz eins.\n";
+        db.save_page_content(p.id, base).unwrap();
+        // Unchanged since the base: stored as sent.
+        let mine = "# Titel\n\nAbsatz eins, getippt.\n";
+        assert_eq!(db.save_page_from(p.id, mine, Some(base)).unwrap().merged, None);
+        assert_eq!(db.page_doc(p.id).unwrap().content, mine);
+        // Changed elsewhere since the editor's base: both changes are kept.
+        db.save_page_content(p.id, &format!("{mine}\n- [ ] Von außen\n")).unwrap();
+        let typed = "# Titel neu\n\nAbsatz eins, getippt.\n";
+        let saved = db.save_page_from(p.id, typed, Some(mine)).unwrap();
+        let want = "# Titel neu\n\nAbsatz eins, getippt.\n\n- [ ] Von außen\n";
+        assert_eq!(saved.merged.as_deref(), Some(want));
+        assert_eq!(db.page_doc(p.id).unwrap().content, want);
+        // The same block changed on both sides: both versions stay, this side's first.
+        db.save_page_content(p.id, "A von außen\n").unwrap();
+        let saved = db.save_page_from(p.id, "A von hier", Some(want)).unwrap();
+        assert_eq!(saved.merged.as_deref(), Some("A von hier\nA von außen\n"));
+        // Without a base: as sent (closed editors, other callers).
+        assert_eq!(db.save_page_from(p.id, "x", None).unwrap().merged, None);
+        assert_eq!(db.page_doc(p.id).unwrap().content, "x");
+    }
 
     #[test]
     fn links_in_table_cells_and_tilde_fences() {

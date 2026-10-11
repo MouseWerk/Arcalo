@@ -96,13 +96,20 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     chips.checked(content);
     const mergesBefore = merges.current;
     const p: Promise<void> = (saving.current ?? Promise.resolve())
-      .then(() => api.savePage(doc.id, content))
+      // With the page as this editor knew it: a change made elsewhere since is merged, not overwritten.
+      .then(() => api.savePage(doc.id, content, base.current))
       .then((saved) => {
         failed.current = false;
         if (!unmounted.current) setStatus("saved");
+        const stored = saved.merged ?? content;
         if (merges.current === mergesBefore) base.current = content;
-        cb.current({ ...saved, content });
-        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
+        cb.current({ ...saved, content: stored });
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: stored, from: instance.current } }));
+        // Merged with a change made elsewhere: shown here too, with what was typed since.
+        if (saved.merged !== undefined && !unmounted.current) {
+          base.current = content;
+          absorbRef.current(saved.merged);
+        }
       })
       .catch((e) => {
         dirty.current = true;

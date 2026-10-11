@@ -33,8 +33,11 @@ export const api = {
   /** `layout`, `presets` or `view`, stored per workspace. */
   graphStateGet: (key: "layout" | "presets" | "view") => call<unknown>("graph_state_get", { key }),
   graphStateSet: (key: "layout" | "presets" | "view", value: unknown) => call<void>("graph_state_set", { key, value }),
-  /** Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content. */
-  savePage: (id: number, content: string) => call<T.SavedPage>("page_save", { id, content }),
+  /**
+   * Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content.
+   * `base`: the page as the editor last knew it; a page changed since is merged, the result in `merged`.
+   */
+  savePage: (id: number, content: string, base?: string) => call<T.SavedPage>("page_save", { id, content, base }),
   /** The child pages of a page with their typed properties (table and board views). */
   pageCollection: (parentId: number) => call<T.PageCollection>("page_collection", { parentId }),
   /** The schema a page's properties follow (its parent's), with the parent's id. */
