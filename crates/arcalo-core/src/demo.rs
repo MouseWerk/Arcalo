@@ -1,22 +1,23 @@
 //! Sample workspace used by `arcalo demo` and the first launch of the app.
 
 use crate::tr;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::{EntrySource, NewTimeEntry};
 
 /// Seeds the samples on explicit request (`arcalo demo`), even if they were removed before.
-pub fn seed_explicit(db: &Database, now: DateTime<Utc>) -> Result<bool> {
+pub fn seed_explicit<Tz: TimeZone>(db: &Database, now: DateTime<Tz>) -> Result<bool> {
     db.conn().execute("DELETE FROM settings WHERE key = 'meta.demo_seeded'", [])?;
     seed(db, now)
 }
 
 /// Seeds a project with a Netzplan, Vorgänge, time entries and pages.
 /// Runs once per workspace: never again after the user removed the samples,
-/// and not at all if the workspace already had projects.
-pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
+/// and not at all if the workspace already had projects. `now` in the user's time zone (`Local`):
+/// today's daily note is the one of the local date, not of UTC's.
+pub fn seed<Tz: TimeZone>(db: &Database, now: DateTime<Tz>) -> Result<bool> {
     if db.meta_get("demo_seeded")?.is_some() {
         return Ok(false);
     }
@@ -24,6 +25,8 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     if !db.list_projects()?.is_empty() {
         return Ok(false);
     }
+    let today = now.date_naive();
+    let now = now.with_timezone(&Utc);
     // The samples come in the display language (codes and numbers are the same in both).
     let p = db.create_project("PRJ-2026-X", "Arcalo Rollout")?;
     let np = db.create_netzplan(
@@ -240,7 +243,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     )?;
     db.set_favorite(proj.id, true)?;
     db.set_favorite(arch.id, true)?;
-    db.daily_note(now.date_naive())?;
+    db.daily_note(today)?;
     Ok(true)
 }
 
@@ -352,6 +355,21 @@ mod tests {
         assert!(db.page(mine.id).is_ok(), "user pages survive");
         assert!(db.page_by_title("Architektur").unwrap().is_some(), "parent of a user page is kept");
         assert!(db.page_by_title("SAP CATS Leitfaden").unwrap().is_none());
+    }
+
+    #[test]
+    fn todays_daily_note_is_the_local_date() {
+        // 00:30 in Berlin is still yesterday in UTC.
+        let berlin = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
+        let now = berlin.with_ymd_and_hms(2026, 10, 11, 0, 30, 0).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        assert!(seed(&db, now).unwrap());
+        let days: Vec<_> = db.page_tree().unwrap().iter().flat_map(walk).filter_map(|p| p.daily_date.clone()).collect();
+        assert_eq!(days, ["2026-10-11"]);
+    }
+
+    fn walk(n: &crate::model::PageNode) -> Vec<crate::model::Page> {
+        std::iter::once(n.page.clone()).chain(n.children.iter().flat_map(walk)).collect()
     }
 
     #[test]

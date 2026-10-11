@@ -4010,7 +4010,7 @@ fn onboarding_needed(state: State<AppState>) -> Result<bool> {
 fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> Result<()> {
     let db = state.db();
     if samples {
-        demo::seed_explicit(&db, Utc::now())?;
+        demo::seed_explicit(&db, Local::now())?;
     }
     db.meta_set("onboarded", "1")?;
     let _ = app.emit("data://entries", ());
@@ -4693,7 +4693,7 @@ pub fn run() {
                 )));
             }
             if opts.demo.unwrap_or(false) {
-                demo::seed(&db, Utc::now())?;
+                demo::seed(&db, Local::now())?;
             }
             // Once: a workspace from before 1.7 gets the notice of the rename to Arcalo (before
             // the intro's classification, whose first row tells a 1.6 workspace).

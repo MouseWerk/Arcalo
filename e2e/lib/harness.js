@@ -151,6 +151,14 @@ export function daytimeZone(hour = 9) {
   return process.env.TZ;
 }
 
+// Every test file runs at about 9:00 local time: fixtures placed relative to now ("a meeting that
+// ends in 45 minutes", "the activity of today") stay on today's date whenever the suite runs, also
+// across midnight on CI. This runs when the file imports the harness, before its own top-level
+// code. A file that needs another hour calls `daytimeZone(hour)` at its top; one that needs a real
+// zone (a clock change) sets `process.env.TZ` there. The weekday is still the real one (the date
+// can be the one before or after UTC's), so tests of "this week" must hold on any weekday.
+daytimeZone();
+
 /** The folder the app uses as its data folder under `home` (Linux: `$XDG_DATA_HOME/<identifier>`). */
 export const homeDataDir = (home) => path.join(home, ".local", "share", "de.mousewerk.arcalo");
 

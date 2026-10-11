@@ -147,7 +147,7 @@ fn run(cli: Cli) -> Result<()> {
 
     match cli.cmd {
         Cmd::Demo => {
-            if demo::seed_explicit(&db, now)? {
+            if demo::seed_explicit(&db, chrono::Local::now())? {
                 println!("Demo workspace created in {}", cli.db.display());
             } else {
                 println!("Workspace already has data; nothing seeded.");

@@ -9,6 +9,8 @@ export function auditLayout(rootSelector) {
     if (r.width < 1 || r.height < 1) return false;
     const s = getComputedStyle(el);
     if (s.visibility === "hidden" || s.display === "none" || Number(s.opacity) <= 0.05) return false;
+    // Text for screen readers only (1×1 px, clipped away): not on screen, so it cannot be cut off.
+    if (r.width <= 1 && r.height <= 1 && s.overflow === "hidden") return false;
     // Scrolled out of its scroll container (e.g. a long menu): not on screen.
     for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
       const ps = getComputedStyle(p);

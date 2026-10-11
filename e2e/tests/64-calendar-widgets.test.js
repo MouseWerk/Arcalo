@@ -61,11 +61,13 @@ test("the start page widget lists today's meetings and opens the calendar on one
 
 test("the timesheet offers this week's unbooked meetings and books one", async () => {
   await app.click(".ribbon .icon-btn[aria-label='Zeiterfassung']");
-  // The first four are shown; „Alle … zeigen“ lists the rest (today's standup comes last).
-  await app.waitText(".ts-meetings .card-head", /Termine dieser Woche noch nicht gebucht/);
+  // The first four are shown; „Alle … zeigen“ lists the rest (today's standup comes last). On a
+  // Monday morning the standup may be the only meeting of the week that is over: „1 Termin“.
+  await app.waitText(".ts-meetings .card-head", /\d+ Termine? dieser Woche noch nicht gebucht/);
   await app.browser.execute(() => [...document.querySelectorAll(".ts-meetings > .btn")].find((b) => /^Alle \d+ zeigen$/.test(b.textContent.trim()))?.click());
   await app.waitText(".ts-meetings .ts-meeting-title", /Daily Standup/);
   const before = await app.browser.execute(() => document.querySelectorAll(".ts-meeting").length);
+  assert.match(await app.text(".ts-meetings .card-head"), new RegExp(`(^|\\D)${before} ${before === 1 ? "Termin" : "Termine"} dieser Woche noch nicht gebucht`), "the count of the listed meetings");
   await app.browser.execute(() => document.querySelector(".ts-meetings").scrollIntoView({ block: "center" }));
   await app.shot("64-timesheet-meetings");
   await app.browser.execute(() => [...document.querySelectorAll(".ts-meeting")].find((li) => /Daily Standup/.test(li.textContent)).querySelector(".btn").click());

@@ -8,13 +8,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { guarded, daytimeZone } from "../lib/harness.js";
+import { guarded } from "../lib/harness.js";
 import { germanLeftovers, launchEnglish } from "../lib/english.js";
 import { iso } from "../lib/calendar-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app, dataDir, dir, noteId;
-daytimeZone();
 const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86_400_000));
 const tomorrow = iso(new Date(Date.now() + 86_400_000));

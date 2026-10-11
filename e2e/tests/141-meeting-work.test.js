@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { launch, guarded, daytimeZone } from "../lib/harness.js";
+import { launch, guarded } from "../lib/harness.js";
 import { startFakeJira, defaultIssues } from "../lib/fake-jira.js";
 import { startFakeOpenAI } from "../lib/fake-openai.js";
 import { iso } from "../lib/calendar-fixtures.js";
@@ -18,7 +18,6 @@ import { OUTLOOK_MAILS, mailEnv } from "../lib/mail-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app, jira, cloud, local, dir, fixture, noteId, eventKey;
-daytimeZone();
 const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86_400_000));
 const tomorrow = iso(new Date(Date.now() + 86_400_000));

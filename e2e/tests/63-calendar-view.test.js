@@ -7,7 +7,7 @@ import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { launch, guarded } from "../lib/harness.js";
-import { iso, outlookEnv, serveTeam, week, writeFixtures, TUESDAY } from "../lib/calendar-fixtures.js";
+import { iso, outlookEnv, serveTeam, week, writeFixtures, tuesday } from "../lib/calendar-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -194,16 +194,16 @@ test("„Nicht buchen“ marks a meeting; the month folds a full day; the list a
 
   // M: month. Tuesday has eight meetings (nine when it is today: Outlook's „Daily Standup“ is always today):
   // three lines and the rest as „+n weitere“.
-  const meetings = iso(TUESDAY) === iso(new Date()) ? 9 : 8;
+  const meetings = iso(tuesday()) === iso(new Date()) ? 9 : 8;
   await app.keys(["m"]);
   await app.waitFor(".calv-month");
-  const cell = `.calv-mcell[data-date="${iso(TUESDAY)}"]`;
+  const cell = `.calv-mcell[data-date="${iso(tuesday())}"]`;
   await app.waitText(`${cell} .calv-more`, new RegExp(`^\\+${meetings - 3} weitere$`));
   assert.equal(await app.browser.execute((c) => document.querySelectorAll(`${c} .calv-mev`).length, cell), 3);
   await app.shot("63-calendar-month");
   await app.click(`${cell} .calv-more`);
   // The day view of that Tuesday with all of them.
-  await app.waitFor(`.calv-dayhead[data-date="${iso(TUESDAY)}"]`);
+  await app.waitFor(`.calv-dayhead[data-date="${iso(tuesday())}"]`);
   assert.equal(await app.browser.execute(() => document.querySelectorAll(".calv-dayhead").length), 1);
   assert.equal(await app.browser.execute(() => document.querySelectorAll(".calv-meetings .calv-ev").length), meetings);
 

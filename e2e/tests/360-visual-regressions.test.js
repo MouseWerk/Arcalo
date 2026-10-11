@@ -141,8 +141,9 @@ test("a split pane's tab strip starts at a tab and keeps the active title readab
 });
 
 test("booked-time strips without room for a reference show the hatch only; today's head keeps one row", async () => {
-  // Three bookings at the same time: three strips side by side in today's lane.
-  for (const [ref, at] of [["NP-8801/1020", "09:00"], ["NP-8801/1030", "09:15"], ["NP-8802/2010", "09:30"]]) {
+  // Three bookings at the same time: three strips side by side in today's lane. Over before 9:00,
+  // the time the harness runs every file at (bookings may not end in the future).
+  for (const [ref, at] of [["NP-8801/1020", "06:00"], ["NP-8801/1030", "06:15"], ["NP-8802/2010", "06:30"]]) {
     await app.invoke("log_time", { line: `/zeit ${ref} 2h #DEV Parallel ${at} @${at}` });
   }
   // Today's head with its note and a task due today.
