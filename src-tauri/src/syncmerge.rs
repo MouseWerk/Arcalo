@@ -1833,6 +1833,45 @@ mod tests {
         assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}", "restored version not on the server");
     }
 
+    /// A record rebuilt after a fast-forward whose start sits on the server's side of a merge (the
+    /// other computer merged this one's pushed commit) invents no conflict from an older merge.
+    #[test]
+    fn a_rebuilt_fast_forward_invents_no_conflict() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("rebuilt-ff");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        let page = |db: &Database, title: &str, text: &str| {
+            let id = match db.page_by_title(title).unwrap() {
+                Some(p) => p.id,
+                None => db.create_page(None, title, None).unwrap().id,
+            };
+            db.save_page_content(id, text).unwrap();
+        };
+        page(&a, "Notiz", "eins\n");
+        r.run(&a, "a");
+        r.run(&b, "b");
+        page(&a, "X", "x\n");
+        r.run(&a, "a");
+        page(&b, "Y", "y\n");
+        r.run(&b, "b");
+        r.run(&a, "a");
+        page(&b, "Notiz", "von B\n");
+        r.run(&b, "b");
+        page(&a, "Z", "z\n");
+        r.run(&a, "a");
+        assert_eq!(a.page_doc(a.page_by_title("Notiz").unwrap().unwrap().id).unwrap().content, "von B\n");
+        page(&a, "Notiz", "von A nach B\n");
+        r.run(&a, "a");
+        let first = r.sync_only(&b, "b");
+        assert!(!first.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("pulled").conflict);
+        std::fs::write(r.base.join("b").join("git-sync/.git/arcalo-pull-pending.json"), b"[{").unwrap();
+        let again = r.sync_only(&b, "b");
+        let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
+        assert!(!c.conflict, "an invented conflict: {c:?}");
+    }
+
     /// A kept version renamed in the attachment manager stays kept under its new name: the new name
     /// reaches the server and the other computer, the old one leaves the server.
     #[test]

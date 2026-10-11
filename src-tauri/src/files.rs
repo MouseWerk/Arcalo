@@ -56,17 +56,27 @@ pub(crate) fn rename_attachment(
             return Ok(out);
         }
     };
-    // In the working tree too: no note may link it, so the Markdown copy does not bring it.
+    // In the working tree too: no note may link it, so the Markdown copy does not bring it. The
+    // rename itself is done, so a failure here is only logged.
     let tree = repo.join(arcalo_core::attachments::DIR_NAME);
     for (old, new) in moved {
         let from = files.join(&new);
         if std::fs::symlink_metadata(&from).is_ok_and(|m| m.is_file()) {
-            std::fs::create_dir_all(&tree).map_err(|e| Error::file(&tree, e))?;
-            arcalo_core::error::copy_file(&from, &tree.join(&new))?;
+            let copied = std::fs::create_dir_all(&tree)
+                .map_err(|e| Error::file(&tree, e))
+                .and_then(|()| arcalo_core::error::copy_file(&from, &tree.join(&new)).map(|_| ()));
+            if let Err(e) = copied {
+                crate::devlog::warn("git", format!("renamed kept file not put into the working tree: {e}"));
+            }
         }
         let gone = tree.join(&old);
-        if std::fs::symlink_metadata(&gone).is_ok_and(|m| m.is_file()) {
-            std::fs::remove_file(&gone).map_err(|e| Error::file(&gone, e))?;
+        if std::fs::symlink_metadata(&gone).is_ok_and(|m| m.is_file())
+            && let Err(e) = std::fs::remove_file(&gone)
+        {
+            crate::devlog::warn(
+                "git",
+                format!("old name of a renamed kept file not removed: {}", Error::file(&gone, e)),
+            );
         }
     }
     Ok(out)

@@ -1731,11 +1731,14 @@ fn rebuild_waiting(git: &Git, repo: &Path, head: &str) -> Result<Option<Vec<Wait
 /// The merge base of `from` and the server's side of the newest merge on HEAD's first-parent
 /// chain since `from` (later commits, fast-forwards and further merges on top included). A side
 /// is any parent but the first; one that already holds `from` (this computer's own merge, pushed
-/// and merged again) tells nothing and is passed over. `None`: no merge since `from`.
+/// and merged again) tells nothing and is passed over. The walk ends at the first commit `from`
+/// holds (also a shallow boundary). `None`: no merge since `from`.
 fn merge_base_since(git: &Git, repo: &Path, from: &str) -> Result<Option<String>> {
     let Some(mut cur) = rev(git, repo, "HEAD")? else { return Ok(None) };
     for _ in 0..100_000 {
-        if cur == from {
+        // Only commits made after `from` can bring a base: a commit `from` already holds (`from`
+        // itself, or the first parent leading past a fast-forward onto another side) ends the walk.
+        if cur == from || git.run(Some(repo), &["merge-base", "--is-ancestor", &cur, from])?.ok {
             break;
         }
         let mut bases = Vec::new();
@@ -4998,6 +5001,30 @@ mod safety_tests {
         let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
         assert!(c.conflict, "B's edit would be replaced: {c:?}");
         assert_eq!((c.base.as_deref(), c.theirs.as_deref()), (Some("eins\n"), Some("von A\n")), "{c:?}");
+    }
+
+    /// A shallow history (the companion's fetch) ends the walk: no base, no error.
+    #[test]
+    fn merge_base_since_stops_at_a_shallow_boundary() {
+        if !git_available() {
+            return;
+        }
+        let dir = tmp("shallow-walk");
+        let src = dir.join("src");
+        fs::create_dir_all(&src).unwrap();
+        sh(&src, &["init", "-q", "-b", "main"]);
+        let mut ids = vec![];
+        for n in ["a", "b", "c"] {
+            put(&src.join(n), n);
+            sh(&src, &["add", "-A"]);
+            sh(&src, &["commit", "-q", "-m", n]);
+            ids.push(sh(&src, &["rev-parse", "HEAD"]).trim().to_owned());
+        }
+        sh(&dir, &["clone", "-q", "--depth", "1", &format!("file://{}", src.display()), "shallow"]);
+        let repo = dir.join("shallow");
+        assert!(repo.join(".git/shallow").exists());
+        assert_eq!(merge_base_since(&Git::new(None, ""), &repo, &ids[0]).unwrap(), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// The newest merge since the start is found over fast-forwards, merges with more than two
