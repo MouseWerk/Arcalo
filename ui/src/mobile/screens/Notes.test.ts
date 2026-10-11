@@ -8,7 +8,7 @@ import { PageBody } from "./Notes";
 
 vi.mock("../../lib/api", async (orig) => {
   const m = await orig<typeof import("../../lib/api")>();
-  return { ...m, api: { ...m.api, savePage: vi.fn() } };
+  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -19,10 +19,12 @@ const saved = (merged?: string) => ({ id: 7, updated_at: "", tags: [], unresolve
 describe("Mobile page editor and the sync", () => {
   let root: Root | null = null;
   let host: HTMLElement | null = null;
+  // The page as stored in the app (what a read returns now).
+  let stored = "";
   const toast = vi.fn();
   const ctx = { toast, refresh: vi.fn(), onBack: () => () => {} } as unknown as MobileContext;
   const render = (content: string) =>
-    act(() =>
+    act(async () =>
       root!.render(
         createElement(Ctx.Provider, { value: ctx }, createElement(PageBody, { doc: doc(content), editing: true, onSaved: () => {}, onDone: () => {} })),
       ),
@@ -35,9 +37,17 @@ describe("Mobile page editor and the sync", () => {
       el.dispatchEvent(new Event("input", { bubbles: true }));
     });
   const blur = () => act(async () => void field().dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+  // A save stores what it sends (or the merged text).
+  const saves = (merged?: string) =>
+    vi.mocked(api.savePage).mockImplementation(async (_id, content) => {
+      stored = merged ?? content;
+      return saved(merged);
+    });
 
   beforeEach(() => {
     vi.mocked(api.savePage).mockReset();
+    vi.mocked(api.page).mockReset();
+    vi.mocked(api.page).mockImplementation(async () => doc(stored));
     toast.mockReset();
     host = document.createElement("div");
     document.body.append(host);
@@ -50,7 +60,8 @@ describe("Mobile page editor and the sync", () => {
   });
 
   it("saves with the text it started from, so a change made elsewhere is merged", async () => {
-    vi.mocked(api.savePage).mockResolvedValue(saved());
+    saves();
+    stored = "Anfang\n";
     await render("Anfang\n");
     await type("Anfang\nvom Handy\n");
     await blur();
@@ -62,8 +73,10 @@ describe("Mobile page editor and the sync", () => {
   });
 
   it("shows a text the sync took over while nothing typed waits", async () => {
-    vi.mocked(api.savePage).mockResolvedValue(saved());
+    saves();
+    stored = "Anfang\n";
     await render("Anfang\n");
+    stored = "Anfang\nvom Desktop\n";
     await render("Anfang\nvom Desktop\n");
     expect(field().value).toBe("Anfang\nvom Desktop\n");
     await type("Anfang\nvom Desktop\nvom Handy\n");
@@ -72,7 +85,8 @@ describe("Mobile page editor and the sync", () => {
   });
 
   it("ignores a read of the page that started before a save and arrived after it", async () => {
-    vi.mocked(api.savePage).mockResolvedValue(saved());
+    saves();
+    stored = "Anfang\n";
     await render("Anfang\n");
     await type("Anfang\nvom Handy\n");
     await blur();
@@ -81,22 +95,50 @@ describe("Mobile page editor and the sync", () => {
     await render("Anfang\nvom Handy\n");
     await render("Anfang\n");
     expect(field().value).toBe("Anfang\nvom Handy\n");
-    // The same while the save is still on its way.
-    let finish: (v: ReturnType<typeof saved>) => void = () => {};
-    vi.mocked(api.savePage).mockImplementation(() => new Promise((r) => (finish = r)));
-    await type("Anfang\nvom Handy\nmehr\n");
+  });
+
+  it("shows a change that brings an earlier text back", async () => {
+    saves();
+    stored = "Anfang\n";
+    await render("Anfang\n");
+    await type("Anfang\nvom Handy\n");
     await blur();
     await render("Anfang\nvom Handy\n");
+    // The desktop took the line out again, the sync brought that here.
+    stored = "Anfang\n";
     await render("Anfang\n");
-    expect(field().value).toBe("Anfang\nvom Handy\nmehr\n");
-    await act(async () => finish(saved()));
-    await render("Anfang\nvom Handy\nmehr\n");
-    await render("Anfang\nvom Handy\n");
-    expect(field().value).toBe("Anfang\nvom Handy\nmehr\n");
+    expect(field().value).toBe("Anfang\n");
+  });
+
+  it("reads the page again after a save when it changed while the save was on its way", async () => {
+    stored = "Anfang\n";
+    await render("Anfang\n");
+    let finish: () => void = () => {};
+    vi.mocked(api.savePage).mockImplementation(
+      (_id, content) =>
+        new Promise((r) => {
+          finish = () => {
+            stored = content;
+            r(saved());
+          };
+        }),
+    );
+    await type("Anfang\nvom Handy\n");
+    await blur();
+    // A sync changes the page while the save is on its way.
+    await render("Anfang\nvom Desktop\n");
+    expect(field().value).toBe("Anfang\nvom Handy\n");
+    await act(async () => {
+      finish();
+      stored = "Anfang\nvom Handy\nvom Desktop\n";
+    });
+    await act(async () => {});
+    expect(field().value).toBe("Anfang\nvom Handy\nvom Desktop\n");
   });
 
   it("reports a save that ends after the screen moved on to the screen's latest handler", async () => {
-    vi.mocked(api.savePage).mockResolvedValue(saved());
+    saves();
+    stored = "Anfang\n";
     const first = vi.fn();
     const second = vi.fn();
     const body = (onSaved: (c: string) => void) =>
@@ -114,10 +156,12 @@ describe("Mobile page editor and the sync", () => {
   });
 
   it("keeps typed text when the sync changed the page, and shows both once merged", async () => {
-    vi.mocked(api.savePage).mockResolvedValue(saved("Anfang\nvom Desktop\nvom Handy\n"));
+    saves("Anfang\nvom Desktop\nvom Handy\n");
+    stored = "Anfang\n";
     await render("Anfang\n");
     await type("Anfang\nvom Handy\n");
     // The sync took the desktop's text over before the pause in typing ran out.
+    stored = "Anfang\nvom Desktop\n";
     await render("Anfang\nvom Desktop\n");
     expect(field().value).toBe("Anfang\nvom Handy\n");
     await blur();
