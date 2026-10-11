@@ -1744,6 +1744,95 @@ mod tests {
         assert_eq!(b.page_doc(b.page_by_title("Board").unwrap().unwrap().id).unwrap().content, json);
     }
 
+    /// A drawing saved again on computers `a` and `b`, so both versions are kept; the renamed one.
+    fn kept_drawing(r: &Rv, a: &Database, b: &Database) -> String {
+        let draw = |pc: &str, v: &str| {
+            std::fs::create_dir_all(r.files(pc)).unwrap();
+            std::fs::write(r.files(pc).join("Skizze.excalidraw"), format!("{{\"v\":\"{v}\"}}")).unwrap();
+            std::fs::write(r.files(pc).join("Skizze.excalidraw.svg"), format!("<svg>{v}</svg>")).unwrap();
+        };
+        draw("a", "0");
+        let p = a.create_page(None, "Plan", None).unwrap();
+        a.save_page_content(p.id, "Plan\n\n![[Skizze.excalidraw]]\n").unwrap();
+        r.run(a, "a");
+        r.run(b, "b");
+        draw("a", "A");
+        draw("b", "B");
+        r.run(a, "a");
+        let out = r.run(b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Skizze.excalidraw").expect("both kept").to.clone();
+        for (db, pc) in [(a, "a"), (b, "b")] {
+            r.run(db, pc);
+        }
+        assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}");
+        new
+    }
+
+    /// A computer still on 1.18.0 knows no kept list: it deletes the list and every version no note
+    /// links. The next sync of a computer on 1.18.1 puts them back.
+    #[test]
+    fn an_older_computer_never_drops_a_version_kept_twice() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("mixed");
+        let (a, b, c) = (
+            Database::open_in_memory().unwrap(),
+            Database::open_in_memory().unwrap(),
+            Database::open_in_memory().unwrap(),
+        );
+        let new = kept_drawing(&r, &a, &b);
+        r.run(&c, "c");
+        let _ = std::fs::remove_file(r.base.join("c").join("git-sync").join(gitsync::KEPT_FILE));
+        let c_page = c.page_by_title("Plan").unwrap().unwrap().id;
+        c.save_page_content(c_page, "Plan\n\n![[Skizze.excalidraw]]\nvon C\n").unwrap();
+        r.run(&c, "c");
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&a, "a"), (&b, "b")] {
+            r.run(db, pc);
+        }
+        assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}", "B's version dropped from the server");
+        assert_eq!(r.server(&format!("attachments/{new}.svg")), "<svg>B</svg>");
+        // The 1.18.0 computer drops it again and again: it always comes back, nothing is lost.
+        for _ in 0..2 {
+            let _ = std::fs::remove_file(r.base.join("c").join("git-sync").join(gitsync::KEPT_FILE));
+            r.run(&c, "c");
+            r.run(&a, "a");
+            assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}");
+        }
+        // Between computers on 1.18.1 it settles.
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            r.run(db, pc);
+        }
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            let out = r.run(db, pc);
+            assert!(!out.committed && out.remote_changes.is_empty(), "{pc}: {out:?}");
+        }
+    }
+
+    /// A kept version moved to the file trash leaves the server; restored from the trash, it is kept
+    /// again and goes back to the server.
+    #[test]
+    fn a_kept_file_restored_from_the_trash_is_kept_again() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("restore");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        let new = kept_drawing(&r, &a, &b);
+        let data = r.base.join("b");
+        let ids = crate::files::trash_attachments(&data, std::slice::from_ref(&new)).unwrap();
+        r.run(&b, "b");
+        assert_eq!(r.server(&format!("attachments/{new}")), "", "trashed: gone from the server");
+        let entry = arcalo_core::attachment_manager::trashed_files(&data).unwrap();
+        let id = entry.iter().find(|e| e.name == new).map(|e| e.id.clone()).unwrap_or_else(|| ids[0].clone());
+        crate::files::restore_attachment(&data, &id, &new).unwrap();
+        assert!(r.files("b").join(&new).exists());
+        for (db, pc) in [(&b, "b"), (&a, "a"), (&b, "b")] {
+            r.run(db, pc);
+        }
+        assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}", "restored version not on the server");
+    }
+
     /// The file changed here between the sync and the take-over (no crash): both kept as well.
     #[test]
     fn a_local_file_changed_during_the_take_over_is_kept_beside_the_servers() {

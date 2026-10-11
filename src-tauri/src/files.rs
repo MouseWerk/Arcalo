@@ -38,15 +38,44 @@ pub async fn attachment_rename(app: AppHandle, name: String, new_name: String) -
 #[tauri::command]
 pub async fn attachment_trash(app: AppHandle, names: Vec<String>) -> Result<Vec<String>> {
     blocking(app, move |s| {
-        let trashed = manager::trash_files(&s.data_dir, &names)?;
-        // A file kept twice by the Git sync stays on its kept list until the user removes it.
         let _running = crate::lock(&s.git_lock);
-        if let Err(e) = arcalo_core::gitsync::forget_kept(&s.data_dir.join(arcalo_core::gitsync::REPO_DIR), &names) {
-            crate::devlog::warn("git", format!("trashed files not taken off the kept list: {e}"));
-        }
-        Ok(trashed)
+        trash_attachments(&s.data_dir, &names)
     })
     .await
+}
+
+/// Moves `names` into the file trash; a file the Git sync kept twice leaves its kept list (the
+/// next sync removes it from the server). Callers hold the sync's lock.
+pub(crate) fn trash_attachments(data_dir: &std::path::Path, names: &[String]) -> Result<Vec<String>> {
+    let trashed = manager::trash_files(data_dir, names)?;
+    if let Err(e) = arcalo_core::gitsync::forget_kept(&data_dir.join(arcalo_core::gitsync::REPO_DIR), names) {
+        crate::devlog::warn("git", format!("trashed files not taken off the kept list: {e}"));
+    }
+    Ok(trashed)
+}
+
+/// Brings `name` back from the file trash; a file the Git sync kept twice before is kept again.
+/// Callers hold the sync's lock.
+pub(crate) fn restore_attachment(data_dir: &std::path::Path, id: &str, name: &str) -> Result<()> {
+    manager::restore_file(data_dir, id, name)?;
+    let repo = data_dir.join(arcalo_core::gitsync::REPO_DIR);
+    let again = match arcalo_core::gitsync::restored_kept(&repo, name) {
+        Ok(again) => again,
+        Err(e) => {
+            crate::devlog::warn("git", format!("restored file not kept again: {e}"));
+            return Ok(());
+        }
+    };
+    // Into the working tree too: no note may link it, so the Markdown copy does not bring it.
+    let (files, tree) = (arcalo_core::attachments::dir(data_dir), repo.join(arcalo_core::attachments::DIR_NAME));
+    for n in again {
+        let from = files.join(&n);
+        if std::fs::symlink_metadata(&from).is_ok_and(|m| m.is_file()) {
+            std::fs::create_dir_all(&tree).map_err(|e| Error::file(&tree, e))?;
+            arcalo_core::error::copy_file(&from, &tree.join(&n))?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -56,7 +85,11 @@ pub async fn attachments_trashed(app: AppHandle) -> Result<Vec<TrashedFile>> {
 
 #[tauri::command]
 pub async fn attachment_restore(app: AppHandle, id: String, name: String) -> Result<()> {
-    blocking(app, move |s| manager::restore_file(&s.data_dir, &id, &name)).await
+    blocking(app, move |s| {
+        let _running = crate::lock(&s.git_lock);
+        restore_attachment(&s.data_dir, &id, &name)
+    })
+    .await
 }
 
 #[tauri::command]

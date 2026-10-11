@@ -341,58 +341,90 @@ fn is_git_dir(name: &str) -> bool {
     name.eq_ignore_ascii_case(".git")
 }
 
-/// In the repository: files of the attachments folder kept twice (one name per line, the server's
-/// version and this computer's renamed one, with a drawing's preview). The Markdown copy takes only
-/// the files a note links along; a version kept twice is often linked by no note (a drawing saved
-/// again on both computers, a file only a canvas shows), and without this list the next sync would
-/// delete it on the server and the other computer would never get it. Every computer's tree sync
-/// keeps the files on the list ([`sync_tree`]); the list is merged line by line ([`merge_kept`])
-/// and a file leaves it when the user moves it to the file trash ([`forget_kept`]).
+/// In the repository: files of the attachments folder kept twice (the server's version and this
+/// computer's renamed one, with a drawing's preview). The Markdown copy takes only the files a note
+/// links along; a version kept twice is often linked by no note (a drawing saved again on both
+/// computers, a file only a canvas shows), and without this list the next sync would delete it on
+/// the server and the other computer would never get it. Every computer's tree sync keeps the files
+/// on the list ([`sync_tree`]). A file leaves it only when the user moves it to the file trash
+/// ([`forget_kept`]), which the list records (`removed`): a list or a listed file missing after a
+/// pull (a computer on 1.18.0 does not know the list and drops both) is no decision, the merge puts
+/// them back ([`merge_kept_files`]). JSON, so any file name is stored as it is.
 pub const KEPT_FILE: &str = ".arcalo-kept-files";
 
-/// The names on the kept list of the working tree `repo` ([`KEPT_FILE`]).
-fn read_kept(repo: &Path) -> Vec<String> {
-    if is_link(&repo.join(KEPT_FILE)) {
-        return vec![];
-    }
-    let text = fs::read_to_string(repo.join(KEPT_FILE)).unwrap_or_default();
-    text.lines()
-        .map(str::trim)
-        .filter(|n| !n.is_empty() && !n.starts_with('.') && !n.contains(['/', '\\']) && *n != "..")
-        .map(str::to_owned)
-        .collect()
+/// The kept list ([`KEPT_FILE`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct KeptList {
+    #[serde(default)]
+    kept: BTreeSet<String>,
+    /// Taken off the list by the user (moved to the file trash).
+    #[serde(default)]
+    removed: BTreeSet<String>,
 }
 
-fn write_kept(stage: Option<&Git>, repo: &Path, names: &BTreeSet<String>) -> Result<()> {
+/// A name the list may hold: one file of the attachments folder, nothing that leaves it.
+fn kept_name_ok(n: &str) -> bool {
+    !n.is_empty() && !n.starts_with('.') && !n.contains(['/', '\\', '\0'])
+}
+
+fn parse_kept(text: &str) -> KeptList {
+    let mut list: KeptList = serde_json::from_str(text).unwrap_or_default();
+    list.kept.retain(|n| kept_name_ok(n));
+    list.removed.retain(|n| kept_name_ok(n) && !list.kept.contains(n));
+    list
+}
+
+/// The kept list of the working tree `repo` (none: an empty one).
+fn read_list(repo: &Path) -> KeptList {
     let path = repo.join(KEPT_FILE);
-    if names.is_empty() {
-        if path.exists() || is_link(&path) {
+    if is_link(&path) {
+        return KeptList::default();
+    }
+    fs::read_to_string(&path).map(|t| parse_kept(&t)).unwrap_or_default()
+}
+
+/// The names on the kept list of the working tree `repo`.
+fn read_kept(repo: &Path) -> Vec<String> {
+    read_list(repo).kept.into_iter().collect()
+}
+
+fn write_list(stage: Option<&Git>, repo: &Path, list: &KeptList) -> Result<()> {
+    let path = repo.join(KEPT_FILE);
+    if is_link(&path) {
+        remove_path(&path)?;
+    }
+    if list.kept.is_empty() && list.removed.is_empty() {
+        if path.exists() {
             remove_path(&path)?;
         }
     } else {
-        let text: String = names.iter().map(|n| format!("{n}\n")).collect();
-        if is_link(&path) {
-            remove_path(&path)?;
+        let text = serde_json::to_string_pretty(list)? + "\n";
+        if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+            fs::write(&path, text)?;
         }
-        if fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
-            return Ok(());
-        }
-        fs::write(&path, text)?;
     }
     if let Some(git) = stage {
-        git.check(Some(repo), &["add", "-A", "--", KEPT_FILE])?;
+        if path.exists() {
+            git.check(Some(repo), &["add", "--", KEPT_FILE])?;
+        } else {
+            git.check(Some(repo), &["rm", "-q", "-f", "--ignore-unmatch", "--", KEPT_FILE])?;
+        }
     }
     Ok(())
 }
 
 /// Puts `names` on the kept list (see [`KEPT_FILE`]); `stage` adds the list to the index.
 fn add_kept(stage: Option<&Git>, repo: &Path, names: &[String]) -> Result<()> {
-    if names.is_empty() {
+    let mut list = read_list(repo);
+    let before = list.clone();
+    for n in names.iter().filter(|n| kept_name_ok(n)) {
+        list.removed.remove(n);
+        list.kept.insert(n.clone());
+    }
+    if list == before {
         return Ok(());
     }
-    let mut all: BTreeSet<String> = read_kept(repo).into_iter().collect();
-    all.extend(names.iter().cloned());
-    write_kept(stage, repo, &all)
+    write_list(stage, repo, &list)
 }
 
 /// Both versions of each file kept twice, with a drawing's previews.
@@ -418,30 +450,113 @@ pub fn keep_files(repo: &Path, names: &[String]) -> Result<()> {
     add_kept(None, repo, names)
 }
 
-/// The user moved `names` to the file trash: they leave the kept list, so the next sync removes
-/// them from the server like any file no note links.
-pub fn forget_kept(repo: &Path, names: &[String]) -> Result<()> {
-    let mut all: BTreeSet<String> = read_kept(repo).into_iter().collect();
-    let before = all.len();
+/// The user moved `names` to the file trash: they leave the kept list (recorded as removed), so
+/// the next sync removes them from the server like any file no note links. Returns the names that
+/// were on the list (a drawing's preview included).
+pub fn forget_kept(repo: &Path, names: &[String]) -> Result<Vec<String>> {
+    let mut list = read_list(repo);
+    let mut out = Vec::new();
     for n in names {
-        all.remove(n);
-        all.remove(&crate::drawings::preview_name(n));
+        for name in [n.clone(), crate::drawings::preview_name(n)] {
+            if list.kept.remove(&name) {
+                list.removed.insert(name.clone());
+                out.push(name);
+            }
+        }
     }
-    if all.len() == before {
-        return Ok(());
+    if !out.is_empty() {
+        write_list(None, repo, &list)?;
     }
-    write_kept(None, repo, &all)
+    Ok(out)
 }
 
-/// The kept list changed on both sides: what either side added stays, what either side removed
-/// (and the other still had from the base) goes.
-fn merge_kept(base: &str, mine: &str, theirs: &str) -> String {
-    let set = |t: &str| t.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect::<BTreeSet<_>>();
-    let (b, m, t) = (set(base), set(mine), set(theirs));
-    m.union(&t)
-        .filter(|n| !(b.contains(*n) && (!m.contains(*n) || !t.contains(*n))))
-        .map(|n| format!("{n}\n"))
-        .collect()
+/// The user restored `name` from the file trash: when the list took it off for that, it is kept
+/// again (with a drawing's preview). Returns the names kept again; the caller puts those files back
+/// into the working tree.
+pub fn restored_kept(repo: &Path, name: &str) -> Result<Vec<String>> {
+    let list = read_list(repo);
+    let back: Vec<String> = [name.to_owned(), crate::drawings::preview_name(name)]
+        .into_iter()
+        .filter(|n| list.removed.contains(n))
+        .collect();
+    add_kept(None, repo, &back)?;
+    Ok(back)
+}
+
+/// The kept lists of the merge base, this computer and the server, merged name by name. A list
+/// that is missing, or a name missing from one, is no decision (it keeps the base's state): only
+/// what a side changed against the base counts, and when both changed a name differently it stays
+/// kept.
+fn merge_kept(base: Option<&str>, mine: Option<&str>, theirs: Option<&str>) -> KeptList {
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Absent,
+        Kept,
+        Removed,
+    }
+    let parse = |t: Option<&str>| t.map(parse_kept);
+    let (b, m, t) = (parse(base).unwrap_or_default(), parse(mine), parse(theirs));
+    let state = |l: &KeptList, n: &str| {
+        if l.kept.contains(n) {
+            State::Kept
+        } else if l.removed.contains(n) {
+            State::Removed
+        } else {
+            State::Absent
+        }
+    };
+    let mut names: BTreeSet<String> = b.kept.union(&b.removed).cloned().collect();
+    for l in [&m, &t].into_iter().flatten() {
+        names.extend(l.kept.iter().chain(&l.removed).cloned());
+    }
+    let mut out = KeptList::default();
+    for n in names {
+        let sb = state(&b, &n);
+        let side = |l: &Option<KeptList>| match l.as_ref().map(|l| state(l, &n)) {
+            Some(State::Absent) | None => sb,
+            Some(s) => s,
+        };
+        let (sm, st) = (side(&m), side(&t));
+        let s = if sm == st {
+            sm
+        } else if sm == sb {
+            st
+        } else if st == sb {
+            sm
+        } else if sm == State::Kept || st == State::Kept {
+            State::Kept
+        } else {
+            State::Removed
+        };
+        match s {
+            State::Kept => {
+                out.kept.insert(n);
+            }
+            State::Removed => {
+                out.removed.insert(n);
+            }
+            State::Absent => {}
+        }
+    }
+    out
+}
+
+/// The kept list after a pull from `theirs` (`base`: the merge base, `ours`: this computer's last
+/// commit), in the working tree and the index; a kept file the pull dropped (a computer on 1.18.0)
+/// comes back from `ours`. Returns whether the working tree changed against `theirs`.
+fn merge_kept_files(git: &Git, repo: &Path, base: &str, ours: &str, theirs: &str) -> Result<bool> {
+    let text = |rev: &str| blob_text(git, repo, rev, KEPT_FILE);
+    let merged = merge_kept(text(base)?.as_deref(), text(ours)?.as_deref(), text(theirs)?.as_deref());
+    let mut changed = merged != text(theirs)?.as_deref().map(parse_kept).unwrap_or_default();
+    write_list(Some(git), repo, &merged)?;
+    for name in &merged.kept {
+        let path = format!("{}/{name}", crate::attachments::DIR_NAME);
+        if blob_id(git, repo, theirs, &path)?.is_none() && blob_id(git, repo, ours, &path)?.is_some() {
+            git.check(Some(repo), &["checkout", "-q", ours, "--", &path])?;
+            changed = true;
+        }
+    }
+    Ok(changed)
 }
 
 /// Root entries of the working tree the tree sync never removes: `.git` and the files
@@ -1568,7 +1683,24 @@ fn rebuild_waiting(git: &Git, repo: &Path, head: &str) -> Result<Option<Vec<Wait
         }
         out
     } else {
-        server_notes(git, repo, &from, "HEAD")?
+        // A note this side had changed against the merge base and the merge kept at the server's
+        // text was a conflict: it stays one (a fast-forward has none).
+        let merge_base_of = match rev(git, repo, "HEAD^2")? {
+            Some(theirs) => merge_base(git, repo, &from, &theirs)?,
+            None => None,
+        };
+        let mut changes = server_notes(git, repo, &from, "HEAD")?;
+        if let Some(mb) = merge_base_of {
+            for c in &mut changes {
+                let at = c.from.clone().unwrap_or_else(|| c.path.clone());
+                let base_text = blob_text(git, repo, &mb, &at)?;
+                if c.mine != base_text && c.mine != c.theirs {
+                    c.conflict = true;
+                    c.base = base_text;
+                }
+            }
+        }
+        changes
     };
     Ok(Some(vec![Waiting { from, adopt, changes, ..Default::default() }]))
 }
@@ -2458,6 +2590,15 @@ fn merge_remote(
         let w = Waiting { from: ours.to_owned(), changes: changes.clone(), files: files.clone(), ..Default::default() };
         record_waiting(repo, w)?;
         git.check(Some(repo), &["reset", "-q", "--hard", theirs])?;
+        // A kept file the server dropped (a computer on 1.18.0) comes back on top of its state.
+        if merge_kept_files(git, repo, base, ours, theirs)? {
+            let msg = trf!(
+                "Abgleich mit dem Server {}",
+                "Merge with the server {}",
+                now.format(tr!("%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M"))
+            );
+            git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
+        }
         return Ok(Merged { changes, renamed: vec![], files });
     }
     let local = changed_paths(git, repo, base, ours)?;
@@ -2548,14 +2689,6 @@ fn merge_remote(
             continue;
         }
         let (mine_id, theirs_id) = (blob_id(git, repo, ours, path)?, blob_id(git, repo, theirs, path)?);
-        // The kept list changed on both sides: merged line by line.
-        if path == KEPT_FILE && mine_id != theirs_id {
-            let text = |rev: &str| -> Result<String> { Ok(blob_text(git, repo, rev, path)?.unwrap_or_default()) };
-            let merged = merge_kept(&text(base)?, &text(ours)?, &text(theirs)?);
-            fs::write(repo.join(path), merged)?;
-            git.check(Some(repo), &["add", "--", path])?;
-            continue;
-        }
         // The settings file changed on both sides: merged per setting, the later change wins.
         if path == crate::settings_sync::FILE && mine_id != theirs_id {
             if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
@@ -2607,6 +2740,8 @@ fn merge_remote(
         // Until the user has merged it, the server keeps its version.
         take_path(git, repo, theirs, path)?;
     }
+    // The kept list name by name; a kept file the server dropped (a computer on 1.18.0) comes back.
+    merge_kept_files(git, repo, base, ours, theirs)?;
     let renamed = if both.is_empty() { vec![] } else { relink_notes(git, repo, ours, &local, &both, &mut changes)? };
     let msg = trf!(
         "Abgleich mit dem Server {}",
@@ -4707,10 +4842,77 @@ mod safety_tests {
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "zwei\n");
     }
 
-    /// The kept list merged line by line: what either side added stays, what one side removed goes.
+    /// A record rebuilt after it was damaged keeps a conflict a conflict (base: the merge base).
     #[test]
-    fn the_kept_list_is_merged_line_by_line() {
-        let merged = merge_kept("a.png\nb.png\n", "a.png\nb.png\nc.png\n", "b.png\nd.png\n");
-        assert_eq!(merged, "b.png\nc.png\nd.png\n");
+    fn a_rebuilt_record_keeps_a_conflict() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("review-rebuilt-conflict");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&b.join("Notiz.md"), "eins\n");
+        taken_over(&repo_b);
+        put(&a.join("Notiz.md"), "von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Notiz.md"), "von B\n");
+        let first = r.sync("b").unwrap();
+        assert!(first.remote_changes.iter().any(|c| c.path == "Notiz.md" && c.conflict));
+        fs::write(pending_file(&repo_b), b"[{").unwrap();
+        let again = r.sync("b").unwrap();
+        let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
+        assert!(c.mine.as_deref() != Some("von B\n") || c.conflict, "B's edit would be replaced: {c:?}");
+        assert_eq!((c.base.as_deref(), c.theirs.as_deref()), (Some("eins\n"), Some("von A\n")), "{c:?}");
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "von A\n");
+    }
+
+    fn list(kept: &[&str], removed: &[&str]) -> String {
+        let l = KeptList {
+            kept: kept.iter().map(|s| (*s).to_owned()).collect(),
+            removed: removed.iter().map(|s| (*s).to_owned()).collect(),
+        };
+        serde_json::to_string(&l).unwrap()
+    }
+
+    /// The kept list merged name by name: what a side added stays, what the user took off (moved
+    /// to the trash) goes; a missing list or a name missing from one is no decision.
+    #[test]
+    fn the_kept_list_is_merged_name_by_name() {
+        let base = list(&["a.png", "b.png"], &[]);
+        let mine = list(&["a.png", "b.png", "c.png"], &[]);
+        let theirs = list(&["b.png", "d.png"], &["a.png"]);
+        let merged = merge_kept(Some(&base), Some(&mine), Some(&theirs));
+        assert_eq!(merged.kept.iter().map(String::as_str).collect::<Vec<_>>(), ["b.png", "c.png", "d.png"]);
+        assert_eq!(merged.removed.iter().map(String::as_str).collect::<Vec<_>>(), ["a.png"]);
+        // A computer on 1.18.0 dropped the list (or a name from it): nothing is taken off.
+        for theirs in [None, Some(list(&["b.png"], &[]))] {
+            let merged = merge_kept(Some(&base), Some(&base), theirs.as_deref());
+            assert_eq!(merged.kept.len(), 2, "{merged:?}");
+        }
+        // Kept again on one side, taken off on the other: kept.
+        let merged =
+            merge_kept(Some(&list(&[], &["x.png"])), Some(&list(&["x.png"], &[])), Some(&list(&[], &["x.png"])));
+        assert!(merged.kept.contains("x.png"));
+    }
+
+    /// Any file name is stored as it is (spaces around it, a line break), nothing that leaves the
+    /// attachments folder.
+    #[test]
+    fn kept_names_round_trip() {
+        let base = tmp("kept-names");
+        let names =
+            [" Bild.png".to_owned(), "Bild .png ".to_owned(), "zwei\nZeilen.png".to_owned(), "../aus.png".to_owned()];
+        add_kept(None, &base, &names).unwrap();
+        assert_eq!(read_kept(&base), [" Bild.png", "Bild .png ", "zwei\nZeilen.png"]);
+        assert_eq!(forget_kept(&base, &[" Bild.png".to_owned()]).unwrap(), [" Bild.png"]);
+        assert_eq!(read_kept(&base), ["Bild .png ", "zwei\nZeilen.png"]);
+        assert_eq!(restored_kept(&base, " Bild.png").unwrap(), [" Bild.png"]);
+        assert_eq!(read_kept(&base).len(), 3);
+        let _ = fs::remove_dir_all(&base);
     }
 }

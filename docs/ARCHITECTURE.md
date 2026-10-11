@@ -165,7 +165,8 @@ page, on a blocking thread).
   tree at the server's commit (reset, untracked files removed). Where the pulls started is also written on its own
   (`.git/arcalo-pull-start`, before the record): a record that cannot be read is rebuilt from it (the server's notes changed
   since the start, or after adopting the server's notes; this computer's own edits since are in the mirror and stay its
-  own), and without it nothing counts as pulled. Deciding a conflict
+  own; a note this computer had changed against the merge base and the merge kept at the server's text is a conflict again,
+  base: the merge base), and without it nothing counts as pulled. Deciding a conflict
   (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
   only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
   (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
@@ -190,9 +191,13 @@ page, on a blocking thread).
   Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`, and in the shell a file changed during the
   take-over, `take_over_files`, `apply_file_renames`) therefore goes, both versions with a drawing's previews, on the kept
   list `.arcalo-kept-files` in the repository: every computer's tree sync keeps those files, linked or not, and the take-over
-  copies them in like other new files. The list is merged line by line (`merge_kept`); a file leaves it when the user moves
-  it to the file trash (`gitsync::forget_kept`). The sync changes no note for it; `FileRename` tells the user about the
-  second version.
+  copies them in like other new files. The list is JSON (`kept`, and `removed`: what the user moved to the file trash,
+  `gitsync::forget_kept`; restoring it from the trash keeps it again, `restored_kept`, and the shell puts the file back into
+  the working tree), so any file name is stored as it is. A pull merges it name by name (`merge_kept_files`): a missing list
+  or a name missing from one is no decision (a computer on 1.18.0 knows no list and deletes it with every unlinked file), so
+  the merge keeps the base's state and puts each kept file the pull dropped back from this computer's last commit, also
+  after a fast-forward (then committed as „Abgleich mit dem Server“); only `removed` takes a file off. The sync changes no
+  note for it; `FileRename` tells the user about the second version.
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
