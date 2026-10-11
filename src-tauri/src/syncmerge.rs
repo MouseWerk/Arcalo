@@ -1472,6 +1472,57 @@ mod tests {
         assert!(r.run(&a, "a").renamed_files.is_empty());
     }
 
+    /// Both computers save the same drawing again and change no note: both versions stay, on the
+    /// server and on both computers, and the note that shows the drawing shows both. Nothing flips.
+    #[test]
+    fn a_drawing_saved_again_on_both_computers_keeps_both_versions() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("drawing-both");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        let draw = |pc: &str, v: &str| {
+            std::fs::create_dir_all(r.files(pc)).unwrap();
+            std::fs::write(r.files(pc).join("Skizze.excalidraw"), format!("{{\"v\":\"{v}\"}}")).unwrap();
+            std::fs::write(r.files(pc).join("Skizze.excalidraw.svg"), format!("<svg>{v}</svg>")).unwrap();
+        };
+        draw("a", "0");
+        let p = a.create_page(None, "Plan", None).unwrap();
+        a.save_page_content(p.id, "Plan\n\n![[Skizze.excalidraw]]\n").unwrap();
+        r.run(&a, "a");
+        r.run(&b, "b");
+        draw("a", "A");
+        draw("b", "B");
+        r.run(&a, "a");
+        let out = r.run(&b, "b");
+        let rename = out.renamed_files.iter().find(|x| x.from == "Skizze.excalidraw").expect("both kept");
+        let new = rename.to.clone();
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&a, "a"), (&b, "b")] {
+            r.run(db, pc);
+        }
+        assert_eq!(r.server("attachments/Skizze.excalidraw"), "{\"v\":\"A\"}");
+        assert_eq!(r.server("attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
+        assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}");
+        assert_eq!(r.server(&format!("attachments/{new}.svg")), "<svg>B</svg>");
+        let both = format!("Plan\n\n![[Skizze.excalidraw]]\n![[{new}]]\n");
+        assert_eq!(r.server("Plan.md"), both);
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            assert_eq!(
+                std::fs::read_to_string(r.files(pc).join("Skizze.excalidraw")).unwrap(),
+                "{\"v\":\"A\"}",
+                "{pc}"
+            );
+            assert_eq!(std::fs::read_to_string(r.files(pc).join(&new)).unwrap(), "{\"v\":\"B\"}", "{pc}");
+            let plan = db.page_by_title("Plan").unwrap().unwrap().id;
+            assert_eq!(db.page_doc(plan).unwrap().content, both, "{pc}");
+        }
+        // Nothing flips back and forth.
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            let out = r.run(db, pc);
+            assert!(!out.committed && out.renamed_files.is_empty() && out.remote_changes.is_empty(), "{pc}: {out:?}");
+        }
+    }
+
     /// The file changed here between the sync and the take-over (no crash): both kept as well.
     #[test]
     fn a_local_file_changed_during_the_take_over_is_kept_beside_the_servers() {

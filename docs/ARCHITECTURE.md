@@ -181,7 +181,10 @@ page, on a blocking thread).
   `<name>-<8 hex of its SHA-256>.<ext>` (a drawing with its preview), and the notes this side changed link to it
   (`relink_notes`: in the repository, in a pulled change that brings this side's text, and in a conflict's `mine`); the
   shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
-  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
+  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file. When
+  no note of this side's text links this side's copy (a drawing saved again on both sides, no note changed), the notes that
+  link the file link both versions (`attachment_manager::link_both`, `FileRename.both`): the mirror takes only linked files
+  along, so an unlinked copy would be deleted with the next sync.
   The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
   server's.
   Moves and renames are pulled

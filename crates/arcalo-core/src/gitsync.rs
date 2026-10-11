@@ -2151,6 +2151,8 @@ fn relink_notes(
         .map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![], both: false })
         .collect();
     let relink = |path: &str, text: &str| relink_text(path, text, &names);
+    // Files a pulled note of this computer's text links already.
+    let mut linked_here = vec![false; out.len()];
     for path in local.iter().filter(|p| is_note(p)) {
         let Some(mine) = blob_text(git, repo, ours, path)? else { continue };
         let (text, hit) = relink(path, &mine);
@@ -2182,10 +2184,51 @@ fn relink_notes(
                 let linked = relink(&c.path, c.theirs.as_deref().unwrap_or_default()).0;
                 put_path(git, repo, &c.path, &linked)?;
                 c.theirs = Some(linked);
+                for i in hit {
+                    linked_here[i] = true;
+                }
             }
             // The server's text was taken: its links are the server's.
             Some(_) => {}
         }
+    }
+    // A file only re-saved here (a drawing changed on both sides, no note changed): no note links
+    // this computer's copy, and the mirror takes only linked files along, so the next sync would
+    // delete it. The notes that link the file link both versions instead.
+    let mut listed = Vec::new();
+    note_paths(repo, "", &mut listed)?;
+    for (i, r) in out.iter_mut().enumerate() {
+        if !r.notes.is_empty() || linked_here[i] {
+            continue;
+        }
+        let mut both = false;
+        for path in listed.iter().filter(|p| !p.to_ascii_lowercase().ends_with(".canvas")) {
+            if content_id(&repo.join(path)).is_none() {
+                continue;
+            }
+            let current = String::from_utf8_lossy(&fs::read(repo.join(path))?).into_owned();
+            let text = crate::attachment_manager::link_both(&current, &r.from, &r.to);
+            if text == current {
+                continue;
+            }
+            put_path(git, repo, path, &text)?;
+            both = true;
+            match changes.iter_mut().find(|c| c.path == *path) {
+                // The server's text waits in the repository (now linking both); the page here
+                // holds this computer's text.
+                Some(c) if c.conflict => {
+                    if let Some(m) = c.mine.as_mut() {
+                        *m = crate::attachment_manager::link_both(m, &r.from, &r.to);
+                    }
+                    r.notes.push(path.clone());
+                }
+                // The page takes the server's text over, linking both.
+                Some(c) => c.theirs = Some(text),
+                // The page holds the text the repository had: rewritten here as well.
+                None => r.notes.push(path.clone()),
+            }
+        }
+        r.both = both;
     }
     Ok(out)
 }
