@@ -214,6 +214,25 @@ fn dispatch(
             Ok(true)
         }
         "rev-parse" => rev_parse(&open(cwd)?, &p, out),
+        "config" => {
+            // Only the working tree's own configuration: `config <key>` and `config <key> <value>`.
+            let repo = open(cwd)?;
+            match p.words.as_slice() {
+                [key] => match repo.config()?.open_level(git2::ConfigLevel::Local)?.get_string(key) {
+                    Ok(v) => {
+                        let _ = writeln!(out, "{v}");
+                        Ok(true)
+                    }
+                    Err(e) if e.code() == ErrorCode::NotFound => Ok(false),
+                    Err(e) => Err(e),
+                },
+                [key, value] => {
+                    repo.config()?.open_level(git2::ConfigLevel::Local)?.set_str(key, value)?;
+                    Ok(true)
+                }
+                _ => Err(err("config: unsupported arguments")),
+            }
+        }
         "symbolic-ref" => {
             let repo = open(cwd)?;
             match p.words.as_slice() {
@@ -281,6 +300,12 @@ fn dispatch(
             fo.remote_callbacks(callbacks(git, &url, &attempts));
             fo.proxy_options(proxy(git));
             fo.download_tags(git2::AutotagOption::None);
+            // Shallow over the network only, as with `clone`.
+            if let Some(d) = value(&p, "--depth").and_then(|d| d.parse().ok())
+                && super::is_http(&url)
+            {
+                fo.depth(d);
+            }
             remote.fetch(&[*spec], Some(&mut fo), None)?;
             Ok(true)
         }
@@ -793,6 +818,174 @@ mod tests {
         assert!(!work.join("Notiz.md").exists());
         ok(&g, &work, &["reset", "-q", "--hard", "HEAD"]);
         assert!(work.join("Notiz.md").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A sync request of the phone (a companion) from `mirror` into `repo`.
+    fn phone_sync(git: &Git, mirror: &Path, repo: &Path, url: &str) -> crate::Result<super::super::SyncOutcome> {
+        let settings = super::super::GitSyncSettings { enabled: true, remote_url: url.into(), ..Default::default() };
+        super::super::sync(
+            git,
+            &super::super::SyncRequest {
+                repo,
+                source: mirror,
+                database: None,
+                settings: &settings,
+                host: "android",
+                now: chrono::Local::now(),
+                hold: &[],
+                allow_deletions: false,
+                settings_file: None,
+                companion: true,
+            },
+        )
+    }
+
+    fn mirror_with(dir: &Path, notes: &[(&str, &str)]) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(crate::mirror::README_NAME), crate::mirror::MARKER).unwrap();
+        for (name, text) in notes {
+            let p = dir.join(name);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        }
+    }
+
+    /// The phone against a server like GitHub (HTTP, sign-in with the token): the first sync
+    /// pushes, a second phone takes the notes over, both push again after the other one did.
+    #[test]
+    fn syncs_over_http_with_the_token() {
+        let base = tmp("http");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        super::super::gitserve::bare(&root, "notes.git");
+        let server = super::super::gitserve::GitServer::start(&root, Some("tok-123"));
+        let url = server.url("notes.git");
+        let g = git_for(Some("tok-123"), &url);
+
+        // The connection test of the settings.
+        let branches = g.ls_remote(&url).unwrap();
+        assert!(branches.is_empty(), "{branches:?}");
+
+        let (a, b) = (base.join("a"), base.join("b"));
+        mirror_with(&a.join("mirror"), &[("Notiz.md", "vom Handy A\n")]);
+        let first = phone_sync(&g, &a.join("mirror"), &a.join("repo"), &url).unwrap();
+        assert!(first.committed && !first.fallback, "{first:?}");
+        assert_eq!(g.ls_remote(&url).unwrap(), ["main"]);
+
+        mirror_with(&b.join("mirror"), &[("Andere.md", "vom Handy B\n")]);
+        let second = phone_sync(&g, &b.join("mirror"), &b.join("repo"), &url).unwrap();
+        let got: Vec<&str> = second.remote_changes.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(got, ["Notiz.md"], "{second:?}");
+
+        // A moves on, B too: B's push is refused, merged and pushed again.
+        mirror_with(&a.join("mirror"), &[("Notiz.md", "vom Handy A, neu\n")]);
+        phone_sync(&g, &a.join("mirror"), &a.join("repo"), &url).unwrap();
+        mirror_with(&b.join("mirror"), &[("Andere.md", "vom Handy B, neu\n"), ("Notiz.md", "vom Handy A\n")]);
+        let merged = phone_sync(&g, &b.join("mirror"), &b.join("repo"), &url).unwrap();
+        assert!(!merged.fallback, "{merged:?}");
+        assert_eq!(merged.remote_changes.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["Notiz.md"]);
+        let out = std::process::Command::new("git")
+            .args(["show", "main:Andere.md"])
+            .current_dir(root.join("notes.git"))
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "vom Handy B, neu\n");
+
+        // The token went only in the sign-in header, never into the repository's config.
+        for repo in [a.join("repo"), b.join("repo")] {
+            let config = fs::read_to_string(repo.join(".git/config")).unwrap();
+            assert!(!config.contains("tok-123"), "{config}");
+        }
+        let seen = server.seen();
+        assert!(seen.iter().any(|s| s.status == 200 && s.method == "POST"), "{seen:?}");
+        assert!(seen.iter().filter(|s| s.status == 200).all(|s| s.authorization.is_some()), "{seen:?}");
+        assert!(seen.iter().all(|s| !s.target.contains("tok-123")), "{seen:?}");
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A wrong or missing token: a sign-in error the user can act on, after one try (no loop
+    /// of refused requests, which locks accounts on some servers).
+    #[test]
+    fn a_wrong_token_is_a_sign_in_error_after_one_try() {
+        let base = tmp("http-auth");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        super::super::gitserve::bare(&root, "notes.git");
+        let server = super::super::gitserve::GitServer::start(&root, Some("richtig"));
+        let url = server.url("notes.git");
+        for token in [Some("falsch"), None] {
+            let before = server.refused();
+            let err = git_for(token, &url).ls_remote(&url).unwrap_err().to_string();
+            assert!(err.contains("Anmeldung") || err.contains("Sign-in"), "{token:?}: {err}");
+            let refused = server.refused() - before;
+            assert!((1..=2).contains(&refused), "{token:?}: {refused} refused requests");
+
+            mirror_with(&base.join("mirror"), &[("Notiz.md", "x")]);
+            let before = server.refused();
+            let err = phone_sync(&git_for(token, &url), &base.join("mirror"), &base.join("repo"), &url).unwrap_err();
+            let err = err.to_string();
+            assert!(err.contains("Anmeldung") || err.contains("Sign-in"), "{token:?}: {err}");
+            assert!(!err.contains("falsch"), "{err}");
+            assert!(server.refused() - before <= 2, "{token:?}");
+        }
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A server that cannot be reached and a repository that does not exist.
+    #[test]
+    fn unreachable_servers_and_missing_repositories_are_named() {
+        let base = tmp("http-missing");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        let server = super::super::gitserve::GitServer::start(&root, None);
+        let url = server.url("fehlt.git");
+        let err = git_for(None, &url).ls_remote(&url).unwrap_err().to_string();
+        assert!(err.contains("nicht erreichbar") || err.contains("not reachable"), "{err}");
+        // A port nobody listens on.
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let url = format!("http://127.0.0.1:{closed}/x.git");
+        let err = git_for(None, &url).ls_remote(&url).unwrap_err().to_string();
+        assert!(err.contains("nicht erreichbar") || err.contains("not reachable"), "{err}");
+        // SSH: what to enter instead (the connection test and the sync).
+        for ssh in ["git@github.com:me/notes.git", "ssh://git@github.com/me/notes.git"] {
+            let err = git_for(None, ssh).ls_remote(ssh).unwrap_err().to_string();
+            assert!(err.contains("HTTPS"), "{err}");
+            mirror_with(&base.join("mirror"), &[("Notiz.md", "x")]);
+            let err = phone_sync(&git_for(None, ssh), &base.join("mirror"), &base.join("repo"), ssh).unwrap_err();
+            assert!(err.to_string().contains("HTTPS"), "{err}");
+        }
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    fn git_for(token: Option<&str>, url: &str) -> Git {
+        let mut g = Git::new(token.map(str::to_owned), url);
+        g.embedded = true;
+        g
+    }
+
+    /// The phone ended in the middle of a sync (swiped away, stopped by Android): its lock files
+    /// are left over at once, not only after two minutes of failed syncs.
+    #[test]
+    fn locks_left_by_an_ended_app_are_removed_at_once() {
+        let base = tmp("locks");
+        let work = base.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let g = git();
+        ok(&g, &work, &["init", "-q"]);
+        fs::write(work.join(".git/index.lock"), "").unwrap();
+        let out = run(&g, Some(&work), &["add", "-A"]);
+        assert!(!out.ok && out.stderr.contains("index.lock"), "{}", out.stderr);
+        assert_eq!(g.stale_lock_age(), Duration::ZERO);
+        assert_eq!(super::super::remove_stale_locks(&work, g.stale_lock_age()).len(), 1);
+        ok(&g, &work, &["add", "-A"]);
+        assert_eq!(Git::new(None, "").with_program("git").stale_lock_age(), super::super::DEFAULT_TIMEOUT);
         let _ = fs::remove_dir_all(&base);
     }
 

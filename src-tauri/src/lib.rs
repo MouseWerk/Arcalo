@@ -1703,7 +1703,7 @@ pub(crate) fn run_git_sync_with(
         };
         let git = network::git(&state, token.clone(), &settings.git_sync.remote_url);
         // Locks of a git that was stopped (timeout, crash) would block every sync from now on.
-        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
+        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), git.stale_lock_age()) {
             devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
         }
         let repo = state.git_repo_dir();
@@ -1753,9 +1753,14 @@ pub(crate) fn run_git_sync_with(
     })();
     let mut taken_over = true;
     if let Ok(out) = &res
-        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty())
+        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty() || !out.pulled_files.is_empty())
     {
         taken_over = take_over_pulled(app, &state, out);
+    }
+    // The pages hold the pulled notes: the next sync starts from the mirror again (a failed
+    // take-over leaves them waiting, so the next sync brings them once more).
+    if res.is_ok() && taken_over {
+        gitsync::taken_over(&state.git_repo_dir());
     }
     // Decided after a restore: done once the server's notes are in (else the next sync asks again).
     if res.is_ok() && taken_over && restored.is_some() && after_restore.is_some_and(|c| c != AfterRestore::Ask) {
@@ -1805,6 +1810,8 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
         Ok(mut p) => {
+            // Anything not taken over here keeps the pull waiting for the next sync.
+            let mut complete = true;
             // Files of one name that differ here and there: this computer's takes its new name
             // before the server's comes in under the old one (below), its notes link to it.
             if !out.renamed_files.is_empty() {
@@ -1829,7 +1836,10 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                             }
                         }
                     }
-                    Err(e) => devlog::warn("git", format!("files of the same name not renamed here: {e}")),
+                    Err(e) => {
+                        complete = false;
+                        devlog::warn("git", format!("files of the same name not renamed here: {e}"));
+                    }
                 }
             }
             // For the start page's „Per Git-Sync geändert“.
@@ -1845,12 +1855,29 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
             if let Err(e) = record_pulled(&state.db(), &changes, chrono::Utc::now()) {
                 devlog::warn("git", format!("pulled pages not recorded for the start page: {e}"));
             }
-            let files = state.git_repo_dir().join(attachments::DIR_NAME);
-            if files.is_dir()
-                && let Err(e) = copy_new_attachments(&files, &state.attachments_dir())
-            {
-                devlog::warn("git", format!("attachments from the server not copied: {e}"));
-            }
+            // New files, and the ones only the server changed; a file that could not be copied keeps
+            // the pull waiting, so the next sync does not upload the old file over the server's.
+            let taken = syncmerge::take_over_files(&state.git_repo_dir(), &state.attachments_dir(), &out.pulled_files);
+            let files_taken = match taken {
+                Ok(kept) => {
+                    if !kept.is_empty() {
+                        // Changed here while the sync ran: both kept, the next sync uploads this one.
+                        let names: Vec<String> = kept.iter().map(|r| format!("{} → {}", r.from, r.to)).collect();
+                        devlog::info(
+                            "git",
+                            format!(
+                                "files changed here and on the server kept under a new name here: {}",
+                                names.join(", ")
+                            ),
+                        );
+                    }
+                    true
+                }
+                Err(e) => {
+                    devlog::warn("git", format!("attachments from the server not copied: {e}"));
+                    false
+                }
+            };
             devlog::info(
                 "git",
                 format!(
@@ -1871,7 +1898,7 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                 );
             }
             let _ = app.emit("gitsync://pulled", &p);
-            true
+            complete && files_taken
         }
         Err(e) => {
             devlog::error("git", format!("taking over the server's notes failed: {e}"));

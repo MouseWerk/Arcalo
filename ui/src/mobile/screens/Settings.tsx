@@ -256,9 +256,10 @@ function ConflictRow({ info }: { info: GitConflictInfo }) {
   const resolve = async (content: string | null, both = false) => {
     setBusy(true);
     try {
-      if (both) await api.keepBothGitConflict(info.page_id);
-      else if (content !== null) await api.resolveGitConflict(info.page_id, content);
+      const out = both ? await api.keepBothGitConflict(info.page_id) : content !== null ? await api.resolveGitConflict(info.page_id, content) : null;
       m.toast("success", t("cf.solved"), t("cf.merged", { title: info.title }));
+      // The sync after the decision failed: the decision stays, the next sync uploads it.
+      if (out?.sync_error) m.toast("error", t("cf.mergedNotSynced"), out.sync_error);
       m.refresh();
     } catch (e) {
       m.toast("error", t("cf.applyFailed"), errorText(e));

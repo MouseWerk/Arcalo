@@ -149,7 +149,32 @@ page, on a blocking thread).
   `blocked_deletions` and Settings → Sicherung offers „Löschungen übertragen“ (`git_sync_now` with `allowDeletions`, after a
   confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
   (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
-  before a sync (`remove_stale_locks`, logged). A rejected push
+  before a sync (`remove_stale_locks`, logged; with the built-in git every lock found then, `Git::stale_lock_age`: it runs in
+  the app's process). A merge left unfinished (`MERGE_HEAD`) is dropped first (`abort_merge`). A pull the pages have not
+  taken over yet (the app ended after it, the push after a merge failed, taking over failed) is not committed away: before a
+  pull moves HEAD (the reset of an adoption, a merge commit, a fast-forward) the sync records it in
+  `.git/arcalo-pull-pending.json` (fsynced): the HEAD it started from and what it returns (the changes with their conflict
+  flags, the renamed files, the attachments only the server changed with this side's content id at the pull). The file is
+  written only on a change, through a synced temporary file and a rename. The shell removes it after `take_over_pulled`
+  (`gitsync::taken_over`; a failed rename or file copy keeps it); a sync with nothing to return removes it too. A later sync
+  returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
+  mirror already holds are left out), keeps the files of those notes, of the renamed files and of the server's attachments
+  as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`, this side's
+  under `clash_name`, both on the kept list below); the rename is recorded and returned like the others. A pull whose HEAD
+  never moved, or on other history, is dropped. An adoption that never got past its reset is done again from a clean working
+  tree at the server's commit (reset, untracked files removed). Where the pulls started is also written on its own
+  (`.git/arcalo-pull-start`, before the record): a record that cannot be read is rebuilt from it (the server's notes changed
+  since the start, or after adopting the server's notes; this computer's own edits since are in the mirror and stay its
+  own; a note this computer had changed against the merge base and the merge kept at the server's text is a conflict again,
+  base: the merge base of the start and the server's side of the newest merge on HEAD's first-parent chain since the start,
+  `merge_base_since`, so later commits and merges on top change nothing), and without it nothing counts as pulled. Deciding a conflict
+  (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
+  only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
+  (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
+  (renamed here, put into the working tree and on the kept list). Links are never followed: the working tree has `core.symlinks=false` (a link from the
+  server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
+  are copied only when they are plain files on both sides. A companion's first sync fetches the newest commit only
+  (`--depth 1`; the history holds every database copy). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
@@ -161,7 +186,22 @@ page, on a blocking thread).
   shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
   before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
   The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
-  server's.
+  server's. The Markdown copy takes only the files a note links along (the explicit vault export shares that code and
+  should not carry unused files), so a version kept twice that no note links (a drawing saved again on both computers, a
+  file only a canvas shows) would be deleted with the next sync, on the server and then never reach the other computer.
+  Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`, and in the shell a file changed during the
+  take-over, `take_over_files`, `apply_file_renames`) therefore goes, both versions with a drawing's previews, on the kept
+  list `.arcalo-kept-files` in the repository: every computer's tree sync keeps those files, linked or not, and the take-over
+  copies them in like other new files. The list is JSON (`kept`, and `removed`: what the user moved to the file trash,
+  `gitsync::forget_kept`; restoring it from the trash keeps it again, `restored_kept`, and the shell puts the file back into
+  the working tree), so any file name is stored as it is. A pull merges it name by name (`merge_kept_files`): a missing list
+  or a name missing from one is no decision (a computer on 1.18.0 knows no list and deletes it with every unlinked file), so
+  the merge keeps the base's state and puts each kept file the pull dropped back from this computer's last commit, also
+  after a fast-forward (then committed as „Abgleich mit dem Server“); only `removed` takes a file off. Accepted: as long as
+  a computer still runs 1.18.0, each of its syncs drops such a file and the next sync of a 1.18.1 computer puts it back
+  (two commits per round, nothing lost); this ends once every computer runs 1.18.1. Renaming a kept file in the attachment
+  manager moves its entry (`renamed_kept`: the new name kept, the old one removed). The sync changes no
+  note for it; `FileRename` tells the user about the second version.
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
