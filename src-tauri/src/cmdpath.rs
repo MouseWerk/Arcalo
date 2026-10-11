@@ -148,7 +148,7 @@ pub fn internal(args: &[std::ffi::OsString]) -> std::process::ExitCode {
     #[cfg(windows)]
     {
         let dir = match args.get(1) {
-            Some(dir) => PathBuf::from(dir),
+            Some(dir) => folder_arg(dir),
             None => program().parent().map(Path::to_path_buf).unwrap_or_default(),
         };
         // Switched off in the settings: install and update leave it off.
@@ -169,6 +169,52 @@ pub fn internal(args: &[std::ffi::OsString]) -> std::process::ExitCode {
         eprintln!("{INTERNAL_ARG} changes the Windows user Path only");
         std::process::ExitCode::from(1)
     }
+}
+
+/// The folder the installer named. NSIS quotes it (`"<folder>"`); a folder ending in a backslash
+/// (`"D:\"`) reaches the program as `D:"`, since `\"` is a quote inside the argument for Windows'
+/// argument parsing. A Windows path holds no `"`, so a trailing one is that quote.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn folder_arg(arg: &std::ffi::OsStr) -> PathBuf {
+    match arg.to_str().and_then(|s| s.strip_suffix('"')) {
+        Some(s) => PathBuf::from(format!("{s}\\")),
+        None => PathBuf::from(arg),
+    }
+}
+
+/// The program runs from a place macOS gives it only for this start: the opened disk image
+/// (`/Volumes/…`, gone after ejecting) or the read-only copy Gatekeeper starts an app from that
+/// was opened in Downloads without being moved ("App Translocation"). Updates, the login item
+/// and the terminal command need the app in a lasting place.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn temporary_place(program: &Path) -> bool {
+    let p = program.to_string_lossy();
+    p.contains("/AppTranslocation/") || p.starts_with("/Volumes/")
+}
+
+/// For the start: a notice when the app runs from a temporary place ([`temporary_place`]).
+#[cfg(target_os = "macos")]
+pub fn temporary_place_notice() -> Option<arcalo_core::datadir::Notice> {
+    temporary_place(&program()).then(|| {
+        arcalo_core::datadir::Notice::titled(
+            "warning",
+            tr!("Arcalo ist nicht installiert", "Arcalo is not installed"),
+            tr!(
+                "Arcalo läuft direkt aus dem Disk-Image oder aus „Downloads“. So funktionieren Updates, „Bei der \
+                 Anmeldung starten“ und der Befehl „arcalo“ nicht. Beende Arcalo, zieh es in den Ordner „Programme“ \
+                 und starte es von dort.",
+                "Arcalo runs straight from the disk image or from Downloads, so updates, “Open at login” and the \
+                 “arcalo” command do not work. Quit Arcalo, drag it into the Applications folder and start it \
+                 from there."
+            )
+            .into(),
+        )
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn temporary_place_notice() -> Option<arcalo_core::datadir::Notice> {
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -556,8 +602,7 @@ mod mac {
     /// A link to this copy would last: not one macOS runs from a temporary place (an app
     /// opened in Downloads runs "translocated"; one in the disk image is gone after ejecting).
     pub fn installable(program: &Path) -> Result<(), String> {
-        let p = program.to_string_lossy();
-        if p.contains("/AppTranslocation/") || p.starts_with("/Volumes/") {
+        if super::temporary_place(program) {
             return Err(tr!(
                 "Zieh Arcalo zuerst in den Ordner „Programme“ und starte es von dort.",
                 "Move Arcalo to the Applications folder first and start it from there."
@@ -764,6 +809,132 @@ mod tests {
             admin_script(&shell, "Arcalo möchte „arcalo“"),
             "do shell script \"/bin/ln -sfn '/Applications/Jörg'\\\\''s \\\"Apps\\\"/Arcalo.app/Contents/MacOS/arcalo' /usr/local/bin/arcalo\" with prompt \"Arcalo möchte „arcalo“\" with administrator privileges"
         );
+    }
+
+    #[test]
+    fn the_installers_folder_argument_loses_the_quote_of_a_trailing_backslash() {
+        use std::ffi::OsStr;
+        // `"D:\"` and `"C:\Users\Jörg Müller\Annalo\"` as Windows hands them to the program.
+        assert_eq!(folder_arg(OsStr::new("D:\"")), PathBuf::from("D:\\"));
+        assert_eq!(
+            folder_arg(OsStr::new("C:\\Users\\Jörg Müller\\Annalo\"")),
+            PathBuf::from("C:\\Users\\Jörg Müller\\Annalo\\")
+        );
+        assert_eq!(
+            folder_arg(OsStr::new("C:\\Users\\Jörg Müller\\Annalo")),
+            PathBuf::from("C:\\Users\\Jörg Müller\\Annalo")
+        );
+        // The entry it names is the one installed (a trailing backslash is the same folder).
+        let installed = format!("C:\\bin;{DIR}");
+        let named = folder_arg(OsStr::new(&format!("{DIR}\""))).to_string_lossy().into_owned();
+        assert_eq!(remove(&installed, &named, &vars).as_deref(), Some("C:\\bin"));
+    }
+
+    #[test]
+    fn a_disk_image_or_a_translocated_copy_is_a_temporary_place() {
+        for p in [
+            "/Volumes/Arcalo/Arcalo.app/Contents/MacOS/arcalo",
+            "/private/var/folders/xy/T/AppTranslocation/0A1B-2C3D/d/Arcalo.app/Contents/MacOS/arcalo",
+        ] {
+            assert!(temporary_place(Path::new(p)), "{p}");
+        }
+        for p in [
+            "/Applications/Arcalo.app/Contents/MacOS/arcalo",
+            "/Users/jörg/Applications/Arcalo.app/Contents/MacOS/arcalo",
+            "/Users/jörg/Downloads/Arcalo.app/Contents/MacOS/arcalo",
+        ] {
+            assert!(!temporary_place(Path::new(p)), "{p}");
+        }
+    }
+
+    /// The .deb's maintainer scripts (installer/deb-*.sh) run with `/bin/sh` (dash on Debian and
+    /// Ubuntu) against a root of their own (`$DPKG_ROOT`, as `dpkg --root` sets it).
+    #[cfg(target_os = "linux")]
+    mod deb_scripts {
+        use std::os::unix::fs::symlink;
+        use std::path::Path;
+        use std::process::Command;
+
+        fn run(script: &str, root: &Path, arg: &str) {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("installer").join(script);
+            let out = Command::new("/bin/sh").arg(&path).arg(arg).env("DPKG_ROOT", root).output().unwrap();
+            assert!(out.status.success(), "{script} {arg}: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        /// A root with `/usr/bin/arcalo` as the package installs it.
+        fn root() -> tempfile::TempDir {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join("usr/bin")).unwrap();
+            std::fs::write(root.path().join("usr/bin/arcalo"), "#!/bin/sh\n").unwrap();
+            root
+        }
+        fn link(root: &Path) -> std::path::PathBuf {
+            root.join("usr/bin/annalo")
+        }
+        fn target(root: &Path) -> Option<String> {
+            std::fs::read_link(link(root)).ok().map(|t| t.to_string_lossy().into_owned())
+        }
+
+        #[test]
+        fn install_links_the_old_name_once_and_remove_or_purge_takes_it() {
+            for last in ["remove", "purge"] {
+                let r = root();
+                run("deb-postinst.sh", r.path(), "configure");
+                assert_eq!(target(r.path()).as_deref(), Some("arcalo"));
+                // Again (reinstall, dpkg-reconfigure): no error, the same link.
+                run("deb-postinst.sh", r.path(), "configure");
+                assert_eq!(target(r.path()).as_deref(), Some("arcalo"));
+                // An upgrade keeps it (the new postinst finds it in place).
+                run("deb-postrm.sh", r.path(), "upgrade");
+                assert_eq!(target(r.path()).as_deref(), Some("arcalo"));
+                // dpkg removes /usr/bin/arcalo before postrm: the link points to nothing then.
+                std::fs::remove_file(r.path().join("usr/bin/arcalo")).unwrap();
+                run("deb-postrm.sh", r.path(), last);
+                assert!(std::fs::symlink_metadata(link(r.path())).is_err(), "{last}");
+                // purge after remove: nothing left to do.
+                run("deb-postrm.sh", r.path(), "purge");
+            }
+        }
+
+        #[test]
+        fn another_program_under_the_old_name_stays() {
+            // A file of its own.
+            let r = root();
+            std::fs::write(link(r.path()), "#!/bin/sh\necho mein annalo\n").unwrap();
+            run("deb-postinst.sh", r.path(), "configure");
+            run("deb-postrm.sh", r.path(), "remove");
+            run("deb-postrm.sh", r.path(), "purge");
+            assert_eq!(std::fs::read_to_string(link(r.path())).unwrap(), "#!/bin/sh\necho mein annalo\n");
+            // A link to another program that exists.
+            let r = root();
+            std::fs::write(r.path().join("usr/bin/other"), "").unwrap();
+            symlink("other", link(r.path())).unwrap();
+            run("deb-postinst.sh", r.path(), "configure");
+            assert_eq!(target(r.path()).as_deref(), Some("other"));
+            run("deb-postrm.sh", r.path(), "remove");
+            assert_eq!(target(r.path()).as_deref(), Some("other"));
+            // A link to nothing is replaced (it names no program).
+            let r = root();
+            symlink("/opt/annalo/annalo", link(r.path())).unwrap();
+            run("deb-postinst.sh", r.path(), "configure");
+            assert_eq!(target(r.path()).as_deref(), Some("arcalo"));
+        }
+
+        #[test]
+        fn the_scripts_are_posix_shell() {
+            for script in ["deb-postinst.sh", "deb-postrm.sh"] {
+                let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("installer").join(script);
+                let text = std::fs::read_to_string(&path).unwrap();
+                assert!(text.starts_with("#!/bin/sh\n"), "{script}");
+                assert!(!text.contains("\r"), "{script}: CRLF");
+                // `sh -n`: parses; dash, where installed, as Debian runs it.
+                for shell in ["/bin/sh", "/bin/dash"] {
+                    if Path::new(shell).exists() {
+                        let ok = Command::new(shell).arg("-n").arg(&path).status().unwrap().success();
+                        assert!(ok, "{shell} -n {script}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
