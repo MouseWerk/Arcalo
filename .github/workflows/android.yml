@@ -113,8 +113,25 @@ jobs:
               echo "keyPassword=$ANDROID_KEY_PASSWORD"
             } > src-tauri/gen/android/keystore.properties
             echo "Signing with the release key."
+          elif [ -n "$TAG" ]; then
+            # Every runner makes a new debug key: a debug-signed release APK cannot update the
+            # installed app (the app explains that instead of offering the update).
+            echo "::warning title=Debug-signed release APK::The ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets are not set: the release APK is signed with a debug key and cannot update an installed app (see docs/release/android.md)."
           else
             echo "::notice title=Debug-signed APK::The ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets are not set: the APK is signed with a debug key (see docs/release/android.md)."
+          fi
+      # A release with the update-signing key: the app's update check is compiled in (the public
+      # key, as for the desktop) and the APK is signed for it below. Other builds never check.
+      - name: Update key
+        if: inputs.tag
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "ARCALO_UPDATER_PUBKEY=$(tr -d '\r\n' < src-tauri/updater.pub)" >> "$GITHUB_ENV"
+            echo "UPDATER_SIGN=1" >> "$GITHUB_ENV"
+          else
+            echo "::notice::No TAURI_SIGNING_PRIVATE_KEY: the APK is built without its update check and not signed for it."
           fi
       - name: Build the APK
         working-directory: src-tauri
@@ -126,10 +143,20 @@ jobs:
           test -n "$apk"
           cp "$apk" "dist-android/Arcalo_${VERSION:-${GITHUB_SHA::8}}_android.apk"
           ls -l dist-android
+      # The update signature (minisign, the desktop's key) with the version in its signed comment;
+      # the release's publish job turns it into android-latest.json.
+      - name: Sign the APK for the app's updates
+        if: env.UPDATER_SIGN == '1'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cargo tauri signer sign --app-version "$VERSION" "dist-android/Arcalo_${VERSION}_android.apk"
+          test -s "dist-android/Arcalo_${VERSION}_android.apk.sig"
       - uses: actions/upload-artifact@v4
         with:
           name: arcalo-android-apk
-          path: dist-android/*.apk
+          path: dist-android/*
           if-no-files-found: error
       - name: Remove the key file
         if: always()

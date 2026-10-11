@@ -120,6 +120,7 @@ pub mod timer;
 pub mod tracking;
 pub mod trash;
 pub mod update;
+pub mod update_android;
 pub mod update_feed;
 pub mod update_policy;
 pub mod update_state;

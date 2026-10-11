@@ -462,6 +462,40 @@ jobs:
               console.log("latest.json:", Object.keys(platforms).join(", "));
             }
           ' "$VERSION"
+          # The Android app's own feed (docs/release/android.md → Updates of the app): a file of
+          # its own, so latest.json keeps only the desktop platforms. Package, version code and
+          # signing certificate are read from the APK itself.
+          APK="dist/Arcalo_${VERSION}_android.apk"
+          if [ -f "$APK" ] && [ -f "$APK.sig" ]; then
+            BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1 || true)"
+            BADGING="$("$BT/aapt2" dump badging "$APK" 2>/dev/null | head -n 1 || true)"
+            export APK_PACKAGE="$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+            export APK_CODE="$(echo "$BADGING" | sed -n "s/.* versionCode='\([0-9]*\)'.*/\1/p")"
+            export APK_SIGNER="$("$BT/apksigner" verify --print-certs "$APK" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+            echo "APK: $APK_PACKAGE $APK_CODE, signer $APK_SIGNER"
+            if [ -n "$APK_PACKAGE" ] && [ -n "$APK_CODE" ] && [ -n "$APK_SIGNER" ]; then
+              BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" node -e '
+                const fs = require("fs");
+                const version = process.argv[1];
+                const apk = `Arcalo_${version}_android.apk`;
+                const feed = {
+                  version,
+                  version_code: Number(process.env.APK_CODE),
+                  notes: fs.readFileSync("notes.md", "utf8"),
+                  pub_date: new Date().toISOString(),
+                  package: process.env.APK_PACKAGE,
+                  url: `${process.env.BASE}/${apk}`,
+                  signature: fs.readFileSync(`dist/${apk}.sig`, "utf8").trim(),
+                  size: fs.statSync(`dist/${apk}`).size,
+                  signer: process.env.APK_SIGNER,
+                };
+                fs.writeFileSync("dist/android-latest.json", JSON.stringify(feed, null, 2));
+                console.log("android-latest.json:", feed.version_code);
+              ' "$VERSION"
+            else
+              echo "::warning::The APK could not be read (aapt2/apksigner): no android-latest.json."
+            fi
+          fi
           ls -la dist
 
       - uses: softprops/action-gh-release@v2

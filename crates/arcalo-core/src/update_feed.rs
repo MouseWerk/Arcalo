@@ -247,7 +247,7 @@ impl FeedError {
         }
     }
 
-    fn of_reqwest(e: &reqwest::Error) -> FeedError {
+    pub(crate) fn of_reqwest(e: &reqwest::Error) -> FeedError {
         if e.is_timeout() {
             FeedError::Timeout
         } else if e.is_connect() {
@@ -422,6 +422,33 @@ pub async fn download(
 /// `latest.json`) with `pubkey` (base64 of the public key file), and that the signed trusted
 /// comment names `version`: a feed cannot pair a new version number with an older file.
 pub fn verify(data: &[u8], signature: &str, pubkey: &str, version: &str) -> Result<(), FeedError> {
+    let (key, sig) = decode_signature(signature, pubkey)?;
+    key.verify(data, &sig, true).map_err(|e| FeedError::Signature(e.to_string()))?;
+    signed_version(&sig, version)
+}
+
+/// [`verify`] for a file that is read in chunks instead of into memory (an APK of 100 MB on a
+/// phone). Only prehashed signatures (what `tauri signer sign` writes) can be checked this way.
+pub fn verify_file(path: &Path, signature: &str, pubkey: &str, version: &str) -> Result<(), FeedError> {
+    let (key, sig) = decode_signature(signature, pubkey)?;
+    let mut stream = key.verify_stream(&sig).map_err(|e| FeedError::Signature(e.to_string()))?;
+    let mut file = std::fs::File::open(path).map_err(|e| FeedError::of_io(path, &e))?;
+    let mut buf = vec![0u8; CHUNK];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| FeedError::of_io(path, &e))?;
+        if n == 0 {
+            break;
+        }
+        stream.update(&buf[..n]);
+    }
+    stream.finalize().map_err(|e| FeedError::Signature(e.to_string()))?;
+    signed_version(&sig, version)
+}
+
+fn decode_signature(
+    signature: &str,
+    pubkey: &str,
+) -> Result<(minisign_verify::PublicKey, minisign_verify::Signature), FeedError> {
     let b64 = |s: &str| {
         base64::engine::general_purpose::STANDARD
             .decode(s.trim())
@@ -431,7 +458,11 @@ pub fn verify(data: &[u8], signature: &str, pubkey: &str, version: &str) -> Resu
     };
     let key = minisign_verify::PublicKey::decode(&b64(pubkey)?).map_err(|e| FeedError::Signature(e.to_string()))?;
     let sig = minisign_verify::Signature::decode(&b64(signature)?).map_err(|e| FeedError::Signature(e.to_string()))?;
-    key.verify(data, &sig, true).map_err(|e| FeedError::Signature(e.to_string()))?;
+    Ok((key, sig))
+}
+
+/// The version named in the signature's trusted comment must be `version`.
+fn signed_version(sig: &minisign_verify::Signature, version: &str) -> Result<(), FeedError> {
     let signed = sig.trusted_comment().split('\t').find_map(|f| f.strip_prefix("version:"));
     let same = |a: &str, b: &str| {
         let p = |v: &str| semver::Version::parse(v.trim().trim_start_matches('v')).ok();
@@ -522,6 +553,37 @@ mod tests {
         assert!(matches!(verify(PAYLOAD, SIG, PUBKEY, "1.9.2"), Err(FeedError::Signature(_))));
         assert!(matches!(verify(PAYLOAD, "garbage", PUBKEY, "1.9.1"), Err(FeedError::Signature(_))));
         assert!(FeedError::Signature(String::new()).message().contains("Signatur"));
+    }
+
+    // A throwaway key and the prehashed signature of PAYLOAD_STREAM for 1.18.0, made with
+    // `cargo tauri signer generate` and `cargo tauri signer sign --app-version 1.18.0` (as the
+    // release workflow signs the Android APK).
+    const PUBKEY_PREHASHED: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ2ODgyOUY5MUUxNzkyQzMKUldURGtoY2UrU21JUmxtVk9Zcm9IK05CcWU2Y3N2Y25SMTVhUjJXa1FPMFUwZ3J1dmdtYmJSNU8K";
+    const SIG_PREHASHED: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURGtoY2UrU21JUm1CN05IMGUyZS9QdEFJL0c4UXdZK0JqL1luSGYrZG1hUXRVeEwwSjEwVGFhV29DQitTMnNCUFdVNk1jQ2hwMTJTQytXaStCd1dKQ3ZkRllmS2U3SWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNzE3ODQ0CWZpbGU6cGF5bG9hZC5iaW4JdmVyc2lvbjoxLjE4LjAKenI5QVgwZy81S1lsQ3lWZ0hLMzVPS1FqemxCby9XNDBuZjh1bVM0MENyaHZobzNDVE10MCtMR0JPVy9zd250L1I3TzVvZVJZWGhpUzhWNlVvd0VyQ1E9PQo=";
+    const PAYLOAD_STREAM: &[u8] = b"arcalo android payload";
+
+    #[test]
+    fn files_are_verified_in_chunks_with_the_signed_version() {
+        let dir = tmp("verify-file");
+        let file = dir.join("Arcalo_1.18.0_android.apk");
+        std::fs::write(&file, PAYLOAD_STREAM).unwrap();
+        assert_eq!(verify_file(&file, SIG_PREHASHED, PUBKEY_PREHASHED, "1.18.0"), Ok(()));
+        // The in-memory check agrees.
+        assert_eq!(verify(PAYLOAD_STREAM, SIG_PREHASHED, PUBKEY_PREHASHED, "1.18.0"), Ok(()));
+        assert!(matches!(verify_file(&file, SIG_PREHASHED, PUBKEY_PREHASHED, "1.18.1"), Err(FeedError::Signature(_))));
+        // Another key, a changed byte, a legacy signature, a missing file.
+        assert!(matches!(verify_file(&file, SIG_PREHASHED, PUBKEY, "1.18.0"), Err(FeedError::Signature(_))));
+        let mut tampered = PAYLOAD_STREAM.to_vec();
+        tampered[0] ^= 1;
+        std::fs::write(&file, &tampered).unwrap();
+        assert!(matches!(verify_file(&file, SIG_PREHASHED, PUBKEY_PREHASHED, "1.18.0"), Err(FeedError::Signature(_))));
+        std::fs::write(&file, PAYLOAD).unwrap();
+        assert!(
+            matches!(verify_file(&file, SIG, PUBKEY, "1.9.1"), Err(FeedError::Signature(_))),
+            "legacy: not streamed"
+        );
+        assert!(verify_file(&dir.join("missing.apk"), SIG_PREHASHED, PUBKEY_PREHASHED, "1.18.0").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A tiny HTTP server: `latest.json` answers per path, `/file` honors `Range`.
