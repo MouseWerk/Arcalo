@@ -150,12 +150,17 @@ page, on a blocking thread).
   confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
   (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
   before a sync (`remove_stale_locks`, logged; with the built-in git every lock found then, `Git::stale_lock_age`: it runs in
-  the app's process). A merge left unfinished (`MERGE_HEAD`) is dropped first (`abort_merge`). Server notes the pages have
-  not taken over yet (the app ended after the pull, the push after a merge failed, taking over failed) are never committed
-  away: before a sync brings the server's state in it writes `.git/arcalo-pull-pending` (`adopt <commit>` or the last commit
-  the pages hold, fsynced), the shell removes it after `take_over_pulled` (`gitsync::taken_over`), and a sync that finds it
-  returns those notes again (`waiting_notes`, minus what the mirror already holds) with their files as the server has them.
-  A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). A rejected push
+  the app's process). A merge left unfinished (`MERGE_HEAD`) is dropped first (`abort_merge`). A pull the pages have not
+  taken over yet (the app ended after it, the push after a merge failed, taking over failed) is not committed away: before a
+  pull moves HEAD (the reset of an adoption, a merge commit, a fast-forward) the sync records it in
+  `.git/arcalo-pull-pending.json` (fsynced): the HEAD it started from and what it returns (the changes with their conflict
+  flags, the renamed files, the attachments only the server changed). The shell removes the file after `take_over_pulled`
+  (`gitsync::taken_over`); a sync with nothing to return removes it too. A later sync returns a recorded pull again once HEAD
+  moved on from its start (`waiting_pulls`; changes the mirror already holds are left out), keeps the files of those notes,
+  of the renamed files and of the server's attachments as HEAD has them, and adopts again when an adoption never got past its
+  reset; a pull whose HEAD never moved, or on other history, is dropped from the file. Attachments only the server changed
+  (`SyncOutcome.pulled_files`) replace this side's copy (`syncmerge::take_over_files`); a copy that fails keeps the pull
+  waiting. A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the

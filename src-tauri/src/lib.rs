@@ -1753,7 +1753,7 @@ pub(crate) fn run_git_sync_with(
     })();
     let mut taken_over = true;
     if let Ok(out) = &res
-        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty())
+        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty() || !out.pulled_files.is_empty())
     {
         taken_over = take_over_pulled(app, &state, out);
     }
@@ -1850,12 +1850,16 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
             if let Err(e) = record_pulled(&state.db(), &changes, chrono::Utc::now()) {
                 devlog::warn("git", format!("pulled pages not recorded for the start page: {e}"));
             }
-            let files = state.git_repo_dir().join(attachments::DIR_NAME);
-            if files.is_dir()
-                && let Err(e) = copy_new_attachments(&files, &state.attachments_dir())
-            {
-                devlog::warn("git", format!("attachments from the server not copied: {e}"));
-            }
+            // New files, and the ones only the server changed; a file that could not be copied keeps
+            // the pull waiting, so the next sync does not upload the old file over the server's.
+            let files_taken =
+                match syncmerge::take_over_files(&state.git_repo_dir(), &state.attachments_dir(), &out.pulled_files) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        devlog::warn("git", format!("attachments from the server not copied: {e}"));
+                        false
+                    }
+                };
             devlog::info(
                 "git",
                 format!(
@@ -1876,7 +1880,7 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                 );
             }
             let _ = app.emit("gitsync://pulled", &p);
-            true
+            files_taken
         }
         Err(e) => {
             devlog::error("git", format!("taking over the server's notes failed: {e}"));

@@ -606,6 +606,35 @@ async fn close_and_sync(
     .map_err(|e| Error::State(e.to_string()))?
 }
 
+/// Takes over the files of the attachments folder a sync brought: the ones this computer does not
+/// have, and `changed` (repository paths), the ones only the server changed (a drawing saved
+/// again there), in place of this computer's older copy.
+pub fn take_over_files(repo: &std::path::Path, dst: &std::path::Path, changed: &[String]) -> Result<()> {
+    let src = repo.join(arcalo_core::attachments::DIR_NAME);
+    if !src.is_dir() {
+        return Ok(());
+    }
+    crate::copy_new_attachments(&src, dst)?;
+    for path in changed {
+        let Some(name) = path.strip_prefix(&format!("{}/", arcalo_core::attachments::DIR_NAME)) else { continue };
+        if name.contains(['/', '\\']) || name.starts_with('.') {
+            continue;
+        }
+        let (from, to) = (src.join(name), dst.join(name));
+        if !from.is_file() || std::fs::read(&from).ok() == std::fs::read(&to).ok() {
+            continue;
+        }
+        let tmp = dst.join(format!(".{name}.part"));
+        let copied = arcalo_core::error::copy_file(&from, &tmp)
+            .and_then(|_| arcalo_core::error::IoAt::at(std::fs::rename(&tmp, &to), &to));
+        if let Err(e) = copied {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1040,7 +1069,12 @@ mod tests {
             std::fs::write(path, text).unwrap();
         };
         put("Zeiterfassung/Regeln.md", "Immer bis Freitag");
-        pcs.push("a", &old, &[]);
+        // 1.15 keeps no record of pulls waiting for the take-over: it syncs its mirror as it is.
+        let push_old = || {
+            pcs.push("a", &old, &[]);
+            gitsync::taken_over(&pcs.base.join("a").join("git-sync"));
+        };
+        push_old();
         // This computer (1.16) has the same pages.
         let b = Database::open_in_memory().unwrap();
         let z = b.create_page(None, "Zeiterfassung", Some("folder")).unwrap();
@@ -1054,11 +1088,11 @@ mod tests {
             // The 1.15 computer took over `Zeiterfassung (2)/Regeln.md` as a page of its own and
             // puts its own note back where 1.15 writes it.
             put("Zeiterfassung (2)/Regeln.md", "Immer bis Freitag");
-            pcs.push("a", &old, &[]);
+            push_old();
         }
         // An edit made on the 1.15 computer reaches this one's page.
         put("Zeiterfassung/Regeln.md", "Immer bis Donnerstag");
-        pcs.push("a", &old, &[]);
+        push_old();
         let out = pcs.sync(&b, "b");
         assert!(out.created.is_empty(), "{out:?}");
         assert_eq!(count("Regeln"), 1);
@@ -1209,5 +1243,93 @@ mod tests {
         assert_eq!(load(&db).len(), 1, "pruned on the writer");
         drop((reader, db));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A sync that ended before the take-over (no apply, marker left): the note changed on both
+    /// sides keeps this computer's text and becomes a conflict with the next sync.
+    #[test]
+    fn an_ended_sync_never_replaces_an_edit_made_on_both_sides() {
+        let Some(pcs) = Pcs::new("review-ended") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let p = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(p.id, "eins\n").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Notiz").unwrap().unwrap().id;
+        a.save_page_content(p.id, "von A\n").unwrap();
+        pcs.sync(&a, "a");
+        b.save_page_content(on_b, "von B\n").unwrap();
+        let dir = pcs.base.join("b");
+        arcalo_core::mirror::write_mirror(&b, &dir.join("mirror"), &dir.join("attachments"), &Local).unwrap();
+        // Ended: no apply, no taken_over.
+        let first = pcs.push("b", &dir.join("mirror"), &hold_paths(&b));
+        assert!(first.iter().any(|c| c.path == "Notiz.md" && c.conflict), "{first:?}");
+        let out = pcs.sync(&b, "b");
+        let text = b.page_doc(on_b).unwrap().content;
+        assert!(text == "von B\n" && out.conflicts.contains(&on_b), "B's edit replaced: {text:?}, {out:?}");
+    }
+
+    /// A file of the attachments folder the other computer changed (a drawing saved again) is
+    /// taken over here and stays on the server with the next syncs; new files come too, and a
+    /// file this computer has with other content is not overwritten when the server did not
+    /// change it.
+    #[test]
+    fn a_file_the_other_computer_changed_reaches_this_one() {
+        use arcalo_core::gitsync::{Git, GitSyncSettings, SyncOutcome, SyncRequest};
+        use std::process::Command;
+        if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("arcalo-server-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let bare = base.join("remote.git");
+        assert!(Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap().success());
+        let settings = GitSyncSettings { enabled: true, remote_url: bare.display().to_string(), ..Default::default() };
+        let files = |pc: &str| base.join(pc).join("attachments");
+        // A sync and what the shell does with its outcome (`take_over_pulled`).
+        let run = |db: &Database, pc: &str| -> SyncOutcome {
+            let dir = base.join(pc);
+            std::fs::create_dir_all(files(pc)).unwrap();
+            arcalo_core::mirror::write_mirror(db, &dir.join("mirror"), &files(pc), &Local).unwrap();
+            let out = arcalo_core::gitsync::sync(
+                &Git::new(None, &settings.remote_url),
+                &SyncRequest {
+                    repo: &dir.join("git-sync"),
+                    source: &dir.join("mirror"),
+                    database: None,
+                    settings: &settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &hold_paths(db),
+                    allow_deletions: false,
+                    settings_file: None,
+                    companion: false,
+                },
+            )
+            .unwrap();
+            apply(db, &out.remote_changes, Local::now()).unwrap();
+            take_over_files(&dir.join("git-sync"), &files(pc), &out.pulled_files).unwrap();
+            arcalo_core::gitsync::taken_over(&dir.join("git-sync"));
+            out
+        };
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        std::fs::create_dir_all(files("a")).unwrap();
+        std::fs::write(files("a").join("Skizze.png"), "PNG eins").unwrap();
+        let p = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(p.id, "![[Skizze.png]]").unwrap();
+        run(&a, "a");
+        run(&b, "b");
+        assert_eq!(std::fs::read_to_string(files("b").join("Skizze.png")).unwrap(), "PNG eins");
+        std::fs::write(files("a").join("Skizze.png"), "PNG zwei").unwrap();
+        run(&a, "a");
+        run(&b, "b");
+        assert_eq!(std::fs::read_to_string(files("b").join("Skizze.png")).unwrap(), "PNG zwei");
+        run(&b, "b");
+        let server =
+            Command::new("git").args(["show", "main:attachments/Skizze.png"]).current_dir(&bare).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&server.stdout), "PNG zwei");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
