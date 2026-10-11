@@ -72,6 +72,81 @@ pub fn manual_update_reason(portable: bool, package: bool) -> Option<&'static st
     }
 }
 
+/// Why the program files of this copy cannot be replaced by the copy itself (macOS, Linux AppImage).
+/// Found before anything is downloaded: such a copy offers the release page instead of an update
+/// that would fail at every quit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Blocked {
+    /// macOS runs the app from a temporary read-only copy (App Translocation: started from the
+    /// Downloads folder or a disk image without being moved into Applications).
+    Translocated,
+    /// The program is on a read-only volume (a mounted disk image, a write-protected drive).
+    ReadOnly,
+    /// No write permission for the folder of the AppImage.
+    NotWritable,
+    /// Linux: the program was not started as an AppImage (an unpacked AppImage, an own build).
+    #[serde(rename = "no_appimage")]
+    NoAppImage,
+}
+
+impl Blocked {
+    /// The name the UI and test runs use (`translocated`, `read_only`, …).
+    pub fn parse(raw: &str) -> Option<Blocked> {
+        match raw.trim() {
+            "translocated" => Some(Blocked::Translocated),
+            "read_only" => Some(Blocked::ReadOnly),
+            "not_writable" => Some(Blocked::NotWritable),
+            "no_appimage" => Some(Blocked::NoAppImage),
+            _ => None,
+        }
+    }
+
+    pub fn message(self) -> &'static str {
+        match self {
+            Blocked::Translocated => tr!(
+                "macOS startet Arcalo aus einem schreibgeschützten Zwischenordner, weil die App nicht im Ordner „Programme“ liegt – zieh Arcalo nach „Programme“ und starte es von dort, dann installieren sich Updates selbst",
+                "macOS runs Arcalo from a read-only temporary folder because the app is not in the Applications folder – move Arcalo to Applications and start it from there, then updates install themselves"
+            ),
+            Blocked::ReadOnly => tr!(
+                "Arcalo liegt auf einem schreibgeschützten Laufwerk und kann sich nicht selbst aktualisieren – bitte die neue Version von der Release-Seite herunterladen",
+                "Arcalo is on a read-only drive and cannot update itself – please download the new version from the release page"
+            ),
+            Blocked::NotWritable => tr!(
+                "Keine Schreibrechte für den Ordner der AppImage-Datei – bitte die neue AppImage von der Release-Seite herunterladen",
+                "No write permission for the folder of the AppImage – please download the new AppImage from the release page"
+            ),
+            Blocked::NoAppImage => tr!(
+                "Arcalo wurde nicht als AppImage gestartet und kann sich nicht selbst aktualisieren – bitte die neue Version von der Release-Seite herunterladen",
+                "Arcalo was not started as an AppImage and cannot update itself – please download the new version from the release page"
+            ),
+        }
+    }
+}
+
+/// Whether the running copy can replace its own program files. `os` is `std::env::consts::OS`;
+/// `program` the `.app` bundle (macOS) or the AppImage file (Linux; `None`: not started as an
+/// AppImage); `write_probe` the error of creating a file next to it (`None`: that worked).
+/// Windows installs through the NSIS installer of the user's own program folder: never blocked.
+/// On macOS a folder without write permission is not blocking (the install asks for an
+/// administrator's password); a read-only volume is.
+pub fn install_blocked(os: &str, program: Option<&Path>, write_probe: Option<std::io::ErrorKind>) -> Option<Blocked> {
+    use std::io::ErrorKind;
+    match (os, program) {
+        ("macos", Some(bundle)) if bundle.components().any(|c| c.as_os_str() == "AppTranslocation") => {
+            Some(Blocked::Translocated)
+        }
+        ("macos", Some(_)) => (write_probe == Some(ErrorKind::ReadOnlyFilesystem)).then_some(Blocked::ReadOnly),
+        ("linux", None) => Some(Blocked::NoAppImage),
+        ("linux", Some(_)) => match write_probe {
+            Some(ErrorKind::ReadOnlyFilesystem) => Some(Blocked::ReadOnly),
+            Some(ErrorKind::PermissionDenied) => Some(Blocked::NotWritable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// A test run's stand-in (`ARCALO_UPDATE_ENDPOINT`, `ARCALO_UPDATE_PUBKEY`), honored only by
 /// debug builds: a release build always asks the configured GitHub feed with its compiled-in key.
 pub fn test_override(debug_build: bool, raw: Option<&str>) -> Option<&str> {
@@ -171,6 +246,20 @@ mod tests {
     }
 
     #[test]
+    fn patch_releases_compare_as_numbers() {
+        assert!(is_newer("1.18.0", "1.18.1"));
+        assert!(is_newer("1.18.1", "1.18.10"));
+        assert!(is_newer("1.18.9", "1.18.10"));
+        assert!(!is_newer("1.18.10", "1.18.9"));
+        assert!(!is_newer("1.18.10", "1.18.1"));
+        assert!(!is_newer("1.18.1", "v1.18.1"));
+        assert!(!is_newer("1.18.1", "1.18.1-rc.1"), "never back to a pre-release");
+        assert!(!is_newer("1.18.0", "1.18.1-rc.1"), "a release build is not offered a pre-release");
+        assert!(is_newer("1.18.1-rc.1", "1.18.1"));
+        assert!(is_newer("1.18.1-rc.2", "1.18.1-rc.10"));
+    }
+
+    #[test]
     fn pre_releases_only_for_pre_release_builds() {
         assert!(!is_newer("1.6.0", "1.7.0-beta.1"), "a release build stays on releases");
         assert!(is_newer("1.6.0-test.1", "1.6.0-test.2"));
@@ -187,6 +276,35 @@ mod tests {
         assert_eq!(manual_update_reason(false, true), Some(PACKAGE_MANUAL));
         // A portable folder wins: it is never installed into the profile.
         assert_eq!(manual_update_reason(true, true), Some(PORTABLE_MANUAL));
+    }
+
+    #[test]
+    fn copies_that_cannot_replace_themselves_are_found() {
+        use std::io::ErrorKind::{Other, PermissionDenied, ReadOnlyFilesystem};
+        let app = Path::new("/Applications/Arcalo.app");
+        assert_eq!(install_blocked("macos", Some(app), None), None);
+        // /Applications without write permission: the install asks for the password.
+        assert_eq!(install_blocked("macos", Some(app), Some(PermissionDenied)), None);
+        let translocated = Path::new("/private/var/folders/x/T/AppTranslocation/1F2E/d/Arcalo.app");
+        assert_eq!(install_blocked("macos", Some(translocated), Some(ReadOnlyFilesystem)), Some(Blocked::Translocated));
+        let dmg = Path::new("/Volumes/Arcalo/Arcalo.app");
+        assert_eq!(install_blocked("macos", Some(dmg), Some(ReadOnlyFilesystem)), Some(Blocked::ReadOnly));
+        assert_eq!(install_blocked("macos", None, None), None, "not in a bundle (a build of its own)");
+
+        let appimage = Path::new("/home/u/Apps/Arcalo_1.18.0_amd64.AppImage");
+        assert_eq!(install_blocked("linux", Some(appimage), None), None);
+        assert_eq!(install_blocked("linux", Some(appimage), Some(PermissionDenied)), Some(Blocked::NotWritable));
+        assert_eq!(install_blocked("linux", Some(appimage), Some(ReadOnlyFilesystem)), Some(Blocked::ReadOnly));
+        assert_eq!(install_blocked("linux", Some(appimage), Some(Other)), None, "tried, and explained if it fails");
+        assert_eq!(install_blocked("linux", None, None), Some(Blocked::NoAppImage));
+        assert_eq!(install_blocked("windows", None, Some(PermissionDenied)), None);
+
+        for b in [Blocked::Translocated, Blocked::ReadOnly, Blocked::NotWritable, Blocked::NoAppImage] {
+            let name = serde_json::to_value(b).unwrap();
+            assert_eq!(Blocked::parse(name.as_str().unwrap()), Some(b));
+            assert!(!b.message().is_empty());
+        }
+        assert_eq!(Blocked::parse("deb"), None);
     }
 
     #[test]

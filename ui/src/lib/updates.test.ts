@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoCheckAllowed, checkIntervalMs, effectiveMode, isManaged, manualUpdate, progressLabel, progressValue, updateHint } from "./updates";
+import { autoCheckAllowed, blockedText, checkIntervalMs, effectiveMode, isManaged, manualUpdate, progressLabel, progressValue, updateHint } from "./updates";
 import type { UpdateStatus } from "./types";
 
 const status = (enabled: boolean) => ({ enabled, current_version: "1.0.0", available: null });
@@ -41,6 +41,16 @@ describe("manualUpdate", () => {
     expect(manualUpdate({ ...status(true), portable: true })).toBe("portable");
     expect(manualUpdate({ ...status(true), portable: true, package: true })).toBe("portable");
   });
+  it("a copy that cannot replace its program files gets the release page and says why", () => {
+    expect(manualUpdate({ ...status(true), blocked: "translocated" })).toBe("blocked");
+    expect(manualUpdate({ ...status(true), package: true, blocked: "no_appimage" })).toBe("package");
+    expect(blockedText(status(true))).toBe(null);
+    for (const b of ["translocated", "read_only", "not_writable", "no_appimage"] as const) {
+      const text = blockedText({ ...status(true), blocked: b });
+      expect(text && text.length > 20 && !text.startsWith("upd.")).toBe(true);
+    }
+    expect(blockedText({ ...status(true), blocked: "translocated" })).toMatch(/Programme|Applications/);
+  });
 });
 
 const auto = (extra: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -65,6 +75,8 @@ describe("policy and modes", () => {
     expect(effectiveMode(auto())).toBe("auto");
     expect(effectiveMode(auto({ package: true }))).toBe("notify");
     expect(effectiveMode(auto({ portable: true }))).toBe("notify");
+    expect(effectiveMode(auto({ blocked: "translocated" }))).toBe("notify");
+    expect(updateHint(auto({ blocked: "not_writable", ready: "1.9.1" }), info).kind).toBe("none");
     expect(effectiveMode(status(true))).toBe("notify");
   });
   it("managed fields", () => {

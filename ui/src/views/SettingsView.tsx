@@ -20,7 +20,7 @@ import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsF
 import { formatShortcut, keyChips, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
-import { effectiveMode, INTERVALS, isManaged, NOT_CONFIGURED, updateHint } from "../lib/updates";
+import { blockedText, effectiveMode, INTERVALS, isManaged, NOT_CONFIGURED, updateHint } from "../lib/updates";
 import { checkForUpdates, loadUpdateStatus, showReleaseNotes, undoSkip, UpdateAction, useUpdates } from "../components/Updates";
 import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
 import { useT, t, type TKey } from "../lib/i18n";
@@ -1703,7 +1703,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   return (
     <Group
       title={t("set.about.updates")}
-      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : mode === "auto" ? t("upd.descAuto") : t("upd.desc")}
+      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : (blockedText(status) ?? (mode === "auto" ? t("upd.descAuto") : t("upd.desc")))}
       help="updates"
     >
       {anyManaged && (

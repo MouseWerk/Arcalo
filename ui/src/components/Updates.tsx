@@ -12,7 +12,7 @@ import { api, on } from "../lib/api";
 import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
 import { fmtDate } from "../lib/format";
-import { autoCheckAllowed, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
+import { autoCheckAllowed, blockedText, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
 import { bundledNotes, HIGHLIGHTS, highlightsBetween, imageOf, imageUrl, textOf, type Highlight, type VersionHighlights } from "../lib/highlights";
 import { saveUpdateSession } from "../lib/updatesession";
 import { openSettingsSection } from "../lib/calnav";
@@ -149,17 +149,36 @@ export async function installUpdate() {
   }
   saveSessionIfWanted();
   useUpdates.setState({ phase: "downloading" });
-  const unlisten = on<UpdateProgress>("update://progress", (progress) => useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" }));
+  installCancelled = false;
+  // A progress event that arrives after the call ended (failed, cancelled) changes nothing.
+  let active = true;
+  const unlisten = on<UpdateProgress>("update://progress", (progress) => {
+    if (active) useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" });
+  });
   try {
     // On Windows the installer ends this process and starts the new version.
     await api.updateInstall();
     useUpdates.setState({ phase: "installing" });
   } catch (e) {
+    active = false;
     useUpdates.setState({ phase: "idle", progress: null });
-    useApp.getState().error(t("upd.failed"), e);
+    // „Abbrechen“: the download stopped as asked (its part stays for the next try).
+    if (!installCancelled) useApp.getState().error(t("upd.failed"), e);
   } finally {
+    active = false;
+    installCancelled = false;
     unlisten.then((f) => f());
   }
+}
+
+/** „Abbrechen“ was clicked while „Installieren“ downloads. */
+let installCancelled = false;
+
+/** „Abbrechen“ while „Installieren“ downloads: the download stops after its current chunk and nothing is installed; the next „Installieren“ continues where it stopped. */
+export async function cancelInstall() {
+  if (useUpdates.getState().phase !== "downloading") return;
+  installCancelled = true;
+  await api.updatePause().catch((e) => useApp.getState().error(t("common.actionFailed"), e));
 }
 
 /** Settings → Über „Sitzung nach dem Neustart wiederherstellen“: the open tabs come back as they are. */
@@ -245,7 +264,7 @@ export function UpdateAction({ size }: { size?: "sm" | "md" }) {
   if (manual)
     return (
       <Button size={size} variant="primary" icon={Download} onClick={() => void downloadPortable()}>
-        {manual === "package" ? t("upd.packageAction") : t("upd.download")}
+        {manual === "portable" ? t("upd.download") : t("upd.packageAction")}
       </Button>
     );
   return (
@@ -320,12 +339,21 @@ export function UpdateToast() {
           <>
             <div className="toast-title">{phase === "installing" ? t("upd.installing", { version: available.version }) : t("upd.downloading", { version: available.version })}</div>
             <div className="toast-detail">{phase === "installing" ? t("upd.restartSoon") : phase === "preparing" ? t("upd.preparing") : progressLabel(progress)}</div>
-            {phase === "downloading" && <Progress value={progressValue(progress)} />}
+            {phase === "downloading" && (
+              <>
+                <Progress value={progressValue(progress)} />
+                <div className="toast-actions">
+                  <Button size="sm" variant="ghost" onClick={() => void cancelInstall()}>
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
             <div className="toast-title">{t("upd.availableShort", { version: available.version })}</div>
-            <div className="toast-detail">{manual === "portable" ? t("upd.portableHint") : manual === "package" ? t("upd.package") : t("upd.savedFirst")}</div>
+            <div className="toast-detail">{manual === "portable" ? t("upd.portableHint") : manual === "package" ? t("upd.package") : manual === "blocked" ? blockedText(status) : t("upd.savedFirst")}</div>
             <div className="toast-actions">
               <UpdateAction size="sm" />
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>

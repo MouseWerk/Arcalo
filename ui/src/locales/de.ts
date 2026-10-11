@@ -4190,6 +4190,10 @@ export const de: Catalog = {
   "upd.package": "Als Paket installiert: das neue Paket von der Release-Seite installieren.",
   "upd.packageAction": "Release-Seite öffnen",
   "upd.packageDesc": "Als Paket (.deb) installiert: Neue Versionen installiert die Paketverwaltung, nicht Arcalo. „Release-Seite öffnen“ führt zum neuen Paket; die AppImage-Version aktualisiert sich selbst.",
+  "upd.blocked.translocated": "macOS startet Arcalo aus einem schreibgeschützten Zwischenordner, weil die App nicht im Ordner „Programme“ liegt. Zieh Arcalo nach „Programme“ und starte es von dort, dann installieren sich Updates selbst.",
+  "upd.blocked.read_only": "Arcalo liegt auf einem schreibgeschützten Laufwerk und kann sich nicht selbst aktualisieren. „Release-Seite öffnen“ führt zur neuen Version.",
+  "upd.blocked.not_writable": "Kein Schreibrecht für den Ordner der AppImage-Datei: Arcalo kann sich nicht selbst aktualisieren. „Release-Seite öffnen“ führt zur neuen AppImage-Datei.",
+  "upd.blocked.no_appimage": "Arcalo wurde nicht als AppImage gestartet und kann sich nicht selbst aktualisieren. „Release-Seite öffnen“ führt zur neuen Version.",
   // ---- merged from main
   "dash.set.hiddenInCalendar": "im Kalender ausgeblendet",
   // ---- merged from main

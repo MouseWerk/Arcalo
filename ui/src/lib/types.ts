@@ -1162,6 +1162,8 @@ export interface UpdateStatus {
   package?: boolean;
   /** The Microsoft Store build: the Store updates it (`enabled` is false, no rollback). */
   store?: boolean;
+  /** This copy cannot replace its own program files: new versions come from the release page. */
+  blocked?: UpdateBlocked | null;
   /** Reported once after a start that followed an update: the version, and whether it runs now. */
   restarted?: { version: string; installed: boolean; from?: string } | null;
   /** What applies: the organization's policy over the settings (`managed` lists the locked fields). */
@@ -1182,6 +1184,8 @@ export interface UpdateStatus {
   rolled_back?: { from: string; to: string; database: boolean } | null;
 }
 export type UpdateMode = "auto" | "notify" | "off";
+/** Why a copy cannot update itself: macOS started it from a temporary read-only place, it is on a read-only drive, the AppImage's folder is not writable, or it was not started as an AppImage. */
+export type UpdateBlocked = "translocated" | "read_only" | "not_writable" | "no_appimage";
 export type UpdateManagedField = "mode" | "source" | "github" | "pinned" | "window" | "interval";
 export interface UpdatePolicy {
   mode: UpdateMode;

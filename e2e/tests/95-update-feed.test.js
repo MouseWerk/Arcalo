@@ -98,9 +98,10 @@ test("a second click while downloading does not start a second install", async (
   await app.dismissToasts();
   await clickInstall();
   await app.waitText(".update-toast .toast-title", /wird geladen/);
-  // The busy toast offers nothing to click; the backend refuses a second install and a new check.
+  // The busy toast offers only „Abbrechen“ (no second install); the backend refuses a second
+  // install and a new check.
   const buttons = await app.browser.execute(() => [...document.querySelectorAll(".update-toast button")].map((b) => b.textContent));
-  assert.deepEqual(buttons, []);
+  assert.deepEqual(buttons, ["Abbrechen"]);
   await assert.rejects(app.invoke("update_install"), /bereits installiert/);
   await assert.rejects(app.invoke("update_check"), /gerade installiert/);
   await app.waitText(".update-toast .toast-detail", /%/);
