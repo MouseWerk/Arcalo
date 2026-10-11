@@ -2,7 +2,8 @@
 // the visual editor and the Markdown source right after typing, two panes (visual or source)
 // on the same page, dialogs keeping the focus, „Als Text einfügen“ after typing, shortcuts
 // that belong to the text field, and Markdown the editor has no block for (raw HTML,
-// comments, long code fences) surviving an edit.
+// comments, long code fences) surviving an edit. The caret put at the end of a long note is where
+// the typing goes, also when the WebView reports selection changes late.
 
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -265,4 +266,46 @@ test("raw HTML, comments, long code fences, empty tasks and \\#tags survive an e
   await sleep(1500);
   const c = (await app.invoke("page_get", { id: p.id })).content;
   assert.equal(c, md.replace("Text mit", "TextX mit"));
+});
+
+test("the caret put at the end of a long note is where the typing lands, even when selection changes arrive late", async () => {
+  const body = Array.from({ length: 40 }, (_, i) => `Absatz ${i} mit etwas Text in der Mitte der Notiz.`).join("\n\n");
+  const p = await app.invoke("page_create", { parentId: null, title: "Späte Auswahl", icon: null, content: `# Späte Auswahl\n\n${body}\n` });
+  await reload();
+  await app.browser.waitUntil(() => app.browser.execute((i) => document.querySelector(`.tree-row[data-id="${i}"]`) != null, p.id), { timeoutMsg: "page in the tree" });
+  await app.click(`.tree-row[data-id="${p.id}"]`);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Absatz 39/);
+  // A busy WebView: the editor hears of selection changes 400 ms late, and meanwhile the note
+  // is redrawn (here: text from elsewhere arrives at its top), which puts the editor's own caret,
+  // still where the click of `caretToEnd` put it in the middle, back into the page.
+  await app.browser.execute(() => {
+    const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
+    window.__lateSelection = (e) => {
+      if (e.late) return;
+      e.stopImmediatePropagation();
+      setTimeout(() => document.dispatchEvent(Object.assign(new Event("selectionchange"), { late: true })), 400);
+    };
+    window.addEventListener("selectionchange", window.__lateSelection, true);
+    const add = (window.__addRange = Selection.prototype.addRange);
+    let redrawn = false;
+    Selection.prototype.addRange = function (range) {
+      add.call(this, range);
+      if (redrawn || !ed.view.dom.contains(range.startContainer)) return;
+      redrawn = true;
+      setTimeout(() => ed.view.dispatch(ed.state.tr.insertText("Neu: ", 1).setMeta("addToHistory", false)), 0);
+    };
+  });
+  try {
+    await app.caretToEnd();
+    await app.type("ENDE");
+  } finally {
+    await app.browser.execute(() => {
+      window.removeEventListener("selectionchange", window.__lateSelection, true);
+      Selection.prototype.addRange = window.__addRange;
+    });
+  }
+  await app.browser.waitUntil(async () => /ENDE/.test((await app.invoke("page_get", { id: p.id })).content), { timeout: 8000, timeoutMsg: "typing saved" });
+  const c = (await app.invoke("page_get", { id: p.id })).content;
+  assert.match(c, /Absatz 39 mit etwas Text in der Mitte der Notiz\.ENDE\n*$/);
+  assert.equal(c.match(/ENDE/g).length, 1);
 });

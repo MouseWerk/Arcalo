@@ -141,8 +141,10 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   await app.click(".ribbon .ribbon-briefing");
   const row = '.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-meeting';
   await app.waitText(`.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"]`, /Jour fixe Portal/, 15000);
-  // The briefing may have written its own text already.
-  const base = cloud.chats().length;
+  // Only the prep's requests count: the briefing writes its own text, and on a busy machine that
+  // request can arrive after the meeting row is shown.
+  const prepChats = () => cloud.chats().filter((c) => /Worauf achten/.test(c.body.messages[0]?.content ?? ""));
+  const base = prepChats().length;
   await app.browser.execute((sel) => [...document.querySelectorAll(sel)].find((r) => /Jour fixe Portal/.test(r.textContent) && !r.classList.contains("past")).querySelector(".bf-prepare").click(), row);
   const shown = await app.browser
     .waitUntil(async () => /Letztes Protokoll/.test(await paneText()), { timeout: 20000 })
@@ -166,8 +168,8 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   assert.doesNotMatch(text, /Raum buchen/, "done tasks are not open points");
   assert.doesNotMatch(text, /\*\*Mia Meyer\*\*|Mia Meyer\n\s*Erwähnt/, "the user is no attendee to prepare for");
   // The request: compact, the meeting's data, no page contents.
-  assert.equal(cloud.chats().length, base + 1);
-  const req = cloud.chats()[base].body;
+  assert.equal(prepChats().length, base + 1);
+  const req = prepChats()[base].body;
   assert.match(req.messages[0].content, /Worauf achten/);
   const sent = JSON.stringify(req.messages);
   assert.match(sent, /Jour fixe Portal/);
@@ -184,14 +186,19 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   // The user writes below the generated part; „Aktualisieren“ from the calendar detail keeps it.
   await app.caretToEnd();
   await app.type("Eigene Frage an Jörg");
-  await app.browser.pause(1200);
+  await app.browser.waitUntil(async () => /<!-- \/arcalo:auto -->[\s\S]*Eigene Frage an Jörg/.test((await app.invoke("page_get", { id: prepId })).content), {
+    timeout: 8000,
+    timeoutMsg: "the user's text saved below the generated part",
+  });
   await app.click(".ribbon .ribbon-briefing");
   await app.waitText(`.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"]`, /Vorbereitung/, 10000);
   await app.browser.execute((sel) => [...document.querySelectorAll(sel)].find((r) => /Jour fixe Portal/.test(r.textContent) && !r.classList.contains("past")).querySelector(".rv-title").click(), row);
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn", 10000);
   assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn"), /Vorbereitung aktualisieren/);
   await app.click(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn");
-  await app.browser.waitUntil(async () => cloud.chats().length === base + 2, { timeout: 15000, timeoutMsg: "refreshed" });
+  await app.waitText(".toast", /Vorbereitung aktualisiert/, 15000);
+  assert.equal(prepChats().length, base + 2, "refreshed with a new „Worauf achten“");
+  // The page as the refresh wrote it, and the editor in front showing it.
   const after = (await app.invoke("page_get", { id: prepId })).content;
   assert.match(after, /Eigene Frage an Jörg/, "the user's text is saved");
   await app.browser.waitUntil(async () => /Eigene Frage an Jörg/.test(await paneText()), { timeout: 15000, timeoutMsg: "prep page in front again" });

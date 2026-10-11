@@ -302,17 +302,42 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     async caretToEnd() {
       const pm = await app.waitFor(EDITOR);
       await pm.click();
-      await browser.execute((css) => {
-        const el = document.querySelector(css);
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(el.lastElementChild ?? el);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }, EDITOR);
-      await browser.pause(60);
+      // The caret is set in the page (the DOM selection); the editor takes it over on its
+      // `selectionchange`, which a busy WebView delivers late. Keys typed before that land where
+      // the click put the caret, so this waits until the editor's own selection is at the end
+      // (and sets the caret again if a redraw put the click position back meanwhile).
+      const atEnd = (place) =>
+        browser.execute(
+          (css, place) => {
+            const el = document.querySelector(css);
+            const target = el.lastElementChild ?? el;
+            // The end of the note's last text block (none: a note ending in an image or a raw
+            // block, where the caret goes wherever the page puts it).
+            const ed = el.editor;
+            let end = ed?.state.doc.content.size ?? 0;
+            let node = ed?.state.doc.lastChild;
+            while (node && !node.isTextblock) {
+              end -= 1;
+              node = node.lastChild;
+            }
+            if (node && ed.state.selection.empty && ed.state.selection.head === end - 1) return true;
+            if (place) {
+              const sel = window.getSelection();
+              const range = document.createRange();
+              range.selectNodeContents(target);
+              range.collapse(false);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+            return !node;
+          },
+          EDITOR,
+          place,
+        );
+      await atEnd(true);
+      await browser.waitUntil(() => atEnd(true), { timeout: 8000, interval: 100, timeoutMsg: "the editor did not take over the caret at the end" });
       await browser.keys(["End"]);
+      await browser.waitUntil(() => atEnd(false), { timeout: 8000, interval: 50, timeoutMsg: "the caret left the end after End" });
     },
     /**
      * Chooses `value` in a dropdown (components/Select.tsx) like a user: clicks the combobox,
