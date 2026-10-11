@@ -93,7 +93,7 @@ export function DailyScreen({ date: start }: { date: string }) {
           />
         </div>
       ) : (
-        <PageBody key={doc.id} doc={doc} editing={editing} onSaved={(content) => setDoc({ ...doc, content })} onDone={() => setEditing(false)} />
+        <PageBody key={doc.id} doc={doc} editing={editing} onSaved={(content) => setDoc((d) => (d && d.id === doc.id ? { ...d, content } : d))} onDone={() => setEditing(false)} />
       )}
     </div>
   );

@@ -190,7 +190,7 @@ export function PageScreen({ id }: { id: number }) {
           <Spinner />
         </div>
       ) : (
-        <PageBody doc={doc} editing={editing} conflict={conflict} onSaved={(content) => setDoc({ ...doc, content })} onDone={() => setEditing(false)} />
+        <PageBody doc={doc} editing={editing} conflict={conflict} onSaved={(content) => setDoc((d) => (d && d.id === doc.id ? { ...d, content } : d))} onDone={() => setEditing(false)} />
       )}
     </div>
   );
@@ -201,33 +201,54 @@ export function PageScreen({ id }: { id: number }) {
  *  started from, so a change a sync took over meanwhile is merged, never overwritten. */
 export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean; onSaved: (content: string) => void; onDone: () => void }) {
   const m = useMobile();
+  // The props and context of the latest render: a save that ends after the screen moved on (the
+  // pause in typing, the app going to the background, the screen closing) reports to them.
+  const props = useRef(p);
+  props.current = p;
+  const ctx = useRef(m);
+  ctx.current = m;
   const [text, setText] = useState(p.doc.content);
   // The page as stored when this editor last saw it: the base of the next save.
   const saved = useRef(p.doc.content);
+  // Texts the page had before this editor's saves: a read of the page that started before a
+  // save and arrives after it brings one of these, never newer text.
+  const older = useRef(new Set<string>());
+  const inFlight = useRef(0);
   const latest = useRef(text);
   latest.current = text;
   const timer = useRef<number | undefined>(undefined);
   const saving = useRef<Promise<void>>(Promise.resolve());
+  const base = (next: string) => {
+    if (next !== saved.current) older.current.add(saved.current);
+    older.current.delete(next);
+    // The last few are enough: a read older than that is long answered.
+    if (older.current.size > 20) older.current.delete(older.current.values().next().value as string);
+    saved.current = next;
+  };
 
   // The page changed under the editor (a sync took the server's text over): shown when nothing
-  // typed waits for its save, else that save merges both.
+  // typed waits for its save, else that save merges both. A read older than a save is ignored.
   useEffect(() => {
-    if (p.doc.content === saved.current || latest.current !== saved.current) return;
-    saved.current = p.doc.content;
-    latest.current = p.doc.content;
-    setText(p.doc.content);
-  }, [p.doc.content]);
+    const content = p.doc.content;
+    if (content === saved.current || latest.current !== saved.current) return;
+    if (inFlight.current > 0 || older.current.has(content)) return;
+    base(content);
+    latest.current = content;
+    setText(content);
+  }, [p.doc.content]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One save after the other, each from the base the one before left.
   const save = (content: string) => {
     window.clearTimeout(timer.current);
+    inFlight.current += 1;
     const run = saving.current.then(async () => {
       if (content === saved.current) return;
+      const { doc, onSaved } = props.current;
       try {
-        const res = await api.savePage(p.doc.id, content, saved.current);
+        const res = await api.savePage(doc.id, content, saved.current);
         const stored = res.merged ?? content;
         if (res.merged === undefined || latest.current === content) {
-          saved.current = stored;
+          base(stored);
           // Merged with the change made elsewhere: shown here as stored.
           if (res.merged !== undefined) {
             latest.current = stored;
@@ -235,20 +256,22 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
           }
         } else {
           // Typed on meanwhile: the next save merges that with what is stored now.
-          saved.current = content;
+          base(content);
         }
-        p.onSaved(stored);
+        onSaved(stored);
       } catch (e) {
-        m.toast("error", t("mob.notes.saveFailed"), errorText(e));
+        ctx.current.toast("error", t("mob.notes.saveFailed"), errorText(e));
       }
     });
-    saving.current = run;
-    return run;
+    saving.current = run.finally(() => {
+      inFlight.current -= 1;
+    });
+    return saving.current;
   };
   // Leaving editing saves.
   const wasEditing = useRef(p.editing);
   useEffect(() => {
-    if (wasEditing.current && !p.editing) void save(latest.current).then(() => m.refresh());
+    if (wasEditing.current && !p.editing) void save(latest.current).then(() => ctx.current.refresh());
     wasEditing.current = p.editing;
   }, [p.editing]); // eslint-disable-line react-hooks/exhaustive-deps
   // Android's back button ends editing first (and saves), the next one leaves the page.
