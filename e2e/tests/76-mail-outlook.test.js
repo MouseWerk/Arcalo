@@ -2,6 +2,9 @@
 // „Aktuelle E-Mail übernehmen“ in the palette reads two selected mails; the first becomes a task
 // on the open page with a due date and priority, the second a note with its attachment. The
 // link chip in the note and in the task list opens the mail again (the fixture's open hook).
+// The fixture mails have fixed times, so the dates are German dates (the app and this file run in
+// Europe/Berlin, not in the harness's morning zone, which moves them to another day in the evening).
+process.env.TZ = "Europe/Berlin";
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

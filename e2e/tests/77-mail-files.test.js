@@ -2,6 +2,9 @@
 // dialog instead of being embedded (task and note, the .eml stored as the link target, its PDF
 // attachment embedded); a pasted Outlook header block becomes a task in the daily note; the
 // Markdown export writes the links as text.
+// The fixture mails have fixed times, so the dates are German dates (the app and this file run in
+// Europe/Berlin, not in the harness's morning zone, which moves them to another day in the evening).
+process.env.TZ = "Europe/Berlin";
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
