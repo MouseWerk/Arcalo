@@ -4673,7 +4673,12 @@ pub fn run() {
             // with a notice that nothing is saved.
             // A restore that was encrypted on the way says so itself; a failed switch still wins.
             let cipher_notice = prepared.notice.filter(|n| restored.is_none() || n.kind != "info");
-            let mut notice = cipher_notice.or(restored).or(startup.notice.clone()).or_else(identity::notice);
+            // Last: macOS started the app from the disk image or translocated from Downloads.
+            let mut notice = cipher_notice
+                .or(restored)
+                .or(startup.notice.clone())
+                .or_else(identity::notice)
+                .or_else(cmdpath::temporary_place_notice);
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(

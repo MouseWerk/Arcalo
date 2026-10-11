@@ -549,7 +549,11 @@ developer cannot be verified” or “is damaged”). Once, either:
 
 - in Finder, right-click (Ctrl-click) *Arcalo* in *Applications* → **Open** → **Open**
   (on macOS 15: System Settings → Privacy & Security → “Open Anyway”), or
-- in the Terminal: `xattr -cr "/Applications/Arcalo.app"`
+- in the Terminal: `xattr -cr "/Applications/Arcalo.app"` (the only way when macOS calls the app “damaged”)
+
+Start Arcalo from *Applications*, not from the disk image or from *Downloads*: macOS runs it from a temporary
+read-only place then, and updates, “Open at login” and the `arcalo` command do not work (Arcalo says so at the
+start).
 
 On macOS the app follows the platform conventions: a menu bar in the app's language (⌘, settings, ⌘\ sidebar, ⌘.
 focus mode), the tab bar sits in the title bar, and every in-app shortcut uses ⌘ instead of Ctrl. Closing the window
