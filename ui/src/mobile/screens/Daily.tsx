@@ -20,9 +20,11 @@ export function DailyScreen({ date: start }: { date: string }) {
   const [doc, setDoc] = useState<PageDoc | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
 
+  // Another day: its note loads. Data that changed (a sync, a booking) reloads the note in place,
+  // so an open editor keeps its text, caret and keyboard.
+  useEffect(() => setDoc(undefined), [date]);
   useEffect(() => {
     let live = true;
-    setDoc(undefined);
     mobileApi
       .daily(date, false)
       .then((page) => (page ? api.page(page.id) : null))
@@ -91,7 +93,7 @@ export function DailyScreen({ date: start }: { date: string }) {
           />
         </div>
       ) : (
-        <PageBody doc={doc} editing={editing} onSaved={(content) => setDoc({ ...doc, content })} onDone={() => setEditing(false)} />
+        <PageBody key={doc.id} doc={doc} editing={editing} onSaved={(content) => setDoc({ ...doc, content })} onDone={() => setEditing(false)} />
       )}
     </div>
   );

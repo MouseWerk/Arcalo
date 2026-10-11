@@ -197,43 +197,64 @@ export function PageScreen({ id }: { id: number }) {
 }
 
 /** A page's text: rendered for reading, or its Markdown in a text field while editing (saved
- *  when leaving the field, after a pause in typing and with „Fertig“). */
+ *  when leaving the field, after a pause in typing and with „Fertig“). A save names the text it
+ *  started from, so a change a sync took over meanwhile is merged, never overwritten. */
 export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean; onSaved: (content: string) => void; onDone: () => void }) {
   const m = useMobile();
   const [text, setText] = useState(p.doc.content);
+  // The page as stored when this editor last saw it: the base of the next save.
   const saved = useRef(p.doc.content);
+  const latest = useRef(text);
+  latest.current = text;
   const timer = useRef<number | undefined>(undefined);
+  const saving = useRef<Promise<void>>(Promise.resolve());
 
+  // The page changed under the editor (a sync took the server's text over): shown when nothing
+  // typed waits for its save, else that save merges both.
   useEffect(() => {
-    if (!p.editing) {
-      setText(p.doc.content);
-      saved.current = p.doc.content;
-    }
-  }, [p.doc.content, p.editing]);
+    if (p.doc.content === saved.current || latest.current !== saved.current) return;
+    saved.current = p.doc.content;
+    latest.current = p.doc.content;
+    setText(p.doc.content);
+  }, [p.doc.content]);
 
-  const save = async (content: string) => {
+  // One save after the other, each from the base the one before left.
+  const save = (content: string) => {
     window.clearTimeout(timer.current);
-    if (content === saved.current) return;
-    try {
-      await api.savePage(p.doc.id, content);
-      saved.current = content;
-      p.onSaved(content);
-    } catch (e) {
-      m.toast("error", t("mob.notes.saveFailed"), errorText(e));
-    }
+    const run = saving.current.then(async () => {
+      if (content === saved.current) return;
+      try {
+        const res = await api.savePage(p.doc.id, content, saved.current);
+        const stored = res.merged ?? content;
+        if (res.merged === undefined || latest.current === content) {
+          saved.current = stored;
+          // Merged with the change made elsewhere: shown here as stored.
+          if (res.merged !== undefined) {
+            latest.current = stored;
+            setText(stored);
+          }
+        } else {
+          // Typed on meanwhile: the next save merges that with what is stored now.
+          saved.current = content;
+        }
+        p.onSaved(stored);
+      } catch (e) {
+        m.toast("error", t("mob.notes.saveFailed"), errorText(e));
+      }
+    });
+    saving.current = run;
+    return run;
   };
   // Leaving editing saves.
   const wasEditing = useRef(p.editing);
   useEffect(() => {
-    if (wasEditing.current && !p.editing) void save(text).then(() => m.refresh());
+    if (wasEditing.current && !p.editing) void save(latest.current).then(() => m.refresh());
     wasEditing.current = p.editing;
   }, [p.editing]); // eslint-disable-line react-hooks/exhaustive-deps
   // Android's back button ends editing first (and saves), the next one leaves the page.
   useBackLayer(p.editing, p.onDone);
   // Typed text is never lost: saved when the app goes to the background (Android may end it
   // there without notice) and when the screen closes before the pause in typing ran out.
-  const latest = useRef(text);
-  latest.current = text;
   useEffect(() => {
     const onHidden = () => document.visibilityState === "hidden" && void save(latest.current);
     document.addEventListener("visibilitychange", onHidden);

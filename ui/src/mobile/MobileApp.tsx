@@ -67,12 +67,16 @@ export function MobileApp() {
     void loadSettings();
   }, [loadSettings]);
 
-  // Data changed in the shell (a booking, a sync that pulled notes): the screens load again.
+  // Data changed in the shell (a booking, a sync that pulled notes): the screens load again. A
+  // sync of the app's own timer (at the start, every 15 minutes) or after a merged conflict
+  // shows its outcome on „Heute“ and in the settings as well.
   useEffect(() => {
     const offs = [
       listen("data://entries", refresh),
       listen("data://pages", refresh),
       listen("gitsync://pulled", refresh),
+      listen("gitsync://done", refresh),
+      listen("gitsync://failed", refresh),
       listen("settings://changed", () => void loadSettings()),
       listen<UpdateStatus>("apkupdate://status", (e) => setUpdate(e.payload)),
     ];
