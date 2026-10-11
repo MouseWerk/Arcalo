@@ -225,7 +225,10 @@ page, on a blocking thread).
 - **Transactions** (`Database::atomic`): savepoints that nest; when the outermost release (the commit) fails (disk full,
   I/O error, locked file), everything since the savepoint is rolled back and the error returned, so the connection never
   stays inside a transaction where later saves would look successful without being committed. An open transaction found at
-  the start of an outermost `atomic` is rolled back.
+  the start of an outermost `atomic` is rolled back. The outermost one on a writable connection starts with
+  `BEGIN IMMEDIATE`: another process (the command line) may write while the app runs, and a transaction that read first
+  could not become the writer after that process committed (`SQLITE_BUSY` without waiting); taking the lock first waits
+  for the other writer (busy timeout: 5 s in the app, 15 s on the command line).
 - **Start-up failures** (shell `recovery.rs`): a data folder that cannot be created, a database that cannot be opened
   (damaged, not a database, locked, read-only storage: `Error::is_storage`) or one of a newer schema (`db::NEWER_SCHEMA`)
   show a native dialog instead of a panic without a window: „Letzte Sicherung wiederherstellen“ (only for a damaged
@@ -421,6 +424,49 @@ defineWidget({
 - Reminders: `end_of_day_reminder` and `late_timer_reminder` are pure functions of time, settings,
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
+
+## Command line (`crates/arcalo-cli`, `external.rs` in core and shell, docs/cli.md)
+
+- **One program**: `arcalo` (`src-tauri/src/main.rs` → `command_line()`) runs as the command line when its first argument
+  is one of the CLI's commands or options (`arcalo_cli::is_command_line`: never none, `--minimized`, a jump-list or
+  notification address); otherwise the app starts. So every install (NSIS, Store alias, portable ZIP, deb, AppImage,
+  macOS bundle) has the command line of its own version, and a portable copy finds its `data` folder. A Windows release
+  build has no console of its own: with its output redirected (scripts, agents) it has the handles; typed in a console
+  it attaches to that console (`AttachConsole`). The crate also builds a standalone `arcalo` (and `annalo`) binary.
+- **Workspace**: `workspace::locate` finds the app's data folder as the app does without moving it
+  (`datadir::locate`: `--data-dir`/`ARCALO_DATA_DIR`, portable, `location.json` when it holds a workspace, the
+  identifier's folder; a pending move stays for the app's start); `--db` names a file as before 1.18. An encrypted
+  database is opened with the key from the credential store (`keystore.rs`, read only: service `Arcalo`, the
+  `@namespace` entries of a portable copy, `secrets.json` on Linux without a Secret Service, the old service until an
+  entry was taken over), `ARCALO_RECOVERY_KEY` or `ARCALO_DB_PASSWORD` with the wrapped key file.
+- **Same functions**: every command calls what the app's commands call (`create_page` + `unique_title`,
+  `rename_page_linked`, `trash_page`/`purge_page`, `set_task_done`, `edit_tasks` with `TaskEdit::Text`,
+  `capture::insert_in_notes`, `daily_note`, `delete_booking` with its Jira worklog, `Settings::for_save` +
+  `finish_save`, …); no SQL of its own. Pages are named `id:N`, by exact title or by path (`model::Pages::resolve`;
+  several matches fail with the list). Page edits keep the text before them as a version (unless one is younger than a
+  minute), so the app's „Versionen“ undo them.
+- **Writes and the running app**: `Workspace::commit` runs a command's change in one `atomic` (write lock first) and
+  records it there with `record_external_change`: a numbered entry in the meta row `external.changes` (the last 64:
+  pages, tree, entries, WBS, absences, settings; a reader further behind reloads everything). The shell's watcher
+  (`external.rs`) checks `PRAGMA data_version` on a read-only connection of its own once a second (it changes only for
+  other connections' commits) and reads the entries after the last one it handled: `data://pages` reloads open editors
+  (unsaved typing merged as for another pane), `data://entries`, `data://wbs`, `data://absences` the views,
+  `data://external` the tree, the task view and the timer, and changed settings are applied through `settings_save`.
+  The watcher lets go of its connection while the app prepares to exit.
+- **Editor saves merge**: the editors send the text they started from (`page_save` with `base`); when the stored page
+  changed since (the command line, a task ticked off in the task view, a chip rewritten), `save_page_from` stores the
+  three-way merge of base, editor text and stored text (`merge::merge3`, both versions of a block changed on both sides,
+  the editor's first) and returns it; the editor takes it over with what was typed meanwhile. Without a base (a closed
+  editor's retry, other callers) a save stores the text as sent.
+- **Output**: `--json` prints one JSON value per command (`model.rs`: pages with `path`, tasks with `ordinal`, times
+  with the local offset); errors go to stderr as `{"error": {"code", "message", "exit_code", "matches"?}}`, exit codes
+  1 usage/ambiguous, 2 not found, 3 conflict/locked, 4 other (`output::Failure` from `arcalo_core::Error`). Messages
+  are `tr!`/`trf!` pairs in the workspace's language (system language until the settings are read). SQLCipher's own
+  stderr lines are switched off (`cipher::quiet_log`).
+- Tests: `crates/arcalo-cli/tests/cli.rs` (the binary on temporary workspaces: every command, JSON shapes, exit
+  codes, ambiguous titles, trash and purge, rename with links, an encrypted workspace, a write waiting for another
+  connection's transaction, the change journal), e2e `373-cli-live` (the built app and its program as the command line
+  on the same workspace).
 
 ## First run (`onboarding.rs` in core, `ui/src/onboarding/`)
 

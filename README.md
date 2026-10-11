@@ -655,6 +655,16 @@ on one side only are merged automatically; for the rest you pick “Mine”, “
 **Restore**: “Restore from Git…” clones the repository and imports it as a new top-level page “Git import <date>”
 (images included); existing pages are left alone.
 
+## Command line and AI agents
+
+The program is also a command line on your workspace: `arcalo pages show "Weekly sync"`, `arcalo tasks add
+"Angebot schicken" --page id:42 --due tomorrow`, `arcalo daily append "…"`, `arcalo zeit NP-8801/1020 1.5h …`,
+and everything else you do with notes, tasks, time, projects, attachments, the trash and the settings. With `--json`
+every command prints JSON and errors come with stable exit codes, so scripts and AI agents with a terminal can read
+and change your workspace while the app is open: the app shows the changes within a second, typing in an open note is
+never lost, and every change keeps a version you can go back to. See [docs/cli.md](docs/cli.md) for the commands,
+where the program is on each system, and how to point an AI agent at it.
+
 ## Tests
 
 ```sh
@@ -682,7 +692,7 @@ in light and dark. Run it after building the app with `ARCALO_SHOTS=<folder>` an
 | Path | Contents |
 |---|---|
 | `crates/arcalo-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/time` parser, time tracking, budgets, CPM, exports, idle detection (Win32), AI clients, router, RAG, tools, calendars, backups, vault import/export |
-| `crates/arcalo-cli` | `arcalo` command line on the same database |
+| `crates/arcalo-cli` | `arcalo` command line on the app's workspace, for people, scripts and AI agents ([docs/cli.md](docs/cli.md)); the app's program runs it when started with a command |
 | `src-tauri` | Tauri v2 desktop shell: IPC commands, credential storage, global shortcuts, tray, quick capture, reminders, activity sampler, updater |
 | `ui` | React + TypeScript + TipTap frontend (Vite), Lucide icons; the English and German texts in `ui/src/locales` |
 | `e2e` | WebdriverIO end-to-end tests against the desktop app |

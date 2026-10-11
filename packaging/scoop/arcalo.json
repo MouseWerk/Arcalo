@@ -5,7 +5,8 @@
     "license": "MIT",
     "notes": [
         "Arcalo runs in portable mode: its data lives in $persist_dir\\data and survives updates.",
-        "API keys and tokens stay in the Windows Credential Manager of this computer."
+        "API keys and tokens stay in the Windows Credential Manager of this computer.",
+        "The command line: `arcalo --help` (docs/cli.md)."
     ],
     "architecture": {
         "64bit": {
@@ -13,6 +14,12 @@
             "hash": "5b39fd4d8c5bcae0e6c755105d983b5baa590d3accc605ab9db9569c45af7d9e"
         }
     },
+    "bin": [
+        [
+            "Arcalo.exe",
+            "arcalo"
+        ]
+    ],
     "shortcuts": [
         [
             "Arcalo.exe",
