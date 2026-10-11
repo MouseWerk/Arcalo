@@ -27,9 +27,47 @@ pub async fn attachments_list(app: AppHandle) -> Result<AttachmentList> {
 #[tauri::command]
 pub async fn attachment_rename(app: AppHandle, name: String, new_name: String) -> Result<RenameOutcome> {
     let emit = app.clone();
-    let out = blocking(app, move |s| manager::rename(&s.db(), &s.attachments_dir(), &name, &new_name)).await?;
+    let out = blocking(app, move |s| {
+        let _running = crate::lock(&s.git_lock);
+        rename_attachment(&s.db(), &s.data_dir, &name, &new_name)
+    })
+    .await?;
     if !out.pages.is_empty() {
         let _ = emit.emit("data://pages", &out.pages);
+    }
+    Ok(out)
+}
+
+/// Renames `name` (see [`manager::rename`]); a file the Git sync kept twice stays kept under its
+/// new name, and the old name leaves the server with the next sync. Callers hold the sync's lock.
+pub(crate) fn rename_attachment(
+    db: &arcalo_core::Database,
+    data_dir: &std::path::Path,
+    name: &str,
+    new_name: &str,
+) -> Result<RenameOutcome> {
+    let files = arcalo_core::attachments::dir(data_dir);
+    let out = manager::rename(db, &files, name, new_name)?;
+    let repo = data_dir.join(arcalo_core::gitsync::REPO_DIR);
+    let moved = match arcalo_core::gitsync::renamed_kept(&repo, name, &out.name) {
+        Ok(moved) => moved,
+        Err(e) => {
+            crate::devlog::warn("git", format!("renamed file not kept under its new name: {e}"));
+            return Ok(out);
+        }
+    };
+    // In the working tree too: no note may link it, so the Markdown copy does not bring it.
+    let tree = repo.join(arcalo_core::attachments::DIR_NAME);
+    for (old, new) in moved {
+        let from = files.join(&new);
+        if std::fs::symlink_metadata(&from).is_ok_and(|m| m.is_file()) {
+            std::fs::create_dir_all(&tree).map_err(|e| Error::file(&tree, e))?;
+            arcalo_core::error::copy_file(&from, &tree.join(&new))?;
+        }
+        let gone = tree.join(&old);
+        if std::fs::symlink_metadata(&gone).is_ok_and(|m| m.is_file()) {
+            std::fs::remove_file(&gone).map_err(|e| Error::file(&gone, e))?;
+        }
     }
     Ok(out)
 }

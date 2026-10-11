@@ -166,7 +166,8 @@ page, on a blocking thread).
   (`.git/arcalo-pull-start`, before the record): a record that cannot be read is rebuilt from it (the server's notes changed
   since the start, or after adopting the server's notes; this computer's own edits since are in the mirror and stay its
   own; a note this computer had changed against the merge base and the merge kept at the server's text is a conflict again,
-  base: the merge base), and without it nothing counts as pulled. Deciding a conflict
+  base: the merge base of the start and the server's side of the newest merge on HEAD's first-parent chain since the start,
+  `merge_base_since`, so later commits and merges on top change nothing), and without it nothing counts as pulled. Deciding a conflict
   (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
   only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
   (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
@@ -196,7 +197,10 @@ page, on a blocking thread).
   the working tree), so any file name is stored as it is. A pull merges it name by name (`merge_kept_files`): a missing list
   or a name missing from one is no decision (a computer on 1.18.0 knows no list and deletes it with every unlinked file), so
   the merge keeps the base's state and puts each kept file the pull dropped back from this computer's last commit, also
-  after a fast-forward (then committed as „Abgleich mit dem Server“); only `removed` takes a file off. The sync changes no
+  after a fast-forward (then committed as „Abgleich mit dem Server“); only `removed` takes a file off. Accepted: as long as
+  a computer still runs 1.18.0, each of its syncs drops such a file and the next sync of a 1.18.1 computer puts it back
+  (two commits per round, nothing lost); this ends once every computer runs 1.18.1. Renaming a kept file in the attachment
+  manager moves its entry (`renamed_kept`: the new name kept, the old one removed). The sync changes no
   note for it; `FileRename` tells the user about the second version.
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)

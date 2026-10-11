@@ -1833,6 +1833,31 @@ mod tests {
         assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}", "restored version not on the server");
     }
 
+    /// A kept version renamed in the attachment manager stays kept under its new name: the new name
+    /// reaches the server and the other computer, the old one leaves the server.
+    #[test]
+    fn a_kept_file_renamed_stays_kept_under_its_new_name() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("rename");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        let new = kept_drawing(&r, &a, &b);
+        let out = crate::files::rename_attachment(&b, &r.base.join("b"), &new, "Umbenannt.excalidraw").unwrap();
+        assert_eq!(out.name, "Umbenannt.excalidraw");
+        for (db, pc) in [(&b, "b"), (&a, "a"), (&b, "b"), (&a, "a")] {
+            r.run(db, pc);
+        }
+        assert_eq!(r.server("attachments/Umbenannt.excalidraw"), "{\"v\":\"B\"}", "new name not on the server");
+        assert_eq!(r.server("attachments/Umbenannt.excalidraw.svg"), "<svg>B</svg>");
+        assert_eq!(r.server(&format!("attachments/{new}")), "", "old name still on the server");
+        assert!(r.files("a").join("Umbenannt.excalidraw").exists(), "not on the other computer");
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            let out = r.run(db, pc);
+            assert!(!out.committed && out.remote_changes.is_empty(), "{pc}: {out:?}");
+        }
+    }
+
     /// The file changed here between the sync and the take-over (no crash): both kept as well.
     #[test]
     fn a_local_file_changed_during_the_take_over_is_kept_beside_the_servers() {

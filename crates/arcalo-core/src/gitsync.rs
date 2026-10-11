@@ -483,6 +483,32 @@ pub fn restored_kept(repo: &Path, name: &str) -> Result<Vec<String>> {
     Ok(back)
 }
 
+/// The user renamed `old` to `new` in the attachments folder: when it was on the kept list, it is
+/// kept under the new name and the old one is taken off (recorded as removed, so no other computer
+/// puts it back), with a drawing's preview. Returns the moved names (old, new); the caller puts the
+/// renamed files into the working tree.
+pub fn renamed_kept(repo: &Path, old: &str, new: &str) -> Result<Vec<(String, String)>> {
+    if old == new || !kept_name_ok(new) {
+        return Ok(Vec::new());
+    }
+    let mut list = read_list(repo);
+    let mut moved = Vec::new();
+    let pairs =
+        [(old.to_owned(), new.to_owned()), (crate::drawings::preview_name(old), crate::drawings::preview_name(new))];
+    for (from, to) in pairs {
+        if list.kept.remove(&from) {
+            list.removed.insert(from.clone());
+            list.removed.remove(&to);
+            list.kept.insert(to.clone());
+            moved.push((from, to));
+        }
+    }
+    if !moved.is_empty() {
+        write_list(None, repo, &list)?;
+    }
+    Ok(moved)
+}
+
 /// The kept lists of the merge base, this computer and the server, merged name by name. A list
 /// that is missing, or a name missing from one, is no decision (it keeps the base's state): only
 /// what a side changed against the base counts, and when both changed a name differently it stays
@@ -1685,10 +1711,7 @@ fn rebuild_waiting(git: &Git, repo: &Path, head: &str) -> Result<Option<Vec<Wait
     } else {
         // A note this side had changed against the merge base and the merge kept at the server's
         // text was a conflict: it stays one (a fast-forward has none).
-        let merge_base_of = match rev(git, repo, "HEAD^2")? {
-            Some(theirs) => merge_base(git, repo, &from, &theirs)?,
-            None => None,
-        };
+        let merge_base_of = merge_base_since(git, repo, &from)?;
         let mut changes = server_notes(git, repo, &from, "HEAD")?;
         if let Some(mb) = merge_base_of {
             for c in &mut changes {
@@ -1703,6 +1726,44 @@ fn rebuild_waiting(git: &Git, repo: &Path, head: &str) -> Result<Option<Vec<Wait
         changes
     };
     Ok(Some(vec![Waiting { from, adopt, changes, ..Default::default() }]))
+}
+
+/// The merge base of `from` and the server's side of the newest merge on HEAD's first-parent
+/// chain since `from` (later commits, fast-forwards and further merges on top included). A side
+/// is any parent but the first; one that already holds `from` (this computer's own merge, pushed
+/// and merged again) tells nothing and is passed over. `None`: no merge since `from`.
+fn merge_base_since(git: &Git, repo: &Path, from: &str) -> Result<Option<String>> {
+    let Some(mut cur) = rev(git, repo, "HEAD")? else { return Ok(None) };
+    for _ in 0..100_000 {
+        if cur == from {
+            break;
+        }
+        let mut bases = Vec::new();
+        for n in 2.. {
+            let Some(side) = rev(git, repo, &format!("{cur}^{n}"))? else { break };
+            match merge_base(git, repo, from, &side)? {
+                Some(mb) if mb != from => bases.push(mb),
+                _ => {}
+            }
+        }
+        // Several sides (more than two parents): the newest base, the one the others lead to.
+        let mut newest: Option<String> = None;
+        for mb in bases {
+            let newer = match &newest {
+                None => true,
+                Some(n) => git.run(Some(repo), &["merge-base", "--is-ancestor", n, &mb])?.ok,
+            };
+            if newer {
+                newest = Some(mb);
+            }
+        }
+        if newest.is_some() {
+            return Ok(newest);
+        }
+        let Some(parent) = rev(git, repo, &format!("{cur}^1"))? else { break };
+        cur = parent;
+    }
+    Ok(None)
 }
 
 /// Adds the pull `w`, or completes the one recorded from the same commit.
@@ -4869,6 +4930,107 @@ mod safety_tests {
         assert!(c.mine.as_deref() != Some("von B\n") || c.conflict, "B's edit would be replaced: {c:?}");
         assert_eq!((c.base.as_deref(), c.theirs.as_deref()), (Some("eins\n"), Some("von A\n")), "{c:?}");
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "von A\n");
+    }
+
+    /// A record rebuilt after it was damaged keeps a conflict a conflict when a later sync put a
+    /// commit on top of the merge.
+    #[test]
+    fn a_rebuilt_record_keeps_a_conflict_after_a_later_commit() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("review-rebuilt-later");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&b.join("Notiz.md"), "eins\n");
+        taken_over(&repo_b);
+        put(&a.join("Notiz.md"), "von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Notiz.md"), "von B\n");
+        let first = r.sync("b").unwrap();
+        assert!(first.remote_changes.iter().any(|c| c.path == "Notiz.md" && c.conflict));
+        put(&b.join("Andere.md"), "von B\n");
+        let second = r.sync("b").unwrap();
+        assert!(second.committed, "{second:?}");
+        assert!(second.remote_changes.iter().any(|c| c.path == "Notiz.md" && c.conflict), "{second:?}");
+        fs::write(pending_file(&repo_b), b"[{").unwrap();
+        let again = r.sync("b").unwrap();
+        let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
+        assert!(c.mine.as_deref() != Some("von B\n") || c.conflict, "B's edit would be replaced: {c:?}");
+    }
+
+    /// The same after a merge sequence: this computer's merge was pushed, the other computer built
+    /// on it, and a second merge brought that in. The second merge's server side holds this
+    /// computer's start, so the base comes from the first merge.
+    #[test]
+    fn a_rebuilt_record_keeps_a_conflict_after_a_second_merge() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("review-rebuilt-second");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&b.join("Notiz.md"), "eins\n");
+        taken_over(&repo_b);
+        put(&a.join("Notiz.md"), "von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Notiz.md"), "von B\n");
+        let first = r.sync("b").unwrap();
+        assert!(first.remote_changes.iter().any(|c| c.path == "Notiz.md" && c.conflict));
+        put(&a.join("Weitere.md"), "von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Andere.md"), "von B\n");
+        r.sync("b").unwrap();
+        let parents = sh(&repo_b, &["rev-list", "--parents", "-n", "1", "HEAD"]);
+        assert_eq!(parents.split_whitespace().count(), 3, "a second merge: {parents}");
+        fs::write(pending_file(&repo_b), b"[{").unwrap();
+        let again = r.sync("b").unwrap();
+        let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
+        assert!(c.conflict, "B's edit would be replaced: {c:?}");
+        assert_eq!((c.base.as_deref(), c.theirs.as_deref()), (Some("eins\n"), Some("von A\n")), "{c:?}");
+    }
+
+    /// The newest merge since the start is found over fast-forwards, merges with more than two
+    /// parents and later commits; none when there is no merge.
+    #[test]
+    fn the_merge_base_is_found_along_the_first_parents() {
+        if !git_available() {
+            return;
+        }
+        let dir = tmp("merge-base-since");
+        let git = Git::new(None, "");
+        sh(&dir, &["init", "-q", "-b", "main"]);
+        let commit = |name: &str| {
+            put(&dir.join(name), name);
+            sh(&dir, &["add", "-A"]);
+            sh(&dir, &["commit", "-q", "-m", name]);
+            sh(&dir, &["rev-parse", "HEAD"]).trim().to_owned()
+        };
+        let base = commit("base");
+        let from = commit("from");
+        commit("ff");
+        assert_eq!(merge_base_since(&git, &dir, &from).unwrap(), None, "fast-forwards only");
+        sh(&dir, &["checkout", "-q", "-b", "x", &base]);
+        commit("x");
+        sh(&dir, &["checkout", "-q", "-b", "y", &base]);
+        commit("y");
+        sh(&dir, &["checkout", "-q", "main"]);
+        sh(&dir, &["merge", "-q", "--no-edit", "x", "y"]);
+        let parents = sh(&dir, &["rev-list", "--parents", "-n", "1", "HEAD"]);
+        assert_eq!(parents.split_whitespace().count(), 4, "an octopus merge: {parents}");
+        commit("later");
+        assert_eq!(merge_base_since(&git, &dir, &from).unwrap().as_deref(), Some(base.as_str()));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn list(kept: &[&str], removed: &[&str]) -> String {
