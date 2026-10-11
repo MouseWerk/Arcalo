@@ -1,6 +1,6 @@
 [package]
 name = "arcalo-cli"
-description = "Headless command line for the Arcalo workspace database"
+description = "Command line for the Arcalo workspace: everything the app does with notes, tasks and time, for people, scripts and AI agents"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,4 +23,16 @@ path = "src/bin/annalo.rs"
 arcalo-core = { path = "../arcalo-core" }
 chrono = "0.4.45"
 clap = { version = "4.6", features = ["derive", "env"] }
+# The platform's folders (the app's data and config folders, as Tauri finds them).
+dirs = "6"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# The system's language for messages before the workspace's settings are read (as the app reads it).
+sys-locale = "0.3.2"
+
+# The key of an encrypted workspace is read from the credential store, as the app keeps it.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

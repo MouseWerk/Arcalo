@@ -4419,6 +4419,35 @@ struct StartupOptions {
     demo: Option<bool>,
 }
 
+/// `arcalo pages list`, `Arcalo.exe --json tasks list`: the program runs as the command line
+/// (crate `arcalo-cli`, docs/cli.md) instead of starting the app, on the same workspace and with
+/// the same version. `None` when the arguments are the app's own (none, `--minimized`, a jump
+/// list or notification address).
+#[cfg(desktop)]
+pub fn command_line() -> Option<std::process::ExitCode> {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if !arcalo_cli::is_command_line(&args) {
+        return None;
+    }
+    #[cfg(windows)]
+    attach_console();
+    Some(arcalo_cli::main_with(args))
+}
+
+/// A release build on Windows is a program without a console of its own: output redirected to a
+/// pipe or a file (scripts, AI agents) already has its handles; typed in a console, the output
+/// goes to that console.
+#[cfg(windows)]
+fn attach_console() {
+    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE};
+    // SAFETY: plain Win32 calls without pointers of ours.
+    unsafe {
+        if GetStdHandle(STD_OUTPUT_HANDLE).is_null() {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
 #[cfg(desktop)]
 pub fn run() {
     PROCESS_START.get_or_init(Instant::now);

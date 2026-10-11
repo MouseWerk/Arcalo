@@ -40,6 +40,8 @@ tempfile = "3"
 # Desktop only (tray, global shortcuts, updates, autostart, one instance, clipboard, voice notes);
 # the Android companion app is built without them (see docs/android.md).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# `arcalo pages list` & co.: the program is also the command line (docs/cli.md).
+arcalo-cli = { path = "../crates/arcalo-cli" }
 tauri-plugin-autostart = "2"
 # The native question of the update rollback, shown before the window exists.
 rfd = { version = "0.16", default-features = false, features = ["gtk3", "common-controls-v6"] }
@@ -61,6 +63,8 @@ auto-launch = "0.5"
 winreg = "0.10"
 windows-sys = { version = "0.61", features = [
   "Wdk_System_SystemServices",
+  # The command line writes into the console it was typed in (a release build has none of its own).
+  "Win32_System_Console",
   "Win32_System_SystemInformation",
   # The Microsoft Store build: does this process run from an MSIX package (store.rs)?
   "Win32_Foundation",

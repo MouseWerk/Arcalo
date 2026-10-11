@@ -185,6 +185,7 @@ name = "arcalo"
 version = "1.0.0"
 dependencies = [
  "arboard",
+ "arcalo-cli",
  "arcalo-core",
  "auto-launch",
  "base64 0.22.1",
@@ -235,7 +236,11 @@ dependencies = [
  "arcalo-core",
  "chrono",
  "clap",
+ "dirs 6.0.0",
+ "keyring",
+ "serde",
  "serde_json",
+ "sys-locale",
 ]
 
 [[package]]
