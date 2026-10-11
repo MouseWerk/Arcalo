@@ -870,18 +870,14 @@ async fn post_worklogs(app: &AppHandle) {
 /// Whether changes of entries reach Jira on `site`: time tracking on, the site enabled and
 /// logging work (Settings → Jira).
 pub fn logs_work(state: &AppState, site: &str) -> bool {
-    let settings = state.settings();
-    settings.time_tracking() && settings.jira.site(site).is_some_and(|s| s.enabled && s.log_work)
+    issues::logs_work(&state.settings(), site)
 }
 
 /// An entry was edited: its posted worklog is updated when duration, start or comment changed.
 pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) {
-    if !issues::worklog_differs(before, after) {
-        return;
-    }
     let state = app.state::<AppState>();
-    let Ok(Some((site, _, _))) = state.reader().entry_worklog(after.id) else { return };
-    if logs_work(&state, &site) && state.db().worklog_changed(after.id).unwrap_or(false) {
+    let settings = state.settings();
+    if state.db().booking_edited(before, after, &settings).unwrap_or(false) {
         kick_worklogs(app.clone());
     }
 }
@@ -891,20 +887,8 @@ pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) 
 /// `with_chip`: the user removed the entry's chip from its note (the note stays as it is);
 /// otherwise the chip is marked „Buchung gelöscht“.
 pub fn delete_entry(state: &AppState, entry_id: i64, with_chip: bool) -> Result<bool> {
-    let db = state.db();
-    let site = db.entry_worklog(entry_id)?.map(|(site, _, _)| site);
-    let queue = site.is_some_and(|s| logs_work(state, &s));
-    db.atomic(|| {
-        let queued = queue && db.worklog_queue_delete(entry_id)?;
-        // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
-        db.issue_keep_link(entry_id, Utc::now())?;
-        if with_chip {
-            db.delete_time_entry_with_chip(entry_id)?
-        } else {
-            db.delete_time_entry(entry_id)?
-        };
-        Ok(queued)
-    })
+    let settings = state.settings();
+    state.db().delete_booking(entry_id, with_chip, &settings)
 }
 
 /// „Erneut versuchen“ on a failed worklog.

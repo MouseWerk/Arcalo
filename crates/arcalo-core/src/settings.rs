@@ -697,6 +697,67 @@ impl Settings {
         crate::ai::tools::check_allowed(tool, &self.allowed_tools())
     }
 
+    /// The first half of a save (the settings page, the command line): `value` parsed and its
+    /// parts checked and cleaned (AI providers, backups, Git sync, network). Settings without the
+    /// provider list (scripts, an older settings page) keep the stored providers and their keys
+    /// instead of falling back to the default one. The caller applies an organization's policy,
+    /// then [`Settings::normalize`], then [`Settings::finish_save`].
+    pub fn for_save(value: serde_json::Value, previous: &Settings) -> Result<Settings> {
+        let has_providers = value.get("providers").is_some();
+        let mut s: Settings = serde_json::from_value(value).map_err(|e| crate::Error::Parse(e.to_string()))?;
+        if !has_providers {
+            s.providers = previous.providers.clone();
+        }
+        // Scripts and older settings pages set only `litellm_base_url`; it moves the LiteLLM provider.
+        s.sync_legacy(previous);
+        s.normalize_ai()?;
+        s.backup_keep = s.backup_keep.clamp(1, 365);
+        s.backup_dir = s.backup_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
+        s.markdown_mirror_dir = s.markdown_mirror_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
+        s.git_sync = crate::gitsync::normalize(&s.git_sync)?;
+        s.network = s.network.normalized()?;
+        Ok(s)
+    }
+
+    /// The second half of a save: the reminder time checked, shortcuts trimmed, and what other
+    /// commands save on their own taken from `stored` (the database's settings), so a settings
+    /// draft opened earlier never overwrites them: the start page, the sidebar's links, the
+    /// calendar sources and Outlook calendars, the sections' scopes, the first-run flags and the
+    /// Jira sites. An inbox title still at the other language's default follows the language
+    /// (`page_exists` tells whether a page has a title).
+    pub fn finish_save(mut self, stored: &Settings, page_exists: impl Fn(&str) -> bool) -> Result<Settings> {
+        self.reminder_time = self.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+        if let Some(t) = &self.reminder_time {
+            let time = crate::desktop::parse_hhmm(t).ok_or_else(|| {
+                crate::Error::State(trf!(
+                    "Erinnerungszeit „{t}“ ungültig, erwartet HH:MM",
+                    "Reminder time “{t}” is invalid, expected HH:MM"
+                ))
+            })?;
+            self.reminder_time = Some(time.format("%H:%M").to_string());
+        }
+        self.capture_shortcut = self.capture_shortcut.trim().to_owned();
+        self.palette_shortcut = self.palette_shortcut.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        self.search_shortcut = self.search_shortcut.trim().to_owned();
+        self.dashboard = stored.dashboard.clone();
+        self.quick_links = stored.quick_links.clone();
+        // Calendar sources: their addresses are secrets.
+        self.calendar.sources = stored.calendar.sources.clone();
+        self.workspace_scopes = stored.workspace_scopes.clone();
+        self.version = stored.version.max(crate::settings_migrate::SETTINGS_VERSION);
+        // The chosen Outlook calendars; the default one takes the color.
+        self.calendar.outlook_calendars = stored.calendar.outlook_calendars.clone();
+        self.calendar.outlook_recipients = stored.calendar.outlook_recipients.clone();
+        self.calendar = std::mem::take(&mut self.calendar).normalized();
+        self.onboarding = stored.onboarding.clone();
+        // Jira sites: their tokens are secrets.
+        self.jira.sites = stored.jira.sites.clone();
+        self.jira = std::mem::take(&mut self.jira).normalized();
+        let lang = self.locale.lang();
+        crate::capture::localize_inbox_title(&mut self.capture, lang, page_exists);
+        Ok(self)
+    }
+
     /// Keeps `litellm_base_url` and the provider [`LEGACY_ID`] in step. Older versions and
     /// scripts only know the old field: when it changed since `previous` and the provider's
     /// address did not, the old field wins; otherwise the provider's address is copied into it.

@@ -128,6 +128,24 @@ pub fn prepare_portable(
     }
 }
 
+/// The data folder the app uses while it runs (or opens at its next start), for a program that
+/// works on the same workspace next to it (the `arcalo` command line): like [`prepare_portable`],
+/// but a pending move is never carried out (the app does that at its start, with the workspace
+/// closed): `env` (ARCALO_DATA_DIR) wins, then the portable copy's folder, then the folder of
+/// `location.json` when it holds a workspace, else `default`.
+pub fn locate(env: Option<PathBuf>, portable: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf) -> PathBuf {
+    if let Some(dir) = env.filter(|p| !p.as_os_str().is_empty()) {
+        return dir;
+    }
+    if let Some(dir) = portable {
+        return dir;
+    }
+    match config_dir.and_then(read_location) {
+        Some(dir) if dir == default || dir.join(DB_FILE).is_file() => dir,
+        _ => default,
+    }
+}
+
 /// Suffix for credential-store entries of a portable copy (`git-token@3f2a…`): the Windows
 /// credential store and the macOS keychain belong to the user, not to the folder, so two
 /// portable copies (or a portable and an installed one) must not share or overwrite secrets.
@@ -406,6 +424,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_program_beside_the_app_finds_its_data_folder_without_moving_it() {
+        let base = temp("locate");
+        let (cfg, default, chosen, target) =
+            (base.join("cfg"), base.join("default"), base.join("chosen"), base.join("neu"));
+        assert_eq!(locate(None, None, Some(&cfg), default.clone()), default, "no location.json");
+        write_location(&cfg, &chosen).unwrap();
+        assert_eq!(locate(None, None, Some(&cfg), default.clone()), default, "no workspace there (yet)");
+        std::fs::create_dir_all(&chosen).unwrap();
+        std::fs::write(chosen.join(DB_FILE), b"").unwrap();
+        assert_eq!(locate(None, None, Some(&cfg), default.clone()), chosen);
+        // A pending move stays pending: the workspace is still in the old folder.
+        write_pending_move(&cfg, &chosen, &target).unwrap();
+        assert_eq!(locate(None, None, Some(&cfg), default.clone()), chosen);
+        assert!(!target.exists() && read_location_file(&cfg).unwrap().pending_move.is_some());
+        // Portable, then the environment variable win.
+        assert_eq!(locate(None, Some(base.join("stick")), Some(&cfg), default.clone()), base.join("stick"));
+        assert_eq!(
+            locate(Some(base.join("env")), Some(base.join("stick")), Some(&cfg), default.clone()),
+            base.join("env")
+        );
+        assert_eq!(locate(Some(PathBuf::new()), None, None, default.clone()), default);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

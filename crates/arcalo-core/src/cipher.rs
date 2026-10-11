@@ -214,6 +214,15 @@ pub fn file_state(path: &Path) -> FileState {
     }
 }
 
+/// SQLCipher writes lines of its own to stderr when a key does not fit (`hmac check failed`). A
+/// program whose stderr others read (the command line's JSON errors) switches them off; the
+/// error itself is still returned.
+pub fn quiet_log() {
+    if let Ok(c) = Connection::open_in_memory() {
+        let _ = c.execute_batch("PRAGMA cipher_log_level = NONE;");
+    }
+}
+
 /// The message when an encrypted database cannot be opened for lack of the key.
 pub fn missing_key_text() -> String {
     tr!(

@@ -636,6 +636,12 @@ pub struct WorklogDelete {
     pub worklog_id: String,
 }
 
+/// Whether bookings on the Jira site `site` are posted as worklogs (time tracking on, the site
+/// switched on and „Arbeitszeit protokollieren“ set).
+pub fn logs_work(settings: &crate::settings::Settings, site: &str) -> bool {
+    settings.time_tracking() && settings.jira.site(site).is_some_and(|s| s.enabled && s.log_work)
+}
+
 /// Whether a change of an entry reaches its Jira worklog: its duration (as Jira gets it), its
 /// start to the minute or its comment changed.
 pub fn worklog_differs(before: &TimeEntry, after: &TimeEntry) -> bool {
@@ -1413,6 +1419,43 @@ impl Database {
             [entry_id],
         )?;
         Ok(n == 1)
+    }
+
+    /// Deletes a booking; its posted worklog is queued for deletion in Jira in the same
+    /// transaction when the site logs work (`settings`), and its issue link is kept for a
+    /// booking that comes back. `with_chip`: the user removed the entry's chip from its note (the
+    /// note stays as it is); otherwise the chip is marked „Buchung gelöscht“. Returns whether a
+    /// worklog deletion was queued.
+    pub fn delete_booking(&self, entry_id: i64, with_chip: bool, settings: &crate::settings::Settings) -> Result<bool> {
+        let site = self.entry_worklog(entry_id)?.map(|(site, _, _)| site);
+        let queue = site.is_some_and(|s| logs_work(settings, &s));
+        self.atomic(|| {
+            let queued = queue && self.worklog_queue_delete(entry_id)?;
+            // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
+            self.issue_keep_link(entry_id, Utc::now())?;
+            if with_chip {
+                self.delete_time_entry_with_chip(entry_id)?
+            } else {
+                self.delete_time_entry(entry_id)?
+            };
+            Ok(queued)
+        })
+    }
+
+    /// A booking was edited from `before` to `after`: its posted worklog is updated at the next
+    /// run when duration, start or comment changed and the site logs work. Returns whether one
+    /// is due now.
+    pub fn booking_edited(
+        &self,
+        before: &TimeEntry,
+        after: &TimeEntry,
+        settings: &crate::settings::Settings,
+    ) -> Result<bool> {
+        if !worklog_differs(before, after) {
+            return Ok(false);
+        }
+        let Some((site, _, _)) = self.entry_worklog(after.id)? else { return Ok(false) };
+        Ok(logs_work(settings, &site) && self.worklog_changed(after.id)?)
     }
 
     /// The entry is being deleted: its posted worklog is queued for deletion in Jira.

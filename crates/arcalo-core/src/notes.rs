@@ -432,7 +432,7 @@ impl Database {
     }
 
     /// The pages a page links to: `[[links]]` of a note, note cards and text-card links of a canvas.
-    pub(crate) fn outgoing_links(&self, id: i64, content: &str) -> Result<Vec<String>> {
+    pub fn outgoing_links(&self, id: i64, content: &str) -> Result<Vec<String>> {
         Ok(if self.is_canvas(id)? { crate::canvas::links(content) } else { wiki_links(content) })
     }
 
@@ -486,6 +486,19 @@ impl Database {
             }
             Ok(())
         })
+    }
+
+    /// `title` as a page gets it ([`clean_title`]), with ` 2`, ` 3` … appended while a page
+    /// outside the trash has that title, so `[[links]]` stay unambiguous.
+    pub fn unique_title(&self, title: &str) -> Result<String> {
+        let base = clean_title(title);
+        let mut name = base.clone();
+        let mut n = 2;
+        while self.page_by_title(&name)?.is_some() {
+            name = format!("{base} {n}");
+            n += 1;
+        }
+        Ok(name)
     }
 
     pub fn page(&self, id: i64) -> Result<Page> {

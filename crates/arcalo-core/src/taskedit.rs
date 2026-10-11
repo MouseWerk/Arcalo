@@ -42,6 +42,11 @@ pub enum TaskEdit {
     Recur {
         recur: Option<Recurrence>,
     },
+    /// New text after the checkbox; the task's due date, priority, repeat rule, `/zeit` chips
+    /// and block id stay.
+    Text {
+        text: String,
+    },
     Delete,
     Move {
         page_id: i64,
@@ -185,6 +190,29 @@ fn edit_line(line: &str, t: &ParsedTask, edit: &TaskEdit) -> String {
             if let Some(r) = recur {
                 edits.push(insert_at(t, &r.tokens()));
             }
+        }
+        TaskEdit::Text { text } => {
+            // The markers keep their order behind the new text, the block id stays last.
+            let mut keep: Vec<Range<usize>> =
+                t.marks.due.iter().chain(&t.marks.priority).chain(&t.marks.recur).cloned().collect();
+            keep.extend(crate::chips::chips(line).into_iter().map(|c| c.range).filter(|r| r.start >= min));
+            keep.sort_by_key(|r| (r.start, r.end));
+            let start = line
+                .get(min..)
+                .and_then(|rest| rest.find(|c: char| !c.is_whitespace()))
+                .map_or(line.len(), |i| min + i);
+            let end = t.marks.end.max(start);
+            let mut new = text.trim().to_owned();
+            let mut last = 0;
+            for r in keep.iter().chain(&t.marks.block_id).filter(|r| r.start >= start && r.end <= end) {
+                if r.start < last {
+                    continue;
+                }
+                new.push(' ');
+                new.push_str(&line[r.clone()]);
+                last = r.end;
+            }
+            edits.push((start..end, new));
         }
         TaskEdit::Delete | TaskEdit::Move { .. } => {}
     }
@@ -388,6 +416,15 @@ impl Database {
             TaskEdit::Priority { priority } if *priority > 2 => {
                 return Err(Error::Parse(tr!("Priorität 0 bis 2", "Priority 0 to 2").into()));
             }
+            TaskEdit::Text { text } if text.trim().is_empty() || text.contains(['\n', '\r']) => {
+                return Err(Error::Parse(
+                    tr!(
+                        "Der Aufgabentext muss eine nicht leere Zeile sein",
+                        "The task text must be one non-empty line"
+                    )
+                    .into(),
+                ));
+            }
             _ => {}
         }
         self.atomic(|| {
@@ -513,6 +550,38 @@ mod tests {
 
     fn one(md: &str, ordinal: usize, edit: TaskEdit) -> String {
         edit_page(md, &[ordinal], &edit, day("2026-10-05")).content
+    }
+
+    #[test]
+    fn new_text_keeps_the_markers_chips_and_block_id() {
+        let chip = r#"<time-entry id="7" hours="1" target="NP-1/10">Termin</time-entry>"#;
+        let md = format!("Notiz\n  - [ ] Alt ! text due:2026-10-09 every:weekly {chip} ^abc1\r\n- [x] Zwei\n");
+        let out = one(&md, 0, TaskEdit::Text { text: "  Neuer Text #tag ".into() });
+        assert_eq!(
+            out,
+            format!("Notiz\n  - [ ] Neuer Text #tag ! due:2026-10-09 every:weekly {chip} ^abc1\r\n- [x] Zwei\n")
+        );
+        let t = &parse_tasks(&out)[0];
+        assert!(t.text.starts_with("Neuer Text #tag "), "{}", t.text);
+        assert_eq!((t.due.as_deref(), t.priority, t.tags.as_slice()), (Some("2026-10-09"), 1, &["tag".to_owned()][..]));
+        assert!(t.recur.is_some());
+        assert_eq!(one("- [ ] a\n", 0, TaskEdit::Text { text: "b".into() }), "- [ ] b\n");
+    }
+
+    #[test]
+    fn empty_or_multi_line_task_text_is_refused() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Seite", None).unwrap();
+        db.save_page_content(p.id, "- [ ] a\n").unwrap();
+        let r = TaskRef { page_id: p.id, ordinal: 0, text: "a".into() };
+        for text in ["  ", "a\nb"] {
+            assert!(
+                db.edit_tasks(std::slice::from_ref(&r), &TaskEdit::Text { text: text.into() }, day("2026-10-05"))
+                    .is_err()
+            );
+        }
+        db.edit_tasks(&[r], &TaskEdit::Text { text: "b".into() }, day("2026-10-05")).unwrap();
+        assert_eq!(db.page_doc(p.id).unwrap().content, "- [ ] b\n");
     }
 
     #[test]

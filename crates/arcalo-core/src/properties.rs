@@ -814,6 +814,79 @@ pub struct CollectionView {
     pub rows: Vec<CollectionViewRow>,
 }
 
+/// How a value given as text is written after `key: `: a flow list or map (`[a, b]`,
+/// `{typ: zahl}`) as it is, anything else as a scalar ([`flow_scalar`]: plain when it reads back
+/// unchanged, else quoted).
+fn property_text(value: &str) -> String {
+    let v = value.trim();
+    match parse_inline(v) {
+        Some(Yaml::List(_) | Yaml::Map(_)) => v.to_owned(),
+        _ => flow_scalar(v),
+    }
+}
+
+/// `markdown` with the top-level frontmatter property `key` set to `value` (see
+/// [`property_text`]), or removed with `None`. An existing entry keeps its place (its indented
+/// lines go with it; the key matches case-insensitively and in either language, like
+/// [`crate::pagework::frontmatter_value`]); a new one goes last, and a page without frontmatter
+/// gets a block. A block left empty is removed. Everything else stays byte for byte.
+pub fn set_property(markdown: &str, key: &str, value: Option<&str>) -> String {
+    let key = key.trim();
+    let eol = if markdown.contains("\r\n") { "\r\n" } else { "\n" };
+    let text = value.map(property_text);
+    let open = ["---\n", "---\r\n"].into_iter().find(|o| markdown.starts_with(o));
+    let Some(open) = open else {
+        return match text {
+            Some(t) => {
+                format!("---{eol}{key}: {t}{eol}---{eol}{}{markdown}", if markdown.is_empty() { "" } else { eol })
+            }
+            None => markdown.to_owned(),
+        };
+    };
+    let rest = &markdown[open.len()..];
+    let lines: Vec<&str> = rest.split_inclusive('\n').collect();
+    let Some(end) = lines.iter().position(|l| l.trim_end() == "---") else {
+        // An unclosed block is no frontmatter: nothing to edit in place.
+        return markdown.to_owned();
+    };
+    let want = crate::i18n::canonical_key(key);
+    let mut out: Vec<String> = vec![];
+    let mut done = false;
+    let mut i = 0;
+    while i < end {
+        let head = lines[i];
+        i += 1;
+        let start = i;
+        while i < end && lines[i].starts_with([' ', '\t', '-']) && !lines[i].trim().is_empty() {
+            i += 1;
+        }
+        // The entry keeps its key as written (`Status:` stays `Status:`).
+        let found = split_key(head.trim_end_matches(['\r', '\n']))
+            .map(|(k, _)| k)
+            .filter(|k| !done && crate::i18n::canonical_key(k) == want);
+        let Some(written) = found else {
+            out.extend(lines[start - 1..i].iter().map(|l| l.to_string()));
+            continue;
+        };
+        done = true;
+        if let Some(t) = &text {
+            out.push(format!("{written}: {t}{eol}"));
+        }
+    }
+    if !done && let Some(t) = &text {
+        if out.last().is_some_and(|l| !l.ends_with('\n')) {
+            out.last_mut().expect("checked").push_str(eol);
+        }
+        out.push(format!("{key}: {t}{eol}"));
+    }
+    let tail: String = lines[end + 1..].concat();
+    if out.iter().all(|l| l.trim().is_empty()) {
+        // Nothing left in the block: the page without it (and without the blank line under it).
+        return tail.strip_prefix(eol).unwrap_or(&tail).to_owned();
+    }
+    format!("{open}{}{}{tail}", out.concat(), lines[end])
+}
+
 /// The frontmatter block of a Markdown text with its `---` lines (line endings normalized).
 pub fn frontmatter_block(markdown: &str) -> String {
     let Some(lines) = frontmatter_lines(markdown) else { return String::new() };
@@ -988,6 +1061,44 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn setting_a_property_keeps_everything_else() {
+        let md = "---\nstatus: offen\ntags:\n  - a\n  - b\nvorgang: NP-1/10\n---\n\n# Text\n";
+        assert_eq!(
+            set_property(md, "Status", Some("erledigt")),
+            "---\nstatus: erledigt\ntags:\n  - a\n  - b\nvorgang: NP-1/10\n---\n\n# Text\n"
+        );
+        // A block value is replaced with its indented lines; a list given as text stays a list.
+        assert_eq!(
+            set_property(md, "tags", Some("[x, \"y, z\"]")),
+            "---\nstatus: offen\ntags: [x, \"y, z\"]\nvorgang: NP-1/10\n---\n\n# Text\n"
+        );
+        // The English alias names the same property.
+        assert_eq!(set_property(md, "activity", None), "---\nstatus: offen\ntags:\n  - a\n  - b\n---\n\n# Text\n");
+        // New ones go last; values that would read back differently are quoted.
+        assert_eq!(
+            set_property(md, "titel", Some("a: b #c")),
+            "---\nstatus: offen\ntags:\n  - a\n  - b\nvorgang: NP-1/10\ntitel: \"a: b #c\"\n---\n\n# Text\n"
+        );
+    }
+
+    #[test]
+    fn a_page_without_frontmatter_gets_a_block_and_an_empty_block_goes() {
+        assert_eq!(set_property("Text\n", "status", Some("offen")), "---\nstatus: offen\n---\n\nText\n");
+        assert_eq!(set_property("", "status", Some("offen")), "---\nstatus: offen\n---\n");
+        assert_eq!(set_property("Text\n", "status", None), "Text\n");
+        assert_eq!(set_property("---\nstatus: offen\n---\n\nText\n", "status", None), "Text\n");
+        // Windows line ends stay.
+        assert_eq!(
+            set_property("---\r\na: 1\r\n---\r\nText\r\n", "b", Some("2")),
+            "---\r\na: 1\r\nb: 2\r\n---\r\nText\r\n"
+        );
+        assert_eq!(
+            page_entries(&set_property("x", "datum", Some("2026-10-11")))[0].value,
+            Some(Yaml::Str("2026-10-11".into()))
+        );
+    }
 
     #[test]
     fn english_keys_and_operators() {

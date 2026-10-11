@@ -482,16 +482,9 @@ fn page_create(
     Ok(page)
 }
 
-/// Avoid duplicate titles so [[links]] stay unambiguous.
+/// Avoid duplicate titles so [[links]] stay unambiguous (see `Database::unique_title`).
 pub(crate) fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = arcalo_core::notes::clean_title(title);
-    let mut name = base.clone();
-    let mut n = 2;
-    while db.page_by_title(&name)?.is_some() {
-        name = format!("{base} {n}");
-        n += 1;
-    }
-    Ok(name)
+    db.unique_title(title)
 }
 
 #[tauri::command(async)]
@@ -2231,66 +2224,18 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 #[tauri::command]
 fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::Value) -> Result<SettingsView> {
     let previous = state.settings();
-    // Settings without the provider list (scripts, an older settings page) keep the stored
-    // providers and their keys instead of falling back to the default one.
-    let has_providers = settings.get("providers").is_some();
-    let mut settings: Settings = serde_json::from_value(settings).map_err(|e| Error::Parse(e.to_string()))?;
-    if !has_providers {
-        settings.providers = previous.providers.clone();
-    }
-    // Scripts and older settings pages set only `litellm_base_url`; it moves the LiteLLM provider.
-    settings.sync_legacy(&previous);
-    settings.normalize_ai()?;
-    settings.backup_keep = settings.backup_keep.clamp(1, 365);
-    settings.backup_dir = settings.backup_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
-    settings.markdown_mirror_dir = settings.markdown_mirror_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
-    settings.git_sync = gitsync::normalize(&settings.git_sync)?;
-    settings.network = settings.network.normalized()?;
+    let mut settings = Settings::for_save(settings, &previous)?;
     // What an organization's policy fixes (routes, locked profiles) stays as it says.
     network::enforce_policy(&previous.network, &mut settings.network);
     settings.normalize();
     // A missing or unreadable CA file is reported now, not on the next request.
     network::check(&settings.network)?;
     network::forget_removed(&state, &previous.network, &settings.network);
-    settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
-    if let Some(t) = &settings.reminder_time {
-        let time = arcalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
-            Error::State(trf!(
-                "Erinnerungszeit „{t}“ ungültig, erwartet HH:MM",
-                "Reminder time “{t}” is invalid, expected HH:MM"
-            ))
-        })?;
-        settings.reminder_time = Some(time.format("%H:%M").to_string());
-    }
-    settings.capture_shortcut = settings.capture_shortcut.trim().to_owned();
-    settings.palette_shortcut = settings.palette_shortcut.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
-    settings.search_shortcut = settings.search_shortcut.trim().to_owned();
-    // What is stored (the database, which a scope change or a settings sync may have changed
-    // ahead of the running settings).
+    // What is stored (the database, which a scope change, a settings sync or the command line
+    // may have changed ahead of the running settings).
     let stored = state.db().load_settings()?;
-    // The start page saves its widgets itself (`dashboard_save`); a settings draft opened
-    // earlier must not overwrite them.
-    settings.dashboard = stored.dashboard.clone();
-    // The same for the sidebar's links (`quick_links_save`).
-    settings.quick_links = stored.quick_links.clone();
-    // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
-    settings.calendar.sources = stored.calendar.sources.clone();
-    // And for the shared sections' scopes (`settings_scope_set`) and the version of the shape.
-    settings.workspace_scopes = stored.workspace_scopes.clone();
-    settings.version = stored.version.max(arcalo_core::settings_migrate::SETTINGS_VERSION);
-    // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
-    let stored_cal = stored.calendar.clone();
-    settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
-    settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
-    settings.calendar = std::mem::take(&mut settings.calendar).normalized();
-    // And for the first-run flags (`onboarding_complete` / `onboarding_reset`).
-    settings.onboarding = stored.onboarding.clone();
-    // And for the Jira sites (`jira_site_*`; their tokens are secrets).
-    settings.jira.sites = stored.jira.sites.clone();
-    settings.jira = std::mem::take(&mut settings.jira).normalized();
-    // An inbox title still at the other language's default follows the language.
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
-    arcalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.lang(), page);
+    let settings = settings.finish_save(&stored, page)?;
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
