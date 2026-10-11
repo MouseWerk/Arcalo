@@ -24,6 +24,8 @@ desktop-only modules and crates, `src-tauri/src/mobile/` holds the entry point, 
 the desktop modules and the Android Keystore for secrets; the UI is `ui/src/mobile/`; the Git sync runs on
 libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`SyncRequest::companion`,
 `companion.rs`: bookings as chips in the daily note, the WBS and meetings from the desktop's database copy).
+It updates itself from the release's `android-latest.json` (`mobile/apkupdate.rs`, `update_android.rs`):
+an APK checked with the desktop's update key and handed to Android's installer.
 
 ## Data model (`crates/arcalo-core/migrations/0001_init.sql`)
 

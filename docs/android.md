@@ -11,12 +11,15 @@ Application id: `de.mousewerk.arcalo` (the identifier the desktop takes with 1.1
 | Screen | What you can do |
 |---|---|
 | **Heute** | Date, time booked today against the day's target (holidays and absences included) and this week, the running timer (pause, stop), today's meetings (from the desktop's calendars, see below), tasks due today or overdue, the way to the daily note. A notice when the last sync failed or a note needs merging. |
-| **Erfassen** (the + in the tab bar) | A note or tasks into today's daily note or the inbox (due dates: today, tomorrow, next week, or typed like on the desktop: `due:morgen`, „bis Fr“), or a booking. |
+| **Erfassen** (the + in the tab bar) | A note or tasks into today's daily note or the inbox (due dates: today, tomorrow, next week, or typed like on the desktop: `due:morgen`, „bis Fr“), or a booking. Text shared from another app („Teilen“ → Arcalo) opens it with that text. |
 | **Tagesnotiz** | The daily note of a day, read or edited, previous and next day. A day without a note shows „Tagesnotiz anlegen“: the phone creates a daily note only when you start one, so it does not meet the desktop's note of the same day as a conflict. A daily note pulled from the desktop becomes the phone's daily note of that day. |
 | **Aufgaben** | Open tasks grouped like the desktop's task view (overdue, today, this week, later, no date), „Fällig“ (up to this week) and the tasks done in the last 14 days. One tap ticks a task off; a repeating task gets its next date in its note, as on the desktop. |
-| **Zeit** | The timer (start on a reference, pause, stop, discard), a booking with the desktop's `/zeit` syntax built from a form (the references booked last as chips, Netzpläne and Vorgänge as suggestions, Leistungsart, description, today or yesterday; the line is shown before booking), and this week's bookings per day. |
+| **Zeit** | The timer (start on a reference, pause, stop, discard after a second tap), a booking with the desktop's `/zeit` syntax built from a form (the references booked last as chips, Netzpläne and Vorgänge as suggestions, Leistungsart, description, today or yesterday; the line is shown before booking), and this week's bookings per day. |
 | **Notizen** | Search, recently edited pages, the page tree; a page is shown rendered from its Markdown (tables, code, links, `/zeit` chips and due dates as small labels, embedded drawings and PDFs as a note that they show on the desktop) and edited as Markdown text. |
-| **Einstellungen** | Git sync (remote URL, branch, author, access token, automatic sync, test, sync now, deletions held back, conflicts), appearance (system, light, dark), language (system, German, English), about. |
+| **Einstellungen** | Git sync (remote URL, branch, author, access token, automatic sync, test, sync now, deletions held back, conflicts), appearance (system, light, dark, high contrast), language (system, German, English), updates, about. |
+
+Android's back button (and gesture) closes the page editor first, then the open screen, then goes to Heute;
+on Heute it sends the app to the background, as Android apps do, and never quits it.
 
 Not in this version: AI, voice notes, Outlook and Jira, the start page boards, the projects view, canvas
 and drawings (a canvas page shows a notice), templates, the calendar's own subscriptions, the app lock and
@@ -77,8 +80,8 @@ desktop.
   audio input) are target dependencies for non-mobile targets only. `run()` is the desktop's; the app's entry
   point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the list of commands the
   phone uses.
-- **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, navigation with Android's back button
-  through the browser history), loaded only on Android as a separate chunk; it uses the desktop's API
+- **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, Android's back button through Tauri's
+  `onBackButtonPress`, see `backAction` in `mobile/model.ts`), loaded only on Android as a separate chunk; it uses the desktop's API
   wrappers, i18n catalogs (`mob.*` keys), design tokens, Markdown rendering, task and capture helpers.
   Editing a page is plain Markdown text in v1: the TipTap editor's menus, popovers and drag handles are
   built for a pointer and a keyboard.
@@ -93,8 +96,12 @@ desktop.
   platform verifier of rustls needs the app's JVM context there.
 - **Secrets.** `secrets.rs` has a Keystore backend on Android (`mobile/keystore.rs` and the Kotlin plugin
   `SecretsPlugin.kt` in `src-tauri/gen/android`).
+- **Window and updates.** `mobile/android.rs` talks to two more Kotlin plugins: `ShellPlugin.kt` (the
+  colors behind the system bars after the app's theme, the app to the background on the root's back
+  button, text shared to the app) and `UpdatePlugin.kt` (what Android knows about the installed app and a
+  downloaded APK, metered network, the permission to install apps, the hand-over to the installer).
 - **Android project.** `src-tauri/gen/android` is generated by `cargo tauri android init` and committed as
-  Tauri recommends, with the app's changes: the Keystore plugin, insets for the system bars and the keyboard,
+  Tauri recommends, with the app's changes: the Keystore, window and update plugins, the share target, insets for the system bars and the keyboard,
   window colors of the app, the launcher icon from the Arcalo mark, no backup of the app data (the Keystore
   key does not travel with a backup), release signing from `keystore.properties`.
 
@@ -117,10 +124,39 @@ npm --prefix ui run build
 node e2e/mobile/shots.mjs --out /tmp/arcalo-shots
 ```
 
+It taps through every screen at 360x800 and 412x915 in light and dark (and in high contrast, at 360x640,
+430x932, in landscape, on tablets and with Android's font size at 130 %), checks touch targets, sideways
+overflow, console errors, the back button, the update banner and its permission flow, shared text, the
+keyboard and that every command the UI invokes is registered for Android. Look at the screenshots.
+
+## Updates
+
+The app updates itself from the GitHub release (`mobile/apkupdate.rs`, `arcalo_core::update_android`;
+the release side is docs/release/android.md → Updates of the app):
+
+1. It asks `android-latest.json` of the latest release at the start, then once a day while it runs, and on
+   Einstellungen → Updates → „Nach Updates suchen“.
+2. A newer version with a higher version code is downloaded in the background into the app's cache, on
+   Wi-Fi only unless „Updates auch über mobile Daten laden“ is on or the user taps „Jetzt über mobile Daten
+   laden“; an interrupted download continues where it stopped.
+3. Before anything is offered: the minisign signature of the file with the update key compiled into the
+   release build (the desktop's key) and the version named in it; the package, the version code and the
+   signing certificate as Android reads them from the file. A file that fails is deleted.
+4. „Version … ist bereit“: a notification and the banner on Heute with „Was ist neu“ (the release notes) and
+   „Update installieren“. One tap opens Android's installer, which asks for confirmation; the first time
+   Android also wants the permission „Unbekannte Apps installieren“ for Arcalo, which the app explains and
+   opens. Notes, settings and the token stay (it is an update of the same app).
+5. A version signed with another APK key (the debug-signed APKs before the release key) cannot be installed
+   over the app; the app says so and links the release page instead of failing in the installer.
+
+The preferences of the updater (mobile data, the last check) are in `android-update.json` in the app's data
+folder: they belong to this phone and never sync.
+
 ## Limits of v1
 
-- The first real build is the CI workflow: the Kotlin plugin, the insets and the libgit2/OpenSSL build for
-  Android have been type-checked and unit-tested on the host, not run on a device yet.
+- The Kotlin plugins (Keystore, window, updates) are reviewed against Tauri's plugin API but compiled only by
+  the CI workflow; the Rust side is type-checked for Android on the host. None of it has run on a
+  device yet: see the manual checklist in docs/release/android.md.
 - Bookings made on the phone reach the desktop's time tracking only through „Erneut buchen“ on their chip.
 - Meetings and Netzpläne need „Datenbank mitsichern“ on the desktop; an encrypted database copy is skipped.
 - HTTPS remotes only (no SSH keys on the phone); a pinned server key (Einstellungen → Netzwerk on the desktop)
