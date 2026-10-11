@@ -68,6 +68,10 @@ jobs:
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri
+      # Starts on a Windows without the Visual C++ Redistributable (static C runtime).
+      - name: No Visual C++ runtime DLLs (installer build)
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       # The update install compiled like the release (the updater plugin refused it only in
       # release builds, 1.12 to 1.14.0): writes the setup into a temp folder and builds the
       # installer's command line, starts nothing. The release exe itself cannot be pointed at a
@@ -89,6 +93,9 @@ jobs:
       # (the Store signs real submissions itself), installed, started and checked, then removed.
       - name: Store build
         run: cargo build --release -p arcalo --features custom-protocol,store
+      - name: No Visual C++ runtime DLLs (Store build)
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       - name: Pack the MSIX (test identity, self-signed)
         id: msix
         shell: pwsh

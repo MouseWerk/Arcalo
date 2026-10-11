@@ -1,0 +1,9 @@
+# Windows (MSVC): the C and C++ runtime linked into arcalo.exe, so it starts on a Windows without the
+# Visual C++ Redistributable (installer, portable ZIP and the Store package alike). Up to 1.18.0
+# arcalo.exe needed VCRUNTIME140.dll, VCRUNTIME140_1.dll and MSVCP140.dll: Tauri's own switch
+# (STATIC_VCRUNTIME, set by `cargo tauri build` only) covers Rust's part, not the C++ of whisper.cpp,
+# and the Store build (`cargo build`) had neither. With crt-static every C and C++ library built
+# from source here (cc, cmake: whisper.cpp, SQLCipher, OpenSSL) is compiled with /MT as well;
+# src-tauri/build.rs switches Tauri's own replacement of the runtime libraries off then.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
