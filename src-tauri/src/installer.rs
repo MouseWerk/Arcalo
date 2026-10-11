@@ -205,7 +205,7 @@ pub fn install(bytes: &[u8], target: &Target, before_exit: impl FnOnce()) -> Res
 
 /// Whether the running copy can replace its own program files (`arcalo_core::update::install_blocked`):
 /// the bundle or AppImage it runs from, and whether a file can be created next to it.
-#[cfg_attr(windows, allow(unused_variables))]
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 pub fn blocked(app: &tauri::AppHandle) -> Option<arcalo_core::update::Blocked> {
     #[cfg(target_os = "linux")]
     let program = {
