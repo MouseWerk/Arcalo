@@ -20,7 +20,11 @@ const POLL: Duration = Duration::from_secs(1);
 
 /// Starts the watcher (once, at start).
 pub fn spawn(app: AppHandle) {
-    let spawned = std::thread::Builder::new().name("external-changes".into()).spawn(move || watch(&app));
+    // The connection, and with it the entry the watcher starts after, is taken now, before the UI
+    // reads anything: a command that writes while the app starts (an agent that started it and
+    // goes on at once) is shown too. Taken by the thread later, such a change counted as seen.
+    let seen = open(&app, true, None);
+    let spawned = std::thread::Builder::new().name("external-changes".into()).spawn(move || watch(&app, seen));
     if let Err(e) = spawned {
         devlog::warn("external", format!("changes of the command line are not watched: {e}"));
     }
@@ -29,12 +33,14 @@ pub fn spawn(app: AppHandle) {
 /// The watcher's connection and what it has seen.
 struct Seen {
     db: Database,
-    version: i64,
+    /// `None` until the first check: the journal is read then in any case.
+    version: Option<i64>,
     seq: u64,
 }
 
-/// The watcher's connection; `warn`: say why there is none (once, not every second).
-fn open(app: &AppHandle, warn: bool) -> Option<Seen> {
+/// The watcher's connection, reading after entry `seq` (`None`: the newest one); `warn`: say why
+/// there is none (once, not every second).
+fn open(app: &AppHandle, warn: bool, seq: Option<u64>) -> Option<Seen> {
     let file = app.state::<AppState>().data_dir.join(datadir::DB_FILE);
     let db = match Database::open_read_only(&file) {
         Ok(db) => db,
@@ -45,14 +51,17 @@ fn open(app: &AppHandle, warn: bool) -> Option<Seen> {
             return None;
         }
     };
-    let version = db.data_version().ok()?;
-    let seq = db.external_change_seq().ok()?;
-    Some(Seen { db, version, seq })
+    let seq = match seq {
+        Some(seq) => seq,
+        None => db.external_change_seq().ok()?,
+    };
+    Some(Seen { db, version: None, seq })
 }
 
-fn watch(app: &AppHandle) {
-    let mut seen: Option<Seen> = None;
-    let mut failed = false;
+fn watch(app: &AppHandle, mut seen: Option<Seen>) {
+    let mut failed = seen.is_none();
+    // The last entry handled, also while the connection is closed for an exit that may not happen.
+    let mut handled = seen.as_ref().map(|s| s.seq);
     loop {
         std::thread::sleep(POLL);
         // Closing for an update or a restart: the workspace must be closed (and is opened again
@@ -62,18 +71,19 @@ fn watch(app: &AppHandle) {
             continue;
         }
         if seen.is_none() {
-            seen = open(app, !failed);
+            seen = open(app, !failed, handled);
             failed = seen.is_none();
         }
         let Some(s) = seen.as_mut() else { continue };
         let Ok(version) = s.db.data_version() else { continue };
-        if version == s.version {
+        if s.version == Some(version) {
             continue;
         }
-        s.version = version;
+        s.version = Some(version);
         match s.db.external_changes_since(s.seq) {
             Ok((seq, change)) => {
                 s.seq = seq;
+                handled = Some(seq);
                 if let Some(c) = change {
                     apply(app, &c);
                 }
