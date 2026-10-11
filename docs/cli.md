@@ -27,26 +27,43 @@ command and ends, without opening a window. Started without one (or with the app
 
 | Install | Program | On the PATH |
 |---|---|---|
-| Windows (installer) | `%LOCALAPPDATA%\Arcalo\arcalo.exe` (an update of Annalo 1.6 keeps `%LOCALAPPDATA%\Annalo\arcalo.exe`) | no |
+| Windows (installer) | `%LOCALAPPDATA%\Arcalo\arcalo.exe` (an update of Annalo 1.6 keeps `%LOCALAPPDATA%\Annalo\arcalo.exe`) | yes, the program folder on the user's `Path` (from 1.18) |
 | Windows (Microsoft Store) | the alias `Arcalo.exe` | yes |
-| Windows (portable ZIP) | `Arcalo.exe` in the unpacked folder; it uses the portable `data` folder next to it | no |
+| Windows (portable ZIP) | `Arcalo.exe` in the unpacked folder; it uses the portable `data` folder next to it | no (on request in the settings) |
 | Windows (Scoop) | the shim `arcalo` | yes |
-| macOS | `/Applications/Arcalo.app/Contents/MacOS/arcalo` | no |
+| macOS | `/Applications/Arcalo.app/Contents/MacOS/arcalo` | on request in the settings: `/usr/local/bin/arcalo` |
 | Linux (.deb, AUR) | `/usr/bin/arcalo` | yes |
 | Linux (AppImage) | the AppImage itself: `./Arcalo_1.18.0_amd64.AppImage pages list` | no |
 | From source | `cargo run -p arcalo-cli -- pages list`, or `cargo install --path crates/arcalo-cli` | `~/.cargo/bin` |
 
-To call it as `arcalo` everywhere:
+Settings → Desktop → „Befehlszeile“ shows whether `arcalo` works in a terminal and which program it starts.
+
+**Windows (installer).** Installing and every update put the program folder onto the user's `Path`
+(`HKCU\Environment`, never the machine's), once: an entry that is already there in any spelling (another case, a
+trailing backslash, `%LOCALAPPDATA%\Arcalo`) is kept and not added again. The rest of the value stays exactly as it
+was, also a long one and its `%VARIABLES%`. Uninstalling removes that entry and nothing else; an update keeps it.
+New terminals find `arcalo` at once; a terminal open during the install needs to be opened again. A silent install
+(`/S`) does the same. To keep the program off the `Path`, switch „Befehl „arcalo“ im Terminal verfügbar machen“ off
+in the settings (Desktop → Befehlszeile): the entry goes, and updates leave it off until you switch it on again
+(the choice is kept in `HKCU\Software\MouseWerk\Arcalo`, value `CommandLinePath` = 0, and goes with „App-Daten
+löschen“ when uninstalling).
+
+**Windows (portable ZIP).** A portable copy leaves no traces on the computer, so it changes nothing by itself. The
+same switch in its settings puts its folder on the user's `Path` (and takes it off again before you delete the
+folder).
+
+**macOS.** Nothing is changed without asking. Settings → Desktop → „Befehl „arcalo“ im Terminal verfügbar machen“
+creates the link `/usr/local/bin/arcalo` to the program in the app bundle; macOS asks for an administrator's
+password (unless `/usr/local/bin` is writable for you). Switching it off removes the link, only when it points to
+this app. Start the app from the Applications folder first: a copy started from the disk image or from Downloads runs
+from a temporary place that would leave the link pointing nowhere. By hand:
 
 ```sh
-# macOS
 sudo ln -s /Applications/Arcalo.app/Contents/MacOS/arcalo /usr/local/bin/arcalo
 ```
 
-```powershell
-# Windows (installer): the program folder on the user's PATH
-[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:LOCALAPPDATA\Arcalo", "User")
-```
+**Linux.** The packages install `/usr/bin/arcalo`. An AppImage is called by its path, or linked into a folder on
+your `PATH` by hand: `ln -s ~/Apps/Arcalo.AppImage ~/.local/bin/arcalo`.
 
 Windows starts `arcalo.exe` like a windowed program: a script or an agent that reads its output gets it
 as usual, but typed into PowerShell or the command prompt the prompt comes back before the output. There,

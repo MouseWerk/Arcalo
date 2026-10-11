@@ -433,6 +433,14 @@ defineWidget({
   macOS bundle) has the command line of its own version, and a portable copy finds its `data` folder. A Windows release
   build has no console of its own: with its output redirected (scripts, agents) it has the handles; typed in a console
   it attaches to that console (`AttachConsole`). The crate also builds a standalone `arcalo` (and `annalo`) binary.
+- **On the PATH** (`src-tauri/src/cmdpath.rs`): the NSIS hooks start the installed program with `--internal-path
+  add|remove` (handled in `command_line()` before the CLI), which changes the user's `Path` (`HKCU\Environment`) raw
+  through the registry: the value's type and every other entry stay byte for byte, the folder is matched in any
+  spelling, `WM_SETTINGCHANGE` is broadcast; a switch-off in the settings is remembered for updates
+  (`HKCU\Software\MouseWerk\Arcalo`, `CommandLinePath` = 0). Settings → Desktop → „Befehlszeile“ (`cli_path_info`,
+  `cli_path_set`) shows the state; on macOS it creates `/usr/local/bin/arcalo` (directly when writable, else through
+  `osascript … with administrator privileges`), on Linux it only shows the program (the packages install
+  `/usr/bin/arcalo`), in the Store package it reports the alias.
 - **Workspace**: `workspace::locate` finds the app's data folder as the app does without moving it
   (`datadir::locate`: `--data-dir`/`ARCALO_DATA_DIR`, portable, `location.json` when it holds a workspace, the
   identifier's folder; a pending move stays for the app's start); `--db` names a file as before 1.18. An encrypted

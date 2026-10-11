@@ -662,8 +662,10 @@ The program is also a command line on your workspace: `arcalo pages show "Weekly
 and everything else you do with notes, tasks, time, projects, attachments, the trash and the settings. With `--json`
 every command prints JSON and errors come with stable exit codes, so scripts and AI agents with a terminal can read
 and change your workspace while the app is open: the app shows the changes within a second, typing in an open note is
-never lost, and every change keeps a version you can go back to. See [docs/cli.md](docs/cli.md) for the commands,
-where the program is on each system, and how to point an AI agent at it.
+never lost, and every change keeps a version you can go back to. The Windows installer, the Microsoft Store, Scoop and
+the Linux packages put `arcalo` on the PATH; on macOS (and for the portable copy) Settings → Desktop → „Befehlszeile“
+does it on request. See [docs/cli.md](docs/cli.md) for the commands, where the program is on each system, and how to
+point an AI agent at it.
 
 ## Tests
 
