@@ -97,8 +97,9 @@ test("the share is the only source; its file is verified, downloaded and install
   await app.waitText(".sb-update", /bereit/);
   // A tampered share file would be refused: the key is built in, whatever the source.
   await app.invoke("page_create", { parentId: null, title: "Vor dem Update", icon: null, content: "Bleibt" });
+  // Quits after this call has answered (see 126).
   await app.browser.execute(() => {
-    window.__TAURI_INTERNALS__.invoke("app_quit");
+    setTimeout(() => window.__TAURI_INTERNALS__.invoke("app_quit"), 50);
   });
   const note = path.join(dataDir, "updates", "fake-install.json");
   for (let i = 0; i < 100 && !fs.existsSync(note); i++) await new Promise((r) => setTimeout(r, 100));
