@@ -159,10 +159,8 @@ page, on a blocking thread).
   (`gitsync::taken_over`; a failed rename or file copy keeps it); a sync with nothing to return removes it too. A later sync
   returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
   mirror already holds are left out), keeps the files of those notes, of the renamed files and of the server's attachments
-  as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`): this side's
-  under `clash_name`, and this side's notes that link the file link both (`attachment_manager::link_both`, `FileRename.both`;
-  the mirror takes only linked files along, so a file no note links would be deleted with the next sync); the rename is
-  recorded and returned like the others. A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
+  as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`, this side's
+  under `clash_name`, both kept linked as below); the rename is recorded and returned like the others. A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
   done again from a clean working tree at the server's commit (reset, untracked files removed); a record that cannot be read
   does the same with HEAD, which deletes nothing on the server and turns differing notes into conflicts. Deciding a conflict
   (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
@@ -181,12 +179,15 @@ page, on a blocking thread).
   `<name>-<8 hex of its SHA-256>.<ext>` (a drawing with its preview), and the notes this side changed link to it
   (`relink_notes`: in the repository, in a pulled change that brings this side's text, and in a conflict's `mine`); the
   shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
-  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file. When
-  no note of this side's text links this side's copy (a drawing saved again on both sides, no note changed), the notes that
-  link the file link both versions (`attachment_manager::link_both`, `FileRename.both`): the mirror takes only linked files
-  along, so an unlinked copy would be deleted with the next sync.
+  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
   The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
-  server's.
+  server's. Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`) goes through `keep_both_linked`:
+  the Markdown copy takes only linked files along, so a version no note links would be deleted with the next sync on the
+  server and then on the other computer. Unless both versions are linked (by the notes in the working tree, and here by a
+  conflict's own text), every note that links either links both (`attachment_manager::link_both`, the server's line first;
+  `FileRename.both`, the shell links both on its pages too); a canvas keeps its cards. In the shell, a file changed here
+  between the sync and the take-over is kept as a further version beside the others, linked next to the file on the pages
+  here (`take_over_files`, `apply_file_renames`).
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict

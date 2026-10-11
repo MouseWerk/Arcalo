@@ -667,6 +667,9 @@ fn adopt_clashes(
             out[i].notes.push(path.clone());
         }
     }
+    for r in &mut out {
+        keep_both_linked(None, repo, r, changes)?;
+    }
     Ok(out)
 }
 
@@ -1986,10 +1989,9 @@ fn attachment_name(path: &str) -> Option<&str> {
 
 /// A file of the attachments folder the server changed (`path`, the server's version in the
 /// working tree) that this side changed as well since the pull: this side's version goes in
-/// beside it under [`clash_name`] (a drawing with its preview), and this side's notes that link
-/// the file link both (in the working tree; for a waiting conflict in its `mine`): the mirror only
-/// writes linked files, so a file no note links would be deleted with the next sync. `None`:
-/// nothing to keep (deleted here, the same content, the server has no such file).
+/// beside it under [`clash_name`] (a drawing with its preview); both stay linked
+/// ([`keep_both_linked`]). `None`: nothing to keep (deleted here, the same content, the server has
+/// no such file).
 fn keep_both_since(source: &Path, repo: &Path, path: &str, waiting: &mut [RemoteChange]) -> Result<Option<FileRename>> {
     let Some(name) = attachment_name(path) else { return Ok(None) };
     let (here, there) = (source.join(path), repo.join(path));
@@ -2006,38 +2008,90 @@ fn keep_both_since(source: &Path, repo: &Path, path: &str, waiting: &mut [Remote
     if crate::attachments::is_drawing(name) && content_id(&own_preview).is_some() {
         fs::copy(&own_preview, repo.join(dir).join(crate::drawings::preview_name(&new)))?;
     }
-    let names = [(name.to_owned(), new.clone())];
-    let mut notes = Vec::new();
+    let mut r = FileRename { from: name.to_owned(), to: new, notes: vec![], both: false };
+    keep_both_linked(None, repo, &mut r, waiting)?;
+    Ok(Some(r))
+}
+
+/// Whether the note `path` (its `text`) takes the file `name` of the attachments folder along
+/// into the Markdown copy (a canvas: one of its cards shows it).
+fn links_file(path: &str, text: &str, name: &str) -> bool {
+    if path.to_ascii_lowercase().ends_with(".canvas") {
+        return crate::canvas::rename_file(text, name, "arcalo-probe") != text;
+    }
+    crate::attachment_manager::export_files(text).iter().any(|n| n.eq_ignore_ascii_case(name))
+}
+
+/// A file kept twice ([`FileRename`]): the server's version under `r.from`, this computer's under
+/// `r.to`. The Markdown copy takes only linked files along, so a version no note links is deleted
+/// with the next sync, on the server and then on the other computer. Unless both are linked
+/// already (by the notes in the working tree, and for this computer by a conflict's own text),
+/// every note that links either links both ([`crate::attachment_manager::link_both`], the server's
+/// line first): in the working tree (staged with `stage`), in a conflict's own text, in a pulled
+/// note's text; `r` then lists the notes whose page here follows (`both`). A canvas keeps its
+/// cards.
+fn keep_both_linked(stage: Option<&Git>, repo: &Path, r: &mut FileRename, changes: &mut [RemoteChange]) -> Result<()> {
     let mut listed = Vec::new();
-    note_paths(source, "", &mut listed)?;
-    for note in listed {
-        if content_id(&source.join(&note)).is_none() {
+    note_paths(repo, "", &mut listed)?;
+    let mut texts = Vec::new();
+    for path in listed {
+        if content_id(&repo.join(&path)).is_some() {
+            let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
+            texts.push((path, text));
+        }
+    }
+    let linked = |name: &str| {
+        texts.iter().any(|(p, t)| links_file(p, t, name))
+            || changes.iter().any(|c| c.conflict && c.mine.as_deref().is_some_and(|m| links_file(&c.path, m, name)))
+    };
+    if linked(&r.from) && linked(&r.to) {
+        return Ok(());
+    }
+    let (from, to) = (r.from.clone(), r.to.clone());
+    let both = |text: &str| {
+        let back = crate::attachment_manager::replace_file_refs(text, &to, &from);
+        crate::attachment_manager::link_both(&back, &from, &to)
+    };
+    let markdown = |p: &str| !p.to_ascii_lowercase().ends_with(".canvas");
+    let mut notes = std::mem::take(&mut r.notes);
+    for (path, text) in &texts {
+        if !markdown(path) || !(links_file(path, text, &from) || links_file(path, text, &to)) {
             continue;
         }
-        let before = String::from_utf8_lossy(&fs::read(source.join(&note))?).into_owned();
-        let text = if note.to_ascii_lowercase().ends_with(".canvas") {
-            relink_text(&note, &before, &names).0
-        } else {
-            crate::attachment_manager::link_both(&before, name, &new)
-        };
-        if text == before {
-            continue;
-        }
-        match waiting.iter_mut().find(|c| c.path == note) {
-            // The server's text waits in the working tree; this side's is the page here.
-            Some(c) if c.conflict => c.mine = Some(text),
-            // The server's text is taken over here: its links are the server's.
-            Some(_) => continue,
-            None => {
-                if is_link(&repo.join(&note)) {
-                    remove_path(&repo.join(&note))?;
-                }
-                fs::write(repo.join(&note), &text)?;
+        let new = both(text);
+        if new != *text {
+            match stage {
+                Some(git) => put_path(git, repo, path, &new)?,
+                None => fs::write(repo.join(path), &new)?,
             }
         }
-        notes.push(note);
+        match changes.iter_mut().find(|c| c.path == *path) {
+            // The server's text waits in the working tree; this computer's is the page here.
+            Some(c) if c.conflict => {
+                if let Some(m) = c.mine.as_mut() {
+                    *m = both(m);
+                }
+                notes.push(path.clone());
+            }
+            // The page takes the pulled text over.
+            Some(c) => c.theirs = Some(new),
+            // The page holds what the working tree had.
+            None => notes.push(path.clone()),
+        }
     }
-    Ok(Some(FileRename { from: name.to_owned(), to: new, notes, both: true }))
+    for c in changes.iter_mut().filter(|c| c.conflict && markdown(&c.path)) {
+        if let Some(m) = c.mine.as_mut()
+            && (links_file(&c.path, m, &from) || links_file(&c.path, m, &to))
+        {
+            *m = both(m);
+            notes.push(c.path.clone());
+        }
+    }
+    notes.sort();
+    notes.dedup();
+    r.notes = notes;
+    r.both = true;
+    Ok(())
 }
 
 /// The pull's file `path` is kept twice ([`keep_both_since`]): the record names the rename from
@@ -2151,8 +2205,6 @@ fn relink_notes(
         .map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![], both: false })
         .collect();
     let relink = |path: &str, text: &str| relink_text(path, text, &names);
-    // Files a pulled note of this computer's text links already.
-    let mut linked_here = vec![false; out.len()];
     for path in local.iter().filter(|p| is_note(p)) {
         let Some(mine) = blob_text(git, repo, ours, path)? else { continue };
         let (text, hit) = relink(path, &mine);
@@ -2184,51 +2236,13 @@ fn relink_notes(
                 let linked = relink(&c.path, c.theirs.as_deref().unwrap_or_default()).0;
                 put_path(git, repo, &c.path, &linked)?;
                 c.theirs = Some(linked);
-                for i in hit {
-                    linked_here[i] = true;
-                }
             }
             // The server's text was taken: its links are the server's.
             Some(_) => {}
         }
     }
-    // A file only re-saved here (a drawing changed on both sides, no note changed): no note links
-    // this computer's copy, and the mirror takes only linked files along, so the next sync would
-    // delete it. The notes that link the file link both versions instead.
-    let mut listed = Vec::new();
-    note_paths(repo, "", &mut listed)?;
-    for (i, r) in out.iter_mut().enumerate() {
-        if !r.notes.is_empty() || linked_here[i] {
-            continue;
-        }
-        let mut both = false;
-        for path in listed.iter().filter(|p| !p.to_ascii_lowercase().ends_with(".canvas")) {
-            if content_id(&repo.join(path)).is_none() {
-                continue;
-            }
-            let current = String::from_utf8_lossy(&fs::read(repo.join(path))?).into_owned();
-            let text = crate::attachment_manager::link_both(&current, &r.from, &r.to);
-            if text == current {
-                continue;
-            }
-            put_path(git, repo, path, &text)?;
-            both = true;
-            match changes.iter_mut().find(|c| c.path == *path) {
-                // The server's text waits in the repository (now linking both); the page here
-                // holds this computer's text.
-                Some(c) if c.conflict => {
-                    if let Some(m) = c.mine.as_mut() {
-                        *m = crate::attachment_manager::link_both(m, &r.from, &r.to);
-                    }
-                    r.notes.push(path.clone());
-                }
-                // The page takes the server's text over, linking both.
-                Some(c) => c.theirs = Some(text),
-                // The page holds the text the repository had: rewritten here as well.
-                None => r.notes.push(path.clone()),
-            }
-        }
-        r.both = both;
+    for r in &mut out {
+        keep_both_linked(Some(git), repo, r, changes)?;
     }
     Ok(out)
 }

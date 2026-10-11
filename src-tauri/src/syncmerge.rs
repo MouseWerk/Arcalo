@@ -393,7 +393,32 @@ pub fn apply_file_renames(
 ) -> Result<Vec<i64>> {
     let repo_files = repo.join(arcalo_core::attachments::DIR_NAME);
     let mut pages = Vec::new();
+    let plain = |p: &std::path::Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
     for r in renames {
+        // Changed here again since the sync (neither the copy the sync renamed nor the server's):
+        // kept as a version of its own beside both, linked where the file is linked here.
+        let here = attachments_dir.join(&r.from);
+        let ours = std::fs::read(repo_files.join(&r.to)).ok();
+        let server = std::fs::read(repo_files.join(&r.from)).ok();
+        if plain(&here)
+            && let Ok(bytes) = std::fs::read(&here)
+            && Some(&bytes) != ours.as_ref()
+            && Some(&bytes) != server.as_ref()
+        {
+            let other =
+                |p: std::path::PathBuf| p.exists() && std::fs::read(&p).ok().as_deref() != Some(bytes.as_slice());
+            let newer =
+                gitsync::clash_name(&r.from, &bytes, |n| other(attachments_dir.join(n)) || other(repo_files.join(n)));
+            std::fs::rename(&here, attachments_dir.join(&newer)).map_err(|e| Error::file(&here, e))?;
+            let preview = arcalo_core::drawings::preview_name(&r.from);
+            if arcalo_core::attachments::is_drawing(&r.from) && plain(&attachments_dir.join(&preview)) {
+                let moved = attachments_dir.join(arcalo_core::drawings::preview_name(&newer));
+                std::fs::rename(attachments_dir.join(&preview), &moved).map_err(|e| Error::file(&moved, e))?;
+            }
+            let ids: Vec<i64> = db.pages_using(&r.from)?.into_iter().filter(|p| !p.trashed).map(|p| p.id).collect();
+            let at = now.with_timezone(&chrono::Utc);
+            pages.extend(db.atomic(|| arcalo_core::attachment_manager::add_refs(db, &ids, &r.from, &newer, at))?);
+        }
         let mut moves = vec![(r.from.clone(), r.to.clone())];
         if arcalo_core::attachments::is_drawing(&r.from) {
             moves.push((arcalo_core::drawings::preview_name(&r.from), arcalo_core::drawings::preview_name(&r.to)));
@@ -1521,6 +1546,163 @@ mod tests {
             let out = r.run(db, pc);
             assert!(!out.committed && out.renamed_files.is_empty() && out.remote_changes.is_empty(), "{pc}: {out:?}");
         }
+    }
+
+    /// Every version in `versions` (`(name, content)`) is on the server and on both computers, the
+    /// pages titled `titles` read the same on both, and further syncs change nothing.
+    fn assert_all_kept(r: &Rv, dbs: [(&Database, &str); 2], versions: &[(String, &str)], titles: &[&str]) {
+        for _ in 0..2 {
+            for (db, pc) in dbs {
+                r.run(db, pc);
+            }
+        }
+        for (name, content) in versions {
+            assert_eq!(r.server(&format!("attachments/{name}")), *content, "server: {name}");
+            for (_, pc) in dbs {
+                let here = std::fs::read_to_string(r.files(pc).join(name)).unwrap_or_default();
+                assert_eq!(here, *content, "{pc}: {name}");
+            }
+        }
+        for title in titles {
+            let text = |db: &Database| db.page_doc(db.page_by_title(title).unwrap().unwrap().id).unwrap().content;
+            assert_eq!(text(dbs[0].0), text(dbs[1].0), "{title}");
+        }
+        // Each version is linked by a page on both computers (else the next sync drops it).
+        for (name, _) in versions {
+            for (db, pc) in dbs {
+                let linked = db
+                    .list_pages()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p.deleted_at.is_none() && db.page_doc(p.id).unwrap().content.contains(name.as_str()));
+                assert!(linked, "{pc}: {name} is linked by no page");
+            }
+        }
+        for (db, pc) in dbs {
+            let out = r.run(db, pc);
+            assert!(!out.committed && out.renamed_files.is_empty() && out.remote_changes.is_empty(), "{pc}: {out:?}");
+        }
+    }
+
+    /// The first sync of a new computer that has its own file of a name the server has, and the
+    /// same note linking it: both versions stay, the note links both.
+    #[test]
+    fn a_new_computers_file_of_a_name_with_the_same_note_keeps_both() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("adopt-same-note");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        for (db, pc, bytes) in [(&a, "a", "PDF von A"), (&b, "b", "PDF von B")] {
+            std::fs::create_dir_all(r.files(pc)).unwrap();
+            std::fs::write(r.files(pc).join("Bericht.pdf"), bytes).unwrap();
+            let p = db.create_page(None, "Notiz", None).unwrap();
+            db.save_page_content(p.id, "![[Bericht.pdf]]\n").unwrap();
+        }
+        r.run(&a, "a");
+        let out = r.run(&b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Bericht.pdf").expect("both kept").to.clone();
+        assert_all_kept(
+            &r,
+            [(&a, "a"), (&b, "b")],
+            &[("Bericht.pdf".into(), "PDF von A"), (new, "PDF von B")],
+            &["Notiz"],
+        );
+    }
+
+    /// A file changed on both computers where the only note that links it changed here: the note
+    /// here links this computer's copy, and the server's version stays linked beside it.
+    #[test]
+    fn a_file_changed_on_both_sides_with_the_only_note_changed_here_keeps_both() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("merge-own-note");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        std::fs::create_dir_all(r.files("a")).unwrap();
+        std::fs::write(r.files("a").join("Bericht.pdf"), "PDF eins").unwrap();
+        let p = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(p.id, "![[Bericht.pdf]]\n").unwrap();
+        r.run(&a, "a");
+        r.run(&b, "b");
+        std::fs::write(r.files("a").join("Bericht.pdf"), "PDF von A").unwrap();
+        r.run(&a, "a");
+        std::fs::write(r.files("b").join("Bericht.pdf"), "PDF von B").unwrap();
+        let on_b = b.page_by_title("Notiz").unwrap().unwrap().id;
+        b.save_page_content(on_b, "Neu von B\n![[Bericht.pdf]]\n").unwrap();
+        let out = r.run(&b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Bericht.pdf").expect("both kept").to.clone();
+        assert_all_kept(
+            &r,
+            [(&a, "a"), (&b, "b")],
+            &[("Bericht.pdf".into(), "PDF von A"), (new, "PDF von B")],
+            &["Notiz"],
+        );
+    }
+
+    /// A pull that changed a file and the note linking it ended before the take-over, and the
+    /// file was saved here meanwhile: both versions stay, the pulled note links both.
+    #[test]
+    fn an_ended_pull_of_a_file_and_its_note_keeps_both_versions() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("ended-note");
+        let (a, b) = with_drawing(&r);
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG von A").unwrap();
+        a.save_page_content(a.page_by_title("Notiz").unwrap().unwrap().id, "Neu von A\n![[Skizze.png]]").unwrap();
+        r.run(&a, "a");
+        r.sync_only(&b, "b");
+        std::fs::write(r.files("b").join("Skizze.png"), "PNG von B").unwrap();
+        let out = r.run(&b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Skizze.png").expect("both kept").to.clone();
+        assert_all_kept(
+            &r,
+            [(&a, "a"), (&b, "b")],
+            &[("Skizze.png".into(), "PNG von A"), (new, "PNG von B")],
+            &["Notiz"],
+        );
+    }
+
+    /// The file this computer's copy was renamed from changed here once more before the take-over:
+    /// a third version, kept beside the other two and linked where the file is linked here.
+    #[test]
+    fn a_file_changed_again_before_its_rename_is_taken_over_is_kept_as_well() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("rename-race");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        r.run(&a, "a");
+        r.run(&b, "b");
+        for (db, pc, bytes) in [(&a, "a", "PDF von A"), (&b, "b", "PDF von B")] {
+            std::fs::create_dir_all(r.files(pc)).unwrap();
+            std::fs::write(r.files(pc).join("Bericht.pdf"), bytes).unwrap();
+            let p = db.create_page(None, &format!("Von {}", pc.to_uppercase()), None).unwrap();
+            db.save_page_content(p.id, "![[Bericht.pdf]]\n").unwrap();
+        }
+        r.run(&a, "a");
+        let out = r.sync_only(&b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Bericht.pdf").expect("both kept").to.clone();
+        // Saved here once more before the shell took the rename over.
+        std::fs::write(r.files("b").join("Bericht.pdf"), "PDF von B, neu").unwrap();
+        let repo = r.base.join("b").join("git-sync");
+        apply(&b, &out.remote_changes, Local::now()).unwrap();
+        apply_file_renames(&b, &r.files("b"), &repo, &out.renamed_files, Local::now()).unwrap();
+        take_over_files(&b, &repo, &r.files("b"), &out.pulled_files, Local::now()).unwrap();
+        gitsync::taken_over(&repo);
+        let third = std::fs::read_dir(r.files("b"))
+            .unwrap()
+            .flatten()
+            .find(|e| std::fs::read(e.path()).ok().as_deref() == Some(b"PDF von B, neu".as_slice()))
+            .map(|e| e.file_name().into_string().unwrap())
+            .expect("the third version is here");
+        assert_all_kept(
+            &r,
+            [(&a, "a"), (&b, "b")],
+            &[("Bericht.pdf".into(), "PDF von A"), (new, "PDF von B"), (third, "PDF von B, neu")],
+            &["Von A", "Von B"],
+        );
     }
 
     /// The file changed here between the sync and the take-over (no crash): both kept as well.

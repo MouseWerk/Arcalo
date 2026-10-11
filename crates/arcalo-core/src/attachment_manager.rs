@@ -507,17 +507,24 @@ pub fn rewrite_refs(db: &Database, ids: &[i64], old: &str, new: &str, now: DateT
 }
 
 /// `markdown` with every line that refers to the file `old` followed by the same line referring
-/// to `new`: both versions of a file kept twice stay linked (and so in the Markdown copy).
+/// to `new`, and every line that refers to `new` followed by the same line referring to `old`
+/// (unless the note has that line already): both versions of a file kept twice stay linked (and so
+/// in the Markdown copy).
 pub fn link_both(markdown: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(markdown.len() * 2);
     for line in markdown.split_inclusive('\n') {
         out.push_str(line);
-        let other = replace_file_refs(line, old, new);
-        if other != line && !markdown.contains(other.trim_end_matches('\n')) {
-            if !line.ends_with('\n') {
-                out.push('\n');
+        for (a, b) in [(old, new), (new, old)] {
+            let other = replace_file_refs(line, a, b);
+            if other != line
+                && !markdown.contains(other.trim_end_matches('\n'))
+                && !out.contains(other.trim_end_matches('\n'))
+            {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(&other);
             }
-            out.push_str(&other);
         }
     }
     out
