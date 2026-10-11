@@ -1,5 +1,5 @@
-// Schnellerfassung: a note or a task into today's daily note or the inbox, or a booking (the
-// form of the „Zeit“ tab).
+// Schnellerfassung: a note or a task into today's daily note or the inbox (also with text shared
+// from another app), or a booking (the form of the „Zeit“ tab).
 
 import { useState } from "react";
 import { fmtDate } from "../../lib/format";
@@ -11,11 +11,11 @@ import { captureMarkdown, dueOf, noonOf, type CaptureMode, type DueChoice } from
 import { Header, Segmented } from "../ui";
 import { ZeitForm } from "./Time";
 
-export function CaptureScreen({ mode: initial }: { mode: CaptureMode }) {
+export function CaptureScreen({ mode: initial, text: shared }: { mode: CaptureMode; text?: string }) {
   const m = useMobile();
   const timeOn = m.settings.time?.enabled !== false;
   const [mode, setMode] = useState<CaptureMode>(initial === "booking" && !timeOn ? "note" : initial);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(shared ?? "");
   const [inbox, setInbox] = useState(false);
   const [due, setDue] = useState<DueChoice>("none");
   const [busy, setBusy] = useState(false);

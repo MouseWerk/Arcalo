@@ -2,12 +2,13 @@
 // capture stores, the `/zeit` line of the booking form, progress, the week's bookings and the
 // note tree. Kept free of React so it can be tested.
 
-import { addDays, fmtDate, fmtMinutes, isoDay, parseDurationInput, weekStart } from "../lib/format";
+import { addDays, fileSize, fmtDate, fmtMinutes, isoDay, parseDurationInput, relative, weekStart } from "../lib/format";
 import { parseDue } from "../lib/capture";
 import { renderMarkdown } from "../lib/markdown";
 import { t } from "../lib/i18n";
 import { taskGroup, type TaskGroup } from "../lib/tasks";
 import type { GitSyncStatus, PageNode, Task, TimeEntryRow } from "../lib/types";
+import type { UpdateStatus } from "./api";
 
 // ------------------------------------------------------------------ navigation
 
@@ -18,7 +19,7 @@ export type CaptureMode = "note" | "task" | "booking";
 
 /** A screen opened above the tabs (the back button closes it). */
 export type Screen =
-  | { kind: "capture"; mode: CaptureMode }
+  | { kind: "capture"; mode: CaptureMode; /** Text to start with (shared from another app). */ text?: string }
   | { kind: "daily"; date: string }
   | { kind: "page"; id: number }
   | { kind: "settings" };
@@ -54,6 +55,15 @@ export function navigate(r: Route, a: NavAction): Route {
 
 /** The screen shown: the top of the stack, else the tab. */
 export const current = (r: Route): Screen | Tab => r.stack[r.stack.length - 1] ?? r.tab;
+
+/** What Android's back button does: first close what is open in a screen (an edit mode), then
+ *  the top screen, then go to „Heute“, and on „Heute“ send the app to the background (it keeps
+ *  its state, as Android apps do since Android 12). It never quits the app. */
+export function backAction(r: Route, openLayers: number): "layer" | "pop" | "today" | "background" {
+  if (openLayers > 0) return "layer";
+  if (r.stack.length) return "pop";
+  return r.tab === "today" ? "background" : "today";
+}
 
 // --------------------------------------------------------------------- capture
 
@@ -241,6 +251,47 @@ export function syncState(enabled: boolean, remote: string, status: GitSyncStatu
 /** Whether the app syncs again when it comes back to the front (at most every two minutes). */
 export function syncDue(lastAt: number | null, now: number, minGapMs = 120_000): boolean {
   return lastAt === null || now - lastAt >= minGapMs;
+}
+
+// --------------------------------------------------------------------- updates
+
+/** The line under „Updates“ and in the banner: what the app's updater is doing. */
+export function updateLine(s: UpdateStatus): { text: string; detail: string | null } {
+  const v = s.offered?.version ?? "";
+  const checked = s.last_check ? t("mob.upd.lastCheck", { when: relative(s.last_check) }) : t("mob.upd.never");
+  switch (s.phase) {
+    case "checking":
+      return { text: t("mob.upd.checking"), detail: null };
+    case "downloading":
+      return { text: t("mob.upd.downloading", { version: v }), detail: s.total ? t("mob.upd.progress", { done: fileSize(s.downloaded), total: fileSize(s.total) }) : fileSize(s.downloaded) };
+    case "waiting":
+      return { text: s.metered ? t("mob.upd.waitingWifi", { version: v }) : t("mob.upd.waitingOffline", { version: v }), detail: s.offered?.size ? fileSize(s.offered.size) : null };
+    case "ready":
+      return { text: t("mob.upd.ready", { version: v }), detail: t("mob.upd.readyHint") };
+    case "blocked":
+      return { text: t("mob.upd.blocked", { version: v }), detail: s.blocked };
+    case "error":
+      return { text: t("mob.upd.failed"), detail: s.error };
+    default:
+      return s.offered ? { text: t("mob.upd.available", { version: v }), detail: checked } : { text: t("mob.upd.upToDate"), detail: checked };
+  }
+}
+
+/** Share of the download, 0–1 (0 while the size is unknown). */
+export const updateProgress = (s: UpdateStatus) => (s.total ? Math.max(0, Math.min(1, s.downloaded / s.total)) : 0);
+
+/** A computed CSS color (`rgb(…)`, `rgba(…)`, `#rgb`, `#rrggbb`) as `#rrggbb` for Android's
+ *  window; null for anything else. */
+export function cssHex(color: string): string | null {
+  const c = color.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(c);
+  if (hex) return hex[1].length === 3 ? `#${[...hex[1]].map((x) => x + x).join("")}` : c;
+  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)/.exec(c);
+  if (!rgb) return null;
+  return `#${rgb
+    .slice(1, 4)
+    .map((n) => Math.max(0, Math.min(255, Math.round(Number(n)))).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /** Days for the booking form's day choice: today and yesterday. */

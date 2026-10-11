@@ -7,7 +7,7 @@ import { api } from "../../lib/api";
 import { relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, PageDoc, PageNode, SearchHit } from "../../lib/types";
-import { errorText, useMobile } from "../context";
+import { errorText, useBackLayer, useMobile } from "../context";
 import { pageHtml, treeRows } from "../model";
 import { Empty, Header, Notice, Section, Spinner } from "../ui";
 
@@ -228,6 +228,20 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
     if (wasEditing.current && !p.editing) void save(text).then(() => m.refresh());
     wasEditing.current = p.editing;
   }, [p.editing]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Android's back button ends editing first (and saves), the next one leaves the page.
+  useBackLayer(p.editing, p.onDone);
+  // Typed text is never lost: saved when the app goes to the background (Android may end it
+  // there without notice) and when the screen closes before the pause in typing ran out.
+  const latest = useRef(text);
+  latest.current = text;
+  useEffect(() => {
+    const onHidden = () => document.visibilityState === "hidden" && void save(latest.current);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      if (latest.current !== saved.current) void save(latest.current);
+    };
+  }, [p.doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest("a");

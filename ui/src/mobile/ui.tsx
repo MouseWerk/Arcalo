@@ -62,13 +62,16 @@ export function Empty(p: { icon?: ReactNode; text: string; action?: ReactNode })
   );
 }
 
-/** A notice: an icon and a tinted background (never a colored bar). */
+/** A notice: an icon and a tinted background (never a colored bar). Its action sits below the
+ *  text, so the text keeps the width of a phone. */
 export function Notice(p: { tone: "info" | "warning" | "error"; icon: ReactNode; children: ReactNode; action?: ReactNode }) {
   return (
     <div className={`m-notice m-notice-${p.tone}`} role={p.tone === "error" ? "alert" : "note"}>
       <span className="m-notice-icon">{p.icon}</span>
-      <div className="m-notice-body">{p.children}</div>
-      {p.action}
+      <div className="m-notice-body">
+        {p.children}
+        {p.action && <div className="m-notice-action">{p.action}</div>}
+      </div>
     </div>
   );
 }

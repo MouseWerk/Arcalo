@@ -86,6 +86,8 @@
   --touch-min: 44px;
   --m-head-h: 56px;
   --m-tabbar-h: 64px;
+  /* The companion app's column on tablets and phones in landscape. */
+  --m-content-max: 760px;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

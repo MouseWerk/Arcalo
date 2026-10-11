@@ -1,5 +1,5 @@
 // Einstellungen: the Git sync (repository, branch, token in the Android Keystore, sync now,
-// conflicts), language, theme and what the app is.
+// conflicts), theme and contrast, language, the app's updates and what the app is.
 
 import { useEffect, useState } from "react";
 import { CircleCheck, KeyRound, TriangleAlert } from "lucide-react";
@@ -11,6 +11,10 @@ import type { GitConflictInfo, GitConflictView, GitSyncStatus, Settings } from "
 import { errorText, useMobile } from "../context";
 import { syncState } from "../model";
 import { Field, Header, Notice, Section, Segmented, Spinner, Switch } from "../ui";
+import { UpdateSection } from "../update";
+
+/** The high contrast themes (lib/themes.ts) for „Hoher Kontrast“. */
+const CONTRAST = { light: "contrast-light", dark: "contrast-dark" } as const;
 
 export function SettingsScreen() {
   const m = useMobile();
@@ -38,6 +42,14 @@ export function SettingsScreen() {
 
   const save = (next: Settings) => m.saveSettings(next).catch((e) => m.toast("error", t("common.saveFailed"), errorText(e)));
   const saveGit = (patch: Partial<Settings["git_sync"]>) => save({ ...s, git_sync: { ...gs, ...patch, include_database: false } });
+  // The phone's git has no SSH: an SSH address is refused here, with the reason.
+  const saveRemote = () => {
+    if (remote.trim() && !/^https?:\/\//i.test(remote.trim())) {
+      m.toast("error", t("mob.set.httpsOnly"));
+      return;
+    }
+    void saveGit({ remote_url: remote.trim(), branch: branch.trim() || "main", author_name: author.trim(), author_email: email.trim() }).then(() => m.toast("success", t("mob.set.saved")));
+  };
   const dirty = remote.trim() !== gs.remote_url || branch.trim() !== gs.branch || author.trim() !== gs.author_name || email.trim() !== gs.author_email;
 
   const saveToken = async () => {
@@ -62,6 +74,7 @@ export function SettingsScreen() {
     }
   };
   const state = syncState(gs.enabled || !!gs.remote_url, gs.remote_url, status);
+  const contrast = s.appearance?.theme_light === CONTRAST.light && s.appearance?.theme_dark === CONTRAST.dark;
 
   return (
     <div className="m-screen">
@@ -69,7 +82,7 @@ export function SettingsScreen() {
       <div className="m-scroll m-form">
         <Section title={t("mob.set.sync")}>
           <p className="m-desc">{t("mob.set.syncDesc")}</p>
-          <Field label={t("set.git.remote")} htmlFor="m-git-url" hint={t("set.git.remoteDesc")}>
+          <Field label={t("set.git.remote")} htmlFor="m-git-url" hint={t("mob.set.remoteDesc")}>
             <input id="m-git-url" className="m-input" type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={remote} placeholder={t("set.git.remotePlaceholder")} onChange={(e) => setRemote(e.target.value)} />
           </Field>
           <div className="m-field-pair">
@@ -85,7 +98,7 @@ export function SettingsScreen() {
           </Field>
           {dirty && (
             <div className="m-form-actions">
-              <button type="button" className="m-btn m-btn-primary m-btn-block" onClick={() => void saveGit({ remote_url: remote.trim(), branch: branch.trim() || "main", author_name: author.trim(), author_email: email.trim() }).then(() => m.toast("success", t("mob.set.saved")))}>
+              <button type="button" className="m-btn m-btn-primary m-btn-block" onClick={saveRemote}>
                 {t("mob.set.saveRemote")}
               </button>
             </div>
@@ -178,6 +191,17 @@ export function SettingsScreen() {
               { value: "dark", label: t("set.appearance.dark") },
             ]}
           />
+          <Switch
+            checked={contrast}
+            onChange={(on) =>
+              void save({
+                ...s,
+                appearance: { ...s.appearance, theme_light: on ? CONTRAST.light : "arcalo-light", theme_dark: on ? CONTRAST.dark : "arcalo-dark" },
+              })
+            }
+            label={t("mob.set.contrast")}
+            desc={t("mob.set.contrastDesc")}
+          />
         </Section>
 
         <Section title={t("mob.set.language")}>
@@ -191,6 +215,10 @@ export function SettingsScreen() {
               { value: "en", label: t("mob.set.langEn") },
             ]}
           />
+        </Section>
+
+        <Section title={t("mob.upd.title")}>
+          <UpdateSection />
         </Section>
 
         <Section title={t("mob.set.about")}>

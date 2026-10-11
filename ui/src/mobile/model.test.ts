@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   START,
+  backAction,
+  cssHex,
+  updateLine,
+  updateProgress,
   captureMarkdown,
   current,
   dueOf,
@@ -16,6 +20,8 @@ import {
   zeitLine,
 } from "./model";
 import type { PageNode, Task, TimeEntryRow } from "../lib/types";
+import type { UpdateStatus } from "./api";
+import { setLang } from "../lib/i18n";
 
 describe("navigation", () => {
   it("opens screens above the tab, once each, and closes them with back or a tab", () => {
@@ -181,5 +187,61 @@ describe("sync", () => {
     expect(syncDue(null, 1000)).toBe(true);
     expect(syncDue(0, 60_000)).toBe(false);
     expect(syncDue(0, 120_000)).toBe(true);
+  });
+});
+
+describe("back button", () => {
+  it("closes an edit mode, then the top screen, then goes to Heute, then to the background", () => {
+    const page = navigate(START, { type: "push", screen: { kind: "page", id: 4 } });
+    expect(backAction(page, 1)).toBe("layer");
+    expect(backAction(page, 0)).toBe("pop");
+    expect(backAction(navigate(START, { type: "tab", tab: "notes" }), 0)).toBe("today");
+    expect(backAction(START, 0)).toBe("background");
+  });
+});
+
+describe("updates", () => {
+  const base: UpdateStatus = {
+    configured: true,
+    current: "1.17.0",
+    phase: "idle",
+    offered: null,
+    downloaded: 0,
+    total: null,
+    metered: false,
+    error: null,
+    blocked: null,
+    last_check: null,
+    allow_mobile_data: false,
+  };
+  const offered = { version: "1.18.0", notes: "## Improved", size: 40 * 1024 * 1024, pub_date: null, page: "https://github.com/MouseWerk/Arcalo/releases/tag/v1.18.0" };
+
+  it("says what the updater does", () => {
+    setLang("de");
+    expect(updateLine(base).text).toBe("Arcalo ist aktuell");
+    expect(updateLine(base).detail).toBe("Noch nicht gesucht");
+    expect(updateLine({ ...base, phase: "checking" }).text).toBe("Suche nach Updates…");
+    const dl = { ...base, phase: "downloading" as const, offered, downloaded: 10 * 1024 * 1024, total: 40 * 1024 * 1024 };
+    expect(updateLine(dl).text).toBe("Version 1.18.0 wird geladen");
+    expect(updateLine(dl).detail).toBe("10,0 MB von 40,0 MB");
+    expect(updateProgress(dl)).toBe(0.25);
+    expect(updateProgress({ ...dl, total: null })).toBe(0);
+    expect(updateLine({ ...base, phase: "waiting", offered, metered: true }).text).toBe("Version 1.18.0 wird im WLAN geladen");
+    expect(updateLine({ ...base, phase: "waiting", offered }).text).toBe("Version 1.18.0 wird geladen, sobald du online bist");
+    expect(updateLine({ ...base, phase: "ready", offered }).text).toBe("Version 1.18.0 ist bereit");
+    expect(updateLine({ ...base, phase: "blocked", offered, blocked: "anderer Schlüssel" }).detail).toBe("anderer Schlüssel");
+    expect(updateLine({ ...base, phase: "error", error: "Keine Verbindung" })).toEqual({ text: "Update fehlgeschlagen", detail: "Keine Verbindung" });
+    setLang("en");
+    expect(updateLine({ ...base, phase: "ready", offered }).text).toBe("Version 1.18.0 is ready");
+    setLang("de");
+  });
+
+  it("turns computed colors into the hex Android takes", () => {
+    expect(cssHex("rgb(244, 244, 245)")).toBe("#f4f4f5");
+    expect(cssHex("rgba(14, 15, 17, 1)")).toBe("#0e0f11");
+    expect(cssHex("rgb(14 15 17)")).toBe("#0e0f11");
+    expect(cssHex("#ABC")).toBe("#aabbcc");
+    expect(cssHex("#0e0f11")).toBe("#0e0f11");
+    expect(cssHex("transparent")).toBeNull();
   });
 });

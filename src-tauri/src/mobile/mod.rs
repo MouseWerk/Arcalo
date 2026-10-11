@@ -1,11 +1,14 @@
 //! The Android companion app: the same state and commands as the desktop shell, without its
-//! windows, tray, shortcuts, updates and voice notes (see docs/android.md).
+//! windows, tray, shortcuts and voice notes (see docs/android.md). Its updates are its own
+//! (`apkupdate.rs`): an APK checked and handed to Android's installer.
 //!
 //! The UI (`ui/src/mobile/`) uses the shared commands for pages, tasks, time and the Git sync,
 //! and the few below for what a phone does differently: the start screen in one call, bookings
 //! that go into the daily note as chips, the sync followed by the reference data from the
-//! desktop's database copy.
+//! desktop's database copy, the window around the WebView and text shared to the app.
 
+pub mod android;
+pub mod apkupdate;
 pub mod keystore;
 
 use std::collections::HashMap;
@@ -38,6 +41,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(keystore::plugin())
+        .plugin(android::plugin())
         .register_uri_scheme_protocol("arcalo-asset", |ctx, request| {
             crate::serve_attachment(ctx.app_handle(), &request)
         })
@@ -51,6 +55,7 @@ pub fn run() {
             crate::page_get,
             crate::page_save,
             crate::page_create,
+            crate::page_resolve,
             crate::recent_pages,
             crate::search_workspace,
             crate::tasks_list,
@@ -83,6 +88,15 @@ pub fn run() {
             mobile_timer_stop,
             mobile_recent_targets,
             mobile_sync,
+            mobile_shared_text,
+            mobile_bars,
+            mobile_to_background,
+            apkupdate::apk_update_status,
+            apkupdate::apk_update_check,
+            apkupdate::apk_update_download,
+            apkupdate::apk_update_install,
+            apkupdate::apk_update_allow_install,
+            apkupdate::apk_update_set_mobile_data,
         ]))
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
@@ -152,7 +166,9 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     app.manage(crate::jira::JiraSync::default());
     // Saving the settings tells the backup destinations (none on the phone) about it.
     app.manage(crate::backupdest::Destinations::default());
+    app.manage(apkupdate::Updater::new(app, &app.state::<AppState>().data_dir));
     spawn_sync_scheduler(app.clone());
+    apkupdate::spawn_scheduler(app.clone());
     Ok(())
 }
 
@@ -163,7 +179,7 @@ fn spawn_sync_scheduler(app: AppHandle) {
         std::thread::sleep(Duration::from_secs(5));
         loop {
             let gs = app.state::<AppState>().settings().git_sync;
-            if gs.enabled && !gs.remote_url.trim().is_empty() {
+            if gs.enabled && !gs.remote_url.trim().is_empty() && https_only(&gs.remote_url).is_ok() {
                 let _ = sync_and_import(&app, false, None);
             }
             std::thread::sleep(SYNC_EVERY);
@@ -320,6 +336,48 @@ async fn mobile_sync(
             .into(),
         ));
     }
+    https_only(&app.state::<AppState>().settings().git_sync.remote_url)?;
     let allow = allow_deletions.unwrap_or(false);
     blocking(move || sync_and_import(&app, allow, after_restore)).await
+}
+
+/// The phone's git (libgit2 without SSH) reaches HTTP(S) remotes only; an SSH address gets a
+/// message that says so instead of libgit2's „unsupported URL protocol“.
+fn https_only(remote: &str) -> Result<()> {
+    let l = remote.trim().to_ascii_lowercase();
+    if l.starts_with("https://") || l.starts_with("http://") {
+        return Ok(());
+    }
+    Err(Error::State(
+        arcalo_core::tr!(
+            "Auf dem Telefon geht nur eine HTTPS-Adresse mit Zugangstoken, kein SSH. Trage die HTTPS-Adresse des Repositorys ein.",
+            "The phone supports HTTPS addresses with an access token only, no SSH. Enter the repository's HTTPS address."
+        )
+        .into(),
+    ))
+}
+
+/// Text shared to the app from another one („Teilen“ → Arcalo), once; the UI opens a capture.
+#[tauri::command(async)]
+fn mobile_shared_text() -> Option<String> {
+    android::shared_text().unwrap_or_else(|e| {
+        devlog::warn("mobile", format!("shared text not read: {e}"));
+        None
+    })
+}
+
+/// The colors behind the system bars follow the app's theme (`#rrggbb`).
+#[tauri::command(async)]
+fn mobile_bars(dark: bool, top: String, bottom: String) {
+    if let Err(e) = android::set_bars(dark, &top, &bottom) {
+        devlog::warn("mobile", format!("system bar colors not set: {e}"));
+    }
+}
+
+/// The back button on the start screen: the app goes to the background and keeps its state.
+#[tauri::command(async)]
+fn mobile_to_background() {
+    if let Err(e) = android::move_to_back() {
+        devlog::warn("mobile", format!("not moved to the background: {e}"));
+    }
 }

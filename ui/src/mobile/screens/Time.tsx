@@ -123,6 +123,7 @@ function TimerCard({ timer }: { timer: TimerStatus }) {
   const seconds = Math.max(0, Math.floor((end - new Date(timer.entry.start_time).getTime()) / 1000) - (timer.paused_seconds ?? 0));
   const clock = `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const [reference, setReference] = useState("");
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   useEffect(() => {
     api
       .wbs()
@@ -160,8 +161,20 @@ function TimerCard({ timer }: { timer: TimerStatus }) {
             <Square size={16} />
             {t("mob.time.stop")}
           </button>
-          <button type="button" className="m-btn m-btn-quiet" onClick={run(() => api.timerDiscard())}>
-            {t("mob.time.discard")}
+          {/* Discarding loses the running time: the first tap asks, a second within 3 s discards. */}
+          <button
+            type="button"
+            className={confirmDiscard ? "m-btn m-btn-danger" : "m-btn m-btn-quiet"}
+            onClick={
+              confirmDiscard
+                ? run(() => api.timerDiscard())
+                : () => {
+                    setConfirmDiscard(true);
+                    window.setTimeout(() => setConfirmDiscard(false), 3000);
+                  }
+            }
+          >
+            {confirmDiscard ? t("mob.time.discardConfirm") : t("mob.time.discard")}
           </button>
         </div>
       </div>
