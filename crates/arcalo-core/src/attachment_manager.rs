@@ -506,51 +506,6 @@ pub fn rewrite_refs(db: &Database, ids: &[i64], old: &str, new: &str, now: DateT
     Ok(changed)
 }
 
-/// `markdown` with every line that refers to the file `old` followed by the same line referring
-/// to `new`, and every line that refers to `new` followed by the same line referring to `old`
-/// (unless the note has that line already): both versions of a file kept twice stay linked (and so
-/// in the Markdown copy).
-pub fn link_both(markdown: &str, old: &str, new: &str) -> String {
-    let mut out = String::with_capacity(markdown.len() * 2);
-    for line in markdown.split_inclusive('\n') {
-        out.push_str(line);
-        for (a, b) in [(old, new), (new, old)] {
-            let other = replace_file_refs(line, a, b);
-            if other != line
-                && !markdown.contains(other.trim_end_matches('\n'))
-                && !out.contains(other.trim_end_matches('\n'))
-            {
-                if !out.ends_with('\n') {
-                    out.push('\n');
-                }
-                out.push_str(&other);
-            }
-        }
-    }
-    out
-}
-
-/// [`rewrite_refs`] that keeps the link to `old` beside the new one ([`link_both`]); a canvas
-/// takes the new name.
-pub fn add_refs(db: &Database, ids: &[i64], old: &str, new: &str, now: DateTime<Utc>) -> Result<Vec<i64>> {
-    let mut changed = Vec::new();
-    for &id in ids {
-        let content: String =
-            db.conn().query_row("SELECT content FROM pages WHERE id = ?1", params![id], |r| r.get(0))?;
-        let updated = if db.is_canvas(id)? {
-            crate::canvas::rename_file(&content, old, new)
-        } else {
-            link_both(&content, old, new)
-        };
-        if updated != content {
-            db.store_version(id, &content, now)?;
-            db.save_page_content_at(id, &updated, now)?;
-            changed.push(id);
-        }
-    }
-    Ok(changed)
-}
-
 // ------------------------------------------------------------------ file trash
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -716,19 +671,6 @@ pub fn purge_expired_files(data_dir: &Path, days: i64, now: DateTime<Utc>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn link_both_keeps_the_old_link_beside_the_new_one() {
-        let text = "# Notiz\n![[Skizze.png]]\nText [Bild](attachments/Skizze.png)\nohne";
-        let both = link_both(text, "Skizze.png", "Skizze-1a2b.png");
-        assert_eq!(
-            both,
-            "# Notiz\n![[Skizze.png]]\n![[Skizze-1a2b.png]]\nText [Bild](attachments/Skizze.png)\n\
-             Text [Bild](attachments/Skizze-1a2b.png)\nohne"
-        );
-        // Done once: a second pass adds nothing.
-        assert_eq!(link_both(&both, "Skizze.png", "Skizze-1a2b.png"), both);
-    }
 
     fn tmp(name: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("arcalo-attmgr-{name}-{}", std::process::id()));

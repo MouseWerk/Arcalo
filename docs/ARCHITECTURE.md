@@ -160,13 +160,16 @@ page, on a blocking thread).
   returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
   mirror already holds are left out), keeps the files of those notes, of the renamed files and of the server's attachments
   as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`, this side's
-  under `clash_name`, both kept linked as below); the rename is recorded and returned like the others. A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
-  done again from a clean working tree at the server's commit (reset, untracked files removed); a record that cannot be read
-  does the same with HEAD, which deletes nothing on the server and turns differing notes into conflicts. Deciding a conflict
+  under `clash_name`, both on the kept list below); the rename is recorded and returned like the others. A pull whose HEAD
+  never moved, or on other history, is dropped. An adoption that never got past its reset is done again from a clean working
+  tree at the server's commit (reset, untracked files removed). Where the pulls started is also written on its own
+  (`.git/arcalo-pull-start`, before the record): a record that cannot be read is rebuilt from it (the server's notes changed
+  since the start, or after adopting the server's notes; this computer's own edits since are in the mirror and stay its
+  own), and without it nothing counts as pulled. Deciding a conflict
   (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
   only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
-  (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way (the
-  pages here link both). Links are never followed: the working tree has `core.symlinks=false` (a link from the
+  (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
+  (renamed here, put into the working tree and on the kept list). Links are never followed: the working tree has `core.symlinks=false` (a link from the
   server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
   are copied only when they are plain files on both sides. A companion's first sync fetches the newest commit only
   (`--depth 1`; the history holds every database copy). A rejected push
@@ -181,13 +184,15 @@ page, on a blocking thread).
   shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
   before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
   The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
-  server's. Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`) goes through `keep_both_linked`:
-  the Markdown copy takes only linked files along, so a version no note links would be deleted with the next sync on the
-  server and then on the other computer. Unless both versions are linked (by the notes in the working tree, and here by a
-  conflict's own text), every note that links either links both (`attachment_manager::link_both`, the server's line first;
-  `FileRename.both`, the shell links both on its pages too); a canvas keeps its cards. In the shell, a file changed here
-  between the sync and the take-over is kept as a further version beside the others, linked next to the file on the pages
-  here (`take_over_files`, `apply_file_renames`).
+  server's. The Markdown copy takes only the files a note links along (the explicit vault export shares that code and
+  should not carry unused files), so a version kept twice that no note links (a drawing saved again on both computers, a
+  file only a canvas shows) would be deleted with the next sync, on the server and then never reach the other computer.
+  Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`, and in the shell a file changed during the
+  take-over, `take_over_files`, `apply_file_renames`) therefore goes, both versions with a drawing's previews, on the kept
+  list `.arcalo-kept-files` in the repository: every computer's tree sync keeps those files, linked or not, and the take-over
+  copies them in like other new files. The list is merged line by line (`merge_kept`); a file leaves it when the user moves
+  it to the file trash (`gitsync::forget_kept`). The sync changes no note for it; `FileRename` tells the user about the
+  second version.
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict

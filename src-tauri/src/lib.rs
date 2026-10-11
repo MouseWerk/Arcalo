@@ -1857,15 +1857,9 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
             }
             // New files, and the ones only the server changed; a file that could not be copied keeps
             // the pull waiting, so the next sync does not upload the old file over the server's.
-            let taken = syncmerge::take_over_files(
-                &state.db(),
-                &state.git_repo_dir(),
-                &state.attachments_dir(),
-                &out.pulled_files,
-                Local::now(),
-            );
+            let taken = syncmerge::take_over_files(&state.git_repo_dir(), &state.attachments_dir(), &out.pulled_files);
             let files_taken = match taken {
-                Ok((kept, pages)) => {
+                Ok(kept) => {
                     if !kept.is_empty() {
                         // Changed here while the sync ran: both kept, the next sync uploads this one.
                         let names: Vec<String> = kept.iter().map(|r| format!("{} → {}", r.from, r.to)).collect();
@@ -1876,11 +1870,6 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                                 names.join(", ")
                             ),
                         );
-                        for id in pages {
-                            if !p.pages.contains(&id) {
-                                p.pages.push(id);
-                            }
-                        }
                     }
                     true
                 }

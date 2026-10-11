@@ -37,7 +37,16 @@ pub async fn attachment_rename(app: AppHandle, name: String, new_name: String) -
 /// Moves files into the file trash (`<data dir>/trash/files`).
 #[tauri::command]
 pub async fn attachment_trash(app: AppHandle, names: Vec<String>) -> Result<Vec<String>> {
-    blocking(app, move |s| manager::trash_files(&s.data_dir, &names)).await
+    blocking(app, move |s| {
+        let trashed = manager::trash_files(&s.data_dir, &names)?;
+        // A file kept twice by the Git sync stays on its kept list until the user removes it.
+        let _running = crate::lock(&s.git_lock);
+        if let Err(e) = arcalo_core::gitsync::forget_kept(&s.data_dir.join(arcalo_core::gitsync::REPO_DIR), &names) {
+            crate::devlog::warn("git", format!("trashed files not taken off the kept list: {e}"));
+        }
+        Ok(trashed)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -393,10 +393,9 @@ pub fn apply_file_renames(
 ) -> Result<Vec<i64>> {
     let repo_files = repo.join(arcalo_core::attachments::DIR_NAME);
     let mut pages = Vec::new();
-    let plain = |p: &std::path::Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
     for r in renames {
         // Changed here again since the sync (neither the copy the sync renamed nor the server's):
-        // kept as a version of its own beside both, linked where the file is linked here.
+        // kept as a version of its own beside both ([`keep_beside`]).
         let here = attachments_dir.join(&r.from);
         let ours = std::fs::read(repo_files.join(&r.to)).ok();
         let server = std::fs::read(repo_files.join(&r.from)).ok();
@@ -405,19 +404,7 @@ pub fn apply_file_renames(
             && Some(&bytes) != ours.as_ref()
             && Some(&bytes) != server.as_ref()
         {
-            let other =
-                |p: std::path::PathBuf| p.exists() && std::fs::read(&p).ok().as_deref() != Some(bytes.as_slice());
-            let newer =
-                gitsync::clash_name(&r.from, &bytes, |n| other(attachments_dir.join(n)) || other(repo_files.join(n)));
-            std::fs::rename(&here, attachments_dir.join(&newer)).map_err(|e| Error::file(&here, e))?;
-            let preview = arcalo_core::drawings::preview_name(&r.from);
-            if arcalo_core::attachments::is_drawing(&r.from) && plain(&attachments_dir.join(&preview)) {
-                let moved = attachments_dir.join(arcalo_core::drawings::preview_name(&newer));
-                std::fs::rename(attachments_dir.join(&preview), &moved).map_err(|e| Error::file(&moved, e))?;
-            }
-            let ids: Vec<i64> = db.pages_using(&r.from)?.into_iter().filter(|p| !p.trashed).map(|p| p.id).collect();
-            let at = now.with_timezone(&chrono::Utc);
-            pages.extend(db.atomic(|| arcalo_core::attachment_manager::add_refs(db, &ids, &r.from, &newer, at))?);
+            keep_beside(repo, attachments_dir, &r.from)?;
         }
         let mut moves = vec![(r.from.clone(), r.to.clone())];
         if arcalo_core::attachments::is_drawing(&r.from) {
@@ -441,14 +428,8 @@ pub fn apply_file_renames(
             })
             .collect();
         let changed = db.atomic(|| {
-            let at = now.with_timezone(&chrono::Utc);
-            if r.both {
-                // Both versions stay linked: the server's under its name, this computer's beside it.
-                arcalo_core::attachment_manager::add_refs(db, &ids, &r.from, &r.to, at)
-            } else {
-                db.rename_pdf_highlights(&r.from, &r.to)?;
-                arcalo_core::attachment_manager::rewrite_refs(db, &ids, &r.from, &r.to, at)
-            }
+            db.rename_pdf_highlights(&r.from, &r.to)?;
+            arcalo_core::attachment_manager::rewrite_refs(db, &ids, &r.from, &r.to, now.with_timezone(&chrono::Utc))
         })?;
         pages.extend(changed);
     }
@@ -642,32 +623,20 @@ async fn close_and_sync(
 /// Takes over the files of the attachments folder a sync brought: the ones this computer does not
 /// have, and the ones only the server changed (a drawing saved again there) in place of this
 /// computer's copy while that is still the one the sync saw. A copy changed here since (between
-/// the sync and now) is kept beside the server's: it takes [`gitsync::clash_name`] (a drawing
-/// with its preview), the pages here that link the file link both, and the rename and the rewritten pages are returned.
-/// Links are never followed, on either side.
+/// the sync and now) is kept beside the server's under [`gitsync::clash_name`] (a drawing with its
+/// preview): put into the working tree and on its kept list, so the next sync uploads it although
+/// no note links it; no note is changed. The renames are returned. Links are never followed.
 pub fn take_over_files(
-    db: &Database,
     repo: &std::path::Path,
     dst: &std::path::Path,
     changed: &[gitsync::PulledFile],
-    now: DateTime<Local>,
-) -> Result<(Vec<FileRename>, Vec<i64>)> {
+) -> Result<Vec<FileRename>> {
     let src = repo.join(arcalo_core::attachments::DIR_NAME);
-    let (mut renamed, mut pages) = (Vec::new(), Vec::new());
+    let mut renamed = Vec::new();
     if !src.is_dir() {
-        return Ok((renamed, pages));
+        return Ok(renamed);
     }
     crate::copy_new_attachments(&src, dst)?;
-    let plain = |p: &std::path::Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file());
-    let put = |from: &std::path::Path, to: &std::path::Path, name: &str| -> Result<()> {
-        let tmp = dst.join(format!(".{name}.part"));
-        let copied = arcalo_core::error::copy_file(from, &tmp)
-            .and_then(|_| arcalo_core::error::IoAt::at(std::fs::rename(&tmp, to), to));
-        if copied.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        copied
-    };
     for f in changed {
         let Some(name) = f.path.strip_prefix(&format!("{}/", arcalo_core::attachments::DIR_NAME)) else { continue };
         if name.contains(['/', '\\']) || name.starts_with('.') {
@@ -678,32 +647,68 @@ pub fn take_over_files(
             continue;
         }
         if gitsync::content_id(&to) != f.mine {
-            let Ok(bytes) = std::fs::read(&to) else { continue };
-            // Changed here since the sync: this computer's file goes beside the server's.
-            let other =
-                |p: std::path::PathBuf| p.exists() && std::fs::read(&p).ok().as_deref() != Some(bytes.as_slice());
-            let new = gitsync::clash_name(name, &bytes, |n| other(dst.join(n)) || other(src.join(n)));
-            std::fs::rename(&to, dst.join(&new)).map_err(|e| Error::file(&to, e))?;
-            let preview = arcalo_core::drawings::preview_name(name);
-            if arcalo_core::attachments::is_drawing(name) && plain(&dst.join(&preview)) {
-                let moved = dst.join(arcalo_core::drawings::preview_name(&new));
-                std::fs::rename(dst.join(&preview), &moved).map_err(|e| Error::file(&moved, e))?;
-                if plain(&src.join(&preview)) {
-                    put(&src.join(&preview), &dst.join(&preview), &preview)?;
-                }
+            // A drawing's preview goes with its drawing (below).
+            if name.strip_suffix(".svg").is_some_and(arcalo_core::attachments::is_drawing) {
+                continue;
             }
-            put(&from, &to, name)?;
-            let ids: Vec<i64> = db.pages_using(name)?.into_iter().filter(|p| !p.trashed).map(|p| p.id).collect();
-            // Both versions stay linked (the Markdown copy only takes linked files along).
-            let at = now.with_timezone(&chrono::Utc);
-            let changed = db.atomic(|| arcalo_core::attachment_manager::add_refs(db, &ids, name, &new, at))?;
-            pages.extend(changed);
-            renamed.push(FileRename { from: name.to_owned(), to: new, notes: vec![], both: true });
-            continue;
+            // Changed here since the sync: this computer's file goes beside the server's.
+            if let Some(new) = keep_beside(repo, dst, name)? {
+                renamed.push(FileRename { from: name.to_owned(), to: new, notes: vec![] });
+            }
+            let preview = arcalo_core::drawings::preview_name(name);
+            if arcalo_core::attachments::is_drawing(name) && plain(&src.join(&preview)) && !dst.join(&preview).exists()
+            {
+                put_file(&src.join(&preview), &dst.join(&preview), dst, &preview)?;
+            }
         }
-        put(&from, &to, name)?;
+        put_file(&from, &to, dst, name)?;
     }
-    Ok((renamed, pages))
+    Ok(renamed)
+}
+
+/// A plain file (no link, no folder).
+fn plain(p: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file())
+}
+
+/// Copies `from` to `to` through a temporary file in `dst`.
+fn put_file(from: &std::path::Path, to: &std::path::Path, dst: &std::path::Path, name: &str) -> Result<()> {
+    let tmp = dst.join(format!(".{name}.part"));
+    let copied = arcalo_core::error::copy_file(from, &tmp)
+        .and_then(|_| arcalo_core::error::IoAt::at(std::fs::rename(&tmp, to), to));
+    if copied.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    copied
+}
+
+/// This computer's file `name` of the attachments folder `dst` (with a drawing's preview) moves to
+/// [`gitsync::clash_name`] of its content, also into the working tree `repo`, and both names go on
+/// the kept list: the next sync uploads it and every computer keeps it, linked by a note or not.
+/// Returns the new name (`None`: no plain file here).
+fn keep_beside(repo: &std::path::Path, dst: &std::path::Path, name: &str) -> Result<Option<String>> {
+    let here = dst.join(name);
+    if !plain(&here) {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&here).map_err(|e| Error::file(&here, e))?;
+    let repo_files = repo.join(arcalo_core::attachments::DIR_NAME);
+    let other = |p: std::path::PathBuf| p.exists() && std::fs::read(&p).ok().as_deref() != Some(bytes.as_slice());
+    let new = gitsync::clash_name(name, &bytes, |n| other(dst.join(n)) || other(repo_files.join(n)));
+    let mut moves = vec![(name.to_owned(), new.clone())];
+    if arcalo_core::attachments::is_drawing(name) && plain(&dst.join(arcalo_core::drawings::preview_name(name))) {
+        moves.push((arcalo_core::drawings::preview_name(name), arcalo_core::drawings::preview_name(&new)));
+    }
+    std::fs::create_dir_all(&repo_files).map_err(|e| Error::file(&repo_files, e))?;
+    let mut names = vec![name.to_owned()];
+    for (a, b) in moves {
+        let target = dst.join(&b);
+        std::fs::rename(dst.join(&a), &target).map_err(|e| Error::file(&target, e))?;
+        put_file(&target, &repo_files.join(&b), &repo_files, &b)?;
+        names.extend([a, b]);
+    }
+    gitsync::keep_files(repo, &names)?;
+    Ok(Some(new))
 }
 
 #[cfg(test)]
@@ -1395,7 +1400,7 @@ mod tests {
             let repo = self.base.join(pc).join("git-sync");
             apply(db, &out.remote_changes, Local::now()).unwrap();
             apply_file_renames(db, &self.files(pc), &repo, &out.renamed_files, Local::now()).unwrap();
-            take_over_files(db, &repo, &self.files(pc), &out.pulled_files, Local::now()).unwrap();
+            take_over_files(&repo, &self.files(pc), &out.pulled_files).unwrap();
             gitsync::taken_over(&repo);
             out
         }
@@ -1452,8 +1457,8 @@ mod tests {
     }
 
     /// Both kept, as with a file changed on both sides: the server's under its name, this
-    /// computer's under the renamed name, which this computer's page links; `out` carries the
-    /// rename.
+    /// computer's under the renamed name, on the server and here; the note is unchanged; `out`
+    /// carries the rename.
     fn assert_kept_both(r: &Rv, b: &Database, renames: &[FileRename]) {
         let r0 = renames.iter().find(|x| x.from == "Skizze.png").expect("the rename is reported");
         assert!(r0.to.starts_with("Skizze-") && r0.to.ends_with(".png"), "{r0:?}");
@@ -1461,11 +1466,10 @@ mod tests {
         assert_eq!(r.server(&format!("attachments/{}", r0.to)), "PNG von B");
         assert_eq!(std::fs::read_to_string(r.files("b").join("Skizze.png")).unwrap(), "PNG von A");
         assert_eq!(std::fs::read_to_string(r.files("b").join(&r0.to)).unwrap(), "PNG von B");
-        // The page here links B's version, beside the server's (the Markdown copy takes only
-        // linked files along: an unlinked one would be deleted on the server with the next sync).
+        // No note was changed for it.
         let page = b.page_by_title("Notiz").unwrap().unwrap().id;
-        assert_eq!(b.page_doc(page).unwrap().content, format!("![[Skizze.png]]\n![[{}]]", r0.to));
-        assert!(r.server("Notiz.md").contains(&format!("![[{}]]", r0.to)));
+        assert_eq!(b.page_doc(page).unwrap().content, "![[Skizze.png]]");
+        assert_eq!(r.server("Notiz.md"), "![[Skizze.png]]");
     }
 
     /// The pull of a changed file ended before the take-over and the file was saved again here
@@ -1498,7 +1502,7 @@ mod tests {
     }
 
     /// Both computers save the same drawing again and change no note: both versions stay, on the
-    /// server and on both computers, and the note that shows the drawing shows both. Nothing flips.
+    /// server and on both computers, and the note is unchanged. Nothing flips.
     #[test]
     fn a_drawing_saved_again_on_both_computers_keeps_both_versions() {
         if !git_available() {
@@ -1529,8 +1533,8 @@ mod tests {
         assert_eq!(r.server("attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
         assert_eq!(r.server(&format!("attachments/{new}")), "{\"v\":\"B\"}");
         assert_eq!(r.server(&format!("attachments/{new}.svg")), "<svg>B</svg>");
-        let both = format!("Plan\n\n![[Skizze.excalidraw]]\n![[{new}]]\n");
-        assert_eq!(r.server("Plan.md"), both);
+        let unchanged = "Plan\n\n![[Skizze.excalidraw]]\n";
+        assert_eq!(r.server("Plan.md"), unchanged);
         for (db, pc) in [(&a, "a"), (&b, "b")] {
             assert_eq!(
                 std::fs::read_to_string(r.files(pc).join("Skizze.excalidraw")).unwrap(),
@@ -1539,7 +1543,7 @@ mod tests {
             );
             assert_eq!(std::fs::read_to_string(r.files(pc).join(&new)).unwrap(), "{\"v\":\"B\"}", "{pc}");
             let plan = db.page_by_title("Plan").unwrap().unwrap().id;
-            assert_eq!(db.page_doc(plan).unwrap().content, both, "{pc}");
+            assert_eq!(db.page_doc(plan).unwrap().content, unchanged, "{pc}");
         }
         // Nothing flips back and forth.
         for (db, pc) in [(&a, "a"), (&b, "b")] {
@@ -1566,17 +1570,6 @@ mod tests {
         for title in titles {
             let text = |db: &Database| db.page_doc(db.page_by_title(title).unwrap().unwrap().id).unwrap().content;
             assert_eq!(text(dbs[0].0), text(dbs[1].0), "{title}");
-        }
-        // Each version is linked by a page on both computers (else the next sync drops it).
-        for (name, _) in versions {
-            for (db, pc) in dbs {
-                let linked = db
-                    .list_pages()
-                    .unwrap()
-                    .iter()
-                    .any(|p| p.deleted_at.is_none() && db.page_doc(p.id).unwrap().content.contains(name.as_str()));
-                assert!(linked, "{pc}: {name} is linked by no page");
-            }
         }
         for (db, pc) in dbs {
             let out = r.run(db, pc);
@@ -1689,7 +1682,7 @@ mod tests {
         let repo = r.base.join("b").join("git-sync");
         apply(&b, &out.remote_changes, Local::now()).unwrap();
         apply_file_renames(&b, &r.files("b"), &repo, &out.renamed_files, Local::now()).unwrap();
-        take_over_files(&b, &repo, &r.files("b"), &out.pulled_files, Local::now()).unwrap();
+        take_over_files(&repo, &r.files("b"), &out.pulled_files).unwrap();
         gitsync::taken_over(&repo);
         let third = std::fs::read_dir(r.files("b"))
             .unwrap()
@@ -1703,6 +1696,52 @@ mod tests {
             &[("Bericht.pdf".into(), "PDF von A"), (new, "PDF von B"), (third, "PDF von B, neu")],
             &["Von A", "Von B"],
         );
+    }
+
+    /// A file only a canvas shows, saved again on both computers: both versions stay on the
+    /// server and on both computers (no note links the renamed one).
+    #[test]
+    fn a_file_only_a_canvas_links_keeps_both_versions() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("canvas-both");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        std::fs::create_dir_all(r.files("a")).unwrap();
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG eins").unwrap();
+        let board = a.create_page(None, "Board", None).unwrap();
+        let json = r#"{"nodes":[{"id":"f","type":"file","file":"attachments/Skizze.png","x":0,"y":0,"width":10,"height":10}],"edges":[]}"#;
+        a.make_canvas(board.id, json).unwrap();
+        r.run(&a, "a");
+        r.run(&b, "b");
+        std::fs::write(r.files("a").join("Skizze.png"), "PNG von A").unwrap();
+        std::fs::write(r.files("b").join("Skizze.png"), "PNG von B").unwrap();
+        r.run(&a, "a");
+        let out = r.run(&b, "b");
+        let new = out.renamed_files.iter().find(|x| x.from == "Skizze.png").map(|x| x.to.clone());
+        for _ in 0..2 {
+            r.run(&a, "a");
+            r.run(&b, "b");
+        }
+        let tree = std::process::Command::new("git")
+            .args(["ls-tree", "-r", "--name-only", "main"])
+            .current_dir(r.base.join("remote.git"))
+            .output()
+            .unwrap();
+        let tree = String::from_utf8_lossy(&tree.stdout).into_owned();
+        let on_server: Vec<String> =
+            tree.lines().filter(|l| l.starts_with("attachments/")).map(|l| r.server(l)).collect();
+        let on_a: Vec<String> = std::fs::read_dir(r.files("a"))
+            .unwrap()
+            .flatten()
+            .map(|e| std::fs::read_to_string(e.path()).unwrap_or_default())
+            .collect();
+        for v in ["PNG von A", "PNG von B"] {
+            assert!(on_server.iter().any(|x| x == v), "server lacks {v}: {on_server:?} (rename {new:?})");
+            assert!(on_a.iter().any(|x| x == v), "A lacks {v}: {on_a:?} (rename {new:?})");
+        }
+        // The canvas is unchanged.
+        assert_eq!(b.page_doc(b.page_by_title("Board").unwrap().unwrap().id).unwrap().content, json);
     }
 
     /// The file changed here between the sync and the take-over (no crash): both kept as well.
@@ -1720,8 +1759,7 @@ mod tests {
         std::fs::write(r.files("b").join("Skizze.png"), "PNG von B").unwrap();
         let repo = r.base.join("b").join("git-sync");
         apply(&b, &out.remote_changes, Local::now()).unwrap();
-        let (kept, pages) = take_over_files(&b, &repo, &r.files("b"), &out.pulled_files, Local::now()).unwrap();
-        assert_eq!(pages.len(), 1);
+        let kept = take_over_files(&repo, &r.files("b"), &out.pulled_files).unwrap();
         gitsync::taken_over(&repo);
         r.run(&b, "b");
         assert_kept_both(&r, &b, &kept);
