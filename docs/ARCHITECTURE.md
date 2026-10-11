@@ -158,14 +158,17 @@ page, on a blocking thread).
   written only on a change, through a synced temporary file and a rename. The shell removes it after `take_over_pulled`
   (`gitsync::taken_over`; a failed rename or file copy keeps it); a sync with nothing to return removes it too. A later sync
   returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
-  mirror already holds are left out), keeps the files of those notes and of the renamed files as HEAD has them, and the
-  server's attachments while this side's file is still the one recorded (one changed here since stays this side's and is
-  uploaded). A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
+  mirror already holds are left out), keeps the files of those notes, of the renamed files and of the server's attachments
+  as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`): this side's
+  under `clash_name`, and this side's notes that link the file link both (`attachment_manager::link_both`, `FileRename.both`;
+  the mirror takes only linked files along, so a file no note links would be deleted with the next sync); the rename is
+  recorded and returned like the others. A pull whose HEAD never moved, or on other history, is dropped. An adoption that never got past its reset is
   done again from a clean working tree at the server's commit (reset, untracked files removed); a record that cannot be read
   does the same with HEAD, which deletes nothing on the server and turns differing notes into conflicts. Deciding a conflict
   (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
   only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
-  (`syncmerge::take_over_files`). Links are never followed: the working tree has `core.symlinks=false` (a link from the
+  (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way (the
+  pages here link both). Links are never followed: the working tree has `core.symlinks=false` (a link from the
   server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
   are copied only when they are plain files on both sides. A companion's first sync fetches the newest commit only
   (`--depth 1`; the history holds every database copy). A rejected push

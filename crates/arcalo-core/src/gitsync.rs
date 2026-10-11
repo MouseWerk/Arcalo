@@ -640,8 +640,10 @@ fn adopt_clashes(
         }
         names.push((name.to_owned(), new_name));
     }
-    let mut out: Vec<FileRename> =
-        names.iter().map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![] }).collect();
+    let mut out: Vec<FileRename> = names
+        .iter()
+        .map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![], both: false })
+        .collect();
     if names.is_empty() {
         return Ok(out);
     }
@@ -1229,6 +1231,11 @@ pub struct FileRename {
     /// rewritten here: the ones kept as this computer wrote them, and conflicts (their page holds
     /// this computer's text). Notes the pull rewrites itself are not listed.
     pub notes: Vec<String>,
+    /// The notes link both files from now on (each line that links `from` is followed by the same
+    /// line linking `to`, [`crate::attachment_manager::link_both`]): a file changed here after the
+    /// server's change was pulled, so both versions stay linked and in the repository.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub both: bool,
 }
 
 /// Last run, as shown in the settings.
@@ -1639,7 +1646,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             }
             changes
         } else {
-            let recovered = still_waiting(req.source, waiting.changes)?;
+            let mut recovered = still_waiting(req.source, waiting.changes)?;
             prepare_tree_as(req.source, repo, req.database, req.companion)?;
             for c in &recovered {
                 for path in std::iter::once(&c.path).chain(c.from.as_ref()) {
@@ -1658,15 +1665,24 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
                     keep_heads(git, repo, note)?;
                 }
             }
-            // The server's files of the attachments folder, while this side's are as they were at
-            // the pull; one changed here since stays this side's (and is uploaded).
+            // The server's files of the attachments folder keep their name. One changed here since
+            // the pull is kept beside it ([`keep_both_since`]).
+            renamed = waiting.renamed;
             for f in waiting.files {
+                keep_heads(git, repo, &f.path)?;
+                // A drawing's preview goes with its drawing.
+                let preview = attachment_name(&f.path)
+                    .and_then(|n| n.strip_suffix(".svg"))
+                    .is_some_and(crate::attachments::is_drawing);
                 if content_id(&req.source.join(&f.path)) == f.mine {
-                    keep_heads(git, repo, &f.path)?;
                     files.push(f);
+                } else if preview {
+                    continue;
+                } else if let Some(r) = keep_both_since(req.source, repo, &f.path, &mut recovered)? {
+                    record_rename(repo, &f.path, &r)?;
+                    renamed.push(r);
                 }
             }
-            renamed = waiting.renamed;
             recovered
         }
     };
@@ -1968,11 +1984,83 @@ fn attachment_name(path: &str) -> Option<&str> {
     (!name.is_empty() && !name.contains('/')).then_some(name)
 }
 
+/// A file of the attachments folder the server changed (`path`, the server's version in the
+/// working tree) that this side changed as well since the pull: this side's version goes in
+/// beside it under [`clash_name`] (a drawing with its preview), and this side's notes that link
+/// the file link both (in the working tree; for a waiting conflict in its `mine`): the mirror only
+/// writes linked files, so a file no note links would be deleted with the next sync. `None`:
+/// nothing to keep (deleted here, the same content, the server has no such file).
+fn keep_both_since(source: &Path, repo: &Path, path: &str, waiting: &mut [RemoteChange]) -> Result<Option<FileRename>> {
+    let Some(name) = attachment_name(path) else { return Ok(None) };
+    let (here, there) = (source.join(path), repo.join(path));
+    if content_id(&here).is_none() || content_id(&there).is_none() || content_id(&here) == content_id(&there) {
+        return Ok(None);
+    }
+    let bytes = fs::read(&here)?;
+    let dir = crate::attachments::DIR_NAME;
+    let other = |p: PathBuf| p.exists() && fs::read(&p).ok().as_deref() != Some(bytes.as_slice());
+    let new = clash_name(name, &bytes, |n| other(repo.join(dir).join(n)) || other(source.join(dir).join(n)));
+    fs::write(repo.join(dir).join(&new), &bytes)?;
+    let preview = crate::drawings::preview_name(name);
+    let own_preview = source.join(dir).join(&preview);
+    if crate::attachments::is_drawing(name) && content_id(&own_preview).is_some() {
+        fs::copy(&own_preview, repo.join(dir).join(crate::drawings::preview_name(&new)))?;
+    }
+    let names = [(name.to_owned(), new.clone())];
+    let mut notes = Vec::new();
+    let mut listed = Vec::new();
+    note_paths(source, "", &mut listed)?;
+    for note in listed {
+        if content_id(&source.join(&note)).is_none() {
+            continue;
+        }
+        let before = String::from_utf8_lossy(&fs::read(source.join(&note))?).into_owned();
+        let text = if note.to_ascii_lowercase().ends_with(".canvas") {
+            relink_text(&note, &before, &names).0
+        } else {
+            crate::attachment_manager::link_both(&before, name, &new)
+        };
+        if text == before {
+            continue;
+        }
+        match waiting.iter_mut().find(|c| c.path == note) {
+            // The server's text waits in the working tree; this side's is the page here.
+            Some(c) if c.conflict => c.mine = Some(text),
+            // The server's text is taken over here: its links are the server's.
+            Some(_) => continue,
+            None => {
+                if is_link(&repo.join(&note)) {
+                    remove_path(&repo.join(&note))?;
+                }
+                fs::write(repo.join(&note), &text)?;
+            }
+        }
+        notes.push(note);
+    }
+    Ok(Some(FileRename { from: name.to_owned(), to: new, notes, both: true }))
+}
+
+/// The pull's file `path` is kept twice ([`keep_both_since`]): the record names the rename from
+/// now on, so a later sync returns it again instead of renaming once more.
+fn record_rename(repo: &Path, path: &str, r: &FileRename) -> Result<()> {
+    let Ok(mut all) = read_waiting(repo) else { return Ok(()) };
+    for w in &mut all {
+        w.files.retain(|f| f.path != path);
+    }
+    let at = all.iter().rposition(|w| !w.adopt).or(if all.is_empty() { None } else { Some(0) });
+    if let Some(w) = at.map(|i| &mut all[i])
+        && !w.renamed.iter().any(|x| x.to == r.to)
+    {
+        w.renamed.push(r.clone());
+    }
+    write_waiting(repo, &all)
+}
+
 /// The name this computer's file `name` takes when the server has another file of that name:
 /// the first 8 hex digits of its content's SHA-256 before the extension (`Bericht-1a2b3c4d.pdf`;
 /// a drawing keeps `.excalidraw`). Deterministic, so another computer with the same file picks
 /// the same name; `taken` (a name in use for other content) makes it longer.
-fn clash_name(name: &str, bytes: &[u8], taken: impl Fn(&str) -> bool) -> String {
+pub fn clash_name(name: &str, bytes: &[u8], taken: impl Fn(&str) -> bool) -> String {
     use sha2::{Digest, Sha256};
     let hash: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
     let (stem, ext) = match name.rsplit_once('.') {
@@ -2058,8 +2146,10 @@ fn relink_notes(
         .iter()
         .filter_map(|(a, b)| Some((attachment_name(a)?.to_owned(), attachment_name(b)?.to_owned())))
         .collect();
-    let mut out: Vec<FileRename> =
-        names.iter().map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![] }).collect();
+    let mut out: Vec<FileRename> = names
+        .iter()
+        .map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![], both: false })
+        .collect();
     let relink = |path: &str, text: &str| relink_text(path, text, &names);
     for path in local.iter().filter(|p| is_note(p)) {
         let Some(mine) = blob_text(git, repo, ours, path)? else { continue };
@@ -3890,7 +3980,7 @@ mod safety_tests {
         let new = clash_name("Bericht.pdf", b"PDF von B", |_| false);
         assert_eq!(
             out.renamed_files,
-            [FileRename { from: "Bericht.pdf".into(), to: new.clone(), notes: vec!["Notiz B.md".into()] }]
+            [FileRename { from: "Bericht.pdf".into(), to: new.clone(), notes: vec!["Notiz B.md".into()], both: false }]
         );
         // The server has both files; each note links to its own.
         assert_eq!(server_file(&r, "attachments/Bericht.pdf"), "PDF von A");
@@ -3991,9 +4081,15 @@ mod safety_tests {
                 FileRename {
                     from: "Bericht.pdf".into(),
                     to: pdf.clone(),
-                    notes: vec!["Notiz B.md".into(), "Plan.md".into()]
+                    notes: vec!["Notiz B.md".into(), "Plan.md".into()],
+                    both: false,
                 },
-                FileRename { from: "Skizze.excalidraw".into(), to: drawing.clone(), notes: vec!["Notiz B.md".into()] },
+                FileRename {
+                    from: "Skizze.excalidraw".into(),
+                    to: drawing.clone(),
+                    notes: vec!["Notiz B.md".into()],
+                    both: false,
+                },
             ]
         );
         // The server's files keep their names and content; B's are there under the new names.
