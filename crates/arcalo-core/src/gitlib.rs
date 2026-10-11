@@ -87,6 +87,17 @@ pub fn init_tls(dir: &Path) -> crate::Result<PathBuf> {
 /// non-zero exit with the reason in `stderr`.
 pub(super) fn run(git: &Git, cwd: Option<&Path>, args: &[&str]) -> GitOutput {
     set_timeouts(git.timeout);
+    #[cfg(test)]
+    {
+        static SYSTEM: OnceLock<()> = OnceLock::new();
+        SYSTEM.get_or_init(|| {
+            let dir = super::test_system_config();
+            // SAFETY: a global libgit2 option, set once before the first repository is opened.
+            unsafe {
+                let _ = git2::opts::set_search_path(git2::ConfigLevel::System, dir.as_os_str());
+            }
+        });
+    }
     let (config, rest) = split_config(args);
     let mut out = String::new();
     match dispatch(git, cwd, &config, &rest, &mut out) {
@@ -770,6 +781,11 @@ mod tests {
         assert!(!run(&g, Some(&work), &["remote", "get-url", "origin"]).ok);
         ok(&g, &work, &["remote", "add", "origin", bare.to_str().unwrap()]);
         assert_eq!(ok(&g, &work, &["remote", "get-url", "origin"]).trim(), bare.to_str().unwrap());
+        // Line ends as stored, as the sync sets them (`ensure_repo`): libgit2 reads the system
+        // configuration (in tests one with `autocrlf=true`), and the working tree's own wins.
+        ok(&g, &work, &["config", "core.autocrlf", "false"]);
+        ok(&g, &work, &["config", "core.eol", "lf"]);
+        assert_eq!(ok(&g, &work, &["config", "--local", "core.eol"]).trim(), "lf");
 
         fs::write(work.join("Notiz.md"), "Hallo\r\nWelt\r\n").unwrap();
         fs::write(work.join(".gitattributes"), "* text=auto\n").unwrap();

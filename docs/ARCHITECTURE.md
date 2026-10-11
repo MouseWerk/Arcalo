@@ -173,7 +173,12 @@ page, on a blocking thread).
   (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
   (renamed here, put into the working tree and on the kept list). Links are never followed: the working tree has `core.symlinks=false` (a link from the
   server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
-  are copied only when they are plain files on both sides. A companion's first sync fetches the newest commit only
+  are copied only when they are plain files on both sides. The working tree holds the stored bytes whatever the system or
+  user configuration says (Git for Windows sets `core.autocrlf=true`, and `text=auto` would check notes out with CRLF):
+  every command runs with `core.autocrlf=false` and `core.eol=lf`, the working tree's own configuration has both (for
+  libgit2), and a working tree checked out with CRLF before 1.18.1 gets the stored text back where only the line ends
+  differ (`restore_line_ends`). The core's tests run git under a system configuration with `autocrlf=true` and
+  `eol=crlf` (`test_system_config`), so this shows on every system. A companion's first sync fetches the newest commit only
   (`--depth 1`; the history holds every database copy). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only

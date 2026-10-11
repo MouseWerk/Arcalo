@@ -1221,6 +1221,10 @@ impl Git {
             "commit.gpgsign=false",
             "-c",
             "core.autocrlf=false",
+            // The working tree holds the stored bytes whatever the system or user configuration
+            // says (Git for Windows: `core.autocrlf=true`, and CRLF line ends under `text=auto`).
+            "-c",
+            "core.eol=lf",
             "-c",
             "core.fsmonitor=false",
             "-c",
@@ -1250,6 +1254,9 @@ impl Git {
                 None => cmd.env_remove(k),
             };
         }
+        // Tests run under the system configuration of Git for Windows that matters here.
+        #[cfg(test)]
+        cmd.env("GIT_CONFIG_SYSTEM", test_system_config().join("gitconfig"));
         cmd.env("GIT_CONFIG_COUNT", config.len().to_string());
         for (i, (k, v)) in config.iter().enumerate() {
             cmd.env(format!("GIT_CONFIG_KEY_{i}"), k).env(format!("GIT_CONFIG_VALUE_{i}"), v);
@@ -1549,6 +1556,15 @@ fn ensure_repo(git: &Git, repo: &Path, url: &str, branch: &str) -> Result<()> {
     if git.run(Some(repo), &["config", "core.symlinks"])?.stdout.trim() != "false" {
         git.check(Some(repo), &["config", "core.symlinks", "false"])?;
     }
+    // Line ends as stored, also in the working tree's own configuration (the built-in git reads
+    // the system and user configuration, not the options of [`Git::command`]). A working tree
+    // checked out with CRLF before (Windows, up to 1.18.0) gets the stored text back first; a
+    // crash before the keys are set does that again.
+    if git.run(Some(repo), &["config", "--local", "core.eol"])?.stdout.trim() != "lf" {
+        restore_line_ends(git, repo)?;
+        git.check(Some(repo), &["config", "core.autocrlf", "false"])?;
+        git.check(Some(repo), &["config", "core.eol", "lf"])?;
+    }
     let head_ref = format!("refs/heads/{branch}");
     let current = git.run(Some(repo), &["symbolic-ref", "-q", "HEAD"])?;
     if current.stdout.trim() != head_ref {
@@ -1563,6 +1579,48 @@ fn ensure_repo(git: &Git, repo: &Path, url: &str, branch: &str) -> Result<()> {
         git.check(Some(repo), &["remote", "add", "origin", url])?;
     } else if remote.stdout.trim() != url {
         git.check(Some(repo), &["remote", "set-url", "origin", url])?;
+    }
+    Ok(())
+}
+
+/// The folder of the system configuration every test runs git under (`gitconfig`): line ends as
+/// Git for Windows sets them (`core.autocrlf=true`) and CRLF where Git has the choice, so a
+/// working tree that does not hold the stored bytes fails the tests on every system.
+#[cfg(test)]
+pub(crate) fn test_system_config() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        // One folder for all test runs (the same text each time, written by a rename).
+        let dir = std::env::temp_dir().join("arcalo-test-gitconfig");
+        fs::create_dir_all(&dir).unwrap();
+        let tmp = dir.join(format!("gitconfig.{}", std::process::id()));
+        fs::write(&tmp, "[core]\n\tautocrlf = true\n\teol = crlf\n").unwrap();
+        fs::rename(&tmp, dir.join("gitconfig")).unwrap();
+        dir
+    })
+}
+
+/// Files of the working tree that differ from their stored text (the index) only by CRLF line
+/// ends get the stored text back; a file with any other difference stays as it is.
+fn restore_line_ends(git: &Git, repo: &Path) -> Result<()> {
+    if !has_head(git, repo)? {
+        return Ok(());
+    }
+    let listed = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", "HEAD"])?;
+    for path in listed.split('\0').filter(|p| !p.is_empty()) {
+        let file = repo.join(path);
+        if is_link(&file) {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&file) else { continue };
+        if !bytes.windows(2).any(|w| w == b"\r\n") {
+            continue;
+        }
+        let Ok(text) = String::from_utf8(bytes) else { continue };
+        let Some(stored) = blob_text(git, repo, "", path)? else { continue };
+        if stored != text && text.replace("\r\n", "\n") == stored {
+            crate::drawings::write_atomic(&file, stored.as_bytes())?;
+        }
     }
     Ok(())
 }
@@ -5001,6 +5059,42 @@ mod safety_tests {
         let c = again.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("comes again");
         assert!(c.conflict, "B's edit would be replaced: {c:?}");
         assert_eq!((c.base.as_deref(), c.theirs.as_deref()), (Some("eins\n"), Some("von A\n")), "{c:?}");
+    }
+
+    /// A working tree checked out with CRLF line ends (Windows, up to 1.18.0) gets the stored text
+    /// back where only the line ends differ; a file with another change stays as it is. The next
+    /// pull reports the server's change without an invented conflict.
+    #[test]
+    fn a_working_tree_with_crlf_line_ends_gets_the_stored_text_back() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("crlf-tree");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\nzwei\n");
+        put(&a.join("Andere.md"), "drei\n");
+        r.sync("a").unwrap();
+        mark(&b);
+        r.sync("b").unwrap();
+        // As 1.18.0 left it on Windows: CRLF in the working tree, no line-end keys of its own.
+        sh(&repo_b, &["config", "--unset", "core.eol"]);
+        sh(&repo_b, &["config", "--unset", "core.autocrlf"]);
+        fs::write(repo_b.join("Notiz.md"), "eins\r\nzwei\r\n").unwrap();
+        fs::write(repo_b.join("Andere.md"), "drei\r\nvier\r\n").unwrap();
+        let git = Git::new(None, &r.settings.remote_url);
+        ensure_repo(&git, &repo_b, &r.settings.remote_url, &r.settings.branch).unwrap();
+        assert_eq!(fs::read(repo_b.join("Notiz.md")).unwrap(), b"eins\nzwei\n");
+        assert_eq!(fs::read(repo_b.join("Andere.md")).unwrap(), b"drei\r\nvier\r\n", "another change is kept");
+        assert_eq!(sh(&repo_b, &["config", "core.eol"]).trim(), "lf");
+        fs::write(repo_b.join("Andere.md"), "drei\n").unwrap();
+        put(&a.join("Notiz.md"), "eins\nzwei\ndrei\n");
+        r.sync("a").unwrap();
+        let out = r.sync("b").unwrap();
+        let c = out.remote_changes.iter().find(|c| c.path == "Notiz.md").expect("pulled");
+        assert!(!c.conflict, "{c:?}");
+        assert!(out.remote_changes.iter().all(|c| !c.conflict), "{out:?}");
     }
 
     /// A shallow history (the companion's fetch) ends the walk: no base, no error.

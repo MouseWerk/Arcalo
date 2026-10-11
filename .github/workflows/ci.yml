@@ -62,9 +62,10 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --prefix ui
-      # File handling differs on Windows (sharing, flush rights): the backup and encryption tests run here too.
-      - name: Core tests on Windows (backups, encryption)
-        run: cargo test -p arcalo-core -- backup cipher
+      # File handling and line ends differ on Windows (sharing, flush rights, Git for Windows' autocrlf): the backup,
+      # encryption and Git sync tests run here too.
+      - name: Core tests on Windows (backups, encryption, Git sync)
+        run: cargo test -p arcalo-core -- backup cipher gitsync
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri
