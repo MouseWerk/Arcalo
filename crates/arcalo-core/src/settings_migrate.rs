@@ -434,11 +434,15 @@ mod tests {
     use crate::db::Database;
     use crate::settings::Settings;
 
-    const FIXTURES: [(&str, &str); 4] = [
+    // 1.14 and 1.18 are the defaults of their docs/settings.schema.json with a user's choices
+    // (1.16 to 1.18 store the same shape, version 17).
+    const FIXTURES: [(&str, &str); 6] = [
         ("1.6", include_str!("../tests/fixtures/settings/1.6.json")),
         ("1.7", include_str!("../tests/fixtures/settings/1.7.json")),
         ("1.8", include_str!("../tests/fixtures/settings/1.8.json")),
         ("1.9", include_str!("../tests/fixtures/settings/1.9.json")),
+        ("1.14", include_str!("../tests/fixtures/settings/1.14.json")),
+        ("1.18", include_str!("../tests/fixtures/settings/1.18.json")),
     ];
 
     #[test]
@@ -470,6 +474,41 @@ mod tests {
             assert_eq!(once, twice, "{name}: not idempotent");
             assert!(!m.ran() && m.notes.is_empty(), "{name}: {m:?}");
         }
+    }
+
+    /// An update from 1.14 (settings version 13) runs the steps of 1.15 and 1.16 once; one from
+    /// 1.16, 1.17 or 1.18.0 (version 17) runs none.
+    #[test]
+    fn updates_from_1_14_and_1_18_run_their_steps_once() {
+        let mut v: Value = serde_json::from_str(FIXTURES[4].1).unwrap();
+        assert_eq!(stored_version(&v), 13);
+        let m = migrate(&mut v);
+        assert_eq!((m.from, m.to), (13, SETTINGS_VERSION));
+        assert_eq!(
+            m.notes,
+            [
+                "search-by-meaning: search.semantic = automatic (on, local embedding model)",
+                "ai-switch: ai.enabled = true (as before)",
+                "theme-ids: appearance.theme_light = arcalo-light, appearance.theme_dark = arcalo-dark",
+            ]
+        );
+        let s = Database::parse_settings(&v.to_string()).unwrap();
+        assert_eq!(
+            (s.appearance.theme_light.as_str(), s.appearance.theme_dark.as_str()),
+            ("arcalo-light", "arcalo-dark")
+        );
+        assert!(s.ai.enabled);
+        assert_eq!(s.notes.daily_folder, "Journal", "the folder 1.14 stored stays");
+        assert_eq!(v["search"]["semantic"], Value::Null);
+        let mut again = v.clone();
+        assert!(!migrate(&mut again).ran());
+        assert_eq!(again, v);
+
+        let mut v: Value = serde_json::from_str(FIXTURES[5].1).unwrap();
+        let before = v.clone();
+        let m = migrate(&mut v);
+        assert_eq!((m.from, m.to, m.notes.len()), (SETTINGS_VERSION, SETTINGS_VERSION, 0));
+        assert_eq!(v, before);
     }
 
     #[test]

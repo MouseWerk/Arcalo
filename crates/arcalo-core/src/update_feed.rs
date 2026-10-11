@@ -128,8 +128,16 @@ pub struct Manifest {
     pub notes: Option<String>,
     #[serde(default)]
     pub pub_date: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "readable_platforms")]
     pub platforms: BTreeMap<String, Platform>,
+}
+
+/// The platform entries this version can read: one it cannot (a platform added later with
+/// other fields, an entry without a signature) is left out instead of making the feed
+/// unreadable for every platform.
+fn readable_platforms<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Platform>, D::Error> {
+    let raw: Option<BTreeMap<String, serde_json::Value>> = Option::deserialize(d)?;
+    Ok(raw.unwrap_or_default().into_iter().filter_map(|(k, v)| Some((k, serde_json::from_value(v).ok()?))).collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -198,8 +206,10 @@ pub enum FeedError {
     Status(u16),
     /// `latest.json` could not be read as a feed.
     Invalid(String),
-    /// A file of the share could not be read (the message names it).
+    /// A file of the share could not be read, or the download not written (the message names it).
     Io(String),
+    /// The disk holding the data folder is full (the download stopped; its part stays).
+    DiskFull,
     /// The signature does not match the file or the key.
     Signature(String),
     /// No file for this system in that version.
@@ -234,6 +244,11 @@ impl FeedError {
                 tr!("Die Versionsinformation ist ungültig", "The version information is invalid").into()
             }
             FeedError::Io(e) => e.clone(),
+            FeedError::DiskFull => tr!(
+                "Nicht genug freier Speicherplatz für das Update – mach Platz frei, dann geht der Download dort weiter, wo er stehen geblieben ist",
+                "Not enough free disk space for the update – free some space, then the download continues where it stopped"
+            )
+            .into(),
             FeedError::Signature(_) => tr!(
                 "Die Signatur des Updates ist ungültig – die Datei wurde verworfen, es wurde nichts installiert",
                 "The update's signature is invalid – the file was discarded, nothing was installed"
@@ -264,6 +279,14 @@ impl FeedError {
             return FeedError::Missing;
         }
         FeedError::Io(trf!("{} ist nicht lesbar ({})", "{} cannot be read ({})", path.display(), e))
+    }
+
+    /// Writing the download (its folder, the part file) failed: a full disk is told as such.
+    fn of_write(path: &Path, e: &std::io::Error) -> FeedError {
+        if matches!(e.kind(), std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded) {
+            return FeedError::DiskFull;
+        }
+        FeedError::Io(trf!("{} kann nicht geschrieben werden ({})", "{} cannot be written ({})", path.display(), e))
     }
 }
 
@@ -339,9 +362,9 @@ pub async fn download(
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<Step, FeedError> {
     if let Some(dir) = part.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| FeedError::of_io(dir, &e))?;
+        std::fs::create_dir_all(dir).map_err(|e| FeedError::of_write(dir, &e))?;
     }
-    let have = std::fs::metadata(part).map(|m| m.len()).unwrap_or(0);
+    let mut have = std::fs::metadata(part).map(|m| m.len()).unwrap_or(0);
     let open = |append: bool| {
         std::fs::OpenOptions::new()
             .create(true)
@@ -349,10 +372,10 @@ pub async fn download(
             .append(append)
             .truncate(!append)
             .open(part)
-            .map_err(|e| FeedError::of_io(part, &e))
+            .map_err(|e| FeedError::of_write(part, &e))
     };
     match from {
-        Location::Http(url) => {
+        Location::Http(url) => loop {
             let mut req = client.get(url).header(reqwest::header::ACCEPT, "application/octet-stream");
             if have > 0 {
                 req = req.header(reqwest::header::RANGE, format!("bytes={have}-"));
@@ -365,7 +388,20 @@ pub async fn download(
                 return Ok(Step::Done);
             }
             if !(200..300).contains(&status) {
-                return Err(if status == 404 { FeedError::Status(404) } else { FeedError::Status(status) });
+                return Err(FeedError::Status(status));
+            }
+            // 206 has to continue exactly where the part ends: a server or proxy answering
+            // another range would splice two pieces of the file. Then the whole file is asked
+            // for instead (once; a server that still answers with a range is not used).
+            if status == 206
+                && let Some(start) = content_range_start(res.headers())
+                && start != have
+            {
+                if have == 0 {
+                    return Err(FeedError::Interrupted);
+                }
+                have = 0;
+                continue;
             }
             // 206: the server continues where the part ends; 200: it sends the whole file again.
             let resumed = status == 206 && have > 0;
@@ -376,7 +412,7 @@ pub async fn download(
             let mut stream = res.bytes_stream();
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(|e| FeedError::of_reqwest(&e))?;
-                file.write_all(&chunk).map_err(|e| FeedError::of_io(part, &e))?;
+                file.write_all(&chunk).map_err(|e| FeedError::of_write(part, &e))?;
                 done += chunk.len() as u64;
                 progress(done, total);
                 if pause.load(Ordering::SeqCst) {
@@ -387,9 +423,9 @@ pub async fn download(
             if total.is_some_and(|t| done < t) {
                 return Err(FeedError::Interrupted);
             }
-            file.flush().map_err(|e| FeedError::of_io(part, &e))?;
-            Ok(Step::Done)
-        }
+            file.flush().map_err(|e| FeedError::of_write(part, &e))?;
+            return Ok(Step::Done);
+        },
         Location::File(path) => {
             let mut src = std::fs::File::open(path).map_err(|e| FeedError::of_io(path, &e))?;
             let total = src.metadata().map(|m| m.len()).ok();
@@ -404,7 +440,7 @@ pub async fn download(
                 if n == 0 {
                     break;
                 }
-                file.write_all(&buf[..n]).map_err(|e| FeedError::of_io(part, &e))?;
+                file.write_all(&buf[..n]).map_err(|e| FeedError::of_write(part, &e))?;
                 done += n as u64;
                 progress(done, total);
                 if pause.load(Ordering::SeqCst) {
@@ -416,6 +452,12 @@ pub async fn download(
             Ok(Step::Done)
         }
     }
+}
+
+/// The first byte of a `Content-Range: bytes <first>-<last>/<size>` answer.
+fn content_range_start(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers.get(reqwest::header::CONTENT_RANGE)?.to_str().ok()?;
+    value.trim().strip_prefix("bytes ")?.split('-').next()?.trim().parse().ok()
 }
 
 /// Checks `data` against the minisign `signature` (base64 of the `.sig` file, as in
@@ -610,12 +652,22 @@ mod tests {
                     .find(|(p, _, _)| *p == path)
                     .map(|(_, s, b)| (*s, b.clone()))
                     .unwrap_or((404, b"Not Found".to_vec()));
-                let (status, body) = match range {
-                    Some(from) if status == 200 && from <= body.len() => (206, body[from..].to_vec()),
-                    _ => (status, body),
+                // `/misrange…` answers every range with the whole file (as from its first byte),
+                // like a proxy that ignores where the part ends.
+                let misrange = path.starts_with("/misrange");
+                let full = body.len();
+                let (status, body, first) = match range {
+                    Some(_) if misrange && status == 200 => (206, body, Some(0)),
+                    Some(from) if status == 200 && from <= body.len() => (206, body[from..].to_vec(), Some(from)),
+                    _ => (status, body, None),
                 };
-                let head =
-                    format!("HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n", body.len());
+                let content_range = first
+                    .map(|f| format!("content-range: bytes {f}-{}/{full}\r\n", full.saturating_sub(1)))
+                    .unwrap_or_default();
+                let head = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-length: {}\r\n{content_range}connection: close\r\n\r\n",
+                    body.len()
+                );
                 let _ = sock.write_all(head.as_bytes()).await;
                 let _ = sock.write_all(&body).await;
             }
@@ -701,5 +753,76 @@ mod tests {
         assert_eq!(starts, Some(first));
         assert_eq!(std::fs::read(&part).unwrap(), big);
         let _ = std::fs::remove_dir_all(&share);
+    }
+
+    #[test]
+    fn entries_this_version_cannot_read_do_not_break_the_feed() {
+        let m: Manifest = serde_json::from_str(
+            r#"{"version":"1.18.1","platforms":{
+                "linux-x86_64":{"url":"https://h/a.AppImage","signature":"s"},
+                "android-aarch64":{"url":"https://h/a.apk","version_code":1018001},
+                "windows-x86_64":"https://h/setup.exe",
+                "darwin-aarch64":{"url":"https://h/a.app.tar.gz","signature":"t","size":1}}}"#,
+        )
+        .unwrap();
+        assert_eq!(m.platforms.keys().collect::<Vec<_>>(), ["darwin-aarch64", "linux-x86_64"]);
+        assert!(platform(&m, &targets("windows-x86_64", Some("nsis"))).is_none(), "no package for Windows");
+        let none: Manifest = serde_json::from_str(r#"{"version":"1.18.1","platforms":null}"#).unwrap();
+        assert!(none.platforms.is_empty());
+        assert!(serde_json::from_str::<Manifest>(r#"{"platforms":{}}"#).is_err(), "a version is required");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_full_disk_is_told_as_such_and_other_write_errors_name_the_file() {
+        let (base, server) = serve(vec![("/file", 200, PAYLOAD.to_vec())]).await;
+        let client = reqwest::Client::new();
+        let at = Location::Http(format!("{base}/file"));
+        // /dev/full answers every write with ENOSPC.
+        let full = Path::new("/dev/full");
+        let err = download(&client, &at, full, &AtomicBool::new(false), |_, _| {}).await.unwrap_err();
+        assert_eq!(err, FeedError::DiskFull);
+        assert!(err.message().contains("Speicherplatz"), "{}", err.message());
+        // The same from a share.
+        let share = tmp("full-share");
+        std::fs::write(share.join("Arcalo.AppImage"), PAYLOAD).unwrap();
+        let from_share = Location::File(share.join("Arcalo.AppImage"));
+        let err = download(&client, &from_share, full, &AtomicBool::new(false), |_, _| {}).await.unwrap_err();
+        assert_eq!(err, FeedError::DiskFull);
+        // A folder that cannot be made: the message says it is not writable, not unreadable.
+        let blocker = share.join("blocker");
+        std::fs::write(&blocker, "a file").unwrap();
+        let err =
+            download(&client, &at, &blocker.join("x.part"), &AtomicBool::new(false), |_, _| {}).await.unwrap_err();
+        assert!(matches!(&err, FeedError::Io(m) if m.contains("geschrieben") && m.contains("blocker")), "{err:?}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&share);
+    }
+
+    #[tokio::test]
+    async fn a_range_answer_that_does_not_continue_the_part_starts_the_file_again() {
+        let (base, server) =
+            serve(vec![("/misrange/file", 200, PAYLOAD.to_vec()), ("/file", 200, PAYLOAD.to_vec())]).await;
+        let client = reqwest::Client::new();
+        let dir = tmp("misrange");
+        let part = dir.join("x.part");
+        // A part of another file: kept only if the server continues at its end.
+        std::fs::write(&part, b"XXXXX").unwrap();
+        let mut seen = vec![];
+        let at = Location::Http(format!("{base}/misrange/file"));
+        let step = download(&client, &at, &part, &AtomicBool::new(false), |d, t| seen.push((d, t))).await.unwrap();
+        assert_eq!(step, Step::Done);
+        assert_eq!(std::fs::read(&part).unwrap(), PAYLOAD, "not spliced");
+        assert_eq!(seen.first(), Some(&(0, Some(PAYLOAD.len() as u64))));
+        assert_eq!(verify(&std::fs::read(&part).unwrap(), SIG, PUBKEY, "1.9.1"), Ok(()));
+        // A server that continues correctly (with its Content-Range) is resumed.
+        std::fs::write(&part, &PAYLOAD[..7]).unwrap();
+        seen.clear();
+        let at = Location::Http(format!("{base}/file"));
+        download(&client, &at, &part, &AtomicBool::new(false), |d, t| seen.push((d, t))).await.unwrap();
+        assert_eq!(seen.first(), Some(&(7, Some(PAYLOAD.len() as u64))));
+        assert_eq!(std::fs::read(&part).unwrap(), PAYLOAD);
+        server.abort();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

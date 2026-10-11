@@ -60,9 +60,12 @@ export function compareVersions(a: string, b: string): number {
   for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
     if (xs[i] === undefined) return -1;
     if (ys[i] === undefined) return 1;
-    const [n, m] = [Number(xs[i]), Number(ys[i])];
-    const d = !Number.isNaN(n) && !Number.isNaN(m) ? n - m : xs[i].localeCompare(ys[i]);
-    if (d) return Math.sign(d);
+    if (xs[i] === ys[i]) continue;
+    // As the backend's semver: numbers as numbers and below words, words in ASCII order.
+    const [xn, yn] = [/^\d+$/.test(xs[i]), /^\d+$/.test(ys[i])];
+    if (xn && yn) return Math.sign(Number(xs[i]) - Number(ys[i]));
+    if (xn !== yn) return xn ? -1 : 1;
+    return xs[i] < ys[i] ? -1 : 1;
   }
   return 0;
 }

@@ -79,6 +79,32 @@ fn packaged() -> bool {
     matches!(tauri::utils::platform::bundle_type(), Some(BundleType::Deb | BundleType::Rpm))
 }
 
+/// Why this copy cannot replace its own program files (translocated or on a read-only volume
+/// on macOS, an AppImage in a folder without write permission or no AppImage at all on Linux),
+/// found once per start. Debug builds are not installed: they answer `ARCALO_UPDATE_BLOCKED`
+/// (tests) and are otherwise never blocked.
+fn blocked(app: &AppHandle) -> Option<core::Blocked> {
+    static BLOCKED: OnceLock<Option<core::Blocked>> = OnceLock::new();
+    *BLOCKED.get_or_init(|| {
+        if cfg!(debug_assertions) {
+            return test_var("ARCALO_UPDATE_BLOCKED").and_then(|b| core::Blocked::parse(&b));
+        }
+        let found = installer::blocked(app);
+        if let Some(b) = found {
+            crate::devlog::info("update", format!("updates are not installed by this copy: {b:?}"));
+        }
+        found
+    })
+}
+
+/// Why this copy does not install updates itself: a portable copy, a package, or program files
+/// it cannot replace (`None`: it installs them). Such a copy offers the release page.
+fn manual_reason(app: &AppHandle) -> Option<String> {
+    core::manual_update_reason(crate::portable::active(), packaged())
+        .or_else(|| blocked(app).map(core::Blocked::message))
+        .map(str::to_string)
+}
+
 /// The keys of `latest.json` this copy takes (`windows-x86_64-nsis`, `windows-x86_64`).
 fn targets() -> Vec<String> {
     use tauri::utils::config::BundleType;
@@ -197,6 +223,8 @@ pub struct UpdateStatus {
     package: bool,
     /// The Microsoft Store build: the Store updates it (`enabled` is false).
     store: bool,
+    /// The program files cannot be replaced by this copy: the release page instead.
+    blocked: Option<core::Blocked>,
     /// The first call after a start that followed an update: which version, and whether it runs now.
     restarted: Option<AfterUpdate>,
     /// What applies (the policy's values over the settings), and which fields are managed.
@@ -349,6 +377,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         portable: crate::portable::active(),
         package: packaged(),
         store: crate::store::active(),
+        blocked: if crate::portable::active() || packaged() || pubkey().is_none() { None } else { blocked(&app) },
         restarted: lock(&updates.after).take(),
         install_now: install_window_open(&eff),
         policy: eff,
@@ -437,7 +466,7 @@ pub async fn update_check(
         *lock(&updates.download) =
             DownloadState { phase: if ready { Phase::Ready } else { Phase::Idle }, ..Default::default() };
     }
-    let can_install = core::manual_update_reason(crate::portable::active(), packaged()).is_none();
+    let can_install = manual_reason(&app).is_none();
     if eff.mode == UpdateMode::Auto && can_install {
         start_download(&app);
     }
@@ -454,8 +483,17 @@ fn start_download(app: &AppHandle) {
     updates.pause.store(false, Ordering::SeqCst);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let res = ensure_staged(&app).await;
         let updates = app.state::<Updates>();
+        let res = loop {
+            let res = ensure_staged(&app).await;
+            // A check found a newer version while this one was downloading: that one follows
+            // (otherwise it would wait for the next check, hours later).
+            let newer =
+                matches!(&res, Ok(Some(s)) if lock(&updates.offer).as_ref().is_some_and(|o| o.version != s.version));
+            if !newer || updates.pause.load(Ordering::SeqCst) {
+                break res;
+            }
+        };
         updates.downloading.store(false, Ordering::SeqCst);
         match res {
             Ok(Some(s)) => {
@@ -479,8 +517,8 @@ pub fn update_download(app: AppHandle, updates: State<Updates>) -> Result<()> {
     if lock(&updates.offer).is_none() {
         return Err(Error::State(tr!("Kein Update gefunden", "No update found").into()));
     }
-    if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
-        return Err(Error::State(why.into()));
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
     }
     start_download(&app);
     Ok(())
@@ -571,8 +609,8 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
         return Err(not_configured());
     }
     // A portable copy would be installed into the user profile instead of updating its folder.
-    if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
-        return Err(Error::State(why.into()));
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
     }
     if lock(&updates.offer).is_none() {
         return Err(Error::State(tr!("Kein Update gefunden", "No update found").into()));
@@ -632,9 +670,21 @@ fn outside_window(eff: &Effective) -> String {
 /// „Jetzt neu starten“ on the hint of a downloaded update.
 #[tauri::command(async)]
 pub async fn update_restart_now(app: AppHandle, updates: State<'_, Updates>) -> Result<()> {
-    let staged = lock(&updates.staged).clone().ok_or_else(|| {
-        Error::State(tr!("Das Update ist noch nicht geladen", "The update has not been downloaded yet").into())
-    })?;
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
+    }
+    let not_loaded =
+        || Error::State(tr!("Das Update ist noch nicht geladen", "The update has not been downloaded yet").into());
+    let staged = lock(&updates.staged).clone().ok_or_else(not_loaded)?;
+    // The file went meanwhile (cleaned up by hand, another copy on the same data folder): it is
+    // downloaded again instead of failing at every try.
+    if !staged.path.is_file() {
+        discard_staged(&app, None);
+        if lock(&updates.offer).is_some() {
+            start_download(&app);
+        }
+        return Err(not_loaded());
+    }
     if !install_window_open(&effective(&app)) {
         return Err(Error::State(outside_window(&effective(&app))));
     }
@@ -666,7 +716,7 @@ fn install_on_quit(app: &AppHandle) -> bool {
     }
     let Some(staged) = lock(&updates.staged).clone().filter(|s| s.path.is_file()) else { return false };
     let eff = effective(app);
-    if eff.mode != UpdateMode::Auto || core::manual_update_reason(crate::portable::active(), packaged()).is_some() {
+    if eff.mode != UpdateMode::Auto || manual_reason(app).is_some() {
         return false;
     }
     if !install_window_open(&eff) {
@@ -719,8 +769,12 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
     let what = tr!("Installation fehlgeschlagen", "Installation failed");
     let key = pubkey().ok_or_else(not_configured)?;
     let bytes = std::fs::read(&staged.path)?;
-    // Checked again: the file waited in the data folder since its download.
-    feed::verify(&bytes, &staged.signature, key, &staged.version).map_err(|e| feed_failed(what, &e))?;
+    // Checked again: the file waited in the data folder since its download. A file that no
+    // longer matches goes, so the next check downloads it again instead of every quit failing.
+    if let Err(e) = feed::verify(&bytes, &staged.signature, key, &staged.version) {
+        discard_staged(app, Some(e.message()));
+        return Err(feed_failed(what, &e));
+    }
     let dir = data_dir(app);
     let from = current_version(app);
     let backup = pre_update_backup(app, &from, &staged.version);
@@ -751,6 +805,19 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
         crate::resume_after_failed_exit(app);
         install_failed(what, &e)
     })
+}
+
+/// Forgets the downloaded update (its file and the stage record). `error`: why, shown as a failed
+/// download (with „Erneut versuchen“); `None`: as if nothing was downloaded yet.
+fn discard_staged(app: &AppHandle, error: Option<String>) {
+    let updates = app.state::<Updates>();
+    if let Some(s) = lock(&updates.staged).take() {
+        let _ = std::fs::remove_file(&s.path);
+    }
+    let _ = std::fs::remove_file(updates_dir(app).join(STAGED_FILE));
+    let phase = if error.is_some() { Phase::Failed } else { Phase::Idle };
+    *lock(&updates.download) = DownloadState { phase, error, ..Default::default() };
+    state_changed(app);
 }
 
 /// `arcalo-pre-update-<from>-<to>.db` in the backup folder (not counted by the rotation).

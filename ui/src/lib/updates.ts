@@ -1,7 +1,7 @@
 // Pure helpers of the auto-update flow (see components/Updates.tsx).
 
 import { fileSize } from "./format";
-import type { UpdateInfo, UpdateManagedField, UpdateMode, UpdateProgress, UpdateStatus } from "./types";
+import type { UpdateBlocked, UpdateInfo, UpdateManagedField, UpdateMode, UpdateProgress, UpdateStatus } from "./types";
 import { t, type TKey } from "./i18n";
 
 /** Automatic checks: shortly after start, then every 6 hours. */
@@ -17,11 +17,25 @@ export function autoCheckAllowed(status: UpdateStatus | null, autoCheck: boolean
   return !!status?.enabled && autoCheck !== false;
 }
 
-/** Why this copy does not install updates itself: a portable folder or a system package (both get the release page). */
-export function manualUpdate(status: UpdateStatus | null): "portable" | "package" | null {
+/** Why this copy does not install updates itself: a portable folder, a system package, or program files it cannot replace (all get the release page). */
+export function manualUpdate(status: UpdateStatus | null): "portable" | "package" | "blocked" | null {
   if (status?.portable) return "portable";
   if (status?.package) return "package";
+  if (status?.blocked) return "blocked";
   return null;
+}
+
+const BLOCKED_TEXT: Record<UpdateBlocked, TKey> = {
+  translocated: "upd.blocked.translocated",
+  read_only: "upd.blocked.read_only",
+  not_writable: "upd.blocked.not_writable",
+  no_appimage: "upd.blocked.no_appimage",
+};
+
+/** What a copy that cannot update itself tells (`null` when it can). */
+export function blockedText(status: UpdateStatus | null): string | null {
+  const b = status?.blocked;
+  return b && BLOCKED_TEXT[b] ? t(BLOCKED_TEXT[b]) : null;
 }
 
 /** „12 %“ with the downloaded size, or only the size while the total is unknown. */

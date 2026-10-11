@@ -4193,6 +4193,10 @@ export const en = {
   "upd.package": "Installed as a package: install the new package from the release page.",
   "upd.packageAction": "Open release page",
   "upd.packageDesc": "Installed as a package (.deb): new versions are installed by the package manager, not by Arcalo. “Open release page” leads to the new package; the AppImage updates itself.",
+  "upd.blocked.translocated": "macOS runs Arcalo from a read-only temporary folder because the app is not in the Applications folder. Move Arcalo to Applications and start it from there, then updates install themselves.",
+  "upd.blocked.read_only": "Arcalo is on a read-only drive and cannot update itself. “Open release page” leads to the new version.",
+  "upd.blocked.not_writable": "No write permission for the folder of the AppImage: Arcalo cannot update itself. “Open release page” leads to the new AppImage.",
+  "upd.blocked.no_appimage": "Arcalo was not started as an AppImage and cannot update itself. “Open release page” leads to the new version.",
   // ---- merged from main
   "dash.set.hiddenInCalendar": "hidden in the Calendar",
   // ---- merged from main

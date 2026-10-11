@@ -18,6 +18,17 @@ them with policies.
   - Linux: the AppImage replaces itself. A .deb (or .rpm) installation only shows the notice;
     the package manager installs the new package.
   - Portable copies never install themselves; they offer the release page.
+  - A copy that cannot replace its own program files offers the release page too, with the
+    reason, and downloads nothing: on macOS an app started from the Downloads folder or a disk
+    image without being moved to Applications (macOS runs it from a temporary read-only place)
+    or one on a read-only volume; on Linux an AppImage in a folder without write permission or
+    on a read-only drive, or a program not started as an AppImage. An app in Applications
+    without write permission for the user asks for an administrator's password instead.
+  - Notify mode: „Cancel“ stops the download of „Install and restart“; the next click continues
+    it where it stopped. A downloaded update that no longer matches its signature when it is
+    to be installed (changed on disk) is deleted and downloaded again.
+  - A full disk stops the download with „Not enough free disk space“; once there is room, it
+    continues where it stopped.
 - Mode **notify**: Arcalo shows the new version; the user clicks „Install and restart“.
 - Mode **off**: no automatic checks (users can still check by hand, unless a policy switches
   updates off).

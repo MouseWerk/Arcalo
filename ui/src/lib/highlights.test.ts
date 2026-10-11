@@ -14,6 +14,16 @@ describe("compareVersions", () => {
     expect(compareVersions("2.0.0", "1.99.99")).toBe(1);
     expect(compareVersions("1.9.0+win", "1.9.0")).toBe(0);
   });
+  it("orders patch releases and pre-release words as the updater does", () => {
+    expect(compareVersions("1.18.10", "1.18.9")).toBe(1);
+    expect(compareVersions("1.18.1", "1.18.10")).toBe(-1);
+    expect(compareVersions("1.18.1-rc.1", "1.18.1")).toBe(-1);
+    // Numbers below words, words in ASCII order (upper case first), like semver.
+    expect(compareVersions("1.18.1-1", "1.18.1-alpha")).toBe(-1);
+    expect(compareVersions("1.18.1-RC.1", "1.18.1-beta.1")).toBe(-1);
+    expect(compareVersions("1.18.1-alpha", "1.18.1-alpha.1")).toBe(-1);
+    expect(compareVersions("1.18.1-rc.1", "1.18.1-rc.1")).toBe(0);
+  });
 });
 
 describe("highlightsBetween", () => {
