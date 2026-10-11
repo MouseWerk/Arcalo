@@ -229,6 +229,13 @@ jobs:
           fi
           cargo tauri build "${ARGS[@]}"
 
+      # The installer and the portable ZIP start on a Windows without the Visual C++
+      # Redistributable (static C runtime, .cargo/config.toml).
+      - name: No Visual C++ runtime DLLs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
+
       - name: Collect files
         shell: bash
         run: |
@@ -349,6 +356,10 @@ jobs:
           cargo fetch
           npm --prefix ui run build
           cargo build --release -p arcalo --features custom-protocol,store
+      - name: No Visual C++ runtime DLLs
+        if: steps.identity.outputs.set == 'true'
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       - name: Pack the MSIX
         id: msix
         if: steps.identity.outputs.set == 'true'

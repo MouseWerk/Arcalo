@@ -20,6 +20,10 @@
   "bundle": {
     "active": true,
     "publisher": "MouseWerk",
+    "homepage": "https://arcalo.mousewerk.de/",
+    "category": "Productivity",
+    "shortDescription": "Local-first notes, tasks and time tracking",
+    "longDescription": "Markdown notes that link to each other, tasks, daily notes and time tracking with SAP and Jira booking, calendar and optional AI. All data stays on your computer.",
     "targets": [
       "nsis",
       "deb",
@@ -37,6 +41,7 @@
     ],
     "linux": {
       "deb": {
+        "depends": ["libasound2"],
         "conflicts": ["annalo"],
         "replaces": ["annalo"],
         "postInstallScript": "installer/deb-postinst.sh",

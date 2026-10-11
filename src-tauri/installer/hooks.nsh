@@ -244,8 +244,11 @@ Var AnnaloFound
 
 !macro NSIS_HOOK_PREUNINSTALL
   ; The program folder leaves the user's Path, while the program is still there to do it. An
-  ; update keeps it (the new version is installed into the same folder).
+  ; update keeps it (the new version is installed into the same folder). A running Arcalo is
+  ; closed first, as the template does right after this hook: cancelling its question keeps the
+  ; installation, and then its Path entry too.
   ${If} $UpdateMode <> 1
+    !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
     !insertmacro UserPath remove ""
   ${EndIf}
 !macroend
