@@ -26,7 +26,7 @@ import { WindowControls } from "./components/WindowControls";
 import { createSubpage } from "./views/PageView";
 import { requestAddProperty } from "./views/PageProperties";
 import { flushAllEditors, reloadEditors } from "./editor/NoteEditor";
-import type { ActivityTick, GitPulled, SearchTarget } from "./lib/types";
+import type { ActivityTick, ExternalChange, GitPulled, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
@@ -145,8 +145,16 @@ export function App() {
       // Git sync took over notes from the server; notes changed on both sides are conflicts.
       on<GitPulled>("gitsync://pulled", (p) => void onPulled(p)),
       on("gitsync://conflicts", () => void useApp.getState().refreshConflicts()),
-      // Pages rewritten elsewhere (an attachment renamed): open editors reload them.
-      on<number[]>("data://pages", (ids) => reloadEditors(ids)),
+      // Pages rewritten elsewhere (an attachment renamed, the command line): open editors reload
+      // them (`null`: all), merging unsaved typing.
+      on<number[] | null>("data://pages", (ids) => reloadEditors(ids ?? undefined)),
+      // The command line (another process) changed the workspace: the tree, the task list and the
+      // timer follow (editors, bookings and the WBS reload through their own events).
+      on<ExternalChange>("data://external", (c) => {
+        const st = useApp.getState();
+        if (c.tree || c.all || c.pages.length) void st.refreshTree().catch(() => {});
+        if (c.entries || c.all) void st.refreshTimer().catch(() => {});
+      }),
       // Saved elsewhere (another window, a test, an import): take over the new settings.
       on("settings://changed", async () => {
         const asked = useApp.getState().settings;

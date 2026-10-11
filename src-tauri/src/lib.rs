@@ -25,6 +25,8 @@ mod dayreview;
 mod desktop;
 mod devlog;
 mod diagnostics;
+#[cfg(desktop)]
+mod external;
 mod feed;
 mod files;
 mod filing;
@@ -4421,6 +4423,13 @@ static BACKUP_RUNNING: Mutex<()> = Mutex::new(());
 /// [`prepare_exit`] ran; [`resume_after_failed_exit`] undoes it.
 static EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
 
+/// The workspace is closed for an exit ([`prepare_exit`]): threads with connections of their
+/// own let go of them.
+#[cfg_attr(mobile, allow(dead_code))]
+pub(crate) fn exit_prepared() -> bool {
+    EXIT_PREPARED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// The process did not end after all (the update installer or the new process could not be
 /// started): opens the workspace again, so edits are not written into the in-memory stand-in.
 pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
@@ -4896,6 +4905,8 @@ pub fn run() {
                 }
             }
             spawn_activity_sampler(app.handle().clone());
+            // The command line (`arcalo pages …`) may change the workspace while the app runs.
+            external::spawn(app.handle().clone());
             backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());

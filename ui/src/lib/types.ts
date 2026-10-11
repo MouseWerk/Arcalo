@@ -1375,6 +1375,19 @@ export interface GitPulled {
   restored?: number[];
 }
 
+/** What another process (the `arcalo` command line) changed in the workspace (`data://external`). */
+export interface ExternalChange {
+  pages: number[];
+  /** Pages created, renamed, moved, trashed, restored or purged. */
+  tree: boolean;
+  entries: boolean;
+  wbs: boolean;
+  absences: boolean;
+  settings: boolean;
+  /** Too much to name: everything reloads. */
+  all: boolean;
+}
+
 // ---- calendar sync (Kalender)
 
 export interface IcsSource {
