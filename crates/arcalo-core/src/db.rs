@@ -284,6 +284,12 @@ impl Database {
     /// locked file) everything since the savepoint is rolled back and the error returned:
     /// the connection never stays inside a transaction, where later saves would look
     /// successful but never be committed.
+    ///
+    /// The outermost call on a writable connection takes the write lock first (`BEGIN
+    /// IMMEDIATE`): another process on the workspace (the `arcalo` command line while the app
+    /// runs) may commit between a read and a write of `f`, and a transaction that started as a
+    /// reader cannot become the writer then (SQLite answers `SQLITE_BUSY` at once, without
+    /// waiting). Taking the lock up front waits for the other writer instead (busy timeout).
     pub fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -293,10 +299,25 @@ impl Database {
             eprintln!("arcalo: open transaction found outside of atomic(), rolled back");
             let _ = self.conn.execute_batch("ROLLBACK");
         }
+        let immediate = outermost && !self.conn.is_readonly(rusqlite::MAIN_DB).unwrap_or(true);
+        if immediate {
+            self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        }
         let name = format!("sp{}", SEQ.fetch_add(1, Ordering::Relaxed));
-        self.conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+        if let Err(e) = self.conn.execute_batch(&format!("SAVEPOINT {name}")) {
+            if immediate {
+                let _ = self.conn.execute_batch("ROLLBACK");
+            }
+            return Err(e.into());
+        }
         self.depth.fetch_add(1, Ordering::Relaxed);
-        let res = f().and_then(|v| self.conn.execute_batch(&format!("RELEASE {name}")).map(|_| v).map_err(Into::into));
+        let res = f().and_then(|v| {
+            self.conn.execute_batch(&format!("RELEASE {name}"))?;
+            if immediate {
+                self.conn.execute_batch("COMMIT")?;
+            }
+            Ok(v)
+        });
         self.depth.fetch_sub(1, Ordering::Relaxed);
         if res.is_err() {
             // SQLite may already have rolled the whole transaction back (then the savepoint is
@@ -1226,6 +1247,38 @@ mod tests {
         assert_eq!(e.status_flag, StatusFlag::Draft);
         assert!(db.running_timer().unwrap().is_none());
         assert!((db.booked_hours(np.id, Some("1020")).unwrap() - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_write_after_a_read_waits_for_another_process_instead_of_failing() {
+        let path = std::env::temp_dir().join(format!("arcalo-immediate-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let db = Database::open(&path).unwrap();
+        let id = db.create_page(None, "Geteilt", None).unwrap().id;
+        let (ready, go) = std::sync::mpsc::channel();
+        let res = db.atomic(|| {
+            // Read first, as a save does: the other writer comes in between.
+            assert!(db.page_doc(id)?.content.is_empty());
+            let other = path.clone();
+            let writer = std::thread::spawn(move || {
+                let db2 = Database::open(&other).unwrap();
+                ready.send(()).unwrap();
+                db2.save_page_content(id, "von außen")
+            });
+            go.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            db.save_page_content(id, "von hier")?;
+            Ok(writer)
+        });
+        let writer = res.expect("the first transaction commits");
+        writer.join().unwrap().expect("the other process waited for the lock and saved");
+        assert_eq!(db.page_doc(id).unwrap().content, "von außen");
+        drop(db);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
     }
 
     #[test]
