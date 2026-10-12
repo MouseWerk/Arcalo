@@ -6117,6 +6117,7 @@ export const de: Catalog = {
   "mob.notes.canvas": "Eine Canvas wird am Desktop angezeigt und bearbeitet.",
   "mob.notes.embed": "Am Desktop eingebettet: {name}",
   "mob.notes.linkMissing": "Die Seite „{title}“ gibt es noch nicht.",
+  "mob.notes.taskGone": "Diese Aufgabe gibt es in der Seite nicht mehr so. Die Seite wird neu geladen.",
   "mob.notes.conflict": "Diese Seite wurde hier und auf einem anderen Gerät geändert. Führe sie in den Einstellungen unter Synchronisierung zusammen.",
   "mob.set.title": "Einstellungen",
   "mob.set.sync": "Synchronisierung",

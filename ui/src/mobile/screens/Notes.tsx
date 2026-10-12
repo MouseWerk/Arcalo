@@ -8,7 +8,7 @@ import { relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, PageDoc, PageNode, SearchHit } from "../../lib/types";
 import { errorText, useBackLayer, useMobile } from "../context";
-import { pageHtml, treeRows } from "../model";
+import { mayRepeat, pageHtml, toggleTask, treeRows, withNextOccurrence } from "../model";
 import { Empty, Header, Notice, Section, Spinner } from "../ui";
 
 export function NotesScreen() {
@@ -199,6 +199,23 @@ export function PageScreen({ id }: { id: number }) {
 /** A page's text: rendered for reading, or its Markdown in a text field while editing (saved
  *  when leaving the field, after a pause in typing and with „Fertig“). A save names the text it
  *  started from, so a change a sync took over meanwhile is merged, never overwritten. */
+/**
+ * The task box a tap meant: the box itself, or the space around it in its row (the box is small;
+ * a tap up to the touch size around it counts, the task's text and links do not).
+ */
+function taskBoxAt(e: MouseEvent<HTMLDivElement>): HTMLInputElement | null {
+  const el = e.target as HTMLElement;
+  if (el instanceof HTMLInputElement && el.type === "checkbox") return el;
+  const li = el.closest("li");
+  const box = li?.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+  if (!box || el.closest("a") || el !== li) return null;
+  const r = box.getBoundingClientRect();
+  const reach = Math.max(0, (TOUCH - r.width) / 2);
+  return e.clientX >= r.left - reach && e.clientX <= r.right + reach ? box : null;
+}
+/** The touch size (--touch-min). */
+const TOUCH = 44;
+
 export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean; onSaved: (content: string) => void; onDone: () => void }) {
   const m = useMobile();
   // The props and context of the latest render: a save that ends after the screen moved on (the
@@ -299,7 +316,41 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
     };
   }, [p.doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A task's box ticked in the page (A19): the line changes in the page's text, saved like a
+  // typed edit (with the text it started from, so a sync's change meanwhile is merged). A
+  // repeating task gets its next occurrence below it, as on the desktop.
+  const tick = async (index: number) => {
+    const start = latest.current;
+    let out = toggleTask(start, index);
+    const gone = () => {
+      ctx.current.toast("error", t("mob.notes.taskGone"));
+      reread();
+    };
+    if (!out) return gone();
+    let next = out.md;
+    if (out.done && mayRepeat(out.text)) {
+      const due = await api.taskNextDue(out.text).catch(() => null);
+      // The page changed while the date was asked for (a sync): ticked off on that text.
+      if (latest.current !== start) {
+        const again = toggleTask(latest.current, index);
+        if (!again || again.text !== out.text || !again.done) return gone();
+        out = again;
+      }
+      next = due ? withNextOccurrence(out.md, out.line, due) : out.md;
+    }
+    latest.current = next;
+    setText(next);
+    await save(next);
+    ctx.current.refresh();
+  };
+
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const box = taskBoxAt(e);
+    if (box) {
+      e.preventDefault();
+      void tick([...e.currentTarget.querySelectorAll('input[type="checkbox"]')].indexOf(box));
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
@@ -350,8 +401,8 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
           {t("mob.notes.conflict")}
         </Notice>
       )}
-      {p.doc.content.trim() ? (
-        <div className="m-read" onClick={onClick} dangerouslySetInnerHTML={{ __html: pageHtml(p.doc.content) }} />
+      {text.trim() ? (
+        <div className="m-read" onClick={onClick} dangerouslySetInnerHTML={{ __html: pageHtml(text) }} />
       ) : (
         <Empty text={t("mob.notes.emptyPage")} />
       )}

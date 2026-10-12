@@ -6119,6 +6119,7 @@ export const en = {
   "mob.notes.canvas": "A canvas is shown and edited on the desktop.",
   "mob.notes.embed": "Embedded on the desktop: {name}",
   "mob.notes.linkMissing": "The page “{title}” does not exist yet.",
+  "mob.notes.taskGone": "The page no longer has this task like that. The page is loaded again.",
   "mob.notes.conflict": "This page was changed here and on another device. Merge it in the settings under Sync.",
   "mob.set.title": "Settings",
   "mob.set.sync": "Sync",

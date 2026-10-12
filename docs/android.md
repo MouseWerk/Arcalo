@@ -15,7 +15,7 @@ Application id: `de.mousewerk.arcalo` (the identifier the desktop takes with 1.1
 | **Tagesnotiz** | The daily note of a day, read or edited, previous and next day. A day without a note shows „Tagesnotiz anlegen“: the phone creates a daily note only when you start one, so it does not meet the desktop's note of the same day as a conflict. A daily note pulled from the desktop becomes the phone's daily note of that day. |
 | **Aufgaben** | Open tasks grouped like the desktop's task view (overdue, today, this week, later, no date), „Fällig“ (up to this week) and the tasks done in the last 14 days. One tap ticks a task off; a repeating task gets its next date in its note, as on the desktop. |
 | **Zeit** | The timer (start on a reference, pause, stop, discard after a second tap), a booking with the desktop's `/zeit` syntax built from a form (the references booked last as chips, Netzpläne and Vorgänge as suggestions, Leistungsart, description, today or yesterday; the line is shown before booking), and this week's bookings per day. |
-| **Notizen** | Search, recently edited pages, the page tree; a page is shown rendered from its Markdown (tables, code, links, `/zeit` chips and due dates as small labels, embedded drawings and PDFs as a note that they show on the desktop) and edited as Markdown text. |
+| **Notizen** | Search, recently edited pages, the page tree; a page is shown rendered from its Markdown (tables, code, links, `/zeit` chips and due dates as small labels, embedded drawings and PDFs as a note that they show on the desktop) and edited as Markdown text. A tap on a task's box ticks it off (or opens it again) in the page, saved like an edit, so a change a sync brought meanwhile is merged; a repeating task gets its next date below it, as on the desktop. |
 | **Einstellungen** | Git sync (remote URL, branch, author, access token, automatic sync, test, sync now, deletions held back, conflicts), appearance (system, light, dark, high contrast), language (system, German, English), updates, about. |
 
 Android's back button (and gesture) closes the page editor first, then the open screen, then goes to Heute;
@@ -88,7 +88,10 @@ editor saves against the text it started from, and the two are merged.
   point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the list of commands the
   phone uses.
 - **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, Android's back button through Tauri's
-  `onBackButtonPress`, see `backAction` in `mobile/model.ts`), loaded only on Android as a separate chunk; it uses the desktop's API
+  `onBackButtonPress`, see `backAction` in `mobile/model.ts`) with a page of its own: the Android window opens
+  `mobile.html` (`src-tauri/tauri.android.conf.json`), whose entry `ui/src/mobile/main.tsx` loads the mobile
+  shell, the design tokens and `mobile.css`, never the desktop app's bundle and stylesheets (1.19: 1.46 MB
+  in 11 files at the start instead of 3.44 MB in 69, of it 36 KB of CSS instead of 499 KB); it uses the desktop's API
   wrappers, i18n catalogs (`mob.*` keys), design tokens, Markdown rendering, task and capture helpers.
   Editing a page is plain Markdown text in v1: the TipTap editor's menus, popovers and drag handles are
   built for a pointer and a keyboard.
