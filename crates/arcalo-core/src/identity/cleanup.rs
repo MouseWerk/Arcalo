@@ -546,28 +546,12 @@ pub fn take_notice(config_dir: &Path) -> Option<String> {
 }
 
 fn notice_text(c: &Cleaned) -> String {
-    let en = crate::i18n::is_en();
-    let folders = match (c.folders, en) {
-        (1, false) => "1 alter Ordner".to_owned(),
-        (n, false) => format!("{n} alte Ordner"),
-        (1, true) => "1 old folder".to_owned(),
-        (n, true) => format!("{n} old folders"),
-    };
-    let credentials = match (c.credentials, en) {
-        (1, false) => "1 alter Eintrag mit Zugangsdaten".to_owned(),
-        (n, false) => format!("{n} alte Einträge mit Zugangsdaten"),
-        (1, true) => "1 old credential entry".to_owned(),
-        (n, true) => format!("{n} old credential entries"),
-    };
-    let what = match (c.folders, c.credentials) {
-        (0, _) => credentials,
-        (_, 0) => folders,
-        _ => trf!("{folders} und {credentials}", "{folders} and {credentials}"),
-    };
-    let freed = if c.bytes > 0 { trf!(", {} frei geworden", ", {} freed", size_text(c.bytes)) } else { String::new() };
+    // What went in folders and credential entries is in the record; the notice says only what the
+    // user gained and that nothing of theirs was touched.
+    let freed = if c.bytes > 0 { format!(" ({})", size_text(c.bytes)) } else { String::new() };
     trf!(
-        "Seit dem Umzug in die neuen Ordner (Version 1.15) lagen die Daten doppelt vor. Gelöscht: {what}{freed}. Deine Notizen, Einstellungen und Zugangsdaten sind unverändert da.",
-        "Since the move to the new folders (version 1.15) the data was kept twice. Deleted: {what}{freed}. Your notes, settings and credentials are unchanged."
+        "Die Kopie aus der Zeit vor Arcalo 1.15 ist gelöscht{freed}. Deine Notizen, Einstellungen und Zugangsdaten sind unverändert.",
+        "The copy from before Arcalo 1.15 was deleted{freed}. Your notes, settings and credentials are unchanged."
     )
 }
 
@@ -1056,8 +1040,8 @@ mod tests {
         assert_eq!(log.removed.len(), 2);
         assert!(log.credentials_done && log.credentials.len() == 2);
         let text = take_notice(&cfg).unwrap();
-        assert!(text.contains("Gelöscht: 2 alte Ordner und 2 alte Einträge mit Zugangsdaten, "), "{text}");
-        assert!(text.contains(" MB frei geworden."), "{text}");
+        assert!(text.starts_with("Die Kopie aus der Zeit vor Arcalo 1.15 ist gelöscht ("), "{text}");
+        assert!(text.contains(" MB). Deine Notizen, Einstellungen und Zugangsdaten sind unverändert."), "{text}");
         assert_eq!(take_notice(&cfg), None, "once");
         // Nothing removed: nothing to tell.
         record(&cfg, &i.start(&Settings::default()), &[], true, chrono::Utc::now()).unwrap();
@@ -1065,7 +1049,15 @@ mod tests {
         let en = crate::i18n::with_lang(crate::prefs::Language::En, || {
             notice_text(&Cleaned { folders: 1, credentials: 0, bytes: 3 * 1024 * 1024 + 400 * 1024 })
         });
-        assert!(en.contains("Deleted: 1 old folder, 3.4 MB freed."), "{en}");
+        assert_eq!(
+            en,
+            "The copy from before Arcalo 1.15 was deleted (3.4 MB). Your notes, settings and credentials are unchanged."
+        );
+        let none = notice_text(&Cleaned { folders: 0, credentials: 2, bytes: 0 });
+        assert_eq!(
+            none,
+            "Die Kopie aus der Zeit vor Arcalo 1.15 ist gelöscht. Deine Notizen, Einstellungen und Zugangsdaten sind unverändert."
+        );
         assert_eq!(size_text(3 * 1024 * 1024 + 400 * 1024), "3,4 MB");
         assert_eq!(size_text(812 * 1024), "812 KB");
         assert_eq!(size_text(1000), "1000 B");

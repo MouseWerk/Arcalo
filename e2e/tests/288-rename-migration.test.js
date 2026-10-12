@@ -185,9 +185,9 @@ test("1.17: a later start deletes the old folders once their copy is in use, and
   assert.equal((await app.invoke("settings_get")).settings.daily_target_hours, 7.5);
   assert.equal(await app.browser.execute(() => localStorage.getItem("arcalo.sidebar-w")), "333");
   // A quiet notice says what went and how much space it freed.
-  const toast = await app.$(".toast*=Alte Daten aufgeräumt");
+  const toast = await app.$(".toast*=Speicherplatz freigegeben");
   await toast.waitForDisplayed({ timeout: 10000 });
-  assert.match(await toast.getText(), /2 alte Ordner, [\d,]+ (KB|MB) frei geworden/);
+  assert.match(await toast.getText(), /Die Kopie aus der Zeit vor Arcalo 1\.15 ist gelöscht \([\d,]+ (KB|MB)\)\. Deine Notizen, Einstellungen und Zugangsdaten sind unverändert\./);
   await app.shot("288-old-folders-deleted");
   const record = JSON.parse(fs.readFileSync(path.join(home, ".config", NEW, "legacy-cleanup.json"), "utf8"));
   assert.deepEqual(record.removed.map((r) => r.path).sort(), [oldConfig, oldData].sort());
