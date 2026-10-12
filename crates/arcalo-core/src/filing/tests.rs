@@ -495,6 +495,58 @@ fn moving_many_to_a_position_keeps_their_order_there() {
 }
 
 #[test]
+fn every_move_in_the_tree_can_be_undone() {
+    let db = Database::open_in_memory().unwrap();
+    let folder = db.create_page(None, "Ordner", None).unwrap();
+    let kids: Vec<i64> =
+        ["Eins", "Zwei", "Drei", "Vier"].iter().map(|n| db.create_page(Some(folder.id), n, None).unwrap().id).collect();
+    let other = db.create_page(None, "Anderer", None).unwrap();
+    let order = |db: &Database, parent: Option<i64>| -> Vec<String> {
+        let mut c: Vec<_> = db.list_pages().unwrap().into_iter().filter(|p| p.parent_id == parent).collect();
+        c.sort_by_key(|p| (p.position, p.id));
+        c.into_iter().map(|p| p.title).collect()
+    };
+    // Gaps in the stored positions (a page trashed in between) do not matter.
+    let gone = db.create_page(Some(folder.id), "Weg", None).unwrap();
+    db.move_page(gone.id, Some(folder.id), 1).unwrap();
+    db.delete_page(gone.id).unwrap();
+    let start = order(&db, Some(folder.id));
+    assert_eq!(start, ["Eins", "Zwei", "Drei", "Vier"]);
+
+    // „Nach unten“: one place down within the folder; counted, and undone.
+    let out = db.move_pages_at(&[kids[0]], Some(folder.id), Some(1)).unwrap();
+    assert_eq!(out.moved, 1);
+    assert_eq!(order(&db, Some(folder.id)), ["Zwei", "Eins", "Drei", "Vier"]);
+    assert_eq!(db.last_move().unwrap(), Some(LastMove { label: "move".into(), pages: 1 }));
+    assert_eq!(db.undo_last_move().unwrap(), 1);
+    assert_eq!(order(&db, Some(folder.id)), start);
+
+    // „Nach oben“ of the last one, and several of the folder to its start.
+    db.move_pages_at(&[kids[3]], Some(folder.id), Some(2)).unwrap();
+    assert_eq!(order(&db, Some(folder.id)), ["Eins", "Zwei", "Vier", "Drei"]);
+    db.undo_last_move().unwrap();
+    assert_eq!(order(&db, Some(folder.id)), start);
+    db.move_pages_at(&[kids[2], kids[3]], Some(folder.id), Some(0)).unwrap();
+    assert_eq!(order(&db, Some(folder.id)), ["Drei", "Vier", "Eins", "Zwei"]);
+    assert_eq!(db.undo_last_move().unwrap(), 2);
+    assert_eq!(order(&db, Some(folder.id)), start);
+
+    // „Eine Ebene höher“ (after the folder) and „Auf die oberste Ebene“: back between the same neighbours.
+    let top = order(&db, None);
+    db.move_pages_at(&[kids[1]], None, Some(1)).unwrap();
+    assert_eq!(order(&db, None), ["Ordner", "Zwei", "Anderer"]);
+    db.undo_last_move().unwrap();
+    assert_eq!((order(&db, Some(folder.id)), order(&db, None)), (start.clone(), top.clone()));
+    db.move_pages_at(&[kids[1], kids[2]], Some(other.id), None).unwrap();
+    db.undo_last_move().unwrap();
+    assert_eq!(order(&db, Some(folder.id)), start);
+
+    // A drop at the place a page already has moves nothing.
+    assert_eq!(db.move_pages_at(&[kids[1]], Some(folder.id), Some(1)).unwrap().moved, 0);
+    assert_eq!(order(&db, Some(folder.id)), start);
+}
+
+#[test]
 fn tidy_files_by_the_local_creation_day() {
     let db = Database::open_in_memory().unwrap();
     let p = db.create_page(None, "Sprachnotiz", None).unwrap();
