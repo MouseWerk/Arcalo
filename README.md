@@ -739,5 +739,9 @@ git tag -a v1.1.0 -m "What's new …" && git push origin v1.1.0
 Or, without a local tag: write the notes to `docs/releases/v1.1.0.md`, then GitHub → **Actions → Release → Run
 workflow** with the version `1.1.0`. The workflow creates the annotated tag itself.
 
+Or automatically: push `docs/releases/v1.1.0.md` to `main`; when CI has passed for that commit and it is still the
+newest on `main`, the release starts by itself ([docs/release/automatic.md](docs/release/automatic.md); switched off
+with the repository variable `AUTO_RELEASE` = `false`).
+
 The [Release workflow](.github/workflows/release.yml) builds Windows, Linux and both macOS variants, signs the update
 files and publishes everything together with `latest.json` on the Releases page.

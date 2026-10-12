@@ -33,6 +33,10 @@ name: Release
 # its message, and builds that. If the tag exists already, it is built again (to re-run a
 # failed release with a fixed workflow).
 
+# Automatic release (docs/release/automatic.md): auto-release.yml calls this workflow with the
+# version of the newest docs/releases/v<version>.md and the commit CI tested on main. The tag is
+# created on that commit; an existing tag is never built again from there.
+
 on:
   push:
     tags: ["v*"]
@@ -41,6 +45,16 @@ on:
       version:
         description: "Version without v, e.g. 1.2.0"
         required: true
+  workflow_call:
+    inputs:
+      version:
+        description: "Version without v, e.g. 1.2.0"
+        required: true
+        type: string
+      ref:
+        description: "The commit to tag (the one CI tested)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -57,14 +71,19 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
+      # A version is given by „Run workflow“ and by the automatic release (with the commit to tag);
+      # a pushed tag has none.
       - uses: actions/checkout@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.version != ''
+        with:
+          ref: ${{ inputs.ref || '' }}
       - id: tag
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+          if [ -z "$INPUT_VERSION" ]; then
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -75,6 +94,10 @@ jobs:
           fi
           TAG="v$VERSION"
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            if [ -n "$INPUT_REF" ]; then
+              echo "::error::Tag $TAG exists: the automatic release never releases a version twice."
+              exit 1
+            fi
             # Re-run of a release: build the existing tag (the workflow itself comes from the branch).
             echo "::notice::Tag $TAG exists, building it again."
             echo "tag=$TAG" >> "$GITHUB_OUTPUT"
