@@ -105,6 +105,14 @@ fn desktop(app: &AppHandle) -> State<'_, Desktop> {
     app.state::<Desktop>()
 }
 
+/// The tray handles, copied out of the lock. Every call on the tray or its menu waits for the
+/// main thread, which takes this lock too (a settings save, `desktop_info`): made while holding
+/// it on another thread (the 30-second tick, a timer command), both waited for good. A guard in
+/// an `if let` scrutinee lives through the whole block, so the copy is taken here.
+fn tray_handles(app: &AppHandle) -> Option<TrayHandles> {
+    lock(&desktop(app).tray).clone()
+}
+
 pub fn show_main(app: &AppHandle) {
     // macOS: Arcalo may be hidden (a popup gave the focus back to another program).
     #[cfg(target_os = "macos")]
@@ -194,8 +202,7 @@ fn time_tracking(app: &AppHandle) -> bool {
 /// The display language changed: the tray menu, the macOS menu bar and the taskbar jump list
 /// are built again in the new language.
 pub fn relocalize(app: &AppHandle) {
-    let handles = lock(&desktop(app).tray).clone();
-    if let Some(t) = handles {
+    if let Some(t) = tray_handles(app) {
         let time = time_tracking(app);
         match tray_menu(app, time) {
             Ok((menu, timer)) => {
@@ -340,14 +347,14 @@ pub fn refresh_tray(app: &AppHandle) {
     rebuild_tray_menu(app, time);
     // Locked: the tooltip names no timer, task or recording.
     if crate::security::is_locked() {
-        if let Some(t) = lock(&desktop(app).tray).clone() {
+        if let Some(t) = tray_handles(app) {
             let _ = t.tray.set_tooltip(Some(tr!("Arcalo – gesperrt", "Arcalo – locked")));
         }
         return;
     }
     if !time {
         // Nothing about a timer, also not one left running from before.
-        if let Some(t) = lock(&desktop(app).tray).clone() {
+        if let Some(t) = tray_handles(app) {
             let tip = crate::voice::tray_tip(app, core::tray_tooltip(None));
             let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
         }
@@ -366,9 +373,7 @@ pub fn refresh_tray(app: &AppHandle) {
         });
         (running, db.last_finished_entry().ok().flatten().is_some())
     };
-    // Cloned out of the lock: tray calls wait for the main thread, which may want the lock.
-    let handles = lock(&desktop(app).tray).clone();
-    let Some(t) = handles else { return };
+    let Some(t) = tray_handles(app) else { return };
     let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m, _)| (l.as_str(), *m))));
     let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
     if let Some((stop, pause, resume)) = &t.timer {
@@ -381,7 +386,7 @@ pub fn refresh_tray(app: &AppHandle) {
 
 /// A new tray menu when the one shown was built for the other state of time tracking.
 fn rebuild_tray_menu(app: &AppHandle, time: bool) {
-    let Some(t) = lock(&desktop(app).tray).clone() else { return };
+    let Some(t) = tray_handles(app) else { return };
     let recording = crate::voice::is_recording(app);
     if t.time == time && t.recording == recording && t.locked == crate::security::is_locked() {
         return;
