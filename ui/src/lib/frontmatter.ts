@@ -205,16 +205,32 @@ export const canonicalKey = (key: string) => {
 /** The name to write for a known key (given by its German name) in a language. */
 export const keyName = (de: string, lang: "de" | "en") => (lang === "en" ? (KEY_ALIASES[de] ?? de) : de);
 
-/** The frontmatter with `tag` added to its `tags` list (created when missing); unchanged when it is there. */
-export function withTag(fm: string, tag: string): string {
+/**
+ * The frontmatter with `tag` added to its `tags` list (created when missing); unchanged when it is there.
+ * A `tags` property the editor cannot read as a list (comments, nested lists) gets the tag as one more
+ * line of its block list when that is safe; otherwise the result is `null` and nothing should change.
+ */
+export function withTag(fm: string, tag: string): string | null {
   const clean = tag.trim().replace(/^#/, "");
   if (!clean) return fm;
   const props = parseFrontmatter(fm);
   const i = props.findIndex((p) => /^tags?$/i.test(p.key.trim()));
   if (i < 0) return serializeFrontmatter([...props, { key: "tags", type: "list", value: "", items: [clean] }]);
   const p = props[i];
+  const has = (items: string[]) => items.some((x) => x.toLowerCase() === clean.toLowerCase());
+  if (p.type === "raw") {
+    const lines = (p.source ?? p.value).split("\n");
+    const items = lines.slice(1).map((l) => /^(\s*)-(?:\s+(.*?))?\s*$/.exec(l));
+    // Only `tags:` followed by items of one block list at one indent; anything else is skipped.
+    if (!/^[^:]*:\s*$/.test(lines[0]) || !items.length || items.some((m) => !m || m[1] !== items[0]![1])) return null;
+    const texts = items.map((m) => (m![2] ?? "").replace(/\s+#.*$/, ""));
+    if (has(texts.map((t) => scalar(t) ?? t))) return fm;
+    const source = `${lines.join("\n")}\n${items[0]![1]}- ${fmtScalar(clean, true)}`;
+    props[i] = { ...p, value: source, source };
+    return serializeFrontmatter(props);
+  }
   const items = p.type === "list" ? p.items : splitItems(p.value);
-  if (items.some((x) => x.toLowerCase() === clean.toLowerCase())) return fm;
+  if (has(items)) return fm;
   props[i] = edited(p, { type: "list", value: "", items: [...items, clean] });
   return serializeFrontmatter(props);
 }

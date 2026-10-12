@@ -6276,6 +6276,7 @@ export const en = {
   "sb.taggedMany": { one: "Added #{tag} to {n} page", other: "Added #{tag} to {n} pages" },
   "sb.tagFailed": "Tag not added",
   "sb.sortedBy": "Sorted: {by}",
+  "sb.tagSkipped": { one: "Skipped {n} page: its tags contain comments or nested lists", other: "Skipped {n} pages: their tags contain comments or nested lists" },
   "sb.changeIconMenu": "Change icon…",
   "sb.subpages": "Subpages",
   "sb.addTag": "Add tag…",

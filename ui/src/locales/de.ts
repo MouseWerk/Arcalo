@@ -6274,6 +6274,7 @@ export const de: Catalog = {
   "sb.taggedMany": { one: "#{tag} bei {n} Seite ergänzt", other: "#{tag} bei {n} Seiten ergänzt" },
   "sb.tagFailed": "Tag nicht hinzugefügt",
   "sb.sortedBy": "Sortiert: {by}",
+  "sb.tagSkipped": { one: "{n} Seite ausgelassen: ihre Tags enthalten Kommentare oder verschachtelte Listen", other: "{n} Seiten ausgelassen: ihre Tags enthalten Kommentare oder verschachtelte Listen" },
   "sb.changeIconMenu": "Symbol ändern…",
   "sb.subpages": "Unterseiten",
   "sb.addTag": "Tag hinzufügen…",

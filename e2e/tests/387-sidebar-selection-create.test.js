@@ -1,7 +1,8 @@
 // 1.19 file explorer, selection and „Neu“: the selection's bar is opaque, below the rows (they
 // do not move when it appears) and keeps its count readable at 900 px; it and the context menu
 // offer favorites, color, a tag, duplicate, HTML export and delete for all selected pages; Ctrl+
-// click keeps selecting. „Neu“ offers every kind (page, folder, canvas, drawing, table, from a
+// click keeps selecting. A folder selected with its subpages: moving and deleting take the folder
+// (with its subtree), every other action takes all selected pages. „Neu“ offers every kind (page, folder, canvas, drawing, table, from a
 // template) in the toolbar, in a page's context menu (inside that page) and in the empty area
 // below the rows (the top level).
 import { test as nodeTest, before, after } from "node:test";
@@ -46,6 +47,12 @@ test("setup", async () => {
   const r = await T.row("Auswahl Ordner");
   if ((await r.getAttribute("aria-expanded")) === "false") await (await r.$(".tree-twisty")).click();
   await T.row("Sel Drei");
+  ids.fFolder = (await T.create("F Ordner")).id;
+  for (const t of ["F Eins", "F Zwei"]) ids[t] = (await T.create(t, ids.fFolder, `Inhalt von ${t}\n`)).id;
+  await T.reload();
+  const f = await T.row("F Ordner");
+  if ((await f.getAttribute("aria-expanded")) === "false") await (await f.$(".tree-twisty")).click();
+  await T.row("F Zwei");
 });
 
 test("the selection's bar: opaque, below the rows, the count readable at 900 px", async () => {
@@ -117,6 +124,30 @@ test("selection actions: favorites, color, tag, duplicate, export, all at once",
   await app.browser.waitUntil(() => fs.existsSync(file), { timeout: 10000, timeoutMsg: "no HTML file" });
   const html = fs.readFileSync(file, "utf8");
   assert.ok(html.includes("Inhalt von Sel Eins") && html.includes("Inhalt von Sel Drei") && !html.includes("Inhalt von Sel Zwei"));
+  assert.ok(await barButton("Auswahl aufheben"));
+  await app.browser.waitUntil(async () => (await app.$$(".tree-selection")).length === 0);
+});
+
+test("a folder and two of its subpages: every action but move and delete takes all three", async () => {
+  await (await T.row("F Ordner")).click();
+  await ctrlClick("F Eins");
+  await ctrlClick("F Zwei");
+  await app.waitFor(".tree-selection");
+  assert.equal(await app.browser.execute(() => document.querySelector(".tree-selection-count").textContent), "3 ausgewählt");
+  assert.ok(await barButton("Zu Favoriten hinzufügen"));
+  await app.waitText(".toast-title", /3 Seiten zu den Favoriten hinzugefügt/);
+  for (const id of [ids.fFolder, ids["F Eins"], ids["F Zwei"]]) assert.equal((await page(id)).favorite, true);
+  // Moving and deleting take the folder with its subtree.
+  await T.rowMenu("F Eins");
+  for (const l of ["1 Seite verschieben nach…", "1 Seite löschen"]) assert.ok(await T.menuItem(l), l);
+  // Duplicate: one copy of each selected page, right after it (a copy has no subpages).
+  assert.ok(await T.menuClick("Duplizieren"));
+  await app.browser.waitUntil(async () => !!(await byTitle("F Zwei (Kopie)")), { timeout: 10000, timeoutMsg: "not duplicated" });
+  await app.waitText(".toast-title", /3 Seiten dupliziert/);
+  assert.deepEqual((await page(ids.fFolder)).children.map((c) => c.title), ["F Eins", "F Eins (Kopie)", "F Zwei", "F Zwei (Kopie)"]);
+  const top = (await app.invoke("workspace_tree")).map((n) => n.title);
+  assert.equal(top[top.indexOf("F Ordner") + 1], "F Ordner (Kopie)");
+  assert.deepEqual((await byTitle("F Ordner (Kopie)")).children ?? [], []);
   assert.ok(await barButton("Auswahl aufheben"));
   await app.browser.waitUntil(async () => (await app.$$(".tree-selection")).length === 0);
 });

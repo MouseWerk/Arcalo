@@ -150,3 +150,34 @@ describe("adding a tag (the sidebar's selection)", () => {
     expect(withTag(fm, "  ")).toBe(fm);
   });
 });
+
+describe("selection action: tag into frontmatter", () => {
+  const tagsOf = (fm: string) => parseFrontmatter(fm).find((p) => p.key === "tags");
+
+  it("keeps the existing tags of a block list with a comment (raw property)", () => {
+    const fm = "---\ntitle: Angebot\ntags:\n  - projekt # wichtig\n  - kunde\n---\n";
+    const next = withTag(fm, "neu");
+    expect(next).toContain("projekt");
+    expect(next).not.toContain('"tags:');
+    // The editor cannot read the comment, so the tag becomes one more item of the block list; the
+    // comment and the other items stay as written.
+    expect(next).toBe("---\ntitle: Angebot\ntags:\n  - projekt # wichtig\n  - kunde\n  - neu\n---\n");
+    expect(tagsOf(next!)?.type).toBe("raw");
+    // Already there (behind a comment or not): unchanged.
+    expect(withTag(fm, "Projekt")).toBe(fm);
+    expect(withTag(fm, "kunde")).toBe(fm);
+  });
+
+  it("keeps a nested flow list", () => {
+    const next = withTag("---\ntags: [a, [b, c]]\n---\n", "neu");
+    expect(next ?? "").not.toContain('"tags:');
+    expect(next ?? "").not.toContain('"[a');
+    // Not safe to change: the page is skipped.
+    expect(next).toBeNull();
+  });
+
+  it("skips other raw tags it cannot extend safely", () => {
+    expect(withTag("---\ntags: # keine\n  - a\n---\n", "neu")).toBeNull();
+    expect(withTag("---\ntags:\n  - a\n  # Kommentar\n---\n", "neu")).toBeNull();
+  });
+});

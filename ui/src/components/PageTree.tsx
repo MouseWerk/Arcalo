@@ -201,6 +201,8 @@ async function favoriteMany(ids: number[]) {
   }
 }
 
+/** Every selected page gets one copy right after it; a page copies without its subpages, so a folder
+ *  selected together with a subpage gets one copy of each (the folder's copy stays empty). */
 async function duplicateMany(ids: number[]) {
   let n = 0;
   for (const id of ids) {
@@ -212,21 +214,34 @@ async function duplicateMany(ids: number[]) {
   if (n) s().toast({ tone: "success", title: tStatic("sb.duplicatedMany", { n }) });
 }
 
-/** The tag goes into the pages' properties (`tags`); canvases have none. */
+/**
+ * The tag goes into the pages' properties (`tags`); canvases have none. Only pages that changed are
+ * counted; a page whose `tags` cannot take the tag safely (comments, nested lists) stays as it is
+ * and is named in the toast.
+ */
 async function tagMany(ids: number[], tag: string) {
   const clean = tag.trim().replace(/^#/, "");
   if (!clean) return;
   const { updateFrontmatter } = await import("../views/collection/write");
   let n = 0;
+  const skipped: string[] = [];
   try {
     for (const id of ids) {
       const node = s().pages.get(id);
       if (!node || isCanvas(node)) continue;
-      await updateFrontmatter(id, (fm) => withTag(fm, clean));
-      n++;
+      let skip = false;
+      const next = await updateFrontmatter(id, (fm) => {
+        const out = withTag(fm, clean);
+        skip = out === null;
+        return out ?? fm;
+      });
+      if (skip) skipped.push(node.title);
+      else if (next !== null) n++;
     }
     await s().refreshTree();
-    s().toast({ tone: "success", title: tStatic("sb.taggedMany", { tag: clean, n }) });
+    if (n || !skipped.length) s().toast({ tone: "success", title: tStatic("sb.taggedMany", { tag: clean, n }) });
+    if (skipped.length)
+      s().toast({ tone: "warning", title: tStatic("sb.tagSkipped", { n: skipped.length }), detail: skipped.join(", "), persistent: true });
   } catch (e) {
     s().error(tStatic("sb.tagFailed"), e);
   }
@@ -337,7 +352,10 @@ export function PageTree({
   // The page opened from the tree itself: revealing it keeps the folders open that were.
   const openedHere = useRef<number | null>(null);
 
+  // Moving and deleting take the top pages of the selection (their subpages go with them); the other
+  // actions (favourite, colour, tag, duplicate, export) act on every selected page.
   const selection = () => topSelected(selected, parentOf);
+  const allSelected = () => [...selected].filter((id) => s().pages.has(id));
   const clearSelection = () => setSelected(new Set());
 
   // ------------------------------------------------------------ rows
@@ -576,7 +594,7 @@ export function PageTree({
   // ------------------------------------------------------------ menus
 
   const menuItems = (n: PageNode): MenuEntry[] => {
-    if (selected.size > 1 && selected.has(n.id)) return selectionMenu(selection());
+    if (selected.size > 1 && selected.has(n.id)) return selectionMenu();
     const style = n.style ?? DEFAULT_STYLE;
     const sibs = childrenOf(n.parent_id);
     const i = sibs.findIndex((x) => x.id === n.id);
@@ -680,17 +698,21 @@ export function PageTree({
   };
 
   /** The actions for several pages at once (context menu and the selection bar). */
-  const selectionMenu = (ids: number[]): MenuEntry[] => [
-    { label: tStatic("fl.moveN", { n: ids.length }), icon: FolderInput, onSelect: () => openMoveTo(ids) },
-    { label: ids.every((id) => s().pages.get(id)?.favorite) ? tStatic("sb.unfavorite") : tStatic("sb.favorite"), icon: Star, onSelect: () => void favoriteMany(ids) },
-    { label: tStatic("fl.color"), icon: Palette, submenu: colorItems(ids) },
-    { label: tStatic("sb.addTag"), icon: Hash, onSelect: () => setTagging(ids) },
-    { label: tStatic("dash.duplicate"), icon: Copy, onSelect: () => void duplicateMany(ids) },
-    { label: tStatic("sb.exportHtml"), icon: FileDown, onSelect: () => void exportMany(ids) },
-    { label: tStatic("fl.clearSelection"), icon: X, onSelect: clearSelection },
-    "separator",
-    { label: tStatic("sb.deleteMany", { n: ids.length }), icon: Trash2, danger: true, shortcut: tStatic("sb.keyDelete"), onSelect: () => void deleteSelection() },
-  ];
+  const selectionMenu = (): MenuEntry[] => {
+    const top = selection();
+    const ids = allSelected();
+    return [
+      { label: tStatic("fl.moveN", { n: top.length }), icon: FolderInput, onSelect: () => openMoveTo(top) },
+      { label: ids.every((id) => s().pages.get(id)?.favorite) ? tStatic("sb.unfavorite") : tStatic("sb.favorite"), icon: Star, onSelect: () => void favoriteMany(ids) },
+      { label: tStatic("fl.color"), icon: Palette, submenu: colorItems(ids) },
+      { label: tStatic("sb.addTag"), icon: Hash, onSelect: () => setTagging(ids) },
+      { label: tStatic("dash.duplicate"), icon: Copy, onSelect: () => void duplicateMany(ids) },
+      { label: tStatic("sb.exportHtml"), icon: FileDown, onSelect: () => void exportMany(ids) },
+      { label: tStatic("fl.clearSelection"), icon: X, onSelect: clearSelection },
+      "separator",
+      { label: tStatic("sb.deleteMany", { n: top.length }), icon: Trash2, danger: true, shortcut: tStatic("sb.keyDelete"), onSelect: () => void deleteSelection() },
+    ];
+  };
   const colorItems = (ids: number[]): MenuItem[] => {
     const current = ids.map((id) => s().pages.get(id)?.style?.color ?? null);
     const all = (c: string | null) => current.every((x) => x === c);
@@ -997,6 +1019,7 @@ export function PageTree({
   };
   const refused = plan?.kind === "refused" ? plan.folder : undefined;
   const sel = multi ? selection() : [];
+  const every = multi ? allSelected() : [];
 
   return (
     <>
@@ -1041,13 +1064,13 @@ export function PageTree({
             count={selected.size}
             onClear={clearSelection}
             onMove={() => openMoveTo(sel)}
-            onFavorite={() => void favoriteMany(sel)}
-            colors={() => colorItems(sel)}
-            onTag={() => setTagging(sel)}
-            onDuplicate={() => void duplicateMany(sel)}
-            onExport={() => void exportMany(sel)}
+            onFavorite={() => void favoriteMany(every)}
+            colors={() => colorItems(every)}
+            onTag={() => setTagging(every)}
+            onDuplicate={() => void duplicateMany(every)}
+            onExport={() => void exportMany(every)}
             onDelete={() => void deleteSelection()}
-            allFavorite={sel.every((id) => s().pages.get(id)?.favorite)}
+            allFavorite={every.every((id) => s().pages.get(id)?.favorite)}
           />,
           selectionSlot,
         )}
