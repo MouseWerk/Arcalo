@@ -178,6 +178,8 @@ function fixtures(theme) {
     git_sync_status: { enabled: true, repo_path: "", last_at: at(0, 14, 12), last_commit: "a1b2c3d", last_branch: "main", last_error: null, pending_changes: 2, token_set: true, blocked_deletions: null, after_restore: null },
     git_conflicts: [conflict],
     git_conflict_get: { page_id: 12, title: "Testplan", at: conflict.at, base: "", mine: "", theirs: "", merge: { chunks: [{ kind: "stable", text: "# Testplan\n" }, { kind: "conflict", base: "a", mine: "b", theirs: "c" }, { kind: "conflict", base: "d", mine: "e", theirs: "f" }], conflicts: 2 } },
+    // What the shell answers to a saved page (no merge).
+    page_save: { id: 10, updated_at: at(0, 9, 30), tags: [], unresolved_links: [] },
     mobile_sync: { commit: "a1b2c3d", committed: true, changed_files: 3, branch: "main", fallback: false, message: "3 Dateien geändert", reference: { projects: 1, netzplaene: 2, vorgaenge: 6, leistungsarten: 4, events: 12, skipped: null } },
     apk_update_status: updateStatus("ready"),
     apk_update_check: updateStatus("idle"),
@@ -215,6 +217,11 @@ const ipcMock = (data) => `
         if (cmd.startsWith("plugin:event|")) return next++;
         if (cmd === "plugin:app|register_listener") { back = args.handler.id; return null; }
         if (cmd === "page_get") return structuredClone(data.pages[args.id] ?? { ...data.pages.default, id: args.id });
+        // A saved page is read back as saved.
+        if (cmd === "page_save") {
+          data.pages[args.id] = { ...(data.pages[args.id] ?? { ...data.pages.default, id: args.id }), content: args.content };
+          return structuredClone(data.page_save);
+        }
         if (cmd === "mobile_shared_text") { const t = window.__shared; window.__shared = null; return t; }
         if (cmd === "apk_update_install") return window.__installAnswers.shift() ?? "started";
         if (cmd === "apk_update_allow_install") return true;
@@ -242,7 +249,8 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
-const base = `http://127.0.0.1:${server.address().port}/index.html?mobile`;
+// The Android window's page (src-tauri/tauri.android.conf.json): the mobile entry only.
+const base = `http://127.0.0.1:${server.address().port}/mobile.html`;
 
 // ------------------------------------------------------------------------ run
 
@@ -368,7 +376,7 @@ async function backButton() {
   await tap(".m-tree-page >> nth=0");
   await tap(".m-head-actions .m-icon-btn");
   if (!(await page.locator(".m-editor-text").count())) fail(where, "editing did not start");
-  await page.fill(".m-editor-text", "Neu getippt, gleich zurück");
+  await page.fill(".m-editor-text", "Neu getippt, gleich zurück\n\n- [ ] Erste Aufgabe\n- [ ] Zweite Aufgabe\n");
   await press();
   if (await page.locator(".m-editor-text").count()) fail(where, "back did not end editing first");
   if ((await screen()) !== "page") fail(where, `back while editing left the page (${await screen()})`);
@@ -382,11 +390,17 @@ async function backButton() {
   const calls = await page.evaluate(() => window.__calls);
   if (!calls.includes("mobile_to_background")) fail(where, "back on Heute did not send the app to the background");
   if ((await screen()) !== "today") fail(where, "back on Heute changed the screen");
-  // A page left while typing (no pause yet) still saves.
+  // A task's box in a page ticks it off there, saved like an edit (A19).
   await tap(".m-tab:nth-child(5)");
   await tap(".m-tree-page >> nth=0");
+  const saves = () => page.evaluate(() => window.__calls.filter((c) => c === "page_save").length);
+  const ticked = await saves();
+  await tap('.m-read input[type="checkbox"] >> nth=0');
+  if ((await saves()) <= ticked) fail(where, "a tapped task box in a page was not saved");
+  if (!(await page.locator('.m-read input[type="checkbox"] >> nth=0').isChecked())) fail(where, "a tapped task box in a page is not ticked");
+  // A page left while typing (no pause yet) still saves.
   await tap(".m-head-actions .m-icon-btn");
-  await page.fill(".m-editor-text", "Getippt und sofort weg");
+  await page.fill(".m-editor-text", "Getippt und sofort weg, siehe [[Kunde Nord]]");
   const before = await page.evaluate(() => window.__calls.filter((c) => c === "page_save").length);
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });

@@ -831,8 +831,11 @@ button.side-section-title:hover { color: var(--text-2); }
 .week-grid th:last-child, .week-grid td:last-child { padding-right: 16px; }
 @container pane (max-width: 760px) { .week-grid th:nth-child(2), .week-grid td:nth-child(2) { display: none; } }
 .quick-book > * { min-width: 0; }
-.week-grid th.today, .week-grid td.today { background: var(--accent-soft); }
-.week-grid th.today, .week-grid th.today .faint { color: var(--accent-text); }
+/* Today's column: a quiet neutral tint, its head in the text color and heavier, like other current states. */
+.week-grid th.today, .week-grid td.today { background: var(--bg-hover); }
+.week-grid tbody tr:hover > td.today { background: var(--bg-active); }
+.week-grid th.today { color: var(--text); font-weight: var(--fw-semibold); }
+.week-grid th.today .faint { color: var(--text-2); }
 .week-grid th.weekend, .week-grid td.weekend { color: var(--text-3); }
 .entry-list { padding: 4px 8px 8px; }
 .entry-day { padding: 4px 0; }
@@ -3176,6 +3179,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issue-facts dt { color: var(--text-3); }
 .issue-facts dd { margin: 0; color: var(--text-2); }
 .issue-desc { white-space: pre-line; font-size: var(--fs-sm); line-height: 1.55; color: var(--text); max-height: 280px; overflow: auto; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-raised); border: 1px solid var(--border); }
+.issue-desc-loading { display: flex; align-items: center; min-height: 40px; padding: 0 12px; color: var(--text-3); }
 .issue-comments h3, .issue-detail-side h3 { margin: 4px 0 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: var(--ls-eyebrow); color: var(--text-3); }
 .issue-comment { padding: 6px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .issue-comment-body { white-space: pre-line; color: var(--text-2); margin-top: 2px; }

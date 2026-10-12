@@ -50,6 +50,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0033_task_recurrence.sql"),
     include_str!("../migrations/0034_embedding_queue.sql"),
     include_str!("../migrations/0035_page_id_floor.sql"),
+    include_str!("../migrations/0036_issue_detail.sql"),
+    include_str!("../migrations/0037_page_line_ends.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -1203,6 +1205,95 @@ mod tests {
         assert_eq!(desc("DEV"), "Entwicklung");
     }
 
+    /// Pages as the Git sync of 1.18.0 took them over on Windows (CRLF), next to pages it did not
+    /// touch (LF) and one with a lone CR in its text.
+    const CRLF_FIXTURE: &[(i64, &str, &str)] = &[
+        (
+            1,
+            "Tagesnotiz",
+            "---\r\ndate: 2026-10-01\r\n---\r\n# Mittwoch\r\n\r\n- [ ] Bericht schreiben\r\n- [x] Zahlen holen\r\n\r\nNotiz mit [[Projekt]]\r\n",
+        ),
+        (2, "Projekt", "# Projekt\n\nSchon LF.\n"),
+        (3, "Gemischt", "Zeile eins\r\nZeile zwei\nZeile drei\r\n"),
+        (4, "Einzelnes CR", "Text mit \r einzelnem CR\n"),
+    ];
+
+    /// 1.19: the line ends of notes taken over by 1.18.0 on Windows are normalized once
+    /// (migration 0037), each changed page keeps its text before as a version, the others stay
+    /// as they are, the index follows, and nothing changes the second time.
+    #[test]
+    fn crlf_notes_of_1_18_0_get_lf_once_and_keep_their_text_as_a_version() {
+        let path = std::env::temp_dir().join(format!("arcalo-crlf-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let before = MIGRATIONS.len() - 1;
+        assert!(MIGRATIONS[before].contains("char(13, 10)"), "0037 is the last migration of this test");
+        {
+            let c = Connection::open(&path).unwrap();
+            for m in &MIGRATIONS[..before] {
+                c.execute_batch(m).unwrap();
+            }
+            c.pragma_update(None, "user_version", before as i64).unwrap();
+            for (id, title, content) in CRLF_FIXTURE {
+                c.execute(
+                    "INSERT INTO pages (id, title, content, updated_at) VALUES (?1, ?2, ?3, '2026-10-01T08:00:00Z')",
+                    params![id, title, content],
+                )
+                .unwrap();
+            }
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), MIGRATIONS.len());
+        let content = |id: i64| db.page_doc(id).unwrap().content;
+        assert_eq!(
+            content(1),
+            "---\ndate: 2026-10-01\n---\n# Mittwoch\n\n- [ ] Bericht schreiben\n- [x] Zahlen holen\n\nNotiz mit [[Projekt]]\n"
+        );
+        assert_eq!(content(2), CRLF_FIXTURE[1].2, "an LF page is not touched");
+        assert_eq!(content(3), "Zeile eins\nZeile zwei\nZeile drei\n");
+        assert_eq!(content(4), CRLF_FIXTURE[3].2, "a lone CR is text, not a line end");
+        // Each changed page keeps its text before as a version, to restore it; the others get none.
+        for (id, _, text) in CRLF_FIXTURE {
+            let versions = db.list_versions(*id).unwrap();
+            if text.contains("\r\n") {
+                assert_eq!(versions.len(), 1, "page {id}");
+                assert_eq!(db.version_content(versions[0].id).unwrap(), *text);
+            } else {
+                assert!(versions.is_empty(), "page {id}");
+            }
+        }
+        // The time of change stays.
+        assert_eq!(db.page(1).unwrap().updated_at, "2026-10-01T08:00:00Z");
+        // The index follows the new text: the tasks have no CR, the link is known.
+        let tasks = db.list_tasks(&Default::default()).unwrap();
+        assert_eq!(tasks.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["Bericht schreiben"]);
+        assert!(db.meta_get(NEEDS_REINDEX).unwrap().is_none());
+        // Restoring the version brings the old text back (undo).
+        let v = db.list_versions(1).unwrap()[0].id;
+        db.restore_version(1, v).unwrap();
+        assert_eq!(content(1), CRLF_FIXTURE[0].2);
+        drop(db);
+        // Idempotent: the migration's text once more changes nothing and adds no version.
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute("UPDATE pages SET content = ?1 WHERE id = 1", [content_lf(CRLF_FIXTURE[0].2)]).unwrap();
+            let versions =
+                |c: &Connection| c.query_row("SELECT COUNT(*) FROM page_versions", [], |r| r.get::<_, i64>(0)).unwrap();
+            let n = versions(&c);
+            c.execute_batch(MIGRATIONS[before]).unwrap();
+            assert_eq!(versions(&c), n);
+            let flag = c
+                .query_row("SELECT COUNT(*) FROM settings WHERE key = 'meta.needs_reindex'", [], |r| r.get::<_, i64>(0))
+                .unwrap();
+            assert_eq!(flag, 0, "nothing to index anew");
+        }
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    fn content_lf(s: &str) -> String {
+        s.replace("\r\n", "\n")
+    }
     #[test]
     fn pending_reindex_survives_a_crash() {
         let path = std::env::temp_dir().join(format!("arcalo-reindex-{}.db", std::process::id()));

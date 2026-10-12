@@ -740,6 +740,43 @@ pub fn parse_env(get: impl Fn(&str) -> Option<String>) -> SystemProxy {
     }
 }
 
+/// The proxy Android names for the app ([`android_proxy`]), set by the shell before a sync; `None`
+/// until then and on other systems.
+static PLATFORM_PROXY: std::sync::RwLock<Option<SystemProxy>> = std::sync::RwLock::new(None);
+
+/// Sets the proxy the platform reports (Android: `ConnectivityManager.getDefaultProxy`, the global
+/// proxy or the one of the network in use, e.g. the Wi-Fi's own); mode `system` uses it from then
+/// on instead of the environment. `None` goes back to the environment.
+pub fn set_platform_proxy(proxy: Option<SystemProxy>) {
+    *PLATFORM_PROXY.write().unwrap_or_else(|e| e.into_inner()) = proxy;
+}
+
+/// Android's proxy as the app gets it (`android.net.ProxyInfo`): `host` and `port` of an HTTP
+/// proxy (a port of 0 or less, or no host: none), the exclusion list (`*.example.com`,
+/// `localhost`, comma or `|` separated) and the address of a PAC script. Android runs a PAC script
+/// itself and names its local proxy as host and port; a PAC address without them is kept for the
+/// settings page only, and the connection is direct, as on the desktop in mode `system`.
+pub fn android_proxy(host: Option<&str>, port: i32, exclusions: &str, pac_url: Option<&str>) -> SystemProxy {
+    let host = host.map(str::trim).filter(|h| !h.is_empty() && port > 0);
+    let url = host.and_then(|h| {
+        let h = if h.contains(':') && !h.starts_with('[') { format!("[{h}]") } else { h.to_owned() };
+        normalize_proxy_url(&format!("{h}:{port}"), "http").ok().flatten()
+    });
+    SystemProxy {
+        http: url.clone(),
+        https: url,
+        socks: None,
+        bypass: exclusions
+            .split([',', '|', ';'])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        pac_url: pac_url.map(str::trim).filter(|u| !u.is_empty()).map(str::to_owned),
+        source: tr!("Android (System oder WLAN)", "Android (system or Wi-Fi)").into(),
+    }
+}
+
 /// Reads the proxy of the operating system now.
 pub fn system_proxy() -> SystemProxy {
     #[cfg(windows)]
@@ -748,8 +785,14 @@ pub fn system_proxy() -> SystemProxy {
     }
     #[cfg(not(windows))]
     {
-        parse_env(|n| std::env::var(n).ok())
+        platform_or_env(PLATFORM_PROXY.read().unwrap_or_else(|e| e.into_inner()).clone(), |n| std::env::var(n).ok())
     }
+}
+
+/// The proxy the platform reported (Android), else the one of the environment.
+#[cfg_attr(windows, allow(dead_code))]
+fn platform_or_env(platform: Option<SystemProxy>, get: impl Fn(&str) -> Option<String>) -> SystemProxy {
+    platform.unwrap_or_else(|| parse_env(get))
 }
 
 #[cfg(windows)]
@@ -1798,6 +1841,50 @@ mod tests {
         assert_eq!(sp.bypass, "localhost,.intra");
         let sp = parse_env(env(&[("ALL_PROXY", "socks5://s:1080")]));
         assert_eq!((sp.socks.as_deref(), sp.http), (Some("socks5://s:1080"), None));
+    }
+
+    /// 1.19: on Android mode `system` is Android's proxy (global or the Wi-Fi's own), with its
+    /// exclusions; the Git sync goes through it when the app has no proxy of its own.
+    #[test]
+    fn android_proxy_is_the_system_proxy_of_the_phone() {
+        let sp = android_proxy(Some("proxy.firma.de"), 3128, "*.intern.firma.de,localhost", None);
+        assert_eq!(
+            (sp.http.as_deref(), sp.https.as_deref()),
+            (Some("http://proxy.firma.de:3128"), Some("http://proxy.firma.de:3128"))
+        );
+        assert_eq!(sp.bypass, "*.intern.firma.de, localhost");
+        assert!(sp.source.contains("Android"));
+        // IPv6, the `|` list of older versions, and no proxy at all (no host, no port).
+        assert_eq!(android_proxy(Some("fd00::1"), 8080, "a|b", None).https.as_deref(), Some("http://[fd00::1]:8080"));
+        assert_eq!(android_proxy(Some("fd00::1"), 8080, "a|b", None).bypass, "a, b");
+        assert_eq!(android_proxy(Some("proxy"), 0, "", None).https, None);
+        assert_eq!(android_proxy(None, 8080, "", None).https, None);
+        assert_eq!(android_proxy(Some(" "), 8080, "", None).https, None);
+        // A PAC script without the local proxy Android runs for it: shown, the connection is direct.
+        let pac = android_proxy(None, -1, "", Some("http://wpad.firma.de/proxy.pac"));
+        assert_eq!((pac.https, pac.pac_url.as_deref()), (None, Some("http://wpad.firma.de/proxy.pac")));
+        // What Android reports wins over the environment; without it the environment counts.
+        let env = |n: &str| (n == "https_proxy").then(|| "env-proxy:1".to_owned());
+        assert_eq!(platform_or_env(Some(sp.clone()), env).https, sp.https);
+        assert_eq!(platform_or_env(None, env).https.as_deref(), Some("http://env-proxy:1"));
+        // The Git sync of a profile in mode `system` goes through it, except for the excluded hosts.
+        let profile = ProxyProfile::default();
+        let via = |url: &str| {
+            git_network(&profile, None, url, &sp, None, &[])
+                .env
+                .into_iter()
+                .find(|(k, _)| k == "https_proxy")
+                .and_then(|(_, v)| v)
+        };
+        assert_eq!(via("https://github.com/maurice/notizen.git").as_deref(), Some("http://proxy.firma.de:3128/"));
+        assert_eq!(via("https://git.intern.firma.de/notizen.git"), None);
+        // A proxy of the app's own (mode manual or none) is not replaced by Android's.
+        let own = ProxyProfile { mode: ProxyMode::Manual, https_proxy: "own:8080".into(), ..Default::default() };
+        let g = git_network(&own, None, "https://github.com/x.git", &SystemProxy::default(), None, &[]);
+        assert_eq!(
+            g.env.iter().find(|(k, _)| k == "https_proxy").and_then(|(_, v)| v.as_deref()),
+            Some("http://own:8080/")
+        );
     }
 
     #[test]

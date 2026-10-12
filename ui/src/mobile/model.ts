@@ -234,7 +234,112 @@ export function pageHtml(md: string): string {
     const name = target.split("|")[0].split("#")[0].trim();
     return `\n\n<p class="m-embed">${escapeHtml(t("mob.notes.embed", { name }))}</p>\n\n`;
   });
-  return renderMarkdown(withEmbeds);
+  // Task boxes can be ticked (A19): enabled, with the page as their label.
+  return renderMarkdown(withEmbeds).replace(/<input\b([^>]*)>/g, (tag, attrs: string) => (/type="checkbox"/.test(attrs) ? `<input${attrs.replace(/\s+disabled(="[^"]*")?/, "")}>` : tag));
+}
+
+// ------------------------------------------------------------------ tasks in a page (A19)
+
+/** The ticked state of every task box {@link pageHtml} shows, in their order. */
+export function taskBoxes(md: string): boolean[] {
+  return [...pageHtml(md).matchAll(/<input\b[^>]*type="checkbox"[^>]*>/g)].map((m) => /\schecked\b/.test(m[0]));
+}
+
+/** A task line: list marker (also quoted or numbered), the box and its state, the text (with a
+ *  Windows line end's `\r`, which `.` would not take). */
+const TASK_LINE = /^((?:[ \t]*>[ \t]?)*([ \t]*)(?:[-*+]|\d{1,9}[.)])[ \t]+\[)([ xX])(\](?:[ \t]+|\r?$))([^\n]*)$/;
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+
+/** Index of each task line of the page's text (front matter and code blocks left out). */
+function taskLineIndexes(lines: string[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  if (/^---\r?$/.test(lines[0] ?? "")) {
+    const end = lines.findIndex((l, n) => n > 0 && /^---[ \t]*\r?$/.test(l));
+    if (end > 0) i = end + 1;
+  }
+  let fence: string | null = null;
+  for (; i < lines.length; i++) {
+    const f = FENCE.exec(lines[i]);
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (f) fence = f[1];
+    else if (TASK_LINE.test(lines[i])) out.push(i);
+  }
+  return out;
+}
+
+export interface TaskToggle {
+  md: string;
+  /** Line of the task in `md`. */
+  line: number;
+  done: boolean;
+  /** The task's text as the core reads it (no chips): the next date of a repeating one. */
+  text: string;
+}
+
+/**
+ * Ticks off (or opens again) the task of the `index`-th box of the page. The line is found by
+ * the boxes the rendering shows: exactly that box changes, or nothing (`null`) when the text no
+ * longer has it.
+ */
+export function toggleTask(md: string, index: number): TaskToggle | null {
+  const before = taskBoxes(md);
+  if (index < 0 || index >= before.length) return null;
+  const lines = md.split("\n");
+  const candidates = taskLineIndexes(lines);
+  // The line of the same position first; another one only when Markdown counted differently.
+  const order = [candidates[index], ...candidates.filter((_, n) => n !== index)].filter((n) => n !== undefined);
+  for (const line of order) {
+    const m = TASK_LINE.exec(lines[line])!;
+    const done = m[3] === " ";
+    const next = [...lines];
+    next[line] = lines[line].replace(TASK_LINE, (_all, head: string, _indent: string, _state: string, tail: string, rest: string) => `${head}${done ? "x" : " "}${tail}${rest}`);
+    const md2 = next.join("\n");
+    const after = taskBoxes(md2);
+    if (after.length === before.length && after.every((v, n) => (n === index ? v === done && v !== before[n] : v === before[n]))) {
+      return { md: md2, line, done, text: taskText(m[5]) };
+    }
+  }
+  return null;
+}
+
+/** A task's text without its `/zeit` chips and line end. */
+const taskText = (rest: string) => rest.replace(/<time-entry\b[^>]*>[^<]*<\/time-entry>/g, "").replace(/\r$/, "").replace(/ {2,}/g, " ").trim();
+
+/** Only tasks that may have a repeat rule ask the core (as in the desktop's editor, recurTasks.ts). */
+export const mayRepeat = (text: string) => /(?:^|\s)(?:every|wdh):|\u{1F501}/iu.test(text);
+
+const DUE_DATE_RE = /((?:due|fällig):|\u{1F4C5}\s?)(\d{4}-\d{2}-\d{2})/iu;
+
+/**
+ * Adds the next occurrence of the repeating task on `line` (ticked off) below it and its
+ * subtasks, as the desktop's editor does: open, with the date `due` in place of the old one (or
+ * added), without its bookings, its block id and an Obsidian done date.
+ */
+export function withNextOccurrence(md: string, line: number, due: string): string {
+  const lines = md.split("\n");
+  const m = TASK_LINE.exec(lines[line] ?? "");
+  if (!m) return md;
+  const cr = lines[line].endsWith("\r") ? "\r" : "";
+  let text = m[5].replace(/\r$/, "").replace(/<time-entry\b[^>]*>[^<]*<\/time-entry>/g, "");
+  const dated = DUE_DATE_RE.test(text);
+  text = text.replace(DUE_DATE_RE, (_all, prefix: string) => `${prefix}${due}`);
+  text = text.replace(/\s*\u{2705}\s?\d{4}-\d{2}-\d{2}/gu, "").replace(/\s+\^[A-Za-z0-9-]+\s*$/, "").replace(/ {2,}/g, " ").trimEnd();
+  if (!dated) text = `${text} due:${due}`;
+  const item = `${m[1]} ]${text.trim() ? ` ${text.trim()}` : ""}${cr}`;
+  // Below its subtasks: the lines indented deeper (blank lines between them included).
+  const width = (l: string) => /^[ \t]*/.exec(l)![0].replace(/\t/g, "    ").length;
+  const own = width(lines[line]);
+  let at = line + 1;
+  for (let n = line + 1; n < lines.length; n++) {
+    if (!lines[n].trim()) continue;
+    if (width(lines[n]) <= own) break;
+    at = n + 1;
+  }
+  return [...lines.slice(0, at), item, ...lines.slice(at)].join("\n");
 }
 
 // ----------------------------------------------------------------------- sync

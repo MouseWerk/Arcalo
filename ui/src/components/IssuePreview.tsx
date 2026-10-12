@@ -1,5 +1,6 @@
 // Hovering an issue chip (`PROJ-123` in a note) shows a card like the page-link preview: type,
-// key, status, summary, assignee, due date and the start of the description.
+// key, status, summary, assignee, due date and the start of the description (loaded from Jira the
+// first time, 1.19: syncs load the list fields only).
 
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
@@ -12,6 +13,8 @@ import { t } from "../lib/i18n";
 import { isKey } from "../lib/ime";
 
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
+/** How long the card waits for a description not loaded yet before it shows without. */
+const DETAIL_WAIT_MS = 1500;
 
 interface Shown {
   key: string;
@@ -48,6 +51,18 @@ export function IssuePreview() {
           } catch (err) {
             error = String(err);
           }
+        } else if (!issue.detailed) {
+          // Offline, refused or slow: the card shows what is cached (a late answer is kept for the next one).
+          const cached: ChipIssue = issue;
+          const loaded = jiraApi.detail(key).then(
+            (full) => {
+              const next = { ...cached, description: full.description.slice(0, 400), detailed: true };
+              useIssueIndex.getState().put(next);
+              return next;
+            },
+            () => cached,
+          );
+          issue = await Promise.race([loaded, new Promise<ChipIssue>((r) => window.setTimeout(() => r(cached), DETAIL_WAIT_MS))]);
         }
         if (chip.matches(":hover")) setShown({ key, rect, issue, error });
       }, editorPrefs()?.hover_delay_ms ?? 450);

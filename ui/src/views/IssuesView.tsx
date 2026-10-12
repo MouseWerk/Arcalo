@@ -293,8 +293,26 @@ function IssueDetail({ issue }: { issue: Issue }) {
   useEffect(() => {
     jiraApi.view(issue.key).then(setView, () => {});
   }, [issue.key, pages]);
-  // The list loads the issues without their comments; the issue's view has them.
-  const comments = view?.issue?.key === issue.key ? view.issue.comments : issue.comments;
+  // The list loads the issues without their comments; the issue's view has them. Syncs load no
+  // descriptions (1.19): one not loaded yet (or changed in Jira since) is loaded now and cached.
+  const cached = view?.issue?.key === issue.key ? view.issue : null;
+  const [detail, setDetail] = useState<{ key: string; issue: Issue | null; failed: boolean } | null>(null);
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!cached || cached.detailed || asked.current === issue.key) return;
+    const key = issue.key;
+    asked.current = key;
+    setDetail({ key, issue: null, failed: false });
+    jiraApi.detail(key).then(
+      (full) => setDetail((d) => (d?.key === key ? { key, issue: full, failed: false } : d)),
+      () => setDetail((d) => (d?.key === key ? { key, issue: null, failed: true } : d)),
+    );
+  }, [cached, issue.key]);
+  const loaded = detail?.key === issue.key ? detail : null;
+  const full = loaded?.issue ?? cached;
+  const description = full ? full.description : issue.description;
+  const comments = full ? full.comments : issue.comments;
+  const loading = !!loaded && !loaded.issue && !loaded.failed;
   const s = useApp.getState;
   return (
     <div className="issue-detail">
@@ -325,7 +343,15 @@ function IssueDetail({ issue }: { issue: Issue }) {
             </>
           )}
         </dl>
-        {issue.description ? <div className="issue-desc">{issue.description}</div> : <div className="faint small">{t("jira.noDescription")}</div>}
+        {description ? (
+          <div className="issue-desc">{description}</div>
+        ) : loading || !view ? (
+          <div className="issue-desc-loading" aria-label={t("jira.descLoading")}>
+            <Spinner size={14} />
+          </div>
+        ) : (
+          <div className="faint small">{loaded?.failed ? t("jira.descUnavailable") : t("jira.noDescription")}</div>
+        )}
         {comments.length > 0 && (
           <div className="issue-comments">
             <h3>{t("jira.comments")}</h3>

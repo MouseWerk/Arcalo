@@ -8,7 +8,7 @@ import { PageBody } from "./Notes";
 
 vi.mock("../../lib/api", async (orig) => {
   const m = await orig<typeof import("../../lib/api")>();
-  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn() } };
+  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn(), taskNextDue: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -169,5 +169,101 @@ describe("Mobile page editor and the sync", () => {
     expect(api.savePage).toHaveBeenCalledWith(7, "Anfang\nvom Handy\n", "Anfang\n");
     expect(field().value).toBe("Anfang\nvom Desktop\nvom Handy\n");
     expect(toast).not.toHaveBeenCalled();
+  });
+});
+
+describe("Task boxes in a page (A19)", () => {
+  let root: Root | null = null;
+  let host: HTMLElement | null = null;
+  let stored = "";
+  const toast = vi.fn();
+  const refresh = vi.fn();
+  const ctx = { toast, refresh, onBack: () => () => {} } as unknown as MobileContext;
+  const read = (content: string, onSaved: (c: string) => void = () => {}) =>
+    act(async () =>
+      root!.render(createElement(Ctx.Provider, { value: ctx }, createElement(PageBody, { doc: doc(content), editing: false, onSaved, onDone: () => {} }))),
+    );
+  const boxes = () => [...host!.querySelectorAll<HTMLInputElement>('.m-read input[type="checkbox"]')];
+  const tap = (el: Element, init: MouseEventInit = {}) => act(async () => void el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init })));
+
+  beforeEach(() => {
+    vi.mocked(api.savePage).mockReset();
+    vi.mocked(api.page).mockReset();
+    vi.mocked(api.taskNextDue).mockReset();
+    vi.mocked(api.page).mockImplementation(async () => doc(stored));
+    vi.mocked(api.savePage).mockImplementation(async (_id, content) => {
+      stored = content;
+      return saved();
+    });
+    toast.mockReset();
+    refresh.mockReset();
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+  });
+  afterEach(() => {
+    act(() => root?.unmount());
+    host?.remove();
+    root = host = null;
+  });
+
+  it("ticks a task off in the page, saved with the text it started from", async () => {
+    stored = "# Plan\n\n- [ ] Eins\n- [ ] Zwei\n\n```\n- [ ] kein Kasten\n```\n";
+    const onSaved = vi.fn();
+    await read(stored, onSaved);
+    expect(boxes().map((b) => [b.checked, b.disabled])).toEqual([
+      [false, false],
+      [false, false],
+    ]);
+    const before = stored;
+    await tap(boxes()[1]);
+    expect(api.savePage).toHaveBeenCalledWith(7, "# Plan\n\n- [ ] Eins\n- [x] Zwei\n\n```\n- [ ] kein Kasten\n```\n", before);
+    expect(boxes().map((b) => b.checked)).toEqual([false, true]);
+    expect(onSaved).toHaveBeenCalledWith(stored);
+    expect(refresh).toHaveBeenCalled();
+    // Open again.
+    await tap(boxes()[1]);
+    expect(api.savePage).toHaveBeenLastCalledWith(7, before, "# Plan\n\n- [ ] Eins\n- [x] Zwei\n\n```\n- [ ] kein Kasten\n```\n");
+  });
+
+  it("merges with a change a sync made meanwhile, and shows both", async () => {
+    stored = "- [ ] Eins\n- [ ] Zwei\n";
+    await read(stored);
+    // The desktop added a line; the shell merges the tick with it.
+    vi.mocked(api.savePage).mockImplementation(async () => {
+      stored = "- [x] Eins\n- [ ] Zwei\n- [ ] Vom Desktop\n";
+      return saved(stored);
+    });
+    await tap(boxes()[0]);
+    expect(api.savePage).toHaveBeenCalledWith(7, "- [x] Eins\n- [ ] Zwei\n", "- [ ] Eins\n- [ ] Zwei\n");
+    expect(boxes().map((b) => b.checked)).toEqual([true, false, false]);
+    expect(host!.textContent).toContain("Vom Desktop");
+  });
+
+  it("a repeating task gets its next occurrence below it, as on the desktop", async () => {
+    stored = "- [ ] Bericht every:weekly due:2026-10-12\n  - [ ] Zahlen holen\n- [ ] Danach\n";
+    vi.mocked(api.taskNextDue).mockResolvedValue("2026-10-19");
+    await read(stored);
+    await tap(boxes()[0]);
+    expect(api.taskNextDue).toHaveBeenCalledWith("Bericht every:weekly due:2026-10-12");
+    expect(api.savePage).toHaveBeenCalledWith(
+      7,
+      "- [x] Bericht every:weekly due:2026-10-12\n  - [ ] Zahlen holen\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach\n",
+      "- [ ] Bericht every:weekly due:2026-10-12\n  - [ ] Zahlen holen\n- [ ] Danach\n",
+    );
+  });
+
+  it("counts a tap next to the small box, not one on the task's text or a link", async () => {
+    stored = "- [ ] Eins mit [[Link]]\n";
+    await read(stored);
+    const box = boxes()[0];
+    const li = box.closest("li")!;
+    const r = box.getBoundingClientRect();
+    await tap(li.querySelector("a")!);
+    expect(api.savePage).not.toHaveBeenCalled();
+    await tap(li, { clientX: r.left + r.width / 2 + 200 });
+    expect(api.savePage).not.toHaveBeenCalled();
+    await tap(li, { clientX: r.left + r.width / 2 + 10 });
+    expect(api.savePage).toHaveBeenCalledWith(7, "- [x] Eins mit [[Link]]\n", "- [ ] Eins mit [[Link]]\n");
   });
 });

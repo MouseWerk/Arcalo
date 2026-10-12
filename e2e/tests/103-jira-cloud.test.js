@@ -120,7 +120,16 @@ test("the Issues page: groups, search, filters and an opened issue", async () =>
   await app.waitFor("[data-issue-row]");
   const loads = await app.browser.execute(() => window.__issueLoads);
   assert.ok(loads.length > 0 && loads.every((l) => l.cmd === "jira_issues_compact"), loads.map((l) => l.cmd).join(", "));
-  assert.ok(loads.every((l) => !l.body.includes("First look at") && l.body.includes("The token has expired")), "comments in the list, or descriptions missing");
+  // 1.19: the syncs load summaries only; descriptions and comments come when an issue is opened.
+  assert.ok(loads.every((l) => !l.body.includes("First look at") && !l.body.includes("The token has expired")), "comments or descriptions in the list");
+  const searches = jira.requests.filter((r) => /\/search(\/jql)?$/.test(r.path) || r.path.endsWith("/sprint/4/issue"));
+  assert.ok(searches.length > 0, "no searches");
+  for (const r of searches) {
+    const asked = (r.query.fields ?? "").split(",");
+    assert.ok(asked.includes("summary") && !asked.includes("description") && !asked.includes("comment"), `${r.path}: fields=${r.query.fields}`);
+  }
+  const detailGets = () => jira.requests.filter((r) => r.method === "GET" && r.path.endsWith("/issue/PROJ-123"));
+  assert.equal(detailGets().length, 0, "an issue was loaded before it was opened");
   assert.deepEqual((await texts(".issues-group-title span:first-child")).filter(Boolean), ["OPS · Operations", "PROJ · Portal"]);
   assert.equal(await count("[data-issue-row]"), 4, "my four open issues");
   assert.match(await app.text('[data-issue-row="PROJ-123"]'), /Login fails on SSO[\s\S]*In Progress/i);
@@ -138,18 +147,24 @@ test("the Issues page: groups, search, filters and an opened issue", async () =>
   await app.browser.waitUntil(async () => (await count("[data-issue-row]")) === 1, { timeoutMsg: "priority filter" });
   await clickText(".issues-toolbar button", /Filter zurücksetzen/);
   await app.select('.view-actions [aria-label="Gruppieren nach"]', "project");
-  // Open an issue: description, comments, actions.
+  // Open an issue: description and comments loaded now, actions.
   await app.click('[data-issue-row="PROJ-123"] .issue-row-main');
   await app.waitText('[data-issue-row="PROJ-123"] .issue-detail', /The token has expired[\s\S]*First look at PROJ-123/);
   await app.waitText('[data-issue-row="PROJ-123"] .issue-detail-side', /Notiz für PROJ-123 anlegen/);
+  assert.equal(detailGets().length, 1, "the opened issue is loaded once");
+  const asked = detailGets()[0].query.fields.split(",");
+  assert.ok(asked.includes("description") && asked.includes("comment"), detailGets()[0].query.fields);
+  assert.match((await app.invoke("jira_issue_view", { key: "PROJ-123" })).issue.description, /The token has expired/, "cached");
   await app.dismissToasts();
   await app.shot("103-issues-light");
   await setTheme("dark");
   await app.click(".ribbon-issues");
   await app.waitFor("[data-issue-row]");
   await app.click('[data-issue-row="PROJ-123"] .issue-row-main');
-  await app.waitFor('[data-issue-row="PROJ-123"] .issue-detail');
+  await app.waitText('[data-issue-row="PROJ-123"] .issue-detail', /The token has expired/);
   await app.shot("103-issues-dark");
+  // Opened again: from the cache.
+  assert.equal(detailGets().length, 1, "loaded again although cached");
   await setTheme("light");
 });
 

@@ -196,6 +196,61 @@ impl Capabilities {
             self.no_temperature.insert(r.clone());
         }
     }
+
+    /// Forgets what is known about the models of `provider` (its server, key or network changed:
+    /// a fixed server gets another chance); the other providers keep theirs.
+    pub fn forget_provider(&mut self, provider: &str) {
+        self.modes.remove(provider);
+        let other = |r: &ModelRef| r.provider != provider;
+        self.embed_failed.retain(|r, _| other(r));
+        self.embed_ok.retain(other);
+        self.embed_told.retain(other);
+        self.no_tools.retain(other);
+        self.no_temperature.retain(other);
+    }
+}
+
+/// What the client of each provider depends on, as a number per provider id: its settings, its
+/// key, the network settings with the proxy passwords, and whether AI is on. Saving the settings
+/// rebuilds the clients; what was learned about a provider (its model list, the parameters its
+/// models reject) is kept when its number stays the same, so a theme saved does not make the
+/// assistant ask a model with tools again that refused them (and put it into cooldown, q119).
+pub fn fingerprints(
+    providers: &[super::provider::AiProvider],
+    ai_on: bool,
+    network: &impl serde::Serialize,
+    keys: &HashMap<String, String>,
+    passwords: &HashMap<String, String>,
+) -> HashMap<String, u64> {
+    use std::hash::{Hash, Hasher};
+    let shared = {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        ai_on.hash(&mut h);
+        serde_json::to_string(network).unwrap_or_default().hash(&mut h);
+        let mut pw: Vec<_> = passwords.iter().collect();
+        pw.sort();
+        pw.hash(&mut h);
+        h.finish()
+    };
+    providers
+        .iter()
+        .map(|p| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            shared.hash(&mut h);
+            serde_json::to_string(p).unwrap_or_default().hash(&mut h);
+            keys.get(&p.id).hash(&mut h);
+            (p.id.clone(), h.finish())
+        })
+        .collect()
+}
+
+/// The providers whose [`fingerprints`] differ between `before` and `after` (also added or removed).
+pub fn changed_providers(before: &HashMap<String, u64>, after: &HashMap<String, u64>) -> Vec<String> {
+    let mut out: Vec<String> =
+        before.keys().chain(after.keys()).filter(|id| before.get(*id) != after.get(*id)).cloned().collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
 #[cfg(test)]
@@ -303,5 +358,47 @@ mod tests {
         assert!(caps.rejects_tools(&r("vllmserver")));
         assert!(!caps.rejects_temperature(&r("vllmserver")));
         assert!(!caps.rejects_tools(&ModelRef::new("ollama", "vllmserver")));
+    }
+
+    /// q119 (e2e 72): saving another setting keeps what was learned about a provider; another
+    /// server, key or network for it forgets it.
+    #[test]
+    fn learned_capabilities_stay_until_the_provider_changes() {
+        use super::super::provider::AiProvider;
+        let p = |id: &str, url: &str| AiProvider { id: id.into(), base_url: url.into(), ..Default::default() };
+        let providers = vec![p("litellm", "http://llm:4000"), p("ollama", "http://localhost:11434")];
+        let keys = HashMap::from([("litellm".to_owned(), "sk-1".to_owned())]);
+        let none = HashMap::new();
+        let net = json!({ "profiles": [] });
+        let base = fingerprints(&providers, true, &net, &keys, &none);
+        assert_eq!(base.len(), 2);
+        // The same settings saved again (a theme changed elsewhere): nothing changed.
+        assert!(changed_providers(&base, &fingerprints(&providers, true, &net, &keys, &none)).is_empty());
+        // Another server of one provider, its key, a new provider: only those.
+        let moved = vec![p("litellm", "http://llm2:4000"), providers[1].clone()];
+        assert_eq!(changed_providers(&base, &fingerprints(&moved, true, &net, &keys, &none)), ["litellm"]);
+        let rekeyed = HashMap::from([("litellm".to_owned(), "sk-2".to_owned())]);
+        assert_eq!(changed_providers(&base, &fingerprints(&providers, true, &net, &rekeyed, &none)), ["litellm"]);
+        let more = vec![providers[0].clone(), providers[1].clone(), p("openai", "https://api.openai.com/v1")];
+        assert_eq!(changed_providers(&base, &fingerprints(&more, true, &net, &keys, &none)), ["openai"]);
+        // The network or a proxy password, or AI switched off and on: all of them.
+        let all = ["litellm".to_owned(), "ollama".to_owned()];
+        assert_eq!(
+            changed_providers(&base, &fingerprints(&providers, true, &json!({ "profiles": [1] }), &keys, &none)),
+            all
+        );
+        let pw = HashMap::from([("firma".to_owned(), "geheim".to_owned())]);
+        assert_eq!(changed_providers(&base, &fingerprints(&providers, true, &net, &keys, &pw)), all);
+        assert_eq!(changed_providers(&base, &fingerprints(&providers, false, &net, &keys, &none)), all);
+
+        // Forgetting one provider keeps the other's.
+        let mut caps = Capabilities::default();
+        caps.rejected(&r("vllmserver"), true, true);
+        caps.rejected(&ModelRef::new("ollama", "gemma"), true, false);
+        caps.set_modes("litellm", HashMap::from([("vllmserver".to_owned(), "chat".to_owned())]));
+        caps.forget_provider("litellm");
+        assert!(!caps.rejects_tools(&r("vllmserver")) && !caps.rejects_temperature(&r("vllmserver")));
+        assert!(!caps.has_modes("litellm"));
+        assert!(caps.rejects_tools(&ModelRef::new("ollama", "gemma")));
     }
 }

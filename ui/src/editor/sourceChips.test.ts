@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { chipDiff, retargetChip, sourceChipIds, sourceChips, useSourceChips } from "./sourceChips";
-import { chipAwaited, chipRemoved, chipReturned, chipsPresent } from "./timeChip";
+import { chipAwaited, chipRemoved, chipReturned, chipsParked, chipsPresent } from "./timeChip";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import type { ChipLink, TimeEntry } from "../lib/types";
@@ -105,6 +105,24 @@ describe("removing a booked chip", () => {
     chipRemoved(13, { hours: "1,50" }, undefined, () => {}, 7);
     expect(chipAwaited(13)).toBe(false);
     chipsPresent(otherNote, null);
+  });
+
+  it("a rich editor parked behind its note's source view does not count as where the chip moved (1.19)", async () => {
+    // Note 7 was opened in the rich editor, then in the source view: its parked editor still has
+    // the chip the source view cut from it. The chip pasted into note 8 and removed there goes.
+    const parked = {};
+    chipsPresent(parked, [14], 7);
+    chipsParked(parked, true);
+    chipRemoved(14, { hours: "1,50" }, undefined, () => {}, 8);
+    expect(chipAwaited(14)).toBe(true);
+    await vi.advanceTimersByTimeAsync(7100);
+    expect(api.chipDelete).toHaveBeenCalledWith(14);
+    await chipReturned(14, () => {});
+    // Shown again (with the note as stored), it counts again.
+    chipsParked(parked, false);
+    chipRemoved(14, { hours: "1,50" }, undefined, () => {}, 8);
+    expect(chipAwaited(14)).toBe(false);
+    chipsPresent(parked, null);
   });
 
   it("„Rückgängig“ in the toast puts the chip back and keeps the booking", async () => {

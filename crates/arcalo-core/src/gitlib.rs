@@ -34,6 +34,10 @@ pub(super) fn default_on() -> bool {
 
 /// The CA bundle libgit2's OpenSSL checks servers against (Android: written by [`init_tls`]).
 static CA_FILE: OnceLock<PathBuf> = OnceLock::new();
+/// The system's certificates of that bundle, and the user-installed ones last added to it
+/// ([`set_user_certificates`]).
+static SYSTEM_PEM: OnceLock<String> = OnceLock::new();
+static USER_PEM: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 /// Writes the CA bundle for HTTPS into `dir` and points libgit2 at it: the system's
 /// certificates (Android: `/system/etc/security/cacerts`, the updatable store of Android 14 and
@@ -75,12 +79,46 @@ pub fn init_tls(dir: &Path) -> crate::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let file = dir.join("git-ca.pem");
     if !pem.is_empty() {
-        fs::write(&file, pem)?;
+        fs::write(&file, &pem)?;
         // SAFETY: called once at start-up, before any git operation runs.
         unsafe { git2::opts::set_ssl_cert_file(&file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
         let _ = CA_FILE.set(file.clone());
+        let _ = SYSTEM_PEM.set(pem);
     }
     Ok(file)
+}
+
+/// The certificates the user installed on the phone (Einstellungen → Sicherheit →
+/// Verschlüsselung & Anmeldedaten), as PEM, added to the bundle of [`init_tls`]: Android lets an
+/// app trust them when its network security config says so (`src-tauri/gen/android`, for a
+/// company's proxy that inspects HTTPS). Rewrites the bundle only when they changed; `true` then.
+pub fn set_user_certificates(pem: &str) -> crate::Result<bool> {
+    let (Some(file), Some(system)) = (CA_FILE.get(), SYSTEM_PEM.get()) else { return Ok(false) };
+    let user = certificates_only(pem);
+    let mut last = USER_PEM.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == user {
+        return Ok(false);
+    }
+    fs::write(file, format!("{system}{user}"))?;
+    // SAFETY: libgit2 reads the file when a TLS connection starts; the path stays the same.
+    unsafe { git2::opts::set_ssl_cert_file(file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
+    *last = user;
+    Ok(true)
+}
+
+/// The `CERTIFICATE` blocks of `pem`, each on its own lines; anything else is dropped.
+fn certificates_only(pem: &str) -> String {
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    let mut out = String::new();
+    let mut rest = pem;
+    while let Some(a) = rest.find(BEGIN) {
+        let Some(b) = rest[a..].find(END) else { break };
+        out.push_str(&rest[a..a + b + END.len()]);
+        out.push('\n');
+        rest = &rest[a + b + END.len()..];
+    }
+    out
 }
 
 /// Runs the git command `args` in `cwd`. Never fails: errors come back as git's would, a
@@ -733,14 +771,20 @@ fn config<'a>(git: &'a Git, key: &str) -> Option<&'a str> {
     git.network.config.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str())
 }
 
-/// The proxy of the network settings (`https_proxy`/`http_proxy`), else none.
+/// The proxy of the network settings (`https_proxy`/`http_proxy`; mode `system` on Android:
+/// Android's proxy, `network::set_platform_proxy`), else none.
 fn proxy(git: &Git) -> ProxyOptions<'static> {
     let mut po = ProxyOptions::new();
-    let env = |k: &str| git.network.env.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.clone());
-    if let Some(p) = env("https_proxy").or_else(|| env("http_proxy")).filter(|p| !p.is_empty()) {
+    if let Some(p) = proxy_url(git) {
         po.url(&p);
     }
     po
+}
+
+/// The proxy URL [`proxy`] gives libgit2 for the remote of `git`; `None` = direct.
+fn proxy_url(git: &Git) -> Option<String> {
+    let env = |k: &str| git.network.env.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.clone());
+    env("https_proxy").or_else(|| env("http_proxy")).filter(|p| !p.is_empty())
 }
 
 #[cfg(test)]
@@ -1014,5 +1058,62 @@ mod tests {
         let out = run(&g, Some(&base), &["add", "-A"]);
         assert!(!out.ok && out.stderr.starts_with("fatal:") || out.stderr.starts_with("error:"), "{}", out.stderr);
         let _ = fs::remove_dir_all(&base);
+    }
+
+    /// 1.19: the phone's proxy (Android's, through mode `system` of the network settings) reaches
+    /// libgit2: a fetch asks a local proxy for the remote; an excluded host goes direct.
+    #[test]
+    fn the_system_proxy_of_the_phone_reaches_libgit2() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or_default().to_owned());
+                let _ = s.write_all(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+            }
+        });
+        let android = crate::network::android_proxy(Some("127.0.0.1"), port as i32, "*.intern.test", None);
+        let profile = crate::network::ProxyProfile::default();
+        let with = |remote: &str| {
+            let mut g = Git::new(None, remote).with_network(crate::network::git_network(
+                &profile,
+                None,
+                remote,
+                &android,
+                None,
+                &[],
+            ));
+            g.embedded = true;
+            g
+        };
+        // HTTPS (the phone's remotes) goes through the proxy as a tunnel. (libgit2 1.9 connects to a
+        // plain HTTP remote directly.)
+        let remote = "https://git.example.test/notizen.git";
+        let g = with(remote);
+        assert_eq!(proxy_url(&g).as_deref(), Some(format!("http://127.0.0.1:{port}/").as_str()));
+        let dir = tmp("proxy");
+        let out = run(&g, Some(&dir), &["ls-remote", "--heads", remote]);
+        assert!(!out.ok, "the proxy refuses");
+        let asked = rx.recv_timeout(Duration::from_secs(20)).expect("libgit2 did not ask the proxy");
+        assert!(asked.starts_with("CONNECT git.example.test:443"), "{asked}");
+        // An excluded host: no proxy.
+        assert_eq!(proxy_url(&with("https://git.intern.test/notizen.git")), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_certificates_are_added_to_the_bundle_once() {
+        let pem = "junk\n-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\ntext\n-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----";
+        assert_eq!(
+            certificates_only(pem),
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----\n"
+        );
+        assert_eq!(certificates_only("-----BEGIN CERTIFICATE-----\nCCCC"), "", "an unfinished block is dropped");
+        // Without the bundle of `init_tls` (not on Android): nothing to add to.
+        assert!(!set_user_certificates(pem).unwrap());
     }
 }

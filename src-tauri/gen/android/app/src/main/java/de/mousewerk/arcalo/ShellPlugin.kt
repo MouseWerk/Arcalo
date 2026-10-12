@@ -1,9 +1,13 @@
 package de.mousewerk.arcalo
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.ConnectivityManager
+import android.net.Uri
+import android.util.Base64
 import android.webkit.WebView
 import androidx.core.view.WindowCompat
 import app.tauri.annotation.Command
@@ -12,6 +16,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.security.KeyStore
 
 @InvokeArg
 class BarsArgs {
@@ -24,7 +29,8 @@ class BarsArgs {
  * The window around the WebView (src-tauri/src/mobile/android.rs): the colors behind the status
  * and navigation bars follow the app's theme (not only the system's), the back button at the
  * app's root sends it to the background like other Android apps, and text shared to Arcalo from
- * another app („Teilen“ → Arcalo) waits here until the UI takes it into a capture.
+ * another app („Teilen“ → Arcalo) waits here until the UI takes it into a capture. Also what the
+ * built-in git needs of Android's network: the proxy and the certificates the user installed.
  */
 @TauriPlugin
 class ShellPlugin(private val activity: Activity) : Plugin(activity) {
@@ -51,6 +57,54 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
         if (joined.isNotEmpty()) shared = joined
         // Taken once: a later restart of the activity must not capture it again.
         intent.action = Intent.ACTION_MAIN
+    }
+
+    /**
+     * Android's proxy for the app: the global one, else the one of the network in use (a Wi-Fi's
+     * own proxy). Host and port of an HTTP proxy (with a PAC script: the local proxy Android runs
+     * for it), its exclusions and the PAC address; nothing without a proxy. The Git sync uses it
+     * when the app has no proxy of its own (src-tauri/src/mobile/mod.rs, `refresh_network`).
+     */
+    @Command
+    fun proxy(invoke: Invoke) {
+        val cm = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val info = cm.defaultProxy
+        val ret = JSObject()
+        if (info != null) {
+            info.host?.let { ret.put("host", it) }
+            ret.put("port", info.port)
+            ret.put("exclusions", info.exclusionList?.joinToString(",") ?: "")
+            val pac = info.pacFileUrl
+            if (pac != null && pac != Uri.EMPTY) ret.put("pac", pac.toString())
+        }
+        invoke.resolve(ret)
+    }
+
+    /**
+     * The CA certificates the user installed (Einstellungen → Sicherheit → Verschlüsselung &
+     * Anmeldedaten), as PEM. The app's network security config trusts them
+     * (res/xml/network_security_config.xml), so the built-in git, which checks servers with its
+     * own bundle (OpenSSL), gets them added to it. Certificates the user switched off are not listed.
+     */
+    @Command
+    fun userCertificates(invoke: Invoke) {
+        val pem = StringBuilder()
+        try {
+            val store = KeyStore.getInstance("AndroidCAStore")
+            store.load(null)
+            for (alias in store.aliases().toList()) {
+                if (!alias.startsWith("user:")) continue
+                val cert = store.getCertificate(alias) ?: continue
+                pem.append("-----BEGIN CERTIFICATE-----\n")
+                pem.append(Base64.encodeToString(cert.encoded, Base64.NO_WRAP).chunked(64).joinToString("\n"))
+                pem.append("\n-----END CERTIFICATE-----\n")
+            }
+        } catch (e: Exception) {
+            // No readable store: the system's certificates only.
+        }
+        val ret = JSObject()
+        ret.put("pem", pem.toString())
+        invoke.resolve(ret)
     }
 
     /** The text shared to the app since the last call (once), or nothing. */

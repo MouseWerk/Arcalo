@@ -920,3 +920,111 @@ fn the_issue_table_holds_the_list_without_comments() {
     );
     assert!(!serde_json::to_string(&t).unwrap().contains("Anna"));
 }
+
+// ------------------------------------------------------------------ descriptions on demand (1.19)
+
+#[test]
+fn searches_ask_for_the_list_fields_and_an_opened_issue_for_its_description() {
+    for f in ["description", "comment"] {
+        assert!(!FIELDS.split(',').any(|x| x == f), "{f} in a search");
+        assert!(DETAIL_FIELDS.split(',').any(|x| x == f), "{f} not loaded with an opened issue");
+    }
+    assert!(
+        FIELDS.split(',').all(|f| DETAIL_FIELDS.split(',').any(|d| d == f)),
+        "an opened issue has the list's fields too"
+    );
+}
+
+#[test]
+fn a_loaded_description_stays_cached_until_the_issue_changes() {
+    let db = setup();
+    let listed = |updated: &str| Issue { updated: Some(updated.into()), ..issue("PROJ-1", "new") };
+    // From a sync: nothing loaded yet.
+    store(&db, &[(listed("2026-09-20T10:00:00Z"), &["mine"])]);
+    let got = db.issue_get("PROJ-1").unwrap().unwrap();
+    assert!(!got.detailed && got.description.is_empty());
+    // Opened: description and comments are loaded and cached.
+    let opened = Issue {
+        description: "Steps to reproduce".into(),
+        comments: vec![IssueComment {
+            author: "Tom".into(),
+            created: "2026-09-20T09:00:00Z".into(),
+            body: "Seen".into(),
+        }],
+        detailed: true,
+        ..listed("2026-09-20T10:00:00Z")
+    };
+    db.issue_put("acme", &opened, now()).unwrap();
+    let got = db.issue_get("PROJ-1").unwrap().unwrap();
+    assert!(got.detailed);
+    assert_eq!((got.description.as_str(), got.comments.len()), ("Steps to reproduce", 1));
+    assert_eq!(got.matches, ["mine"], "opening an issue keeps the searches that found it");
+    // The next sync (no description asked for) keeps them, and they are still current.
+    store(&db, &[(listed("2026-09-20T10:00:00Z"), &["mine"])]);
+    let got = db.issue_get("PROJ-1").unwrap().unwrap();
+    assert!(got.detailed && got.description == "Steps to reproduce" && got.comments.len() == 1);
+    assert_eq!(db.issues_list(&IssueFilter::default()).unwrap()[0].description, "Steps to reproduce");
+    // Changed in Jira: still shown, but loaded again when opened.
+    store(&db, &[(listed("2026-09-21T08:00:00Z"), &["mine"])]);
+    let got = db.issue_get("PROJ-1").unwrap().unwrap();
+    assert!(!got.detailed, "a changed issue counts as not loaded");
+    assert_eq!(got.description, "Steps to reproduce");
+    let reopened =
+        Issue { description: "Steps, updated".into(), updated: Some("2026-09-21T08:00:00Z".into()), ..opened.clone() };
+    db.issue_put("acme", &reopened, now()).unwrap();
+    let got = db.issue_get("PROJ-1").unwrap().unwrap();
+    assert!(got.detailed && got.description == "Steps, updated");
+}
+
+/// A Jira that answers every request with `body` and records the request lines.
+fn recording_jira(body: &'static str) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let log = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line);
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                    break;
+                }
+            }
+            log.lock().unwrap().push(line.trim().to_owned());
+            let mut out = stream;
+            let _ = write!(
+                out,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    (url, seen)
+}
+
+#[tokio::test]
+async fn the_client_loads_descriptions_only_for_an_opened_issue() {
+    const BODY: &str = r#"{"key":"PROJ-1","id":"1","fields":{"summary":"S","description":"D","comment":{"comments":[]}},
+        "issues":[{"key":"PROJ-1","id":"1","fields":{"summary":"S"}}],"isLast":true,"total":1}"#;
+    let (url, seen) = recording_jira(BODY);
+    let jira = direct_jira(&url);
+    let listed = jira.search("project = PROJ", 10).await.unwrap();
+    assert!(!listed[0].detailed);
+    let opened = jira.get("PROJ-1").await.unwrap();
+    assert!(opened.detailed && opened.description == "D");
+    let lines = seen.lock().unwrap().clone();
+    let fields = |line: &str| -> Vec<String> {
+        let target = line.split_whitespace().nth(1).unwrap_or("");
+        let url = reqwest::Url::parse(&format!("http://x{target}")).unwrap();
+        let list = url.query_pairs().find(|(k, _)| k == "fields").map(|(_, v)| v.into_owned()).unwrap_or_default();
+        list.split(',').map(str::to_owned).collect()
+    };
+    let search = lines.iter().find(|l| l.contains("/search")).expect("a search");
+    let get = lines.iter().find(|l| l.contains("/issue/PROJ-1")).expect("the issue");
+    assert!(!fields(search).iter().any(|f| f == "description" || f == "comment"), "{search}");
+    assert!(fields(get).iter().any(|f| f == "description") && fields(get).iter().any(|f| f == "comment"), "{get}");
+}

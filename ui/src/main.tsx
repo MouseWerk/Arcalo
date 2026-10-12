@@ -1,5 +1,5 @@
 import "./lib/storageBoot";
-import { lazy, StrictMode, Suspense } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
@@ -25,12 +25,9 @@ import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
-import { describeError, logUi } from "./lib/devlog";
+import { collectErrors } from "./lib/errorLog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
-
-// The Android shell is loaded only there (a chunk of its own): the desktop bundle stays as it was.
-const MobileApp = lazy(() => import("./mobile/MobileApp").then((m) => ({ default: m.MobileApp })));
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -40,9 +37,11 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 const presenterMode = location.hash === "#presenter";
 // The recovery screen of an encrypted database whose key is missing (instead of the app).
 const keygateMode = location.hash === "#keygate";
-// The Android companion app (ui/src/mobile): its own shell with tabs; `?mobile` shows it in a
-// browser for the screenshot check (e2e/mobile/shots.mjs).
+// The Android companion app has an entry of its own (`mobile.html`, ui/src/mobile/main.tsx), so
+// the phone never loads this bundle; should this page open there anyway (or with `?mobile`), it
+// goes over.
 const mobileMode = /\bAndroid\b/.test(navigator.userAgent) || new URLSearchParams(location.search).has("mobile");
+if (mobileMode) location.replace(`mobile.html${location.search}`);
 
 // The language the shell resolved („Wie das System“ included) holds from the first frame on.
 const boot = bootLang();
@@ -55,30 +54,12 @@ if (!mobileMode) {
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
 // the developer log (Settings → Protokoll).
-const w = window as unknown as { __arcaloErrors: string[] };
-w.__arcaloErrors = [];
-window.addEventListener("error", (e) => {
-  w.__arcaloErrors.push(String(e.message));
-  logUi("ERROR", e.error ? describeError(e.error) : `${e.message} (${e.filename}:${e.lineno})`);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  w.__arcaloErrors.push(String(e.reason));
-  logUi("ERROR", `Unhandled rejection: ${describeError(e.reason)}`);
-});
-const origError = console.error;
-console.error = (...args: unknown[]) => {
-  w.__arcaloErrors.push(args.map(String).join(" "));
-  logUi("ERROR", args.map((a) => (a instanceof Error ? describeError(a) : typeof a === "string" ? a : describeError(a))).join(" "));
-  origError(...args);
-};
+collectErrors();
 
 // Follow the OS theme until settings are loaded.
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 // Windows 11: the window can have a Mica or Acrylic backdrop that the app lets show through.
-if (mobileMode) {
-  document.documentElement.classList.add("mobile");
-  applyBootAppearance();
-} else if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
+if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode) {
   initBackdrop();
   applyBootAppearance();
 }
@@ -98,11 +79,7 @@ if (captureMode || searchMode || presenterMode) followLocale();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {mobileMode ? (
-      <Suspense fallback={null}>
-        <MobileApp />
-      </Suspense>
-    ) : keygateMode ? (
+    {mobileMode ? null : keygateMode ? (
       <KeyGateApp />
     ) : captureMode ? (
       <PopupLockGate>
@@ -129,9 +106,7 @@ createRoot(document.getElementById("root")!).render(
 // The main window starts hidden and appears once the app script runs: the page and the splash
 // styles are loaded by then, so there is no unstyled page and no white flash before the splash.
 // (Not after a requestAnimationFrame: hidden webviews do not run frames.)
-if (mobileMode) {
-  splashShown();
-} else if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
+if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode) {
   import("@tauri-apps/api/core")
     .then(({ invoke }) => invoke("window_ready"))
     .catch(() => {})

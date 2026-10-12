@@ -41,6 +41,7 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { isReplaceKey, keys, replaceHint } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
+import { chipsParked } from "./timeChip";
 import { flushAllEditors, keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
 import { SaveFailed } from "./SaveFailed";
 import { titleSet } from "../lib/links";
@@ -121,6 +122,11 @@ export interface NoteEditorHandle {
   flush: () => Promise<void>;
   /** Replaces the page's frontmatter (property editor); saved like any other edit. */
   setFrontmatter: (fm: string) => void;
+  /**
+   * The page as stored after the Markdown source view (this editor was parked behind it): only what
+   * changed is replaced, as one step of the undo history; caret, history and scroll stay.
+   */
+  takeOver: (content: string) => void;
 }
 
 /** Asks the page view of `pageId` for „Besprechung zusammenfassen“ (slash command). */
@@ -142,9 +148,15 @@ export function NoteEditor({
   handleRef,
   onFrontmatter,
   active = true,
+  parked = false,
   toolbarSlot,
 }: {
   active?: boolean;
+  /**
+   * Kept alive but hidden behind the page's Markdown source view: it takes no content from other
+   * panes meanwhile (the source view saves them) and gets the page back through `takeOver`.
+   */
+  parked?: boolean;
   /** Where the toolbar goes (the page's header row); in the note itself without one. */
   toolbarSlot?: HTMLElement | null;
   doc: PageDoc;
@@ -175,6 +187,8 @@ export function NoteEditor({
   cb.current = { onSaved, onOpenLink, onOpenTag, onFrontmatter };
   const activeRef = useRef(active);
   activeRef.current = active;
+  const parkedRef = useRef(parked);
+  parkedRef.current = parked;
   const instance = useRef(Math.random().toString(36).slice(2));
   // Inline AI bar: the range it works on (null = closed); `seq` remounts it per opening.
   const [ai, setAi] = useState<{ range: AiRange; seq: number } | null>(null);
@@ -212,7 +226,8 @@ export function NoteEditor({
   const unmounted = useRef(false);
   const failed = useRef(false);
 
-  const apply = (editor: Editor, content: string) => {
+  // `undoable`: the edits of the source view, one step of the undo history (else another pane's, outside it).
+  const apply = (editor: Editor, content: string, undoable = false) => {
     const { frontmatter: fm, body, gap } = splitFrontmatter(content);
     fmGap.current = gap;
     shape.current = textShape(body);
@@ -221,7 +236,7 @@ export function NoteEditor({
       cb.current.onFrontmatter?.(fm);
     }
     if (bodyOf(editor) === body) return;
-    replaceChanged(editor, body);
+    replaceChanged(editor, body, undoable);
     if (activeRef.current) publishOutline(editor);
   };
 
@@ -565,6 +580,15 @@ export function NoteEditor({
     [doc.id],
   );
 
+  // Parked behind the source view: its chips are the note's from before and count nowhere (a chip
+  // cut there and pasted into another note moves its booking along).
+  useEffect(() => {
+    if (!editor || !parked) return;
+    const view = editor.view;
+    chipsParked(view, true);
+    return () => chipsParked(view, false);
+  }, [editor, parked]);
+
   // „Neu transkribieren“ on a voice note's audio in this page.
   useEffect(() => {
     if (!editor) return;
@@ -601,7 +625,14 @@ export function NoteEditor({
       window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
     };
-    handleRef?.({ editor, flush: flushNow, setFrontmatter });
+    const takeOver = (content: string) => {
+      if (editor.isDestroyed) return;
+      // The source view started after this editor's edits were saved; one still unsaved is merged.
+      if (busy()) return absorb(editor, content);
+      base.current = content;
+      apply(editor, content, true);
+    };
+    handleRef?.({ editor, flush: flushNow, setFrontmatter, takeOver });
     const unflush = registerFlusher(flushNow);
     const unregister = registerEditor(doc.id, editor);
     const flush = () => {
@@ -645,14 +676,15 @@ export function NoteEditor({
   // (or in-flight) edits; then reload after our own save. Renames reload all pages.
   useEffect(() => {
     if (!editor) return;
+    // Parked behind the source view: that view takes these over, and this editor the page after it.
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
-      if (d.id !== doc.id || d.from === instance.current) return;
+      if (d.id !== doc.id || d.from === instance.current || parkedRef.current) return;
       absorb(editor, d.content);
     };
     const onReload = (e: Event) => {
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
-      if (!ids || ids.includes(doc.id)) reload(editor);
+      if ((!ids || ids.includes(doc.id)) && !parkedRef.current) reload(editor);
     };
     const onFlushPage = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; from: string }>).detail;
@@ -760,15 +792,17 @@ export function NoteEditor({
   };
 
   return (
-    <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
+    // Parked: hidden with its menus and bars; the editor, its history and selection stay.
+    <div className="editor-wrap" data-save-status={status} ref={wrapRef} hidden={parked}>
       {status === "failed" && <SaveFailed />}
       {editor &&
+        !parked &&
         toolbarOn &&
         (toolbarSlot
           ? createPortal(<EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />, toolbarSlot)
           : <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />)}
-      {zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
-      {find !== null && findLayer(
+      {!parked && zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
+      {find !== null && !parked && findLayer(
         <div className="find-stack">
           <div className="find-bar" role="search">
           <Search size={14} className="faint" />
@@ -825,7 +859,7 @@ export function NoteEditor({
         )}
         </div>
       )}
-      {editor && (
+      {editor && !parked && (
         // A selected block (table of contents, image, drawing, file) has no text to format.
         <BubbleMenu editor={editor} className="bubble" shouldShow={showBubble}>
           <IconButton icon={Bold} label={`${tr("tb.bold")} (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
@@ -886,8 +920,8 @@ export function NoteEditor({
           )}
         </BubbleMenu>
       )}
-      {editor && <TableToolbar editor={editor} hidden={find !== null} />}
-      {editor && ai && (
+      {editor && !parked && <TableToolbar editor={editor} hidden={find !== null} />}
+      {editor && !parked && ai && (
         <InlineAiBar
           key={ai.seq}
           editor={editor}
