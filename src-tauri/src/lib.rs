@@ -4067,6 +4067,17 @@ fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     Ok(n)
 }
 
+/// A short tag of a data folder (FNV-1a of its path): page ids of two workspaces never mix in
+/// what the UI keeps per workspace.
+#[cfg(desktop)]
+fn workspace_tag(data_dir: &std::path::Path) -> String {
+    let hash = data_dir
+        .to_string_lossy()
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    format!("{hash:016x}")
+}
+
 #[cfg(desktop)]
 fn create_main_window(
     app: &tauri::App,
@@ -4075,6 +4086,7 @@ fn create_main_window(
     effect: arcalo_core::prefs::WindowEffect,
     custom_frame: bool,
     webview_dir: Option<PathBuf>,
+    data_dir: &std::path::Path,
 ) -> tauri::Result<tauri::WebviewWindow> {
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
@@ -4083,6 +4095,9 @@ fn create_main_window(
         // The display language before the UI script runs (index.html cannot carry a script):
         // the splash and the first frame are in it, a first run on an English system included.
         .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", arcalo_core::i18n::lang().as_str()))
+        // Which workspace (data folder) this is: what the UI keeps per workspace in localStorage
+        // (the open folders of the tree) is stored under it.
+        .initialization_script(format!("window.__ARCALO_WORKSPACE__ = {:?};", workspace_tag(data_dir)))
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
     // Portable: the webview's profile stays in the data folder, not in the user profile.
@@ -4901,7 +4916,8 @@ pub fn run() {
             // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
             // Windows showed the unstyled page, then the webview's white, then the splash.
             let webview_dir = portable::webview_dir(&app.state::<AppState>().data_dir);
-            let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir)?;
+            let data_dir = app.state::<AppState>().data_dir.clone();
+            let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir, &data_dir)?;
             startup_mark("main window");
             PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
             // Should the UI never report (a script error), the window still appears.
@@ -5209,6 +5225,7 @@ pub fn run() {
             present::presenter_open,
             present::presenter_close,
             updates::update_status,
+            updates::update_flushed,
             updates::update_check,
             updates::update_install,
             updates::update_download,
@@ -5225,7 +5242,6 @@ pub fn run() {
             devlog::devlog_read,
             devlog::devlog_stats,
             devlog::devlog_clear,
-            updates::update_flushed,
             devlog::devlog_open_folder,
             diagnostics::diagnostics_bundle,
             secrets::secrets_status,

@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { collapsePages, migrateCollapsed, pruneIds, readExpanded, readOldCollapsed, writeExpanded } from "./collapsed";
 
 describe("open folders", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    delete (window as { __ARCALO_WORKSPACE__?: string }).__ARCALO_WORKSPACE__;
+  });
 
   it("stores nothing until a folder is opened (all start collapsed)", () => {
     expect(readExpanded()).toBeNull();
@@ -25,6 +28,21 @@ describe("open folders", () => {
     const ids = new Set([1, 2, 3]);
     expect(pruneIds(ids, () => true)).toBe(ids);
     expect([...pruneIds(ids, (id) => id !== 2)]).toEqual([1, 3]);
+  });
+
+  it("keeps the open folders per workspace and takes over the shared list of the first 1.19 builds once", () => {
+    const w = window as { __ARCALO_WORKSPACE__?: string };
+    localStorage.setItem("arcalo.expanded", "[7,8]");
+    w.__ARCALO_WORKSPACE__ = "aaaa";
+    expect([...readExpanded()!]).toEqual([7, 8]);
+    expect(localStorage.getItem("arcalo.expanded")).toBeNull();
+    expect(localStorage.getItem("arcalo.expanded.aaaa")).toBe("[7,8]");
+    // Another workspace: its own list; pruning there leaves this one alone.
+    w.__ARCALO_WORKSPACE__ = "bbbb";
+    expect(readExpanded()).toBeNull();
+    writeExpanded(new Set([1]));
+    w.__ARCALO_WORKSPACE__ = "aaaa";
+    expect([...readExpanded()!]).toEqual([7, 8]);
   });
 
   it("collapses folders from outside the sidebar", () => {

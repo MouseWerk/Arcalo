@@ -41,7 +41,8 @@ export function treeHelpers(getApp) {
       };
     }, title);
 
-  const expanded = () => app().browser.execute(() => JSON.parse(localStorage.getItem("arcalo.expanded") ?? "null"));
+  // The open folders of this workspace (stored per data folder).
+  const expanded = () => app().browser.execute(() => JSON.parse(localStorage.getItem(`arcalo.expanded.${window.__ARCALO_WORKSPACE__}`) ?? "null"));
 
   async function reload() {
     await app().browser.execute(() => location.reload());

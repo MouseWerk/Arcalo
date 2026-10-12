@@ -32,6 +32,10 @@ test("folders that come later start collapsed; opened ones are stored and surviv
   await (await (await T.row("Navi Ordner")).$(".tree-twisty")).click();
   await app.browser.waitUntil(async () => (await T.rowState("Navi Ordner")).expanded === "true");
   assert.ok((await T.expanded()).includes(ids.folder), "stored as open");
+  // Per workspace: under the tag of the data folder, never in one list for all.
+  const keys = await app.browser.execute(() => ({ tag: window.__ARCALO_WORKSPACE__, shared: localStorage.getItem("arcalo.expanded") }));
+  assert.match(keys.tag, /^[0-9a-f]{16}$/);
+  assert.equal(keys.shared, null);
   await T.reload();
   assert.equal((await T.rowState("Navi Ordner")).expanded, "true", "still open after a restart");
   assert.ok(await T.findRow("Navi Kind"));
@@ -51,7 +55,7 @@ test("a deleted folder leaves the stored list", async () => {
 test("the collapsed list of 1.18 is taken over once", async () => {
   const projects = (await T.rowState("Projekte")).id;
   await app.browser.execute((p) => {
-    localStorage.removeItem("arcalo.expanded");
+    localStorage.removeItem(`arcalo.expanded.${window.__ARCALO_WORKSPACE__}`);
     localStorage.setItem("arcalo.collapsed", JSON.stringify([p]));
   }, projects);
   await T.reload();
@@ -114,10 +118,6 @@ test("„Im Baum zeigen“ (Ctrl+Shift+R) switches to the tree and focuses the o
   await app.keys(["Control", "Shift", "r"]);
   await app.browser.waitUntil(async () => (await T.rowState("Navi Ziel"))?.focused, { timeout: 5000, timeoutMsg: "the row of the open page did not get the focus" });
   assert.ok((await T.rowState("Navi Ziel")).inView);
-});
-
-test("a filed folder (Tagesnotizen, year, month) opens and closes on click", async () => {
-  await app.invoke("daily_note", { date: null });
   // The webview's own reload keys never reload the app, also where no command runs (the palette).
   await app.browser.execute(() => (window.__notReloaded = true));
   await app.keys(["Control", "k"]);
@@ -135,6 +135,10 @@ test("a filed folder (Tagesnotizen, year, month) opens and closes on click", asy
   await T.sleep(500);
   assert.equal(await app.browser.execute(() => window.__notReloaded === true), true, "the page was reloaded");
   await app.keys(["Escape"]);
+});
+
+test("a filed folder (Tagesnotizen, year, month) opens and closes on click", async () => {
+  await app.invoke("daily_note", { date: null });
   await T.reload();
   const before = await app.browser.execute((s) => document.querySelector(`${s} .page-title`)?.value, SHOWN);
   const st = await T.rowState("Tagesnotizen");
