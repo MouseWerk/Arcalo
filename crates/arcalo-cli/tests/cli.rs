@@ -36,6 +36,8 @@ impl Ws {
             .env("ARCALO_LOCALE", "en-US")
             .env("ARCALO_SECRET_STORE", "file")
             .env("TZ", "Europe/Berlin")
+            // The mark of a running command (`arcalo_core::cmdlock`) lands here on Linux.
+            .env("XDG_DATA_HOME", self.dir.join("xdg"))
             .env_remove("ARCALO_DB")
             .env_remove("ANNALO_DB")
             .env_remove("ARCALO_RECOVERY_KEY")
@@ -719,4 +721,40 @@ fn the_commands_of_1_17_print_json_too() {
     assert_eq!(ws.json(&["pages", "list", "--trash"])[0]["id"], json!(root));
     let meta = ws.text(&["pages", "show", "Notiz", "--meta"]);
     assert!(meta.starts_with("# Notiz  (id:") && meta.ends_with("Text mit [[Link]]\n"), "{meta}");
+}
+
+/// A running command marks itself for an update of the app, locked by the operating system, and
+/// the mark goes when it ends. Only its command words are in the mark, not its text.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_running_command_holds_its_mark_until_it_ends() {
+    use std::io::Write;
+    let ws = Ws::new("cmdlock");
+    let dir = ws.dir.join("xdg/de.mousewerk.arcalo/commands");
+    let mut child = ws
+        .cmd(&["--json", "pages", "create", "Geheim", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mark = dir.join(format!("{} pages create.lock", child.id()));
+    for _ in 0..200 {
+        if mark.is_file() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert!(mark.is_file(), "no mark in {}", dir.display());
+    let other = std::fs::OpenOptions::new().read(true).write(true).open(&mark).unwrap();
+    assert!(matches!(other.try_lock(), Err(std::fs::TryLockError::WouldBlock)), "the mark is locked");
+    drop(other);
+    let running = arcalo_core::cmdlock::running(&dir);
+    assert_eq!(running.len(), 1);
+    assert_eq!(running[0].command, "pages create");
+    child.stdin.take().unwrap().write_all(b"Text\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!mark.exists(), "the mark goes with the command");
+    assert_eq!(arcalo_core::cmdlock::running(&dir), vec![]);
 }

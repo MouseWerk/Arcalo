@@ -308,6 +308,7 @@
 .toast-detail { color: var(--text-2); font-size: var(--fs-sm); margin-top: 2px; overflow-wrap: anywhere; }
 .toast-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .update-toast .progress { margin-top: 8px; }
+.update-waiting-commands { font-family: var(--font-mono); font-variant-ligatures: none; color: var(--text); }
 .update-notes { max-height: min(50vh, 420px); overflow-y: auto; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 

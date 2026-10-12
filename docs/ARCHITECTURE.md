@@ -579,6 +579,17 @@ defineWidget({
 - Right before installing, `.arcalo-update` (target version) is written into the data folder; the next start
   reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
   version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Running terminal commands (`arcalo pages list`, also of the standalone CLI) are waited for before anything is
+  installed (`core::cmdlock`): each command holds `<pid> <command words>.lock` in `commands/` of the app's local data
+  folder (`%LOCALAPPDATA%\de.mousewerk.arcalo`, `~/Library/Application Support/…`, `$XDG_DATA_HOME/…`, the same for
+  both sides whatever workspace a command names; a portable copy marks nothing), locked with the OS file lock
+  (`File::try_lock`), so a crashed command's file is unlocked and removed by the next scan (a file system without
+  locks: after 12 h). `install` waits up to 2 minutes (`ARCALO_UPDATE_WAIT_SECS` in debug builds) before the backup;
+  `update_status.waiting` names the commands and the UI shows „Das Update wartet auf einen Terminal-Befehl“. The quit
+  waits on a thread of its own so the window can show it (the main window was closed, or the process ends without the
+  UI's quit: the update waits for the next quit). After the limit macOS and Linux install beside the command; Windows
+  waits for the next quit, because the NSIS setup (`CheckIfAppIsRunning`) would end every running `arcalo.exe` of the
+  user. No command is ever ended by the app (`e2e/tests/376-update-waits-for-commands.test.js`).
 - Debug builds only: `ARCALO_UPDATE_ENDPOINT`, `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_BUNDLE=deb` point the
   updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 

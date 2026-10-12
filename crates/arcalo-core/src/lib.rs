@@ -40,6 +40,7 @@
 //! * [`datadir`] – data folder location (`location.json`), synced-folder check
 //! * [`identity`] – the old internal names (Annalo, 1.14 and earlier): folder copy, fallbacks
 //! * [`update`] – auto-update gating (compiled-in key), release links, download progress
+//! * [`cmdlock`] – running terminal commands, which an update waits for
 //! * [`activity`] – idle detection and active window probing (Win32 on Windows)
 //! * [`feed`] – activity feed („Aktivität“): what happened when (pages, tasks, bookings, files)
 //! * [`focus`] – focus sessions (Pomodoro) booked on a Vorgang
@@ -64,6 +65,7 @@ pub mod capture;
 pub mod chats;
 pub mod chips;
 pub mod cipher;
+pub mod cmdlock;
 pub mod companion;
 pub mod dashboard;
 pub mod datadir;

@@ -307,6 +307,12 @@ as one object:
 - **Versions.** Before a command changes a page's text, the text is kept as a version (Versionen in the
   app), unless one was kept in the last minute, so a burst of commands keeps the state from before the
   first. Restoring that version takes the command's changes back.
+- **Updates wait for commands.** A running command marks itself in `commands` of the app's local data
+  folder (`%LOCALAPPDATA%\de.mousewerk.arcalo`, `~/Library/Application Support/de.mousewerk.arcalo`,
+  `~/.local/share/de.mousewerk.arcalo`; only the command's words such as `pages create`, never its
+  text). Before installing an update, the app waits for running commands up to 2 minutes and says so in
+  its window; it never ends one. If a command still runs after that, macOS and Linux install beside it
+  (it goes on), Windows installs at the next quit (the setup would end it). A portable copy marks nothing.
 
 ## Using Arcalo from an AI agent
 

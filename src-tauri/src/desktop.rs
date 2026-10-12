@@ -430,7 +430,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
         // Without close-to-tray the UI destroys the main window; a hidden capture window
         // must not keep the process alive then. Closing it quits: a downloaded update installs.
-        (MAIN, WindowEvent::Destroyed) => crate::updates::quit(app),
+        (MAIN, WindowEvent::Destroyed) => crate::updates::quit(app, false),
         #[cfg(any(windows, target_os = "macos"))]
         (CAPTURE | SEARCH, WindowEvent::Focused(false)) => {
             let _ = window.hide();
@@ -476,7 +476,7 @@ pub fn close_front_window(app: &AppHandle) {
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
     // A downloaded update is installed now (mode „automatisch“).
-    crate::updates::quit(&app);
+    crate::updates::quit(&app, true);
 }
 
 // ------------------------------------------------------------ quick capture

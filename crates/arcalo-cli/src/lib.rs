@@ -610,6 +610,19 @@ pub fn is_command_line(args: &[OsString]) -> bool {
     command || option
 }
 
+/// The words of the command in `args` (`pages list`), without its arguments.
+fn command_words(args: &[OsString]) -> String {
+    use clap::CommandFactory;
+    let Ok(matches) = Cli::command().try_get_matches_from(args) else { return String::new() };
+    let mut words = Vec::new();
+    let mut at = &matches;
+    while let Some((name, sub)) = at.subcommand() {
+        words.push(name);
+        at = sub;
+    }
+    words.join(" ")
+}
+
 /// Runs the command line with `args` (the program name first).
 pub fn main_with(args: Vec<OsString>) -> ExitCode {
     // `ANNALO_DB` of 1.14 and earlier still names the database when `ARCALO_DB` is not set.
@@ -621,6 +634,7 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
     }
     workspace::init_language();
     let json = args.iter().any(|a| a == "--json");
+    let words = command_words(&args);
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(e) if !e.use_stderr() => {
@@ -637,6 +651,8 @@ pub fn main_with(args: Vec<OsString>) -> ExitCode {
         }
     };
     let out = Out { json: cli.json };
+    // An update of the app waits while this runs (`arcalo_core::cmdlock`); it never ends it.
+    let _running = workspace::mark_running(&words);
     match run(cli, out) {
         Ok(()) => ExitCode::SUCCESS,
         Err(f) => out.fail(&f),
