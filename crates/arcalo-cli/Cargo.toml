@@ -4,14 +4,18 @@ description = "Command line for the Arcalo workspace: everything the app does wi
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# `cargo run -p arcalo-cli -- pages list`
+default-run = "arcalo-cli"
 
 [lib]
 name = "arcalo_cli"
 path = "src/lib.rs"
 doctest = false
 
+# Not `arcalo`: that is the app's program (src-tauri), which runs the same commands. Both would
+# be written to target/<profile>/arcalo, and a test run of this crate replaced the app there.
 [[bin]]
-name = "arcalo"
+name = "arcalo-cli"
 path = "src/main.rs"
 
 # The name of 1.14 and earlier (scripts that call `annalo` keep working).

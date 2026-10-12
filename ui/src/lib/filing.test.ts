@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PageNode } from "./types";
-import { filterIds, folderOptions, fuzzyScore, pickFolders, isWithin, rangeIds, renameProblem, sortNodes, topSelected, typeFiling } from "./filing";
+import { filterIds, folderOptions, fuzzyScore, matchRanges, pickFolders, planDrop, isWithin, rangeIds, renameProblem, sortNodes, topSelected, typeahead, typeFiling } from "./filing";
 import { examplePath, isoWeek, monthFolder } from "../views/settings/FilingSection";
 
 const node = (id: number, title: string, children: PageNode[] = [], extra: Partial<PageNode> = {}): PageNode => ({
@@ -59,6 +59,65 @@ describe("tree filter", () => {
     expect(filterIds(tree, "  ")).toBeNull();
     expect([...filterIds(tree, "ang")!.shown].sort()).toEqual([1, 2, 3]);
     expect(filterIds(tree, "kunde ang")!.hits.size).toBe(0);
+  });
+  it("matches a path: the parts before the last name ancestors, in order", () => {
+    const f = filterIds(tree, "Kunde/Angebot")!;
+    expect([...f.hits]).toEqual([3]);
+    expect([...f.shown].sort()).toEqual([1, 2, 3]);
+    expect([...filterIds(tree, "proj / ang")!.hits]).toEqual([3]);
+    expect([...filterIds(tree, "projekte/kunde/ang")!.hits]).toEqual([3]);
+    // The order counts, and every part must match.
+    expect(filterIds(tree, "kunde/projekte/ang")!.hits.size).toBe(0);
+    expect(filterIds(tree, "intern/angebot")!.hits.size).toBe(0);
+    expect(filterIds(tree, "/angebot/")!.hits.size).toBe(1);
+  });
+  it("falls back to similar titles when no title contains the words", () => {
+    const f = filterIds(tree, "angbt")!;
+    expect(f.fuzzy).toBe(true);
+    expect([...f.hits]).toEqual([3]);
+    expect(filterIds(tree, "ang")!.fuzzy).toBe(false);
+    // Letters scattered over a title are no hit.
+    expect(filterIds(tree, "pkt")!.hits.size).toBe(0);
+  });
+  it("finds the matched parts of a title for highlighting", () => {
+    expect(matchRanges("Kunde Müller", "muller")).toEqual([[6, 12]]);
+    expect(matchRanges("Angebot Müller", "müll ang")).toEqual([[0, 3], [8, 12]]);
+    expect(matchRanges("Angebot", "x/geb")).toEqual([[2, 5]]);
+    expect(matchRanges("Angebot", "angbt", true)).toEqual([[0, 3], [4, 5], [6, 7]]);
+    // Overlapping words become one range; accents in decomposed form keep their place.
+    expect(matchRanges("Angebot", "ange geb")).toEqual([[0, 5]]);
+    expect(matchRanges("Müller", "mull")).toEqual([[0, 5]]);
+    expect(matchRanges("Angebot", "")).toEqual([]);
+  });
+});
+
+describe("typeahead", () => {
+  const rows = ["Angebot", "Abnahme", "Besprechung", "Bäckerei", "Kunde"];
+  it("goes to the next row starting with the letters typed", () => {
+    expect(typeahead(rows, 0, "a")).toBe(1);
+    expect(typeahead(rows, 1, "a")).toBe(0);
+    expect(typeahead(rows, -1, "b")).toBe(2);
+    expect(typeahead(rows, 2, "ba")).toBe(3);
+    expect(typeahead(rows, 2, "be")).toBe(2);
+    expect(typeahead(rows, 0, "bb")).toBe(2);
+    expect(typeahead(rows, 0, "x")).toBe(-1);
+    expect(typeahead([], 0, "a")).toBe(-1);
+  });
+});
+
+describe("drop planning", () => {
+  const row = { id: 7, parent_id: 2 };
+  it("before, inside and after a row in a folder in its own order", () => {
+    expect(planDrop(0.1, row, false, [{ parent_id: 2 }])).toEqual({ kind: "at", parent: 2, pos: "before", row: 7 });
+    expect(planDrop(0.5, row, false, [{ parent_id: 2 }])).toEqual({ kind: "at", parent: 7, pos: "inside", row: 7 });
+    expect(planDrop(0.9, row, false, [{ parent_id: 2 }])).toEqual({ kind: "at", parent: 2, pos: "after", row: 7 });
+  });
+  it("in a sorted folder: into the folder from elsewhere, refused from inside it", () => {
+    expect(planDrop(0.1, row, true, [{ parent_id: 3 }])).toEqual({ kind: "into", parent: 2 });
+    expect(planDrop(0.9, row, true, [{ parent_id: 2 }, { parent_id: 2 }])).toEqual({ kind: "refused", folder: 2 });
+    expect(planDrop(0.9, row, true, [{ parent_id: 2 }, { parent_id: null }])).toEqual({ kind: "into", parent: 2 });
+    // Into a page is always possible.
+    expect(planDrop(0.5, row, true, [{ parent_id: 2 }]).kind).toBe("at");
   });
 });
 

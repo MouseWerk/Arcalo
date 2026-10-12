@@ -34,7 +34,7 @@ command and ends, without opening a window. Started without one (or with the app
 | macOS | `/Applications/Arcalo.app/Contents/MacOS/arcalo` | on request in the settings: `/usr/local/bin/arcalo` |
 | Linux (.deb, AUR) | `/usr/bin/arcalo` | yes |
 | Linux (AppImage) | the AppImage itself: `./Arcalo_1.18.0_amd64.AppImage pages list` | no |
-| From source | `cargo run -p arcalo-cli -- pages list`, or `cargo install --path crates/arcalo-cli` | `~/.cargo/bin` |
+| From source | `cargo run -p arcalo-cli -- pages list`, or `cargo install --path crates/arcalo-cli` (the program is called `arcalo-cli` there, so it does not replace the app's `arcalo` in `target/`) | `~/.cargo/bin` |
 
 Settings → Desktop → „Befehlszeile“ shows whether `arcalo` works in a terminal and which program it starts.
 

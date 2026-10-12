@@ -354,12 +354,20 @@ impl Database {
         })
     }
 
-    /// Notes where `page` was and where the move puts it (`to`).
+    /// Notes where `page` was and where the move puts it (`to`). The old place is its index among
+    /// the live siblings (stored positions may have gaps), so the undo, which goes through the
+    /// moves backwards, puts each page back between the same neighbours.
     fn remember_move(&self, page: &crate::model::Page, to: Option<i64>, label: &str) -> Result<()> {
+        let index: i64 = self.conn().query_row(
+            "SELECT COUNT(*) FROM pages WHERE parent_id IS ?1 AND deleted_at IS NULL AND id <> ?2
+                AND (position < ?3 OR (position = ?3 AND id < ?2))",
+            params![page.parent_id, page.id, page.position],
+            |r| r.get(0),
+        )?;
         self.conn().execute(
             "INSERT INTO move_undo (page_id, old_parent, old_position, label, new_parent, placed)
              VALUES (?1, ?2, ?3, ?4, ?5, 1)",
-            params![page.id, page.parent_id, page.position, label, to],
+            params![page.id, page.parent_id, index, label, to],
         )?;
         Ok(())
     }
@@ -397,7 +405,8 @@ impl Database {
 
     /// [`Database::move_pages`] to `position` among the other children of `parent` (a drop in
     /// the sidebar between two pages; `None`: last). The pages keep their order; pages already
-    /// below `parent` are put there too.
+    /// below `parent` are put there too. Every move, also one within the same folder („Nach
+    /// oben“, „Eine Ebene höher“), can be undone with [`Database::undo_last_move`].
     pub fn move_pages_at(&self, page_ids: &[i64], parent: Option<i64>, position: Option<i64>) -> Result<MoveOutcome> {
         if let Some(p) = parent
             && self.page(p)?.deleted_at.is_some()
@@ -420,6 +429,7 @@ impl Database {
             let mut out = MoveOutcome::default();
             let mut done = HashSet::new();
             let mut placed: Vec<i64> = vec![];
+            let mut reordered: Vec<i64> = vec![];
             for &id in page_ids {
                 if !done.insert(id) {
                     continue;
@@ -432,9 +442,11 @@ impl Database {
                     continue;
                 }
                 if page.parent_id == parent {
-                    // Already there: only a drop at a position reorders it.
+                    // Already there: only a drop at a position reorders it (with an undo too).
                     if position.is_some() {
+                        self.remember_move(&page, parent, "move")?;
                         placed.push(id);
+                        reordered.push(id);
                     }
                     continue;
                 }
@@ -444,19 +456,23 @@ impl Database {
                 out.moved += 1;
             }
             if let Some(pos) = position.filter(|_| !placed.is_empty()) {
-                let others: Vec<i64> = self
+                let before: Vec<i64> = self
                     .conn()
                     .prepare("SELECT id FROM pages WHERE parent_id IS ?1 AND deleted_at IS NULL ORDER BY position, id")?
                     .query_map(params![parent], |r| r.get(0))?
-                    .collect::<rusqlite::Result<Vec<i64>>>()?
-                    .into_iter()
-                    .filter(|id| !placed.contains(id))
-                    .collect();
+                    .collect::<rusqlite::Result<_>>()?;
+                let others: Vec<i64> = before.iter().copied().filter(|id| !placed.contains(id)).collect();
                 let at = pos.clamp(0, others.len() as i64) as usize;
-                let order = others[..at].iter().chain(placed.iter()).chain(others[at..].iter());
-                for (i, id) in order.enumerate() {
+                let order: Vec<i64> =
+                    others[..at].iter().chain(placed.iter()).chain(others[at..].iter()).copied().collect();
+                for (i, id) in order.iter().enumerate() {
                     self.conn().execute("UPDATE pages SET position = ?2 WHERE id = ?1", params![id, i as i64])?;
                 }
+                // A page of the same folder counts as moved when its place changed.
+                out.moved += reordered
+                    .iter()
+                    .filter(|id| before.iter().position(|x| x == *id) != order.iter().position(|x| x == *id))
+                    .count();
             }
             Ok(out)
         })

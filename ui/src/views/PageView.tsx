@@ -734,10 +734,11 @@ async function newPageParent(): Promise<number | null> {
   return null;
 }
 
-export async function createSubpage(parentId: number | null, title = tr("page.untitled")) {
+/** A new page below `parentId`; `null`: where Settings → Editor puts new pages, or the top level with `top`. */
+export async function createSubpage(parentId: number | null, title = tr("page.untitled"), opts: { top?: boolean } = {}) {
   const s = useApp.getState();
   try {
-    const parent = parentId ?? (await newPageParent());
+    const parent = parentId ?? (opts.top ? null : await newPageParent());
     const icon = s.settings?.settings.editor?.default_icon ?? "file-text";
     const p = await api.createPage(title, parent, icon);
     await s.refreshTree();

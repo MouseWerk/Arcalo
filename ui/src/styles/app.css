@@ -224,7 +224,8 @@ body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 .sidebar-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .sidebar {
   flex: none;
-  width: clamp(200px, var(--sidebar-w), max(200px, 24vw));
+  /* At least 240 px (a 900 px window): deep pages keep room for their titles. */
+  width: clamp(200px, var(--sidebar-w), max(240px, 24vw));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -287,50 +288,88 @@ button.side-section-title:hover { color: var(--text-2); }
 .chev { transition: transform var(--dur-fast) var(--ease-out); }
 .chev.open { transform: rotate(90deg); }
 
+/* ---- page tree (1.19) ----
+   One row per page, indented per level (--depth on the row, --tree-indent). States are neutral
+   tints with text weight: hover, the open page (current: also a 2 px edge in the contrast
+   themes), the multi-selection (a check instead of the icon, and a 1 px edge there), a drop
+   target. The row's buttons lie over the end of the title on hover, so the title keeps its width. */
 .tree-row {
+  --row-tint: transparent;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   height: var(--tree-row-h, 28px);
-  padding: 0 6px;
+  padding: 0 var(--tree-pad) 0 calc(var(--tree-pad) + var(--depth, 0) * var(--tree-indent));
   border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--row-tint);
   color: var(--text-2);
   text-align: left;
   position: relative;
 }
-.tree-row:hover { background: var(--bg-hover); color: var(--text); }
-.tree-row.active { background: var(--bg-current); color: var(--text); font-weight: var(--fw-medium); box-shadow: var(--selected-ring); }
+.tree-row:hover { --row-tint: var(--bg-hover); color: var(--text); }
+.tree-row.active { --row-tint: var(--bg-current); color: var(--text); font-weight: var(--fw-medium); box-shadow: var(--current-ring); }
 .tree-twisty { width: 16px; height: 16px; display: grid; place-items: center; flex: none; color: var(--text-3); border-radius: var(--r-xs); }
 .tree-twisty:not(.leaf):hover { background: var(--bg-active); color: var(--text); }
 .tree-icon { flex: none; color: var(--text-3); }
 .tree-row.active .tree-icon { color: var(--text-2); }
 .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-count { font-size: var(--fs-xs); color: var(--text-3); }
-.tree-row-actions { display: none; }
+.tree-count { flex: none; font-size: var(--fs-xs); font-weight: var(--fw-normal); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tree-count[data-count]::before { content: attr(data-count); }
+.tree-elsewhere { flex: none; display: grid; place-items: center; color: var(--text-3); }
+.tree-mark { background: none; color: var(--text); font-weight: var(--fw-semibold); text-decoration: underline; text-decoration-color: var(--border-focus); text-underline-offset: 2px; }
+.tree-row-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  align-items: center;
+  gap: 1px;
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  /* The row's tint over the sidebar, opaque; the left edge fades into the title. */
+  background: linear-gradient(var(--row-tint), var(--row-tint)), var(--bg-sidebar);
+  mask-image: linear-gradient(to right, transparent, #000 var(--sp-3));
+}
 .tree-row:hover .tree-row-actions { display: flex; }
+/* A translucent window (Settings → Darstellung) shows through the sidebar: the buttons stay in the row there. */
+:root[data-backdrop] .tree-row-actions { position: static; padding: 0; background: none; mask-image: none; }
 /* ---- rename in the tree (1.13) ----
    The title becomes a field in place (its text stays where it was); a message about the name
-   hangs under the row. */
-.tree-rename { flex: 1; min-width: 0; height: calc(var(--tree-row-h, 28px) - 6px); margin: 0 -1px 0 -5px; padding: 0 4px; border: 1px solid var(--border-focus); border-radius: var(--r-xs); background: var(--bg-input); color: var(--text); font: inherit; outline: none; box-shadow: var(--focus-halo); user-select: text; }
+   hangs under the row. On a deep row the field reaches back over the indent (PageTree.tsx). */
+.tree-rename { flex: 1; min-width: 0; height: calc(var(--tree-row-h, 28px) - 6px); margin: 0 -1px 0 -5px; padding: 0 4px; border: 1px solid var(--border-focus); border-radius: var(--r-xs); background: var(--bg-input); color: var(--text); font: inherit; outline: none; box-shadow: var(--focus-halo); user-select: text; position: relative; z-index: 1; }
 .tree-rename[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
 .tree-rename-msg { position: absolute; top: calc(100% + 2px); left: 6px; right: 6px; z-index: var(--z-inline); padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-overlay); color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-normal); line-height: 1.4; white-space: normal; box-shadow: var(--shadow-md); }
 .tree-rename-msg.is-error { border-color: var(--danger); color: var(--text); }
-.tree-row.renaming, .tree-row.renaming:hover { background: var(--bg-current); }
-.tree-row.drop-inside { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.tree-row.renaming, .tree-row.renaming:hover { --row-tint: var(--bg-current); }
+/* Drops: into a page a neutral tint with the text raised; between two pages a gray line at the
+   depth the page lands on. */
+.tree-row.drop-inside { --row-tint: var(--bg-active); color: var(--text); font-weight: var(--fw-medium); }
 .tree-row.drop-before::before, .tree-row.drop-after::after {
   content: "";
   position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
+  left: calc(var(--tree-pad) + var(--depth, 0) * var(--tree-indent) + 22px);
+  right: var(--sp-2);
+  height: var(--tree-drop-line);
   border-radius: var(--r-2xs);
-  background: var(--accent);
+  background: var(--border-focus);
+  pointer-events: none;
 }
-.tree-row.drop-before::before { top: -1px; }
-.tree-row.drop-after::after { bottom: -1px; }
+.tree-row.drop-before::before { top: calc(var(--tree-drop-line) / -2); }
+.tree-row.drop-after::after { bottom: calc(var(--tree-drop-line) / -2); }
+/* The empty area below the rows: drops to the top level, „Neu“ in its context menu. */
+.sidebar-files { display: flex; flex-direction: column; }
+.sidebar-files > * { flex: none; }
+.sidebar-files > .tree-end { flex: 1 0 var(--sp-10); border-radius: var(--r-sm); }
+.tree-end.drop-root { background: var(--bg-active); }
+.tree-drop-hint { position: sticky; bottom: 0; margin-top: var(--sp-1); padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-overlay); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; box-shadow: var(--shadow-md); }
+.tree-filter-note { padding: 2px 8px 6px; color: var(--text-3); font-size: var(--fs-xs); }
+/* Narrow windows: a little less indent per level, so deep pages keep room for their titles. */
+@media (max-width: 1100px) {
+  .tree-row { --tree-indent: 11px; }
+}
 
 .timer-dock {
   display: flex;
@@ -952,7 +991,8 @@ button.side-section-title:hover { color: var(--text-2); }
 .tab.drop-before::before { content: ""; position: absolute; left: -2px; top: 4px; bottom: 4px; width: 2px; border-radius: var(--r-2xs); background: var(--accent); }
 .tab.drop-after::after { content: ""; position: absolute; right: -2px; top: 4px; bottom: 4px; width: 2px; border-radius: var(--r-2xs); background: var(--accent); }
 /* A tab dragged from another pane over this pane's content. */
-.pane.tab-drop > .pane-content { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -8px; border-radius: var(--r-md); background: color-mix(in srgb, var(--accent-soft) 40%, transparent); }
+/* A tab or a page from the sidebar dropped here opens in this pane: a neutral dashed frame and tint. */
+.pane.tab-drop > .pane-content { outline: 2px dashed var(--border-focus); outline-offset: -8px; border-radius: var(--r-md); background: var(--bg-hover); }
 
 @container pane (max-width: 900px) {
   .timer-form { grid-template-columns: 1fr 1fr; }
@@ -3479,14 +3519,19 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .tree-filter input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--text); font: inherit; font-size: var(--fs-sm); }
 .tree-filter input::placeholder { color: var(--text-3); }
 .tree-filter-empty { padding: 6px 8px; }
-.tree-row.selected { background: var(--bg-selected); color: var(--text); box-shadow: var(--selected-ring); }
-.tree-row.selected.active { background: var(--bg-current); }
-.tree-row.hit .tree-label { color: var(--text); font-weight: var(--fw-medium); }
-.tree-selection { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 3px 4px 3px 10px; border-radius: var(--r-sm); background: var(--bg-current); color: var(--text-2); font-size: var(--fs-sm); }
-/* In a narrow sidebar the count and the button shorten; the clear button always stays inside. */
-.tree-selection > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tree-selection > .btn { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tree-selection > .icon-btn { flex: none; }
+.tree-row.selected { --row-tint: var(--bg-selected); color: var(--text); box-shadow: var(--selected-ring); }
+.tree-row.selected.active { --row-tint: var(--bg-current); box-shadow: var(--current-ring); }
+.tree-check { color: var(--text); }
+.tree-row.hit .tree-label { color: var(--text); }
+/* The multi-selection's bar sits below the rows (they do not move when it appears): the count
+   with its clear button, then the actions. Opaque, with the sidebar's own surface. */
+.tree-selection-slot { flex: none; }
+.tree-selection { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; padding: 6px 8px 8px; border-top: 1px solid var(--border); background: var(--bg-sidebar); color: var(--text-2); font-size: var(--fs-sm); }
+.tree-selection-count { padding-left: 6px; color: var(--text); font-weight: var(--fw-medium); white-space: nowrap; }
+.tree-selection-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+/* „Symbol ändern…“: the icon grid as a popover. */
+.tree-style-pop { position: fixed; z-index: var(--z-menu); display: grid; gap: var(--sp-2); width: calc(8 * 34px + 7 * 2px + 2 * var(--sp-2)); padding: var(--sp-2); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-overlay); box-shadow: var(--shadow-lg); animation: pop-in var(--dur-fast) var(--ease-out); }
+.tree-style-pop .tree-style-icons { grid-template-columns: repeat(8, 34px); max-height: min(240px, 40vh); padding: 0; border: 0; }
 .tint-accent { color: var(--accent) !important; }
 .tint-info { color: var(--info) !important; }
 .tint-success { color: var(--success) !important; }

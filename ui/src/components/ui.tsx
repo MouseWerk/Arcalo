@@ -282,6 +282,8 @@ export interface MenuItem {
   danger?: boolean;
   checked?: boolean;
   disabled?: boolean;
+  /** Why a disabled entry does nothing (shown where the shortcut goes). */
+  hint?: string;
   onSelect?: () => void;
   submenu?: MenuItem[];
 }
@@ -443,7 +445,7 @@ export function Menu({
             >
               <span className="menu-icon">{it.checked ? <Check size={14} /> : it.icon ? <it.icon size={14} strokeWidth={1.75} /> : null}</span>
               <span className="menu-label">{it.label}</span>
-              {it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
+              {it.hint ? <span className="menu-shortcut menu-hint">{it.hint}</span> : it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
               {it.submenu && <ChevronRight size={14} className="faint" />}
             </button>
           ),

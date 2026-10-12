@@ -35,6 +35,17 @@ async function detailView() {
   await sleep(1500);
 }
 async function openPage(id) {
+  // Its folder came after the start, so it starts collapsed (1.19): open the folders on the way.
+  const flat = (await app.invoke("workspace_tree")).flatMap(function f(n) { return [n, ...n.children.flatMap(f)]; });
+  const line = [];
+  for (let p = flat.find((n) => n.id === flat.find((x) => x.id === id)?.parent_id); p; p = flat.find((n) => n.id === p.parent_id)) line.unshift(p.id);
+  for (const parent of line) {
+    await app.browser.waitUntil(() => app.browser.execute((i) => !!document.querySelector(`.tree-row[data-id="${i}"]`), parent), { timeoutMsg: "folder in the tree" });
+    await app.browser.execute((i) => {
+      const row = document.querySelector(`.tree-row[data-id="${i}"]`);
+      if (row.getAttribute("aria-expanded") === "false") row.querySelector(".tree-twisty").click();
+    }, parent);
+  }
   await app.browser.waitUntil(() => app.browser.execute((i) => document.querySelector(`.tree-row[data-id="${i}"]`) != null, id), { timeoutMsg: "page in the tree" });
   await app.click(`.tree-row[data-id="${id}"]`);
   await app.browser.waitUntil(() => app.browser.execute((i) => document.querySelector(`.cv-board[data-canvas="${i}"]`) != null, id), { timeoutMsg: "canvas opened" });

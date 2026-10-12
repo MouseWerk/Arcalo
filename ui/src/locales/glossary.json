@@ -47,6 +47,7 @@
     { "concept": "shortcut", "de": "Tastenkürzel (kurz: Kürzel)", "en": "shortcut", "forbiddenDe": ["Shortcut*", "Hotkey*", "Tastaturkürzel*"], "forbiddenEn": ["hotkey*"] },
     { "concept": "tray", "de": "Infobereich", "en": "tray", "forbiddenDe": ["Tray*", "Systray*"], "forbiddenEn": [] },
     { "concept": "backlinks", "de": "Rückverweise", "en": "backlinks", "forbiddenDe": ["Backlink*"], "forbiddenEn": [] },
-    { "concept": "AI", "de": "KI", "en": "AI", "forbiddenDe": ["AI"], "forbiddenEn": [] }
+    { "concept": "AI", "de": "KI", "en": "AI", "forbiddenDe": ["AI"], "forbiddenEn": [] },
+    { "concept": "starred page", "de": "Favorit (die Favoriten)", "en": "favorite", "forbiddenDe": [], "forbiddenEn": [], "note": "Since 1.19 pages with the star are „Favoriten“ everywhere (sidebar tab, smart folder, start page). „Lesezeichen“ / bookmarks only names the browser's links (bookmark import, Lesezeichenleiste)." }
   ]
 }

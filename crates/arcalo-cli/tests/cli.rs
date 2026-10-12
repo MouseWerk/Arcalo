@@ -30,7 +30,7 @@ impl Ws {
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_arcalo"));
+        let mut c = Command::new(env!("CARGO_BIN_EXE_arcalo-cli"));
         c.args(args)
             .env("ARCALO_DATA_DIR", &self.dir)
             .env("ARCALO_LOCALE", "en-US")

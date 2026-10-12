@@ -152,6 +152,9 @@ test("the sidebar renders only the rows in view of a large tree; keyboard, hover
   });
   await app.browser.refresh();
   await app.waitFor(".sidebar .tree [role=treeitem]", 20000);
+  // A folder that comes later starts collapsed (1.19): open it.
+  await app.browser.execute((id) => document.querySelector(`.sidebar .tree-row[data-id="${id}"] .tree-twisty`).click(), ids[0]);
+  await app.waitFor(`.sidebar .tree-row[data-id="${ids[1]}"]`);
   const dom = await app.browser.execute(() => ({ rows: document.querySelectorAll(".sidebar .tree [role=treeitem]").length, virtual: !!document.querySelector(".sidebar .tree.is-virtual"), actions: document.querySelectorAll(".sidebar .tree-row-actions").length }));
   assert.ok(dom.virtual, "virtualized");
   assert.ok(dom.rows < 150, `${dom.rows} rows in the DOM`);

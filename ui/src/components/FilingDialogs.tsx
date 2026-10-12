@@ -8,7 +8,7 @@ import { Badge, Button, Dialog, EmptyState, Input, Spinner } from "./ui";
 import { PageIcon } from "./icons";
 import { useApp } from "../store/app";
 import { t as tr, useT, type TKey } from "../lib/i18n";
-import { filingApi, folderOptions, fuzzyScore, pickFolders, type MoveOutcome, type TidyMove } from "../lib/filing";
+import { filingApi, folderOptions, fuzzyScore, pickFolders, type LastMove, type MoveOutcome, type TidyMove } from "../lib/filing";
 import { isComposing } from "../lib/ime";
 
 const s = useApp.getState;
@@ -24,6 +24,17 @@ export const openTidyUp = (scope: number | null = null, title?: string) => useFi
 /** Opens „Verschieben nach …“ for these pages. */
 export const openMoveTo = (ids: number[]) => ids.length && useFilingDialogs.setState({ move: ids });
 
+/**
+ * What „Rückgängig“ in the tree options takes back: set by the moves and the tidy-up here, read
+ * from the core once the window is idle (an undo kept from the last session); `undefined` until then.
+ */
+export const useLastMove = create<{ last: LastMove | null | undefined }>(() => ({ last: undefined }));
+const setLastMove = (last: LastMove | null) => useLastMove.setState({ last });
+/** Reads the last move from the core if no move set it yet. */
+export function loadLastMove() {
+  if (useLastMove.getState().last === undefined) filingApi.lastMove().then((last) => useLastMove.getState().last === undefined && setLastMove(last), () => {});
+}
+
 /** „Rückgängig“ of the last tidy-up or bulk move. */
 export async function undoLastMove() {
   try {
@@ -33,6 +44,7 @@ export async function undoLastMove() {
       return;
     }
     const n = await filingApi.undoMove();
+    setLastMove(null);
     await s().refreshTree();
     s().toast({ tone: "info", title: tr("fl.undone", { n }) });
   } catch (e) {
@@ -57,6 +69,8 @@ export function toastMoved(out: MoveOutcome) {
 export async function movePages(ids: number[], parentId: number | null, position: number | null = null) {
   try {
     const out = await filingApi.movePages(ids, parentId, position);
+    // Every move replaces the undo, also one that moved nothing.
+    setLastMove(out.moved ? { label: "move", pages: out.moved } : null);
     await s().refreshTree();
     toastMoved(out);
     return out;
@@ -106,6 +120,7 @@ function TidyDialog({ scope, title, onClose }: { scope: number | null; title?: s
     setBusy(true);
     try {
       const out = await filingApi.tidyApply(scope, [...picked]);
+      setLastMove(out.moved ? { label: "tidy", pages: out.moved } : null);
       await s().refreshTree();
       onClose();
       toastMoved(out);

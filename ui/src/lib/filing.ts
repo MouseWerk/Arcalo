@@ -131,28 +131,174 @@ export function sortNodes(nodes: PageNode[], style: FolderStyle | null | undefin
 /** Folds case and accents (ä → a) for matching. */
 export const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+/** What the tree filter found: the hits, the pages shown (hits and their ancestors) and whether
+ *  the hits are only similar (no title contains the words, see `filterIds`). */
+export interface TreeFilter {
+  hits: Set<number>;
+  shown: Set<number>;
+  fuzzy: boolean;
+}
+
+/** The words of each part of a filter: „Kunde/Angebot“ is a path of two parts. */
+export function filterParts(query: string): string[][] {
+  return query
+    .split("/")
+    .map((part) => fold(part).split(/\s+/).filter(Boolean))
+    .filter((words) => words.length);
+}
+
+/** Whether the parts before the last one name ancestors of the page, in order (each part all
+ *  its words in one ancestor; ancestors may lie between them). `line`: folded titles from the top. */
+function pathMatches(line: string[], parts: string[][]): boolean {
+  let at = 0;
+  for (const words of parts) {
+    while (at < line.length && !words.every((w) => line[at].includes(w))) at++;
+    if (at >= line.length) return false;
+    at++;
+  }
+  return true;
+}
+
+/** The shortest stretch of `text` holding the letters of `q` in order (its length; -1: none). */
+function fuzzySpan(q: string, text: string): number {
+  let best = -1;
+  for (let start = text.indexOf(q[0]); start >= 0; start = text.indexOf(q[0], start + 1)) {
+    let at = start;
+    for (let k = 1; k < q.length && at >= 0; k++) at = text.indexOf(q[k], at + 1);
+    if (at < 0) break;
+    if (best < 0 || at - start + 1 < best) best = at - start + 1;
+  }
+  return best;
+}
+
+/** Fuzzy hit (`title` folded): the letters in order within twice their number, mostly in runs or at word starts. */
+function fuzzyHit(query: string, title: string): boolean {
+  const q = query.replace(/\s+/g, "");
+  if (q.length < 3) return false;
+  const span = fuzzySpan(q, title);
+  return span > 0 && span <= q.length * 2 && fuzzyScore(q, title) >= q.length * 20;
+}
+
 /**
- * The tree filter: the ids of the pages whose title contains every word of `query`, plus their
- * ancestors (shown so the hit stays in context). `null` for an empty query.
+ * The tree filter: the pages whose title contains every word of `query`, plus their ancestors
+ * (shown so the hit stays in context). „Kunde/Angebot“ also asks the ancestors: a page with
+ * „Angebot“ below one with „Kunde“. When no title contains the words, the titles with the
+ * letters in order and close together count (`fuzzy`). `null` for an empty query.
  */
-export function filterIds(nodes: PageNode[], query: string): { hits: Set<number>; shown: Set<number> } | null {
-  const words = fold(query).split(/\s+/).filter(Boolean);
-  if (!words.length) return null;
+export function filterIds(nodes: PageNode[], query: string): TreeFilter | null {
+  const parts = filterParts(query);
+  if (!parts.length) return null;
+  const words = parts[parts.length - 1];
+  const above = parts.slice(0, -1);
   const hits = new Set<number>();
   const shown = new Set<number>();
-  const walk = (list: PageNode[], line: number[]) => {
+  const ids: number[] = [];
+  const line: string[] = [];
+  const hit = (id: number) => {
+    hits.add(id);
+    shown.add(id);
+    ids.forEach((a) => shown.add(a));
+  };
+  const walk = (list: PageNode[], test: (title: string) => boolean) => {
     for (const n of list) {
       const title = fold(n.title);
-      if (words.every((w) => title.includes(w))) {
-        hits.add(n.id);
-        shown.add(n.id);
-        line.forEach((a) => shown.add(a));
+      if (test(title) && (!above.length || pathMatches(line, above))) hit(n.id);
+      if (n.children.length) {
+        ids.push(n.id);
+        line.push(title);
+        walk(n.children, test);
+        ids.pop();
+        line.pop();
       }
-      if (n.children.length) walk(n.children, [...line, n.id]);
     }
   };
-  walk(nodes, []);
-  return { hits, shown };
+  walk(nodes, (title) => words.every((w) => title.includes(w)));
+  if (hits.size || above.length) return { hits, shown, fuzzy: false };
+  const q = words.join(" ");
+  walk(nodes, (title) => fuzzyHit(q, title));
+  return { hits, shown, fuzzy: true };
+}
+
+/** `text` folded as `fold` does, with the index in `text` of every folded character. */
+function foldWithMap(text: string): { folded: string; at: number[] } {
+  let folded = "";
+  const at: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const f = fold(ch);
+    for (let k = 0; k < f.length; k++) at.push(i);
+    folded += f;
+    i += ch.length;
+  }
+  at.push(text.length);
+  return { folded, at };
+}
+
+/** The parts of `title` the filter matched, as [start, end) ranges in order (for highlighting). */
+export function matchRanges(title: string, query: string, fuzzy = false): [number, number][] {
+  const parts = filterParts(query);
+  if (!parts.length) return [];
+  const words = parts[parts.length - 1];
+  const { folded, at } = foldWithMap(title);
+  const out: [number, number][] = [];
+  if (fuzzy) {
+    let from = 0;
+    for (const ch of words.join("")) {
+      const k = folded.indexOf(ch, from);
+      if (k < 0) return [];
+      out.push([at[k], at[k + 1]]);
+      from = k + 1;
+    }
+  } else {
+    for (const w of words) {
+      const k = folded.indexOf(w);
+      if (k >= 0) out.push([at[k], at[k + w.length]]);
+    }
+  }
+  out.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const r of out) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
+  return merged;
+}
+
+/**
+ * Typeahead in the tree: the row to go to for the letters typed so far, -1 when none starts with
+ * them. A new search (one letter) starts after `current`; a longer one may stay on it. The same
+ * letter typed again („aaa“) cycles through the rows starting with it.
+ */
+export function typeahead(labels: string[], current: number, typed: string): number {
+  const q = fold(typed);
+  if (!q || !labels.length) return -1;
+  const same = [...q].every((c) => c === q[0]);
+  const want = same ? q[0] : q;
+  const from = q.length === 1 || same ? current + 1 : Math.max(current, 0);
+  for (let k = 0; k < labels.length; k++) {
+    const i = (from + k) % labels.length;
+    if (fold(labels[i]).startsWith(want)) return i;
+  }
+  return -1;
+}
+
+export type DropPos = "before" | "inside" | "after";
+/** Where a dragged page lands: at a position next to a row, into a folder, or nowhere (and why). */
+export type DropPlan = { kind: "at"; parent: number | null; pos: DropPos; row: number } | { kind: "into"; parent: number | null } | { kind: "refused"; folder: number | null };
+
+/**
+ * The drop for a pointer at `y` (0 top, 1 bottom) of `row`: the upper and lower quarter mean
+ * before and after it, the middle into it. In a folder sorted by name or date a place between
+ * two pages means nothing: pages from elsewhere go into that folder (it sorts them), and pages
+ * already in it are refused.
+ */
+export function planDrop(y: number, row: { id: number; parent_id: number | null }, parentSorted: boolean, moving: { parent_id: number | null }[]): DropPlan {
+  const pos: DropPos = y < 0.28 ? "before" : y > 0.72 ? "after" : "inside";
+  if (pos === "inside") return { kind: "at", parent: row.id, pos, row: row.id };
+  if (!parentSorted) return { kind: "at", parent: row.parent_id, pos, row: row.id };
+  if (moving.every((m) => m.parent_id === row.parent_id)) return { kind: "refused", folder: row.parent_id };
+  return { kind: "into", parent: row.parent_id };
 }
 
 /**

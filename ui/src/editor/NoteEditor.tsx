@@ -14,6 +14,7 @@ import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
+import { draggedPages } from "../lib/blocks";
 import { fmtMinutes, h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { joinFrontmatter, linkAtCaret, pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, textShape, toMarkdown, withShape } from "./schema";
@@ -497,6 +498,21 @@ export function NoteEditor({
           event.preventDefault();
           event.stopPropagation();
           openAi(editorRef.current);
+          return true;
+        },
+        // Pages dragged from the sidebar become links where they are dropped.
+        handleDrop: (view, event) => {
+          const ids = draggedPages(event.dataTransfer);
+          const link = view.state.schema.nodes.wikiLink;
+          if (!ids.length || !link) return false;
+          const pages = useApp.getState().pages;
+          const titles = ids.map((id) => pages.get(id)?.title).filter((x): x is string => !!x);
+          if (!titles.length) return false;
+          event.preventDefault();
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
+          const nodes = titles.flatMap((target, i) => (i ? [view.state.schema.text(" "), link.create({ target })] : [link.create({ target })]));
+          view.dispatch(view.state.tr.insert(at, nodes).scrollIntoView());
+          view.focus();
           return true;
         },
         // A paste of megabytes of text: offered as an attached file first (see `largePaste`).

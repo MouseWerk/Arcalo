@@ -11,6 +11,17 @@ export const DEFAULT_MINUTES = 60;
 export const PLAN_MIME = "application/x-arcalo-plan";
 /** A page dragged from the sidebar. */
 export const PAGE_MIME = "application/x-arcalo-page";
+/** Every page of a drag from the sidebar (the selection, comma-separated ids). */
+export const PAGES_MIME = "application/x-arcalo-pages";
+
+/** The pages of a drag from the sidebar, in order (none for other drags). */
+export function draggedPages(dt: Pick<DataTransfer, "getData" | "types"> | null | undefined): number[] {
+  if (!dt || !dt.types.includes(PAGE_MIME)) return [];
+  const many = (dt.getData(PAGES_MIME) || "").split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (many.length) return many;
+  const one = Number(dt.getData(PAGE_MIME));
+  return Number.isInteger(one) && one > 0 ? [one] : [];
+}
 
 /** Something to plan: a task, a Jira issue or a page. */
 export type PlanItem =

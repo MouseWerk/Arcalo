@@ -6,7 +6,7 @@ import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { AI_SHORTCUTS, aiEnabled } from "./lib/aiswitch";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
-import { Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
+import { REVEAL_EVENT, Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
 import { TemplateHost } from "./components/Templates";
@@ -30,7 +30,7 @@ import type { ActivityTick, ExternalChange, GitPulled, SearchTarget } from "./li
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
-import { sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
+import { showSidebar, sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { cycleRegion } from "./lib/regions";
 import { startUpdateChecks } from "./components/Updates";
@@ -580,6 +580,10 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
       savePref("arcalo.sidebar", true);
     }
     setTimeout(() => window.dispatchEvent(new Event("arcalo:sidebar-search")), 0);
+  },
+  reveal_in_tree: () => {
+    showSidebar();
+    setTimeout(() => window.dispatchEvent(new Event(REVEAL_EVENT)), 0);
   },
   new_tab: () => useApp.getState().openTab({ kind: "home" }, { newTab: true }),
   close_tab: () => {

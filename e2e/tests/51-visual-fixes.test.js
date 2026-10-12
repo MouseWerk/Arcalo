@@ -65,27 +65,23 @@ test("„Symbol ändern“: German names, the list scrolls inside the window and
   await row.waitForExist({ timeout: 8000 });
   await app.browser.execute((r) => r.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 160, clientY: 560 })), row);
   await app.waitFor(".menu");
-  await app.browser.execute(() => {
-    const b = [...document.querySelectorAll(".menu .menu-item")].find((x) => x.textContent.includes("Symbol ändern"));
-    b.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    b.click();
+  // 1.19: the icons are a popover, not a submenu as tall as the window.
+  await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((x) => x.textContent.includes("Symbol ändern"))?.click());
+  await app.waitFor(".tree-style-pop");
+  const pop = await app.browser.execute(() => {
+    const m = document.querySelector(".tree-style-pop");
+    const grid = m.querySelector("[role=listbox]");
+    const r = m.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, scroll: grid.scrollHeight > grid.clientHeight, labels: [...grid.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")) };
   });
-  await app.browser.waitUntil(async () => (await app.$$(".menu")).length === 2, { timeoutMsg: "no submenu" });
-  const menus = await app.browser.execute(() =>
-    [...document.querySelectorAll(".menu")].map((m) => {
-      const r = m.getBoundingClientRect();
-      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, scroll: m.scrollHeight > m.clientHeight, labels: [...m.querySelectorAll(".menu-label")].map((l) => l.textContent) };
-    }),
-  );
-  const [, sub] = menus;
-  for (const m of menus) assert.ok(m.top >= 0 && m.bottom <= 700 && m.left >= 0 && m.right <= 1100, `menu inside the window: ${JSON.stringify(m)}`);
-  assert.ok(sub.scroll, "the long icon list scrolls");
-  for (const name of ["Dokument", "Rakete", "Aufgabenliste", "Startseite"]) assert.ok(sub.labels.includes(name), `${name} in ${sub.labels}`);
-  assert.ok(!sub.labels.some((l) => /^(file text|rocket|list todo)$/.test(l)), "no English icon names");
+  assert.ok(pop.top >= 0 && pop.bottom <= 700 && pop.left >= 0 && pop.right <= 1100, `popover inside the window: ${JSON.stringify(pop)}`);
+  assert.ok(pop.scroll, "the long icon list scrolls");
+  for (const name of ["Dokument", "Rakete", "Aufgabenliste", "Startseite"]) assert.ok(pop.labels.includes(name), `${name} in ${pop.labels}`);
+  assert.ok(!pop.labels.some((l) => /^(file text|rocket|list todo)$/.test(l)), "no English icon names");
   await app.shot("vis-icon-menu");
-  // The last entries are reachable: scrolled into view and chosen.
+  // The entries further down are reachable: scrolled into view and chosen.
   await app.browser.execute(() => {
-    const item = [...document.querySelectorAll(".menu")][1].querySelector(".menu-item:last-child");
+    const item = document.querySelector('.tree-style-pop [aria-label="Canvas"]');
     item.scrollIntoView({ block: "nearest" });
     item.click();
   });
