@@ -169,7 +169,61 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     app.manage(apkupdate::Updater::new(app, &app.state::<AppState>().data_dir));
     spawn_sync_scheduler(app.clone());
     apkupdate::spawn_scheduler(app.clone());
+    spawn_network_watch();
     Ok(())
+}
+
+/// How often Android's proxy and the user's certificates are read again (a Wi-Fi can bring a
+/// proxy of its own); a sync reads them right before it, too.
+const NETWORK_EVERY: Duration = Duration::from_secs(60);
+
+fn spawn_network_watch() {
+    std::thread::spawn(|| {
+        loop {
+            refresh_network();
+            std::thread::sleep(NETWORK_EVERY);
+        }
+    });
+}
+
+/// Android's proxy for mode „System“ of the network settings (the default: the app has no proxy
+/// of its own, 1.19), and the certificates the user installed for the built-in git. Only off the
+/// main thread: the Kotlin plugin answers on it.
+fn refresh_network() {
+    static LAST: Mutex<Option<String>> = Mutex::new(None);
+    match android::system_proxy() {
+        Ok(p) => {
+            let route = p.https.clone().unwrap_or_else(|| "direct".into());
+            let seen = format!(
+                "{route} (except {}){}",
+                p.bypass,
+                p.pac_url.as_deref().map(|u| format!(", PAC {u} not evaluated")).unwrap_or_default()
+            );
+            let mut last = lock(&LAST);
+            if last.as_deref() != Some(seen.as_str()) {
+                devlog::info("net", format!("Android proxy: {seen}"));
+                *last = Some(seen);
+            }
+            arcalo_core::network::set_platform_proxy(Some(p));
+        }
+        Err(e) => devlog::warn("net", format!("Android proxy not read: {e}")),
+    }
+    #[cfg(target_os = "android")]
+    add_user_certificates();
+}
+
+/// The certificates the user installed, for the built-in git's HTTPS (the app's network security
+/// config trusts them, see docs/android.md).
+#[cfg(target_os = "android")]
+fn add_user_certificates() {
+    match android::user_certificates() {
+        Ok(pem) => match gitsync::gitlib::set_user_certificates(&pem) {
+            Ok(true) => devlog::info("git", "the certificates installed by the user were added for HTTPS"),
+            Ok(false) => {}
+            Err(e) => devlog::warn("git", format!("user certificates not added: {e}")),
+        },
+        Err(e) => devlog::warn("git", format!("user certificates not read: {e}")),
+    }
 }
 
 /// Syncs a few seconds after the start and then every [`SYNC_EVERY`] while the app runs (when
@@ -202,6 +256,7 @@ fn sync_and_import(
     allow_deletions: bool,
     after_restore: Option<gitsync::AfterRestore>,
 ) -> Result<MobileSync> {
+    refresh_network();
     let outcome = crate::run_git_sync_with(app, false, allow_deletions, after_restore)?;
     let state = app.state::<AppState>();
     let copy = gitsync::db_copy(&state.git_repo_dir());

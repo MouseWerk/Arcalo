@@ -1,7 +1,8 @@
 //! The app's Kotlin plugins around the WebView (`gen/android/.../ShellPlugin.kt`) and for its
 //! updates (`UpdatePlugin.kt`): the colors behind the system bars, the back button at the root,
-//! text shared to the app, what Android knows about the installed app and a downloaded APK, the
-//! network, the permission to install apps and the hand-over to Android's installer.
+//! text shared to the app, Android's proxy and the user's certificates for the Git sync, what
+//! Android knows about the installed app and a downloaded APK, the network, the permission to
+//! install apps and the hand-over to Android's installer.
 //!
 //! Like the Keystore calls (`keystore.rs`) these block until Kotlin answers, and some answer only
 //! after the user came back from a system screen: they run on worker threads, never on the main
@@ -83,6 +84,35 @@ pub fn set_bars(dark: bool, top: &str, bottom: &str) -> Result<(), String> {
 /// The app to the background (the back button on the start screen).
 pub fn move_to_back() -> Result<(), String> {
     call::<serde_json::Value>(&SHELL, "moveToBack", NoArgs {}).map(|_| ())
+}
+
+// ----------------------------------------------------------------- network
+
+/// `android.net.ProxyInfo` as the Kotlin plugin passes it on (all empty without a proxy).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ProxyFacts {
+    host: Option<String>,
+    port: i32,
+    exclusions: String,
+    pac: Option<String>,
+}
+
+/// Android's proxy (global, else the one of the network in use) as the system proxy of the
+/// network settings.
+pub fn system_proxy() -> Result<arcalo_core::network::SystemProxy, String> {
+    let p: ProxyFacts = call(&SHELL, "proxy", NoArgs {})?;
+    Ok(arcalo_core::network::android_proxy(p.host.as_deref(), p.port, &p.exclusions, p.pac.as_deref()))
+}
+
+#[derive(Deserialize)]
+struct Pem {
+    pem: String,
+}
+
+/// The CA certificates the user installed on the phone, as PEM (empty without any).
+pub fn user_certificates() -> Result<String, String> {
+    call::<Pem>(&SHELL, "userCertificates", NoArgs {}).map(|p| p.pem)
 }
 
 // ----------------------------------------------------------------- updates

@@ -97,8 +97,20 @@ editor saves against the text it started from, and the two are merged.
   the sync code, its conflict handling and its guards are unchanged, and the sync's tests run on both
   (`ARCALO_TEST_EMBEDDED_GIT=1`). HTTPS uses OpenSSL, built from source like the SQLCipher encryption needs
   anyway; the certificates are the Android system's (`/system/etc/security/cacerts`, the updatable store of
-  Android 14), else Mozilla's root store compiled in. The token is given to the server when it asks for
+  Android 14), else Mozilla's root store compiled in, plus the certificates the user installed
+  (Einstellungen → Sicherheit → Verschlüsselung & Anmeldedaten): the app's network security config
+  (`res/xml/network_security_config.xml`) trusts them, which is how Android lets an app accept a company
+  proxy's own certificate, and `ShellPlugin.kt` (`userCertificates`, `AndroidCAStore` entries `user:…`)
+  passes them to `gitlib::set_user_certificates`. The token is given to the server when it asks for
   credentials (HTTP Basic, `x-access-token`), never written to `.git/config`.
+- **Proxy (1.19).** When the app has no proxy of its own (the network profile of the Git sync is in mode
+  „System“, the default), the Git sync uses Android's proxy: `ConnectivityManager.getDefaultProxy` (the global
+  proxy, else the one of the network in use, e.g. a Wi-Fi's own proxy) with its exclusions, read by
+  `ShellPlugin.kt` (`proxy`) before each sync and every minute and set with `network::set_platform_proxy`;
+  from there it takes the desktop's path (`git_network` → libgit2's proxy options). A PAC script runs in
+  Android's own local proxy, which Android names as the proxy; a PAC address without it is logged and the
+  connection is direct. libgit2 sends HTTPS through the proxy (`CONNECT`); a plain `http://` remote is
+  reached directly.
 - **HTTP clients** (`network::client_for`) check certificates against Mozilla's root store on Android: the
   platform verifier of rustls needs the app's JVM context there.
 - **Secrets.** `secrets.rs` has a Keystore backend on Android (`mobile/keystore.rs` and the Kotlin plugin

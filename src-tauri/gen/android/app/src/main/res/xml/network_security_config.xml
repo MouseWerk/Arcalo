@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Which certificate authorities the app trusts (1.19): the system's and those the user installed
+     (Einstellungen → Sicherheit → Verschlüsselung & Anmeldedaten), so the Git sync works behind a
+     company proxy that inspects HTTPS with its own certificate. Android trusts a user-installed
+     certificate in an app only when the app says so here; the built-in git (OpenSSL) gets the same
+     certificates added to its bundle (ShellPlugin.kt `userCertificates`). No plain HTTP (the debug
+     build allows it for the development server, src/debug/res/xml). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
