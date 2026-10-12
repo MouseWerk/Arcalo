@@ -118,6 +118,23 @@ test("„Im Baum zeigen“ (Ctrl+Shift+R) switches to the tree and focuses the o
 
 test("a filed folder (Tagesnotizen, year, month) opens and closes on click", async () => {
   await app.invoke("daily_note", { date: null });
+  // The webview's own reload keys never reload the app, also where no command runs (the palette).
+  await app.browser.execute(() => (window.__notReloaded = true));
+  await app.keys(["Control", "k"]);
+  await app.waitFor(".palette");
+  await app.keys(["Control", "Shift", "r"]);
+  await app.keys(["F5"]);
+  const prevented = await app.browser.execute(() =>
+    [{ key: "F5" }, { key: "r", ctrlKey: true }, { key: "R", ctrlKey: true, shiftKey: true }].map((init) => {
+      const e = new KeyboardEvent("keydown", { cancelable: true, bubbles: true, ...init });
+      document.body.dispatchEvent(e);
+      return e.defaultPrevented;
+    }),
+  );
+  assert.deepEqual(prevented, [true, true, true]);
+  await T.sleep(500);
+  assert.equal(await app.browser.execute(() => window.__notReloaded === true), true, "the page was reloaded");
+  await app.keys(["Escape"]);
   await T.reload();
   const before = await app.browser.execute((s) => document.querySelector(`${s} .page-title`)?.value, SHOWN);
   const st = await T.rowState("Tagesnotizen");

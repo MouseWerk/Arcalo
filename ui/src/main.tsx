@@ -25,6 +25,7 @@ import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
+import { installReloadGuard } from "./lib/reloadGuard";
 import { collectErrors } from "./lib/errorLog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
@@ -50,6 +51,7 @@ startSplash(captureMode || searchMode || presenterMode || keygateMode);
 if (!mobileMode) {
   trackModKey();
   installTooltips();
+  installReloadGuard();
 }
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
