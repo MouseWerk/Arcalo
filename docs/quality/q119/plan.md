@@ -35,4 +35,5 @@ was done and what moved on.
 
 ## File explorer sidebar
 
-Comes from the sidebar audit (`docs/quality/q119/sidebar.md`) once the owner has chosen the items.
+See `docs/quality/q119/sidebar.md`: every bug and polish problem from the audit, plus navigation, a better
+filter, actions for a selection, dragging into the editor and panes, and more kinds of things to create.
