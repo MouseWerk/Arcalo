@@ -337,6 +337,10 @@ pub struct Issue {
     /// Searches that found it in the last sync (`mine`, saved query ids).
     #[serde(default)]
     pub matches: Vec<String>,
+    /// `description` and `comments` were loaded with the issue (opened, 1.19) and it did not change
+    /// in Jira since. Searches and syncs load the list fields only and keep what was loaded.
+    #[serde(default)]
+    pub detailed: bool,
 }
 
 impl Issue {
@@ -491,9 +495,10 @@ pub trait IssueProvider {
     fn site(&self) -> &str;
     /// The account the token belongs to.
     async fn whoami(&self) -> Result<Account>;
-    /// Issues of a query in the tracker's language (JQL), at most `limit`.
+    /// Issues of a query in the tracker's language (JQL), at most `limit`; without description and
+    /// comments.
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>>;
-    /// One issue with its comments.
+    /// One issue with its description and comments (`detailed`).
     async fn get(&self, key: &str) -> Result<Issue>;
     /// Projects the user can create issues in.
     async fn projects(&self) -> Result<Vec<RemoteProject>>;
@@ -878,10 +883,15 @@ pub struct IssueBacklink {
 
 const ISSUE_COLS: &str = "site, key, remote_id, summary, status, status_category, priority, assignee, reporter, issue_type, \
      project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches, priority_level";
+/// What [`map_issue`] reads: the columns and whether the description is loaded.
+const ISSUE_SELECT: &str = "site, key, remote_id, summary, status, status_category, priority, assignee, reporter, issue_type, \
+     project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches, priority_level, \
+     detail_at IS NOT NULL";
 
 fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
     let comments: String = r.get(19)?;
     let matches: String = r.get(20)?;
+    let detailed: bool = r.get(22)?;
     Ok(Issue {
         site: r.get(0)?,
         key: r.get(1)?,
@@ -906,6 +916,7 @@ fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
         matches: serde_json::from_str(&matches).unwrap_or_default(),
         priority_level: r.get(21)?,
         priority_id: String::new(),
+        detailed,
     })
 }
 
@@ -974,14 +985,21 @@ impl Database {
         })
     }
 
-    /// Writes one issue (keeps nothing of an older row but its place).
+    /// Writes one issue (keeps nothing of an older row but its place). An issue of a search (not
+    /// `detailed`) keeps the description and comments loaded before; they count as loaded until the
+    /// issue changes in Jira (its `updated`), and are shown meanwhile.
     pub fn issue_put(&self, site: &str, i: &Issue, now: DateTime<Utc>) -> Result<()> {
         self.conn().execute(
             &format!(
-                "INSERT INTO issues ({ISSUE_COLS}, seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?23, ?22)
+                "INSERT INTO issues ({ISSUE_COLS}, seen_at, detail_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?23, ?22,
+                   CASE WHEN ?24 THEN ?22 END)
                  ON CONFLICT (site, key) DO UPDATE SET remote_id = ?3, summary = ?4, status = ?5, status_category = ?6, priority = ?7,
                    assignee = ?8, reporter = ?9, issue_type = ?10, project_key = ?11, project_name = ?12, sprint = ?13, sprint_state = ?14,
-                   due_date = ?15, updated = ?16, resolved = ?17, url = ?18, description = ?19, comments = ?20,
+                   due_date = ?15,
+                   detail_at = CASE WHEN ?24 THEN ?22 WHEN updated IS ?16 THEN detail_at END,
+                   updated = ?16, resolved = ?17, url = ?18,
+                   description = CASE WHEN ?24 THEN ?19 ELSE description END,
+                   comments = CASE WHEN ?24 THEN ?20 ELSE comments END,
                    matches = CASE WHEN ?21 = '[]' THEN matches ELSE ?21 END, seen_at = ?22, priority_level = ?23"
             ),
             params![
@@ -1008,6 +1026,7 @@ impl Database {
                 serde_json::to_string(&i.matches)?,
                 ts(now),
                 i.priority_level,
+                i.detailed,
             ],
         )?;
         if !i.project_key.is_empty() {
@@ -1021,7 +1040,7 @@ impl Database {
 
     /// Cached issues, newest change first.
     pub fn issues_list(&self, f: &IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = format!("SELECT {ISSUE_COLS} FROM issues WHERE (?1 = '' OR site = ?1)");
+        let mut sql = format!("SELECT {ISSUE_SELECT} FROM issues WHERE (?1 = '' OR site = ?1)");
         if !f.all {
             sql.push_str(" AND matches <> '[]'");
         }
@@ -1041,7 +1060,7 @@ impl Database {
         Ok(self
             .conn()
             .query_row(
-                &format!("SELECT {ISSUE_COLS} FROM issues WHERE key = ?1 ORDER BY site LIMIT 1"),
+                &format!("SELECT {ISSUE_SELECT} FROM issues WHERE key = ?1 ORDER BY site LIMIT 1"),
                 [key],
                 map_issue,
             )

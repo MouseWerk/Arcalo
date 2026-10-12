@@ -4683,6 +4683,8 @@ export const de: Catalog = {
   "jira.noWbs": "noch nicht zugeordnet",
   "jira.unassigned": "Nicht zugewiesen",
   "jira.noDescription": "Keine Beschreibung.",
+  "jira.descLoading": "Beschreibung wird geladen",
+  "jira.descUnavailable": "Beschreibung und Kommentare konnten nicht aus Jira geladen werden.",
   "jira.comments": "Letzte Kommentare",
   "jira.backlinks": "Seiten, die es nennen",
   "jira.noBacklinks": "Noch keine Seite nennt {key}.",

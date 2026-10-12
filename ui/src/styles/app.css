@@ -3179,6 +3179,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issue-facts dt { color: var(--text-3); }
 .issue-facts dd { margin: 0; color: var(--text-2); }
 .issue-desc { white-space: pre-line; font-size: var(--fs-sm); line-height: 1.55; color: var(--text); max-height: 280px; overflow: auto; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-raised); border: 1px solid var(--border); }
+.issue-desc-loading { display: flex; align-items: center; min-height: 40px; padding: 0 12px; color: var(--text-3); }
 .issue-comments h3, .issue-detail-side h3 { margin: 4px 0 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: var(--ls-eyebrow); color: var(--text-3); }
 .issue-comment { padding: 6px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .issue-comment-body { white-space: pre-line; color: var(--text-2); margin-top: 2px; }

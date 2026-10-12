@@ -3,8 +3,9 @@
 // Center (REST v2, Bearer personal access token, wiki markup, `/search` with `startAt`, no Agile).
 // It understands the JQL Arcalo sends (my open issues, `key in (…)`, `project = X`, `text ~ "…"`,
 // `key = X`), pages its searches two issues at a time, stores created issues, comments,
-// transitions and worklogs, and records every request. It listens on a random port; `stop()`
-// closes it (connection refused, as offline), `start()` opens the same port again.
+// transitions and worklogs, and records every request. Like Jira it answers only the fields a
+// request asks for (`fields=`), so a test sees what the app loads. It listens on a random port;
+// `stop()` closes it (connection refused, as offline), `start()` opens the same port again.
 //
 // Options: `rateLimitOnce` answers the first search with 429 (Retry-After: 1); `captcha` makes
 // every login fail as a Server account locked behind a CAPTCHA; `failWorklogs: n` refuses the
@@ -60,7 +61,12 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     comment: { comments: i.comments.map((c) => ({ author: { displayName: c.author }, created: c.created, body: cloud ? adf(c.body) : c.body })) },
     customfield_10020: i.sprint ? (cloud ? [{ id: 4, name: i.sprint, state: i.sprint === "Sprint 4" ? "active" : "closed" }] : [`com.atlassian.greenhopper.service.sprint.Sprint@1a[id=4,rapidViewId=1,state=${i.sprint === "Sprint 4" ? "ACTIVE" : "CLOSED"},name=${i.sprint},sequence=4]`]) : null,
   });
-  const wire = (i) => ({ id: String(10000 + store.indexOf(i)), key: i.key, fields: fields(i) });
+  /** An issue as Jira sends it: only the fields asked for (`fields=a,b`; all without the parameter). */
+  const wire = (i, want = null) => {
+    const all = fields(i);
+    const asked = want ? want.split(",").map((f) => f.trim()) : null;
+    return { id: String(10000 + store.indexOf(i)), key: i.key, fields: asked ? Object.fromEntries(Object.entries(all).filter(([k]) => asked.includes(k))) : all };
+  };
   const byKey = (k) => store.find((i) => i.key === k);
 
   /** The issues a JQL query finds. */
@@ -90,6 +96,7 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     const data = body ? JSON.parse(body) : null;
     const url = new URL(req.url, "http://x");
     const path = url.pathname;
+    const want = url.searchParams.get("fields");
     requests.push({ method: req.method, path, query: Object.fromEntries(url.searchParams), headers: req.headers, body: data });
     if (path === "/rest/api/2/serverInfo") return json(res, 200, { deploymentType: cloud ? "Cloud" : "DataCenter", version: cloud ? "1001.0.0" : "9.12.0" });
     if (state.captcha) return json(res, 403, { errorMessages: ["CAPTCHA_CHALLENGE"] }, { "X-Authentication-Denied-Reason": "CAPTCHA_CHALLENGE; login-url=http://x/login.jsp" });
@@ -108,7 +115,7 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
         const end = new Date(Date.now() + 6 * 86400_000).toISOString();
         return json(res, 200, { values: [{ id: 4, name: "Sprint 4", state: "active", startDate: start, endDate: end, goal: "Login works" }] });
       }
-      if (rest === "sprint/4/issue") return json(res, 200, { issues: store.filter((i) => i.sprint === "Sprint 4").map(wire) });
+      if (rest === "sprint/4/issue") return json(res, 200, { issues: store.filter((i) => i.sprint === "Sprint 4").map((i) => wire(i, want)) });
       return json(res, 404, { errorMessages: ["no"] });
     }
     if (!path.startsWith(api)) return json(res, 404, { errorMessages: ["wrong API version"] });
@@ -127,10 +134,10 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
         const start = Number(url.searchParams.get("nextPageToken") ?? 0);
         const page = found.slice(start, start + size);
         const more = start + size < found.length;
-        return json(res, 200, { issues: page.map(wire), ...(more ? { nextPageToken: String(start + size) } : {}), isLast: !more });
+        return json(res, 200, { issues: page.map((i) => wire(i, want)), ...(more ? { nextPageToken: String(start + size) } : {}), isLast: !more });
       }
       const start = Number(url.searchParams.get("startAt") ?? 0);
-      return json(res, 200, { startAt: start, maxResults: size, total: found.length, issues: found.slice(start, start + size).map(wire) });
+      return json(res, 200, { startAt: start, maxResults: size, total: found.length, issues: found.slice(start, start + size).map((i) => wire(i, want)) });
     }
     if (rest === "project/search" && cloud) return json(res, 200, { values: [...new Set(store.map((i) => i.project))].map((k) => ({ key: k, name: byKey(store.find((i) => i.project === k).key).projectName })) });
     if (rest === "project" && !cloud) return json(res, 200, [...new Set(store.map((i) => i.project))].map((k) => ({ key: k, name: store.find((i) => i.project === k).projectName })));
@@ -147,7 +154,7 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
       const issue = byKey(m[1]);
       if (!issue) return json(res, 404, { errorMessages: ["Issue does not exist or you do not have permission to see it."] });
       const sub = m[3];
-      if (!sub && req.method === "GET") return json(res, 200, wire(issue));
+      if (!sub && req.method === "GET") return json(res, 200, wire(issue, want));
       if (sub === "comment" && req.method === "POST") {
         issue.comments.push({ author: me, created: "2026-10-01T09:00:00.000+0000", body: adfText(data.body) });
         return json(res, 201, { id: "c1" });

@@ -5223,6 +5223,7 @@ pub fn run() {
             jira::jira_index,
             jira::jira_issue_view,
             jira::jira_issue_fetch,
+            jira::jira_issue_detail,
             jira::jira_issue_note,
             filing::filing_tidy_plan,
             filing::filing_tidy_apply,

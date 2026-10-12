@@ -4686,6 +4686,8 @@ export const en = {
   "jira.noWbs": "not mapped yet",
   "jira.unassigned": "Unassigned",
   "jira.noDescription": "No description.",
+  "jira.descLoading": "Loading the description",
+  "jira.descUnavailable": "The description and comments could not be loaded from Jira.",
   "jira.comments": "Last comments",
   "jira.backlinks": "Pages naming it",
   "jira.noBacklinks": "No page names {key} yet.",

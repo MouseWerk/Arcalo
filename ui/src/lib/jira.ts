@@ -64,6 +64,8 @@ export interface Issue {
   description: string;
   comments: IssueComment[];
   matches: string[];
+  /** Description and comments are loaded (an issue opened, 1.19); lists and syncs load the rest only. */
+  detailed?: boolean;
 }
 type Opt = string | null;
 /** What `jira_issues_compact` answers (`arcalo_core::issues::IssueTable`): each project once, each issue as an array, no comments. */
@@ -113,7 +115,7 @@ export interface TestResult {
   kind: SiteKind;
 }
 /** What a chip and its hover card show. */
-export type ChipIssue = Pick<Issue, "key" | "site" | "summary" | "status" | "status_category" | "issue_type" | "priority" | "assignee" | "due_date" | "url" | "description">;
+export type ChipIssue = Pick<Issue, "key" | "site" | "summary" | "status" | "status_category" | "issue_type" | "priority" | "assignee" | "due_date" | "url" | "description" | "detailed">;
 export interface IssueIndex {
   projects: string[];
   issues: ChipIssue[];
@@ -245,6 +247,8 @@ export const jiraApi = {
   index: () => call<IssueIndex>("jira_index"),
   view: (key: string) => call<IssueView>("jira_issue_view", { key }),
   fetch: (key: string) => call<Issue>("jira_issue_fetch", { key }),
+  /** Description and comments of an issue opened, from Jira (then cached); nothing else is reloaded. */
+  detail: (key: string) => call<Issue>("jira_issue_detail", { key }),
   note: (key: string) => call<{ page: { id: number; title: string }; created: boolean }>("jira_issue_note", { key }),
   addTask: (key: string) => call<{ page_id: number; title: string }>("jira_add_task", { key }),
   entryIssues: (entryIds: number[]) => call<EntryIssue[]>("jira_entry_issues", { entryIds }),
@@ -265,6 +269,8 @@ interface IndexState {
   /** Bumped on every load (editors rebuild their chips). */
   version: number;
   load: () => Promise<void>;
+  /** An issue's description loaded (the hover card): kept for the next card, the chips stay as they are. */
+  put: (issue: ChipIssue) => void;
 }
 
 export const useIssueIndex = create<IndexState>((set) => ({
@@ -279,6 +285,7 @@ export const useIssueIndex = create<IndexState>((set) => ({
       /* no index: no chips */
     }
   },
+  put: (issue) => set((st) => (st.byKey.has(issue.key) ? { byKey: new Map(st.byKey).set(issue.key, issue) } : {})),
 }));
 
 let started = false;

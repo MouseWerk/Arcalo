@@ -448,6 +448,8 @@ pub struct ChipIssue {
     due_date: Option<String>,
     url: String,
     description: String,
+    /// The description is loaded (else the hover card loads it, `jira_issue_detail`).
+    detailed: bool,
 }
 
 /// The keys that become chips: the cached projects and what each issue shows.
@@ -477,6 +479,7 @@ pub fn jira_index(state: State<AppState>) -> Result<IssueIndex> {
             assignee: i.assignee,
             due_date: i.due_date,
             url: i.url,
+            detailed: i.detailed,
         })
         .collect();
     Ok(IssueIndex { projects, issues })
@@ -520,6 +523,17 @@ pub async fn jira_issue_fetch(app: AppHandle, key: String) -> Result<Issue> {
     let issue = client(&state, &site)?.get(&key).await?;
     state.db().issue_put(&site.id, &issue, Utc::now())?;
     let _ = app.emit("jira://synced", &site.id);
+    Ok(issue)
+}
+
+/// The description and comments of an issue opened (the list and the hover card), from Jira, cached
+/// (1.19: searches load the list fields only). Nothing else is reloaded.
+#[tauri::command]
+pub async fn jira_issue_detail(app: AppHandle, key: String) -> Result<Issue> {
+    let state = app.state::<AppState>();
+    let site = site_for_key(&state, &key)?;
+    let issue = client(&state, &site)?.get(&key).await?;
+    state.db().issue_put(&site.id, &issue, Utc::now())?;
     Ok(issue)
 }
 
