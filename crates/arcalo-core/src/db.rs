@@ -52,6 +52,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0035_page_id_floor.sql"),
     include_str!("../migrations/0036_issue_detail.sql"),
     include_str!("../migrations/0037_page_line_ends.sql"),
+    include_str!("../migrations/0038_move_undo_order.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -1225,8 +1226,7 @@ mod tests {
     fn crlf_notes_of_1_18_0_get_lf_once_and_keep_their_text_as_a_version() {
         let path = std::env::temp_dir().join(format!("arcalo-crlf-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let before = MIGRATIONS.len() - 1;
-        assert!(MIGRATIONS[before].contains("char(13, 10)"), "0037 is the last migration of this test");
+        let before = MIGRATIONS.iter().position(|m| m.contains("char(13, 10)")).expect("migration 0037");
         {
             let c = Connection::open(&path).unwrap();
             for m in &MIGRATIONS[..before] {

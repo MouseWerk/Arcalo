@@ -562,3 +562,52 @@ fn tidy_files_by_the_local_creation_day() {
     let in_utc = tidy::Snapshot::read_in(&db, &Utc).unwrap();
     assert_eq!(in_utc.info_of(&db, p.id).map(|i| i.date), Some(day(2026, 10, 31)));
 }
+
+/// Children of `parent` in their order (titles).
+fn order_below(db: &Database, parent: Option<i64>) -> Vec<String> {
+    let mut c: Vec<_> = db.list_pages().unwrap().into_iter().filter(|p| p.parent_id == parent).collect();
+    c.sort_by_key(|p| (p.position, p.id));
+    c.into_iter().map(|p| p.title).collect()
+}
+
+#[test]
+fn undo_of_a_reorder_of_two_pages_restores_their_order() {
+    let db = Database::open_in_memory().unwrap();
+    let folder = db.create_page(None, "Ordner", None).unwrap();
+    let ids: Vec<i64> =
+        ["A", "B", "C", "D"].iter().map(|n| db.create_page(Some(folder.id), n, None).unwrap().id).collect();
+    db.move_pages_at(&[ids[0], ids[2]], Some(folder.id), Some(2)).unwrap();
+    assert_eq!(order_below(&db, Some(folder.id)), ["B", "D", "A", "C"]);
+    db.undo_last_move().unwrap();
+    assert_eq!(order_below(&db, Some(folder.id)), ["A", "B", "C", "D"]);
+}
+
+/// A drop that brings pages from elsewhere and reorders others of the folder: the undo puts
+/// every page back, in both places in the old order.
+#[test]
+fn undo_of_a_move_with_a_reorder_restores_both_places() {
+    let db = Database::open_in_memory().unwrap();
+    let folder = db.create_page(None, "Ordner", None).unwrap();
+    let ids: Vec<i64> = ["A", "B", "C"].iter().map(|n| db.create_page(Some(folder.id), n, None).unwrap().id).collect();
+    let x = db.create_page(None, "X", None).unwrap();
+    let y = db.create_page(None, "Y", None).unwrap();
+    db.create_page(None, "Z", None).unwrap();
+    let top = order_below(&db, None);
+    db.move_pages_at(&[y.id, ids[2], x.id], Some(folder.id), Some(0)).unwrap();
+    assert_eq!(order_below(&db, Some(folder.id)), ["Y", "C", "X", "A", "B"]);
+    assert_eq!(db.undo_last_move().unwrap(), 3);
+    assert_eq!(order_below(&db, Some(folder.id)), ["A", "B", "C"]);
+    assert_eq!(order_below(&db, None), top);
+}
+
+#[test]
+fn a_drop_in_place_keeps_the_undo_of_the_previous_move() {
+    let db = Database::open_in_memory().unwrap();
+    let folder = db.create_page(None, "Ordner", None).unwrap();
+    let a = db.create_page(Some(folder.id), "A", None).unwrap();
+    let b = db.create_page(None, "B", None).unwrap();
+    db.move_pages(&[b.id], Some(folder.id)).unwrap();
+    assert_eq!(db.move_pages_at(&[a.id], Some(folder.id), Some(0)).unwrap().moved, 0);
+    assert_eq!(db.undo_last_move().unwrap(), 1);
+    assert_eq!(db.page(b.id).unwrap().parent_id, None);
+}
