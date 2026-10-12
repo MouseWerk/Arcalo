@@ -558,13 +558,18 @@ export function PageTree({
   useEffect(() => {
     const sc = scroller();
     if (!drag || !sc) return;
+    // In the next frame: the row under the pointer works out the drop from where it is now.
+    let frame = 0;
     const onOver = (e: globalThis.DragEvent) => {
       const r = sc.getBoundingClientRect();
-      if (e.clientY < r.top + DRAG_SCROLL_EDGE) sc.scrollTop -= 12;
-      else if (e.clientY > r.bottom - DRAG_SCROLL_EDGE) sc.scrollTop += 12;
+      const step = e.clientY < r.top + DRAG_SCROLL_EDGE ? -12 : e.clientY > r.bottom - DRAG_SCROLL_EDGE ? 12 : 0;
+      if (step && !frame) frame = requestAnimationFrame(() => ((frame = 0), (sc.scrollTop += step)));
     };
     sc.addEventListener("dragover", onOver);
-    return () => sc.removeEventListener("dragover", onOver);
+    return () => {
+      cancelAnimationFrame(frame);
+      sc.removeEventListener("dragover", onOver);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!drag]);
 
