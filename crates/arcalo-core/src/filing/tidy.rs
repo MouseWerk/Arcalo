@@ -463,7 +463,8 @@ impl Database {
                     .collect::<rusqlite::Result<_>>()?;
                 let others: Vec<i64> = before.iter().copied().filter(|id| !placed.contains(id)).collect();
                 let at = pos.clamp(0, others.len() as i64) as usize;
-                let order: Vec<i64> = others[..at].iter().chain(placed.iter()).chain(others[at..].iter()).copied().collect();
+                let order: Vec<i64> =
+                    others[..at].iter().chain(placed.iter()).chain(others[at..].iter()).copied().collect();
                 for (i, id) in order.iter().enumerate() {
                     self.conn().execute("UPDATE pages SET position = ?2 WHERE id = ?1", params![id, i as i64])?;
                 }
