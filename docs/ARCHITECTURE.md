@@ -1287,6 +1287,12 @@ Read under the old name, written under the new one:
   directives naming `annalo`, `annalo_core` or `annalo_lib` mean the new crates.
 - Older markers: mirrors and README titles of 1.6, `annalo-portable` markers, `annalo-…db` backups.
 
+WebView2: the NSIS setup carries Microsoft's WebView2 bootstrapper (`bundle.windows.webviewInstallMode`
+`embedBootstrapper`, silent, about 2 MB) and runs it only when the runtime is missing; the bootstrapper downloads the
+runtime with Windows' own network settings (proxy included). The setup itself downloads nothing (up to 1.18 it fetched
+the bootstrapper with NSIS' own HTTP client, which may not get through a proxy). Offline without WebView2 the full
+runtime installer is still needed. The Store package and the portable ZIP do not use this setting.
+
 Program file: `arcalo.exe` / `arcalo`. The NSIS hooks (`src-tauri/installer/hooks.nsh`) close a
 running `annalo.exe`, remove it, point the autostart Run value and the Start menu, desktop and
 pinned taskbar shortcuts at `arcalo.exe` and stamp the new AppUserModelID on them; uninstalling with

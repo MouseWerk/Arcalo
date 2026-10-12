@@ -573,6 +573,15 @@ mod tests {
         assert_eq!(windows_config(Some(&quiet)), (InstallMode::Quiet, vec!["/D=x".to_string()]));
     }
 
+    /// The setup carries the WebView2 bootstrapper instead of downloading it with NSIS' own HTTP
+    /// client (which may not get through a proxy), and runs it without asking.
+    #[test]
+    fn the_setup_carries_the_webview2_bootstrapper() {
+        let mode = &conf()["bundle"]["windows"]["webviewInstallMode"];
+        assert_eq!(mode["type"], "embedBootstrapper");
+        assert_eq!(mode["silent"], true);
+    }
+
     #[test]
     fn nsis_gets_the_plugins_arguments() {
         let none: [String; 0] = [];

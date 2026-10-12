@@ -93,7 +93,9 @@ package: tell users to choose a data folder in Settings → Daten before uninsta
   requires a privacy policy URL when the app transmits personal information (Arcalo connects to services the user
   sets up: AI providers, Jira, calendars, Git). 10.14: an individual account fits a single developer; a publisher
   name that reads like a company may lead certification to ask for a company account (see step 1).
-- **WebView2:** part of Windows 10 (since 2021 updates) and Windows 11; the package does not bundle or bootstrap it.
+- **WebView2:** part of Windows 10 (since 2021 updates) and Windows 11; the package does not bundle or bootstrap it
+  (the NSIS setup's `webviewInstallMode`, `embedBootstrapper`, does not apply to the MSIX, which is packed from the
+  plain release binary).
   Minimum OS in the manifest: Windows 10 1903 (`10.0.18362.0`), the first version with `unvirtualizedResources`.
 - **Registration:** free for individual developers since September 2025, with an ID and selfie check
   ([Windows Developer Blog](https://blogs.windows.com/windowsdeveloper/2025/09/10/free-developer-registration-for-individual-developers-on-microsoft-store/)).
