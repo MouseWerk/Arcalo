@@ -79,7 +79,7 @@ pub fn init_tls(dir: &Path) -> crate::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let file = dir.join("git-ca.pem");
     if !pem.is_empty() {
-        fs::write(&file, &pem)?;
+        replace_file(&file, &pem)?;
         // SAFETY: called once at start-up, before any git operation runs.
         unsafe { git2::opts::set_ssl_cert_file(&file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
         let _ = CA_FILE.set(file.clone());
@@ -99,11 +99,21 @@ pub fn set_user_certificates(pem: &str) -> crate::Result<bool> {
     if *last == user {
         return Ok(false);
     }
-    fs::write(file, format!("{system}{user}"))?;
+    // A connection that starts meanwhile reads the old bundle or the new one, never half of it.
+    replace_file(file, &format!("{system}{user}"))?;
     // SAFETY: libgit2 reads the file when a TLS connection starts; the path stays the same.
     unsafe { git2::opts::set_ssl_cert_file(file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
     *last = user;
     Ok(true)
+}
+
+/// Writes `text` to a file beside `file`, then renames it over `file` (atomic on one file system).
+fn replace_file(file: &Path, text: &str) -> std::io::Result<()> {
+    let tmp = file.with_extension("pem.tmp");
+    fs::write(&tmp, text)?;
+    fs::rename(&tmp, file).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
 }
 
 /// The `CERTIFICATE` blocks of `pem`, each on its own lines; anything else is dropped.
@@ -1115,5 +1125,20 @@ mod tests {
         assert_eq!(certificates_only("-----BEGIN CERTIFICATE-----\nCCCC"), "", "an unfinished block is dropped");
         // Without the bundle of `init_tls` (not on Android): nothing to add to.
         assert!(!set_user_certificates(pem).unwrap());
+    }
+
+    /// The bundle is replaced as a whole (a temporary file renamed over it), never written in
+    /// place while a connection may read it.
+    #[test]
+    fn the_bundle_is_replaced_as_a_whole() {
+        let dir = tmp("ca-bundle");
+        let file = dir.join("git-ca.pem");
+        replace_file(&file, "alt\n").unwrap();
+        replace_file(&file, "neu\n").unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "neu\n");
+        let names: Vec<String> =
+            fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["git-ca.pem"], "no temporary file is left");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
