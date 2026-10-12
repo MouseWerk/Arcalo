@@ -831,8 +831,11 @@ button.side-section-title:hover { color: var(--text-2); }
 .week-grid th:last-child, .week-grid td:last-child { padding-right: 16px; }
 @container pane (max-width: 760px) { .week-grid th:nth-child(2), .week-grid td:nth-child(2) { display: none; } }
 .quick-book > * { min-width: 0; }
-.week-grid th.today, .week-grid td.today { background: var(--accent-soft); }
-.week-grid th.today, .week-grid th.today .faint { color: var(--accent-text); }
+/* Today's column: a quiet neutral tint, its head in the text color and heavier, like other current states. */
+.week-grid th.today, .week-grid td.today { background: var(--bg-hover); }
+.week-grid tbody tr:hover > td.today { background: var(--bg-active); }
+.week-grid th.today { color: var(--text); font-weight: var(--fw-semibold); }
+.week-grid th.today .faint { color: var(--text-2); }
 .week-grid th.weekend, .week-grid td.weekend { color: var(--text-3); }
 .entry-list { padding: 4px 8px 8px; }
 .entry-day { padding: 4px 0; }

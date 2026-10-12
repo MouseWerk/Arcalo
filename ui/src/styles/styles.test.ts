@@ -220,6 +220,16 @@ describe("selection and focus look", () => {
       for (const v of values) expect(v, token).not.toMatch(ACCENT);
     }
   });
+
+  // Today's column in Zeiterfassung was an accent tint with accent text (q119): a neutral tint and
+  // the text weight now, like the current day of the week review and the day plan strip.
+  it("today's column in the time sheet is neutral", () => {
+    const today = rules("app.css").filter(({ selector }) => /week-grid/.test(selector) && /\.today\b/.test(selector));
+    expect(today.length).toBeGreaterThan(0);
+    const bad = today.flatMap(({ selector, decls }) => decls.filter(([, v]) => ACCENT.test(v)).map(([p, v]) => `${selector} { ${p}: ${v} }`));
+    expect(bad).toEqual([]);
+    expect(today.some(({ decls }) => decls.some(([p, v]) => p === "font-weight" && /--fw-(semibold|medium|heading)/.test(v)))).toBe(true);
+  });
 });
 
 // An endless animation of anything but opacity or transform repaints every frame (a box-shadow pulse on the
