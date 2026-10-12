@@ -479,7 +479,9 @@ defineWidget({
   notification address); otherwise the app starts. So every install (NSIS, Store alias, portable ZIP, deb, AppImage,
   macOS bundle) has the command line of its own version, and a portable copy finds its `data` folder. A Windows release
   build has no console of its own: with its output redirected (scripts, agents) it has the handles; typed in a console
-  it attaches to that console (`AttachConsole`). The crate also builds a standalone `arcalo` (and `annalo`) binary.
+  it attaches to that console (`AttachConsole`). The crate also builds a standalone binary, `arcalo-cli` (and the old
+  name `annalo`): not `arcalo`, which would overwrite the app's program in `target/<profile>` (a test run of the crate
+  replaced the app there and hung the e2e runs).
 - **On the PATH** (`src-tauri/src/cmdpath.rs`): the NSIS hooks start the installed program with `--internal-path
   add|remove` (handled in `command_line()` before the CLI), which changes the user's `Path` (`HKCU\Environment`) raw
   through the registry: the value's type and every other entry stay byte for byte, the folder is matched in any
