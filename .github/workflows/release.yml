@@ -475,14 +475,34 @@ jobs:
           ' "$VERSION"
           # The Android app's own feed (docs/release/android.md → Updates of the app): a file of
           # its own, so latest.json keeps only the desktop platforms. Package, version code and
-          # signing certificate are read from the APK itself.
+          # signing certificate are read from the APK itself. A debug-signed APK (no ANDROID_* secrets)
+          # gets its feed too: the app refuses an update from another signer by itself.
           APK="dist/Arcalo_${VERSION}_android.apk"
           if [ -f "$APK" ] && [ -f "$APK.sig" ]; then
             BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1 || true)"
-            BADGING="$("$BT/aapt2" dump badging "$APK" 2>/dev/null | head -n 1 || true)"
+            echo "Android build tools: ${BT:-none}"
+            BADGING="$("$BT/aapt2" dump badging "$APK" 2>&1 | head -n 1 || true)"
             export APK_PACKAGE="$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
             export APK_CODE="$(echo "$BADGING" | sed -n "s/.* versionCode='\([0-9]*\)'.*/\1/p")"
-            export APK_SIGNER="$("$BT/apksigner" verify --print-certs "$APK" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+            [ -n "$APK_PACKAGE" ] || echo "aapt2: $BADGING"
+            # The signing certificate from the APK Signing Block (scripts/apk-signer.mjs, no Java
+            # needed). apksigner is asked too, its output and errors shown: build-tools 37 prints
+            # „V2 Signer: certificate SHA-256 digest“ where older ones print „Signer #1 certificate
+            # SHA-256 digest“, which lost the signer of 1.18.1. Two different answers: no feed.
+            BLOCK_SIGNER="$(node scripts/apk-signer.mjs "$APK" 2>&1)" || { echo "apk-signer: $BLOCK_SIGNER"; BLOCK_SIGNER=""; }
+            CHECK="$("$BT/apksigner" verify --print-certs "$APK" 2>&1 || true)"
+            echo "apksigner:"
+            echo "$CHECK" | grep -v '^WARNING' | head -n 20 || true
+            TOOL_SIGNER="$(echo "$CHECK" | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer:) certificate SHA-256 digest: ([0-9a-fA-F]+)$/\2/p' | head -n 1)"
+            if [ -n "$BLOCK_SIGNER" ] && [ -n "$TOOL_SIGNER" ] && [ "${BLOCK_SIGNER,,}" != "${TOOL_SIGNER,,}" ]; then
+              echo "::warning::Signing certificate: apk-signer says $BLOCK_SIGNER, apksigner $TOOL_SIGNER."
+              export APK_SIGNER=""
+            else
+              export APK_SIGNER="${BLOCK_SIGNER:-$TOOL_SIGNER}"
+            fi
+            if echo "$CHECK" | grep -q 'CN=Android Debug'; then
+              echo "::notice::The APK is signed with a debug key (no ANDROID_* secrets): its feed is published, installs of an earlier key are not updated by it."
+            fi
             echo "APK: $APK_PACKAGE $APK_CODE, signer $APK_SIGNER"
             if [ -n "$APK_PACKAGE" ] && [ -n "$APK_CODE" ] && [ -n "$APK_SIGNER" ]; then
               BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" node -e '
@@ -504,7 +524,7 @@ jobs:
                 console.log("android-latest.json:", feed.version_code);
               ' "$VERSION"
             else
-              echo "::warning::The APK could not be read (aapt2/apksigner): no android-latest.json."
+              echo "::warning::The APK could not be read (package and version code: aapt2; signer: scripts/apk-signer.mjs, apksigner): no android-latest.json."
             fi
           fi
           ls -la dist
