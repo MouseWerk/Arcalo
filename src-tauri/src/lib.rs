@@ -148,6 +148,8 @@ struct AiRuntime {
     /// Why the network settings cannot be applied (a missing CA file): requests fail with this
     /// instead of going out without proxy and certificates.
     network_error: Option<String>,
+    /// What each provider's client was built from (`arcalo_core::ai::capability::fingerprints`).
+    fingerprints: HashMap<String, u64>,
 }
 
 /// A client of `provider`: its key, the network profile it is routed to (direct on the
@@ -207,7 +209,14 @@ impl AiRuntime {
             }
         }
         let router = Arc::new(ModelRouter::new(settings.router.clone()));
-        AiRuntime { clients, router, http: Mutex::new(HashMap::new()), network_error, settings }
+        let fingerprints = arcalo_core::ai::capability::fingerprints(
+            &settings.providers,
+            settings.ai_on(),
+            &settings.network,
+            keys,
+            proxy_passwords,
+        );
+        AiRuntime { clients, router, http: Mutex::new(HashMap::new()), network_error, settings, fingerprints }
     }
 }
 
@@ -215,10 +224,18 @@ impl AiRuntime {
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let keys = provider_keys(&state.data_dir, &settings.providers);
     let rt = AiRuntime::new(settings.clone(), &keys, &network::passwords_of(&state.data_dir, &settings.network));
-    *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
-    // Another server or key may offer other models, and a fixed server gets another chance.
-    lock(&state.server_models).clear();
-    lock(&state.caps).clear();
+    let before = std::mem::replace(&mut *state.ai.write().unwrap_or_else(|e| e.into_inner()), rt).fingerprints;
+    let after = state.ai.read().unwrap_or_else(|e| e.into_inner()).fingerprints.clone();
+    // Another server, key or network may offer other models, and a fixed server gets another
+    // chance. Another setting saved keeps what is known (q119: forgetting that a model rejects
+    // tools sent them again, and the 400 put the model into the server's cooldown).
+    let changed = arcalo_core::ai::capability::changed_providers(&before, &after);
+    let mut models = lock(&state.server_models);
+    let mut caps = lock(&state.caps);
+    for id in &changed {
+        models.remove(id);
+        caps.forget_provider(id);
+    }
 }
 
 /// When a provider was asked for its models, and the answer (`None` = it could not be asked).
