@@ -242,7 +242,8 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
-const base = `http://127.0.0.1:${server.address().port}/index.html?mobile`;
+// The Android window's page (src-tauri/tauri.android.conf.json): the mobile entry only.
+const base = `http://127.0.0.1:${server.address().port}/mobile.html`;
 
 // ------------------------------------------------------------------------ run
 

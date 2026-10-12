@@ -1006,6 +1006,14 @@ select.m-input {
 .m-read a {
   color: var(--accent-text);
 }
+/* A link to another page: like in the desktop's editor, without its stylesheet (the phone loads
+   only this one, A18). */
+.m-read .wikilink {
+  text-decoration: none;
+  border-radius: var(--r-xs);
+  padding: 0 1px;
+  background: linear-gradient(transparent 62%, var(--accent-soft) 62%);
+}
 .m-read blockquote {
   margin: 0 0 var(--sp-3);
   padding: var(--sp-1) var(--sp-3);
