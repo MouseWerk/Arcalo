@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIRST_LINE_RE, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "./frontmatter";
+import { FIRST_LINE_RE, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, withTag, type Property } from "./frontmatter";
 
 const OBSIDIAN = `---
 title: Kickoff Systemintegration
@@ -135,5 +135,18 @@ describe("serializeFrontmatter", () => {
 
   it("splits typed lists", () => {
     expect(splitItems("a, #b ,, c")).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("adding a tag (the sidebar's selection)", () => {
+  it("creates the tags list, appends to it and leaves the rest as it was", () => {
+    expect(withTag("", "#projekt")).toBe("---\ntags: [projekt]\n---\n");
+    expect(withTag("---\nstatus: offen\n---\n", "kunde")).toBe("---\nstatus: offen\ntags: [kunde]\n---\n");
+    expect(withTag("---\ntags: [a, b]\nstatus: offen\n---\n", "c")).toBe("---\ntags: [a, b, c]\nstatus: offen\n---\n");
+    expect(withTag("---\ntags:\n  - a\n---\n", "b")).toBe("---\ntags: [a, b]\n---\n");
+    // Already there (any case), or nothing to add: unchanged.
+    const fm = "---\ntags: [Kunde]\n---\n";
+    expect(withTag(fm, "kunde")).toBe(fm);
+    expect(withTag(fm, "  ")).toBe(fm);
   });
 });

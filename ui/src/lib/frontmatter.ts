@@ -204,3 +204,17 @@ export const canonicalKey = (key: string) => {
 };
 /** The name to write for a known key (given by its German name) in a language. */
 export const keyName = (de: string, lang: "de" | "en") => (lang === "en" ? (KEY_ALIASES[de] ?? de) : de);
+
+/** The frontmatter with `tag` added to its `tags` list (created when missing); unchanged when it is there. */
+export function withTag(fm: string, tag: string): string {
+  const clean = tag.trim().replace(/^#/, "");
+  if (!clean) return fm;
+  const props = parseFrontmatter(fm);
+  const i = props.findIndex((p) => /^tags?$/i.test(p.key.trim()));
+  if (i < 0) return serializeFrontmatter([...props, { key: "tags", type: "list", value: "", items: [clean] }]);
+  const p = props[i];
+  const items = p.type === "list" ? p.items : splitItems(p.value);
+  if (items.some((x) => x.toLowerCase() === clean.toLowerCase())) return fm;
+  props[i] = edited(p, { type: "list", value: "", items: [...items, clean] });
+  return serializeFrontmatter(props);
+}

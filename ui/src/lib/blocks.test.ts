@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PAGE_MIME, PLAN_MIME, blockIdOf, blockKey, blockMinutes, canPlan, dropRange, itemTitle, linkOf, minuteAt, moved, plannedMinutes, readPlanData, resized, snapMinutes } from "./blocks";
+import { PAGE_MIME, PAGES_MIME, PLAN_MIME, blockIdOf, draggedPages, blockKey, blockMinutes, canPlan, dropRange, itemTitle, linkOf, minuteAt, moved, plannedMinutes, readPlanData, resized, snapMinutes } from "./blocks";
 
 const data = (m: Record<string, string>) => ({ getData: (k: string) => m[k] ?? "" });
 
@@ -61,5 +61,16 @@ describe("focus blocks", () => {
     expect(blockIdOf("outlook|G1|")).toBeNull();
     expect(blockMinutes(undefined)).toBe(60);
     expect(blockMinutes({ block_minutes: 90 } as never)).toBe(90);
+  });
+});
+
+describe("pages dragged from the sidebar", () => {
+  const dt = (data: Record<string, string>) => ({ types: Object.keys(data), getData: (t: string) => data[t] ?? "" });
+  it("reads the selection, else the one page, else nothing", () => {
+    expect(draggedPages(dt({ [PAGE_MIME]: "4", [PAGES_MIME]: "4,9,12" }))).toEqual([4, 9, 12]);
+    expect(draggedPages(dt({ [PAGE_MIME]: "4" }))).toEqual([4]);
+    expect(draggedPages(dt({ "text/plain": "4" }))).toEqual([]);
+    expect(draggedPages(dt({ [PAGE_MIME]: "x" }))).toEqual([]);
+    expect(draggedPages(null)).toEqual([]);
   });
 });
