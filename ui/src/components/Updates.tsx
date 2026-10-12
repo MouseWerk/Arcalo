@@ -92,6 +92,17 @@ export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
     if (fresh) useUpdates.setState({ whatsNew: { versions, seen: r.version } });
   } else if (r) toast({ tone: "warning", persistent: true, title: t("upd.notInstalled", { version: r.version }), detail: t("upd.notInstalledDetail", { current: status.current_version }) });
   if (back) toast({ tone: "warning", persistent: true, title: t("upd.rolledBack", { version: back.from }), detail: t("upd.rolledBackDetail", { version: back.to }) });
+  // Windows: terminal commands kept the update from installing at several quits; they are named
+  // so the user can end them (the update never does).
+  const late = status.postponed;
+  if (late)
+    toast({
+      tone: "warning",
+      persistent: true,
+      key: "update-postponed",
+      title: t("upd.postponedTitle", { version: late.version, n: late.times }),
+      detail: t("upd.postponedDetail", { n: late.commands.length, commands: late.commands.join(", ") }),
+    });
   return status;
 }
 
@@ -304,6 +315,13 @@ export function startUpdateChecks(): () => void {
     useUpdates.setState({ progress });
     refresh();
   });
+  // The install waited for terminal commands while the window was usable: what was typed
+  // meanwhile is stored before it goes on (no answer, or „stay“: it is not installed now).
+  const offFlush = on("update://flush", async () => {
+    const ok = await flushBeforeExit(t("upd.anyway"));
+    if (ok) saveSessionIfWanted();
+    await api.updateFlushed(ok).catch(() => {});
+  });
   // A changed interval (Settings) applies from now on.
   const offSettings = useApp.subscribe((s, prev) => {
     if (s.settings?.settings.updates !== prev.settings?.settings.updates) void refreshUpdateStatus().then(schedule);
@@ -314,6 +332,7 @@ export function startUpdateChecks(): () => void {
     clearTimeout(pending);
     offState.then((f) => f());
     offProgress.then((f) => f());
+    offFlush.then((f) => f());
     offSettings();
   };
 }

@@ -1184,6 +1184,13 @@ export interface UpdateStatus {
   rolled_back?: { from: string; to: string; database: boolean } | null;
   /** The install waits for running terminal commands (`arcalo pages list`) until `until`; then it installs (`then_install`) or waits for the next quit (Windows). */
   waiting?: UpdateWaiting | null;
+  /** The waiting update was postponed at several quits by terminal commands that still ran. */
+  postponed?: UpdatePostponed | null;
+}
+export interface UpdatePostponed {
+  version: string;
+  times: number;
+  commands: string[];
 }
 export interface UpdateWaiting {
   commands: string[];

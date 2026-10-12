@@ -17,6 +17,9 @@
 //!
 //! Before installing, the update waits for running terminal commands (`arcalo pages list`,
 //! `arcalo_core::cmdlock`) up to a time limit, with a hint in the window; it never ends them.
+//! The window stays usable meanwhile, so the UI stores its editors again before the install
+//! goes on, and another quit during the wait is ignored. An update postponed by the same
+//! commands at several quits (Windows) names them at the next start.
 //!
 //! Debug builds take a test feed, key and version from `ARCALO_UPDATE_ENDPOINT`,
 //! `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_CURRENT` (end-to-end tests with a local server), and
@@ -176,6 +179,8 @@ pub struct Updates {
     rolled_back: Mutex<Option<rollback::Notice>>,
     /// The install waits for running terminal commands.
     waiting: Mutex<Option<Waiting>>,
+    /// The UI's answer to „store the editors“ before an install that waited ([`update_flushed`]).
+    flushed: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
 }
 
 /// Terminal commands the install waits for (the window shows them).
@@ -263,6 +268,8 @@ pub struct UpdateStatus {
     rolled_back: Option<rollback::Notice>,
     /// The install waits for running terminal commands.
     waiting: Option<Waiting>,
+    /// The waiting update was postponed at several quits by terminal commands that still ran.
+    postponed: Option<st::Postponed>,
 }
 
 #[derive(Serialize, Clone)]
@@ -383,6 +390,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
     let state = UpdateState::load(&data_dir(&app));
     let current = current_version(&app);
     let staged = lock(&updates.staged).clone();
+    let postponed = staged.as_ref().and_then(|s| state.postponed_notice(&s.version).cloned());
     let offer = lock(&updates.offer).clone();
     let ready =
         staged.as_ref().filter(|s| offer.as_ref().is_some_and(|o| o.version == s.version)).map(|s| s.version.clone());
@@ -410,6 +418,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         rollback,
         rolled_back: lock(&updates.rolled_back).take(),
         waiting: lock(&updates.waiting).clone(),
+        postponed,
     }
 }
 
@@ -769,7 +778,26 @@ fn install_on_quit(app: &AppHandle, staged: &Staged) {
 /// The quit installs nothing now: the update stays ready for the next one.
 fn postpone_on_quit(app: &AppHandle, staged: &Staged) {
     crate::devlog::info("update", format!("{} waits for the next quit: terminal commands run", staged.version));
+    let running = commands_dir(app).map(|d| cmdlock::running(&d)).unwrap_or_default();
+    note_postponed(app, &staged.version, running.iter().map(command_line).collect());
     app.state::<Updates>().installing.store(false, Ordering::SeqCst);
+}
+
+/// One more quit that did not install `version` because `commands` ran (see [`st::Postponed`]).
+fn note_postponed(app: &AppHandle, version: &str, commands: Vec<String>) {
+    let dir = data_dir(app);
+    let mut state = UpdateState::load(&dir);
+    let times = state.note_postponed(version, commands);
+    if let Err(e) = state.save(&dir) {
+        crate::devlog::warn("update", format!("postponement not noted: {e}"));
+    }
+    if times >= st::POSTPONED_BEFORE_NOTICE {
+        crate::devlog::warn("update", format!("{version} postponed {times} times by terminal commands"));
+    }
+}
+
+fn command_line(r: &cmdlock::Running) -> String {
+    format!("arcalo {}", r.command).trim_end().to_string()
 }
 
 /// „Beenden“ (tray, ⌘Q, the menu) after the UI stored its editors: installs a waiting update,
@@ -778,6 +806,15 @@ fn postpone_on_quit(app: &AppHandle, staged: &Staged) {
 /// window is still there to show it; when it was closed, the update waits for the next quit
 /// instead of a wait nobody sees.
 pub fn quit(app: &AppHandle, window: bool) {
+    // An update is being installed (it may wait for terminal commands, with its hint in the
+    // window): this quit is ignored, the install ends the app itself.
+    if app.try_state::<Updates>().is_some_and(|u| u.installing.load(Ordering::SeqCst)) {
+        crate::devlog::info("update", "quit ignored: the update is being installed");
+        if window {
+            crate::desktop::show_main(app);
+        }
+        return;
+    }
     let Some(staged) = quit_staged(app) else {
         app.exit(0);
         return;
@@ -833,11 +870,20 @@ fn wait_limit() -> Duration {
         .unwrap_or(cmdlock::WAIT_LIMIT)
 }
 
+/// What the wait for terminal commands came to.
+enum Waited {
+    /// No command ran: nothing changed in the window meanwhile.
+    No,
+    /// It waited (the window was usable meanwhile); the update goes on.
+    Yes,
+    /// These commands still run and the update must not go on (Windows after the limit).
+    Blocked(Vec<String>),
+}
+
 /// Waits until no terminal command runs, at most [`wait_limit`], while the window shows which
-/// ones. Never ends a command. Returns the commands still running when the update must not go on
-/// (Windows after the limit), else nothing.
-async fn wait_for_commands(app: &AppHandle) -> Option<Vec<String>> {
-    let dir = commands_dir(app)?;
+/// ones. Never ends a command.
+async fn wait_for_commands(app: &AppHandle) -> Waited {
+    let Some(dir) = commands_dir(app) else { return Waited::No };
     let updates = app.state::<Updates>();
     let limit = wait_limit();
     let start = Instant::now();
@@ -847,14 +893,13 @@ async fn wait_for_commands(app: &AppHandle) -> Option<Vec<String>> {
     let blocked = loop {
         let running = cmdlock::running(&dir);
         if running.is_empty() {
-            break None;
+            break if shown { Waited::Yes } else { Waited::No };
         }
-        let commands: Vec<String> =
-            running.iter().map(|r| format!("arcalo {}", r.command).trim_end().to_string()).collect();
+        let commands: Vec<String> = running.iter().map(command_line).collect();
         if start.elapsed() >= limit {
             let list = commands.join(", ");
             crate::devlog::warn("update", format!("terminal commands still run after {}s: {list}", limit.as_secs()));
-            break (!then_install).then_some(commands);
+            break if then_install { Waited::Yes } else { Waited::Blocked(commands) };
         }
         let waiting = Waiting { commands, until, then_install };
         if lock(&updates.waiting).as_ref() != Some(&waiting) {
@@ -877,6 +922,33 @@ async fn wait_for_commands(app: &AppHandle) -> Option<Vec<String>> {
     blocked
 }
 
+/// How long the UI may take to store its editors before an install that waited (it may ask
+/// whether to go on without them).
+const FLUSH_LIMIT: Duration = Duration::from_secs(120);
+
+/// Asks the window to store its editors (`update://flush`) and waits for its answer; `false`:
+/// no answer, or the user chose to keep editing.
+async fn flush_editors(app: &AppHandle) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *lock(&app.state::<Updates>().flushed) = Some(tx);
+    if app.emit_to(crate::desktop::MAIN, "update://flush", ()).is_err() {
+        return false;
+    }
+    let ok = matches!(tokio::time::timeout(FLUSH_LIMIT, rx).await, Ok(Ok(true)));
+    if !ok {
+        crate::devlog::warn("update", "the editors were not stored after the wait: not installed");
+    }
+    ok
+}
+
+/// The UI's answer to `update://flush`: the editors are stored (`ok`), or the user stays.
+#[tauri::command]
+pub fn update_flushed(updates: State<Updates>, ok: bool) {
+    if let Some(tx) = lock(&updates.flushed).take() {
+        let _ = tx.send(ok);
+    }
+}
+
 /// Backs up the database, keeps the running version, notes the restart, then installs the
 /// verified file (`installer.rs`). `restart`: the Windows installer starts the new version.
 #[tracing::instrument(name = "update_install", skip_all, fields(source = "update", version = %staged.version, restart))]
@@ -891,14 +963,30 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
         return Err(feed_failed(what, &e));
     }
     // Running terminal commands first: their writes go into the backup, and none is ended.
-    if let Some(commands) = wait_for_commands(app).await {
-        return Err(Error::State(trf!(
-            "{what}: {} läuft noch – das Update wird beim nächsten Beenden installiert, damit der Befehl nicht abgebrochen wird",
-            "{what}: {} is still running – the update installs the next time you quit, so the command is not cut off",
-            commands.join(", ")
-        )));
+    match wait_for_commands(app).await {
+        Waited::Blocked(commands) => {
+            let list = commands.join(", ");
+            note_postponed(app, &staged.version, commands);
+            return Err(Error::State(trf!(
+                "{what}: {} läuft noch – das Update wird beim nächsten Beenden installiert, damit der Befehl nicht abgebrochen wird",
+                "{what}: {} is still running – the update installs the next time you quit, so the command is not cut off",
+                list
+            )));
+        }
+        // The window was usable during the wait: what was typed meanwhile is stored first.
+        Waited::Yes if !flush_editors(app).await => {
+            return Err(Error::State(trf!(
+                "{what}: Die Änderungen der letzten Minuten konnten nicht gespeichert werden – das Update wird beim nächsten Beenden installiert",
+                "{what}: The changes of the last minutes could not be saved – the update installs the next time you quit"
+            )));
+        }
+        _ => {}
     }
     let dir = data_dir(app);
+    let mut state = UpdateState::load(&dir);
+    if state.postponed.take().is_some() {
+        let _ = state.save(&dir);
+    }
     let from = current_version(app);
     let backup = pre_update_backup(app, &from, &staged.version);
     rollback::keep_previous(&dir, &from, &staged.version, backup);

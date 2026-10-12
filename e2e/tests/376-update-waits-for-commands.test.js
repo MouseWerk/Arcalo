@@ -4,10 +4,12 @@
 // ARCALO_UPDATE_FAKE_INSTALL). With a command that keeps running, „Jetzt neu starten“ goes on
 // after the time limit (ARCALO_UPDATE_WAIT_SECS; on Linux the program file is replaced beside
 // the command) and the command is never ended. A lock left behind by a crashed command does
-// not hold up the install.
+// not hold up the install. While the quit waits, the window stays usable: another quit is ignored,
+// and what is typed meanwhile is stored before the install. An update postponed at three quits
+// by terminal commands names them at the next start.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,6 +46,8 @@ function dataFolder() {
 
 async function start(dir, waitSecs) {
   feed ??= await startFeed({ key, version: "1.9.0" });
+  // A test that failed before its own close leaves no app behind.
+  await app?.close();
   app = await launch({
     dataDir: dir,
     env: {
@@ -72,12 +76,30 @@ function longCommand(dir, title) {
   return child;
 }
 
+/** `arcalo pages show <title>` on the app's workspace (after the app has ended). */
+function pageText(dir, title) {
+  const out = execFileSync(APP, ["--json", "pages", "show", title], {
+    env: { ...process.env, ARCALO_DATA_DIR: dir, XDG_DATA_HOME: path.join(dir, "xdg-data"), ARCALO_LOCALE: "de-DE" },
+    encoding: "utf8",
+  });
+  return JSON.parse(out).content;
+}
+
 const exited = (child) => new Promise((r) => (child.exitCode !== null ? r(child.exitCode) : child.on("exit", (code) => r(code))));
 const waitingText = () => app.browser.execute(() => document.querySelector(".update-waiting")?.textContent ?? null);
 
 test("quitting with a ready update waits for a running command, shows it, and installs when it has finished", async () => {
   const { dir, locks } = dataFolder();
   await start(dir, 60);
+  // A slow autosave, so a quit right after typing would lose the text without the flush.
+  execFileSync(APP, ["--json", "settings", "set", "editor.autosave_ms", "3000"], {
+    env: { ...process.env, ARCALO_DATA_DIR: dir, XDG_DATA_HOME: path.join(dir, "xdg-data"), ARCALO_LOCALE: "de-DE" },
+    encoding: "utf8",
+  });
+  await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.editor.autosave_ms === 3000, { timeout: 8000, timeoutMsg: "autosave delay not taken over" });
+  const page = await app.invoke("page_create", { parentId: null, title: "Während des Wartens", icon: null, content: "Vorher\n" });
+  await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
+  await app.waitText(".pane > .pane-content:not([hidden]) .ProseMirror", /Vorher/);
   const cmd = longCommand(dir, "Aus dem Terminal");
   const lock = path.join(locks, `${cmd.pid} pages create.lock`);
   await until("the command's lock", () => fs.existsSync(lock));
@@ -95,6 +117,13 @@ test("quitting with a ready update waits for a running command, shows it, and in
   await sleep(1500);
   assert.equal(fs.existsSync(note), false, "nothing installed while the command runs");
   assert.equal(cmd.exitCode, null, "the command still runs");
+  // Another quit while the update waits is ignored (it would cut the install off).
+  await app.browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_quit"));
+  await sleep(1000);
+  assert.match((await waitingText()) ?? "", /wartet auf einen Terminal-Befehl/, "the app still runs and waits");
+  // The window is usable meanwhile: what is typed now is stored before the install.
+  await app.caretToEnd();
+  await app.type(" Beim Warten getippt");
 
   cmd.stdin.end("Vom Agenten geschrieben\n");
   assert.equal(await exited(cmd), 0, cmd.output());
@@ -103,6 +132,24 @@ test("quitting with a ready update waits for a running command, shows it, and in
   await until("the install after the command", () => fs.existsSync(note));
   assert.deepEqual(JSON.parse(fs.readFileSync(note, "utf8")), { version: "1.9.0", from: "1.8.5", restart: false });
   assert.ok(fs.existsSync(path.join(dir, "backups", "arcalo-pre-update-1.8.5-1.9.0.db")), "backup after the command's write");
+  await app.close();
+  app = null;
+  assert.match(pageText(dir, "Während des Wartens"), /Beim Warten getippt/, "the text typed during the wait was stored before the install");
+});
+
+test("an update postponed at three quits by a terminal command names it at the next start", async () => {
+  const { dir } = dataFolder();
+  // Three quits on Windows found `arcalo serve` still running (written as the app notes it).
+  fs.mkdirSync(path.join(dir, "updates"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "updates", "state.json"), JSON.stringify({ postponed: { version: "1.9.0", times: 3, commands: ["arcalo serve"] } }));
+  await start(dir, 60);
+  assert.deepEqual((await app.invoke("update_status")).postponed, { version: "1.9.0", times: 3, commands: ["arcalo serve"] });
+  // The next start of the window says it.
+  await app.browser.execute(() => location.reload());
+  await app.waitText(".toast-title", /Das Update auf 1\.9\.0 wurde schon 3-mal verschoben/);
+  const detail = await app.browser.execute(() => [...document.querySelectorAll(".toast")].find((t) => /verschoben/.test(t.textContent))?.textContent ?? "");
+  assert.match(detail, /arcalo serve/);
+  assert.match(detail, /Beende ihn/);
   await app.close();
   app = null;
 });

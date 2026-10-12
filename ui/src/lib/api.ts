@@ -308,6 +308,8 @@ export const api = {
   updatePause: () => call<void>("update_pause"),
   /** Installs the downloaded update now and restarts. */
   updateRestartNow: () => call<void>("update_restart_now"),
+  /** The answer to `update://flush`: the editors are stored (`ok`), or the user stays. */
+  updateFlushed: (ok: boolean) => call<void>("update_flushed", { ok }),
   updateSkip: (version: string) => call<void>("update_skip", { version }),
   /** Undoes a skipped version and „Später erinnern“. */
   updateUnskip: () => call<void>("update_unskip"),

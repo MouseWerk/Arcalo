@@ -5225,6 +5225,7 @@ pub fn run() {
             devlog::devlog_read,
             devlog::devlog_stats,
             devlog::devlog_clear,
+            updates::update_flushed,
             devlog::devlog_open_folder,
             diagnostics::diagnostics_bundle,
             secrets::secrets_status,
