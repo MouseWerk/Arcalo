@@ -4,7 +4,9 @@
 // lost the signer when build-tools 37 changed apksigner's output). The signature itself is not
 // checked here; Android checks it on install, and the app compares the certificate.
 //
-//   node scripts/apk-signer.mjs <file.apk>    prints the digest (lowercase hex), exit 1 if none
+//   node scripts/apk-signer.mjs <file.apk>              prints the digest (lowercase hex), exit 1 if none
+//   node scripts/apk-signer.mjs --subject <file.apk>    prints the certificate's subject
+//                                                       (`CN=Android Debug` for a debug key), exit 1 if none
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -61,23 +63,53 @@ export function firstCertificate(scheme) {
   return cert;
 }
 
-/** SHA-256 of the signing certificate in lowercase hex, or null when the APK has no v2/v3 signature. */
-export function signerDigest(apk) {
+/** The signing certificate (DER) of the v3 signer, else the v2 one; null without one. */
+function signingCertificate(apk) {
   const pairs = signingBlock(apk);
   const scheme = pairs?.get(V3) ?? pairs?.get(V2);
   if (!scheme) return null;
   try {
-    return crypto.createHash("sha256").update(firstCertificate(scheme)).digest("hex");
+    return firstCertificate(scheme);
   } catch {
     return null;
   }
 }
 
+/** SHA-256 of the signing certificate in lowercase hex, or null when the APK has no v2/v3 signature. */
+export function signerDigest(apk) {
+  const cert = signingCertificate(apk);
+  return cert && crypto.createHash("sha256").update(cert).digest("hex");
+}
+
+/** The subject of the signing certificate (`C=US\nO=Android\nCN=Android Debug`), or null. */
+export function signerSubject(apk) {
+  const cert = signingCertificate(apk);
+  if (!cert) return null;
+  try {
+    return new crypto.X509Certificate(cert).subject;
+  } catch {
+    return null;
+  }
+}
+
+/** The subject of the key the Android build tools sign debug builds with. */
+export const isDebugSubject = (subject) => /(^|\n)CN=Android Debug(\n|$)/.test(subject ?? "");
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const file = process.argv[2];
+  const subject = process.argv[2] === "--subject";
+  const file = process.argv[subject ? 3 : 2];
   if (!file) {
-    console.error("usage: node scripts/apk-signer.mjs <file.apk>");
+    console.error("usage: node scripts/apk-signer.mjs [--subject] <file.apk>");
     process.exit(2);
+  }
+  if (subject) {
+    const text = signerSubject(fs.readFileSync(file));
+    if (!text) {
+      console.error(`${file}: no readable signing certificate`);
+      process.exit(1);
+    }
+    console.log(text);
+    process.exit(0);
   }
   const digest = signerDigest(fs.readFileSync(file));
   if (!digest) {

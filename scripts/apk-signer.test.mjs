@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { signerDigest } from "./apk-signer.mjs";
+import { isDebugSubject, signerDigest, signerSubject } from "./apk-signer.mjs";
 
 const u32 = (n) => {
   const b = Buffer.alloc(4);
@@ -77,6 +77,30 @@ test("no digest without a v2 or v3 signer, or from a broken block", () => {
   assert.equal(signerDigest(Buffer.alloc(0)), null);
 });
 
+// Self-signed certificates made with openssl: the subject of the Android debug key, and another.
+const DEBUG_CERT = Buffer.from(
+  "MIIBxDCCAWugAwIBAgIUWQ8Md6mWf5uxFXL36UTDj98+AFYwCgYIKoZIzj0EAwIwNzELMAkGA1UEBhMCVVMxEDAOBgNVBAoMB0FuZHJvaWQxFjAUBgNVBAMMDUFuZHJvaWQgRGVidWcwIBcNMjYxMDEyMTIwODIxWhgPMjA1NjEwMDQxMjA4MjFaMDcxCzAJBgNVBAYTAlVTMRAwDgYDVQQKDAdBbmRyb2lkMRYwFAYDVQQDDA1BbmRyb2lkIERlYnVnMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5IHeTHGy3XSv1AYKRjODSIgdai6wQZizbLtzewqyloX0Pwn6p3OCftfH8FPDwZUtLZojYOiTvTK/2qQCNPkSaqNTMFEwHQYDVR0OBBYEFGX60MU+TpbzviD+m5Of82E5dDWlMB8GA1UdIwQYMBaAFGX60MU+TpbzviD+m5Of82E5dDWlMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDRwAwRAIgUgGA959tDH5q5ZD7zKjqI57FK9Rk8brhBvMWvlQtMmoCIC4j9ry5UhjYqejx5elnrvG86WpEQ6iLaNad62mOHKNd",
+  "base64",
+);
+const RELEASE_CERT = Buffer.from(
+  "MIIBujCCAWGgAwIBAgIUevMvTmpSVaOjAp0tRt4eVnYzUUgwCgYIKoZIzj0EAwIwMjELMAkGA1UEBhMCREUxEjAQBgNVBAoMCU1vdXNlV2VyazEPMA0GA1UEAwwGQXJjYWxvMCAXDTI2MTAxMjEyMDgyMVoYDzIwNTYxMDA0MTIwODIxWjAyMQswCQYDVQQGEwJERTESMBAGA1UECgwJTW91c2VXZXJrMQ8wDQYDVQQDDAZBcmNhbG8wWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASCUO3UBSw5LkKOoIx06s4+oIdkufysv1hqh2r67IaBB4ORXUZfTicqqIZ4rYcM8VLSStGTZBr588Jp+3ae+rVpo1MwUTAdBgNVHQ4EFgQUxR5lBDl5QiXENLlQfm0mNdEpWlkwHwYDVR0jBBgwFoAUxR5lBDl5QiXENLlQfm0mNdEpWlkwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNHADBEAiBilQgHXqO/kILqYzWmqtrR86crY+Kpz84/T+Z4LWXQggIgPc5llBkWVVfRFsX4c1CxTkaf1CVabcWKYUDz7jKh5Hk=",
+  "base64",
+);
+
+test("a debug-signed APK is told apart by its certificate's subject", () => {
+  const debug = signerSubject(apk([[0x7109871a, scheme([DEBUG_CERT])]]));
+  assert.equal(debug, "C=US\nO=Android\nCN=Android Debug");
+  assert.equal(isDebugSubject(debug), true);
+  const release = signerSubject(apk([[0xf05368c0, scheme([RELEASE_CERT], true)]]));
+  assert.equal(release, "C=DE\nO=MouseWerk\nCN=Arcalo");
+  assert.equal(isDebugSubject(release), false);
+  assert.equal(isDebugSubject("CN=Android Debugger"), false);
+  // No certificate, or none X.509 can read: no subject (and not taken for a debug key).
+  assert.equal(signerSubject(apk(null)), null);
+  assert.equal(signerSubject(apk([[0x7109871a, scheme([certA])]])), null);
+  assert.equal(isDebugSubject(null), false);
+});
+
 test("the command line prints the digest or fails", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-apk-signer-"));
   try {
@@ -87,6 +111,10 @@ test("the command line prints the digest or fails", () => {
     const unsigned = path.join(dir, "unsigned.apk");
     fs.writeFileSync(unsigned, apk(null));
     assert.throws(() => execFileSync(process.execPath, [script, unsigned], { stdio: "pipe" }), /no APK Signing Block/);
+    const debug = path.join(dir, "debug.apk");
+    fs.writeFileSync(debug, apk([[0x7109871a, scheme([DEBUG_CERT])]]));
+    assert.equal(execFileSync(process.execPath, [script, "--subject", debug], { encoding: "utf8" }), "C=US\nO=Android\nCN=Android Debug\n");
+    assert.throws(() => execFileSync(process.execPath, [script, "--subject", signed], { stdio: "pipe" }), /no readable signing certificate/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

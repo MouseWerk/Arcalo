@@ -59,6 +59,12 @@ on:
 permissions:
   contents: write
 
+# One run per version: a manual run and the automatic one never build the same release at once
+# (the second waits; a pushed tag v1.2.3 and the version 1.2.3 are the same group).
+concurrency:
+  group: release-${{ inputs.version == '' && github.ref_name || (startsWith(inputs.version, 'v') && inputs.version || format('v{0}', inputs.version)) }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   # whisper.cpp (voice notes) for every CPU of its kind, not only the build machine (x86: AVX2 baseline).
@@ -499,7 +505,7 @@ jobs:
           # The Android app's own feed (docs/release/android.md → Updates of the app): a file of
           # its own, so latest.json keeps only the desktop platforms. Package, version code and
           # signing certificate are read from the APK itself. A debug-signed APK (no ANDROID_* secrets)
-          # gets its feed too: the app refuses an update from another signer by itself.
+          # gets no feed: phones with the release-signed app could not install it.
           APK="dist/Arcalo_${VERSION}_android.apk"
           if [ -f "$APK" ] && [ -f "$APK.sig" ]; then
             BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1 || true)"
@@ -523,11 +529,16 @@ jobs:
             else
               export APK_SIGNER="${BLOCK_SIGNER:-$TOOL_SIGNER}"
             fi
-            if echo "$CHECK" | grep -q 'CN=Android Debug'; then
-              echo "::notice::The APK is signed with a debug key (no ANDROID_* secrets): its feed is published, installs of an earlier key are not updated by it."
+            SUBJECT="$(node scripts/apk-signer.mjs --subject "$APK" 2>&1)" || { echo "apk-signer --subject: $SUBJECT"; SUBJECT=""; }
+            DEBUG_KEY=""
+            if node -e 'import("./scripts/apk-signer.mjs").then((m) => process.exit(m.isDebugSubject(process.argv[1]) ? 0 : 1))' "$SUBJECT" \
+              || echo "$CHECK" | grep -q 'CN=Android Debug'; then
+              DEBUG_KEY=1
             fi
-            echo "APK: $APK_PACKAGE $APK_CODE, signer $APK_SIGNER"
-            if [ -n "$APK_PACKAGE" ] && [ -n "$APK_CODE" ] && [ -n "$APK_SIGNER" ]; then
+            echo "APK: $APK_PACKAGE $APK_CODE, signer $APK_SIGNER (${SUBJECT//$'\n'/, })"
+            if [ -n "$DEBUG_KEY" ]; then
+              echo "::warning::The APK is signed with a debug key (CN=Android Debug, no ANDROID_* secrets): no android-latest.json, phones with the release-signed app could not install it."
+            elif [ -n "$APK_PACKAGE" ] && [ -n "$APK_CODE" ] && [ -n "$APK_SIGNER" ]; then
               BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" node -e '
                 const fs = require("fs");
                 const version = process.argv[1];
