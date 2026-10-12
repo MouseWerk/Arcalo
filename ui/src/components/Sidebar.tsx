@@ -18,7 +18,7 @@ import { withHint } from "../lib/keymap";
 import { stripMarkdown } from "../lib/plaintext";
 import { setExactOnly, useExactOnly, useMeaningSearch, type PageHit } from "../lib/meaningSearch";
 import { DEFAULT_STYLE, filingApi, type FolderStyle, type LastMove } from "../lib/filing";
-import { openTidyUp, undoLastMove } from "./FilingDialogs";
+import { loadLastMove, openTidyUp, undoLastMove, useLastMove } from "./FilingDialogs";
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import { isComposing } from "../lib/ime";
 import { PageTree, sortMenu, useTreeOpen, type TreeHandle } from "./PageTree";
@@ -112,11 +112,13 @@ export function Sidebar() {
     "separator",
     { label: smartShown ? t("fl.smartHide") : t("fl.smartShow"), icon: LayoutList, checked: smartShown, onSelect: () => setSmartHidden(smartShown) },
   ];
-  // Every move refreshes the tree: the last one is read then, so the menu opens at once.
-  const [lastMove, setLastMove] = useState<LastMove | null>(null);
+  // Set by the moves themselves; the one kept from the last session is read when the window is idle
+  // (not during the start), so the menu opens at once with the right label.
+  const lastMove = useLastMove((st) => st.last) ?? null;
   useEffect(() => {
-    filingApi.lastMove().then(setLastMove, () => setLastMove(null));
-  }, [tree]);
+    const timer = setTimeout(loadLastMove, 2000);
+    return () => clearTimeout(timer);
+  }, []);
   const openTreeMenu = (e: React.MouseEvent<HTMLButtonElement>) => openTreeMenuAt(e, treeMenuItems(lastMove));
   const [newMenu, , openNewMenuAt] = useMenu();
   const allCollapsed = withChildren.length > 0 && withChildren.every((id) => !treeOpen.open.has(id));
