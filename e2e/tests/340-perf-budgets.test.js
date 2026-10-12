@@ -212,8 +212,9 @@ function timed(action, until, pageId) {
       };
       const ok = () =>
         document.querySelector(`${shown} .page-title`)?.value === "Langes Dokument" &&
+        // The visual editor stays alive (hidden) behind the source view (1.19): shown is what counts.
         (until === "rich"
-          ? (document.querySelector(`${shown} .ProseMirror`)?.editor?.state.doc.content.size ?? 0) > 150_000
+          ? !document.querySelector(`${shown} .source-text`) && (document.querySelector(`${shown} .ProseMirror:not([hidden] *)`)?.editor?.state.doc.content.size ?? 0) > 150_000
           : (document.querySelector(`${shown} .source-text`)?.value.length ?? 0) > 150_000);
       const t0 = performance.now();
       if (action === "open") window.__TAURI_INTERNALS__.invoke("search_open", { target: { kind: "page", page_id: pageId, new_tab: true } });
@@ -267,7 +268,9 @@ test("a long note with tables, diagrams and embeds: opened, to the source view a
     assert.equal(source.drawn, 0, "the note was drawn again on the way to the source view");
     await app.browser.pause(1000);
     const rich = await timed("toggle", "rich");
-    assert.equal(rich.drawn, rich.items, "list items created on the way back");
+    // Back from the source view the kept editor shows again: nothing is drawn anew (1.19; before, the
+    // whole note was drawn once more here).
+    assert.equal(rich.drawn, 0, "list items created on the way back");
     for (const [k, v] of Object.entries({ open, source, rich })) runs[k].push(Math.round(v.ms));
     await app.browser.pause(1000);
     await app.keys(["Control", "w"]);

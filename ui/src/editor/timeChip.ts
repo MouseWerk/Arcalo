@@ -177,7 +177,17 @@ const presentIn = new Map<object, { page: number | null; ids: Set<number> }>();
  * second pane, a tab kept open behind another one) shows that note's text, not a copy: it
  * follows the removal once it is saved.
  */
-const presentElsewhere = (id: number, from: number | null) => [...presentIn.values()].some((p) => p.ids.has(id) && (from == null || p.page !== from));
+const presentElsewhere = (id: number, from: number | null) =>
+  [...presentIn].some(([owner, p]) => !parkedOwners.has(owner) && p.ids.has(id) && (from == null || p.page !== from));
+// Rich editors parked behind their note's source view (PageView): their text is the note's as it was
+// before the source view, so their chips do not count until they show the note again.
+const parkedOwners = new WeakSet<object>();
+
+/** The rich editor `owner` is parked behind the source view (`true`) or shown again. */
+export function chipsParked(owner: object, parked: boolean) {
+  if (parked) parkedOwners.add(owner);
+  else parkedOwners.delete(owner);
+}
 
 /** The chip ids an editor (`owner`) of note `page` shows now; `null` when it closes. */
 export function chipsPresent(owner: object, ids: Iterable<number> | null, page: number | null = null) {
