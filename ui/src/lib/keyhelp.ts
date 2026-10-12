@@ -48,11 +48,16 @@ export const KEY_HELP: KeyGroup[] = [
     title: "kh.group.tree",
     items: [
       { label: "kh.open", keys: ["Enter"] },
+      { label: "kh.treeMove", keys: ["ArrowDown", "ArrowUp", "Home", "End"] },
+      { label: "kh.treeFold", keys: ["ArrowRight", "ArrowLeft"] },
+      { label: "kh.typeahead", keys: ["abc"], typed: true },
       { label: "kh.rename", keys: ["F2"] },
       { label: "kh.trash", keys: ["Delete"] },
+      { label: "kh.select", keys: ["Mod Space"] },
       { label: "kh.range", keys: ["Shift ArrowUp", "Shift ArrowDown"] },
       { label: "keys.reserved.selectAll", keys: ["Mod A"] },
-      { label: "kh.menu", keys: ["Shift F10"] },
+      { label: "fl.clearSelection", keys: ["Escape"] },
+      { label: "kh.menu", keys: ["Shift F10", "ContextMenu"] },
     ],
   },
   {

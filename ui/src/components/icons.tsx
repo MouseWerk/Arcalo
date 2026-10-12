@@ -2,7 +2,7 @@ import {
   BookOpen, Box, Briefcase, Bug, Calendar, CalendarDays, ClipboardList, Code2, Database, FileText, Flag,
   Folder, FolderKanban, Globe, GraduationCap, Heart, Layers, Library, Lightbulb, ListTodo, Map, MessageSquare,
   Notebook, Rocket, Shield, Sparkles, Star, Target, Users, Zap, Blocks, LayoutTemplate, Mail, Server, Cloud,
-  Terminal, Ticket, BarChart3, Video, Mic, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, LayoutDashboard, type LucideIcon,
+  Terminal, Ticket, BarChart3, Video, Mic, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, LayoutDashboard, PenTool, type LucideIcon,
 } from "lucide-react";
 import { t, type TKey } from "../lib/i18n";
 
@@ -55,6 +55,7 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   home: Home,
   kanban: KanbanSquare,
   canvas: LayoutDashboard,
+  drawing: PenTool,
 };
 
 /** Catalog keys of the page icon names (menus, tooltips, screen readers). */
@@ -106,6 +107,7 @@ const PAGE_ICON_LABELS: Record<string, TKey> = {
   home: "icon.home",
   kanban: "icon.kanban",
   canvas: "icon.canvas",
+  drawing: "icon.drawing",
 };
 
 /** The name of a page icon in the display language (the stored name for unknown icons). */

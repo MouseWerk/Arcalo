@@ -21,7 +21,8 @@ function handledKeys(file: string, marker: string): string[] {
   expect(start, `${marker} in ${file}`).toBeGreaterThan(-1);
   const body = text.slice(start, text.indexOf("\n  };", start));
   const keys = new Set<string>();
-  for (const m of body.matchAll(/\.key === "([^"]+)"/g)) keys.add(m[1]);
+  // `e.key === …` and a `key` taken from the event (`const key = e.key`).
+  for (const m of body.matchAll(/\bkey === "([^"]+)"/g)) keys.add(m[1]);
   for (const m of body.matchAll(/\b(Arrow(?:Left|Right|Up|Down))\b/g)) keys.add(m[1]);
   if (/\[1-5\]/.test(body)) ["1", "2", "3", "4", "5"].forEach((k) => keys.add(k));
   // Alternatives that mean the same key („=“ is + without Shift, Backspace deletes like Delete, Space opens like Enter).
@@ -36,11 +37,12 @@ describe("keyhelp", () => {
     for (const k of candidates) if (keyAction(k)) expect(keys.has(k.toLowerCase()), k).toBe(true);
   });
 
-  it("lists every key of the start page's edit mode, focus blocks and the graph", () => {
+  it("lists every key of the start page's edit mode, focus blocks, the graph and the page tree", () => {
     const cases: [TKey, string, string][] = [
       ["kh.group.dashboard", "components/Dashboard.tsx", "const keyDown = (w: GridWidget"],
       ["kh.group.blocks", "views/CalendarBlocks.tsx", "const key = (e: ReactKeyboardEvent<HTMLDivElement>)"],
       ["kh.group.graph", "components/graph/GraphCanvas.tsx", "const onKeyDown = (e: React.KeyboardEvent)"],
+      ["kh.group.tree", "components/PageTree.tsx", "const onRowKey = (e: React.KeyboardEvent<HTMLDivElement>, n: PageNode)"],
     ];
     for (const [title, file, marker] of cases) {
       const keys = named(title);

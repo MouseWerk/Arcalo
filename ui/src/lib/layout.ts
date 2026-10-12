@@ -65,6 +65,20 @@ export function sidebarShown(sidebarOpen: boolean, panelShown: boolean, narrow: 
   return sidebarOpen && !(narrow && panelShown);
 }
 
+/** Shows the sidebar if it is hidden (in a narrow window the panel gives way to it). */
+export function showSidebar() {
+  const st = useApp.getState();
+  if (sidebarShown(st.sidebarOpen, st.panelOpen, isNarrow())) return;
+  if (isNarrow() && st.panelOpen) {
+    st.set({ panelOpen: false });
+    savePref("arcalo.panel", false);
+  }
+  if (!st.sidebarOpen) {
+    st.set({ sidebarOpen: true });
+    savePref("arcalo.sidebar", true);
+  }
+}
+
 /** The sidebar button: in a narrow window with the panel open it brings the sidebar back instead. */
 export function toggleSidebar() {
   const st = useApp.getState();

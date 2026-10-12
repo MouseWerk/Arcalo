@@ -1031,9 +1031,17 @@ quelle: "[[Konzept]]"
 - `page_tree` groups the rows by parent in one `HashMap` pass and moves them into their nodes: O(n)
   instead of a filter per parent (O(n²) with a clone per node). A core test builds 5,000 pages in well
   under 200 ms in a debug build.
-- The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
-  re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
-  collapsed (`arcalo.collapsed` in localStorage).
+- The sidebar's tree (`components/PageTree.tsx`) renders the visible rows flat (`aria-level`,
+  `aria-setsize`, `aria-posinset`), each a memoized component that compares what it shows (a refresh brings
+  new page objects; handlers take the page by id), so switching tabs re-renders only the old and the new
+  active row. The open folders are stored as `arcalo.expanded` (1.19; the list of collapsed folders of
+  1.18, `arcalo.collapsed`, is turned into it once): folders that come later start collapsed, pages that are
+  gone leave the list, and revealing the open page opens its ancestors only until another page is revealed
+  (`useTreeOpen`). The filter (`lib/filing.ts` `filterIds`, `matchRanges`) matches words, paths
+  („Kunde/Angebot“) and, when nothing contains the words, similar titles. Every move goes through
+  `pages_move` (with a position for reorders) and its undo; drops are planned by `planDrop` (a sorted
+  folder refuses a place between its pages). A dragged row carries `application/x-arcalo-page(s)`:
+  `NoteEditor` turns it into `[[links]]`, a pane opens it (`Workspace.tsx`).
 - Database commands are `#[tauri::command(async)]` (or `spawn_blocking`): they run off the main thread,
   which handles the window (`set_title`, drag, focus) and never waits for the database. Pure reads
   (`page_get`, `workspace_tree`, lists, search, budgets) use a second, read-only connection

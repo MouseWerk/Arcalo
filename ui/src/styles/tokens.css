@@ -79,6 +79,12 @@
   --focus-halo: 0 0 0 3px var(--focus-soft);
 
   --sidebar-w: 256px;
+  /* The page tree: indent per level and the row's own inset (smaller in narrow windows, app.css),
+     the narrowest a rename field gets on a deep row, the drop line between two pages. */
+  --tree-indent: 14px;
+  --tree-pad: 6px;
+  --tree-rename-min: 180px;
+  --tree-drop-line: 2px;
   --panel-w: 360px;
   --tabbar-h: 40px;
   --statusbar-h: 28px;
@@ -132,6 +138,8 @@
   --bg-current: rgb(255 255 255 / 0.11);
   /* An extra edge on selected rows; only the high contrast themes set one (lib/themes.ts). */
   --selected-ring: 0 0 transparent;
+  /* The same for the current row (the open page): a stronger edge there, so the two differ. */
+  --current-ring: 0 0 transparent;
 
   --border: rgb(255 255 255 / 0.07);
   --border-strong: rgb(255 255 255 / 0.12);
@@ -206,6 +214,7 @@
   --bg-selected: rgb(15 15 20 / 0.075);
   --bg-current: rgb(15 15 20 / 0.095);
   --selected-ring: 0 0 transparent;
+  --current-ring: 0 0 transparent;
 
   --border: rgb(15 15 20 / 0.09);
   --border-strong: rgb(15 15 20 / 0.14);

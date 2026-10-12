@@ -201,6 +201,7 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
     "--border-focus": toHex(focus),
     "--focus-soft": rgba(text, dark ? 0.07 : 0.06),
     "--selected-ring": def.fixedAccent ? `inset 0 0 0 1px ${toHex(focus)}` : "0 0 transparent",
+    "--current-ring": def.fixedAccent ? `inset 0 0 0 2px ${toHex(focus)}` : "0 0 transparent",
     "--border": toHex(border),
     "--border-strong": toHex(mix(border, text, dark ? 0.14 : 0.16)),
     "--text": toHex(text),

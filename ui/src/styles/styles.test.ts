@@ -26,7 +26,7 @@ describe("stylesheets", () => {
 // fine where it must not follow the theme; every such place is listed here with its reason.
 const LITERAL_COLORS_OK: [RegExp, string][] = [
   [/win-close/, "Windows' own red close button"],
-  [/fade-(left|right|top|bottom)|assistant-scroll|tab-title/, "mask gradients (only the alpha counts)"],
+  [/fade-(left|right|top|bottom)|assistant-scroll|tab-title|tree-row-actions/, "mask gradients (only the alpha counts)"],
   [/send-btn|task-check|qb-check|\.cite:hover|cf-choice\.on|btn-primary|switch-knob|\.check:|taskList.*checked::after|slide-task > input:checked::after|swatch|bm-steps li\.on/, "white on --accent-strong or a color swatch (>= 4.5:1 by construction)"],
   [/^:root, :root\[data-theme="dark"\]$|^body, \.app$/, "print: black on white paper"],
   [/onb-mark|about-mark/, "the app logo"],
@@ -214,7 +214,7 @@ describe("selection and focus look", () => {
 
   it("focus and selection tokens are neutral", () => {
     const css = readFileSync(resolve(dir, "tokens.css"), "utf8");
-    for (const token of ["--border-focus", "--focus-ring", "--focus-halo", "--focus-soft", "--bg-selected", "--bg-current", "--selected-ring"]) {
+    for (const token of ["--border-focus", "--focus-ring", "--focus-halo", "--focus-soft", "--bg-selected", "--bg-current", "--selected-ring", "--current-ring"]) {
       const values = [...css.matchAll(new RegExp(`${token}:\\s*([^;]+);`, "g"))].map((m) => m[1]);
       expect(values.length, token).toBeGreaterThan(0);
       for (const v of values) expect(v, token).not.toMatch(ACCENT);

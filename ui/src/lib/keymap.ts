@@ -23,6 +23,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "calendar_view", label: "cmd.calendarView", combo: "Ctrl+Shift+E" },
   { id: "tasks", label: "cmd.tasks", combo: "Ctrl+Shift+A" },
   { id: "search", label: "cmd.search", combo: "Ctrl+Shift+F" },
+  { id: "reveal_in_tree", label: "cmd.revealInTree", combo: "Ctrl+Shift+R" },
   { id: "new_tab", label: "cmd.newTab", combo: "Ctrl+T" },
   { id: "close_tab", label: "cmd.closeTab", combo: "Ctrl+W" },
   // No default: no free combo says „anheften“ (Ctrl+Shift+P presents, Ctrl+Shift+K is the usual

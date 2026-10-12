@@ -284,6 +284,8 @@
 .menu-item.danger .menu-icon { color: var(--danger); }
 .menu-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-shortcut { color: var(--text-3); font-size: var(--fs-xs); }
+/* Why a disabled entry does nothing („Sortiert: Name“). */
+.menu-hint { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-sep { height: 1px; margin: 5px 4px; background: var(--border); }
 
 /* ----------------------------------------------------------------- toasts */
