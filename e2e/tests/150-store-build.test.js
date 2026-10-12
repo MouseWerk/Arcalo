@@ -35,6 +35,7 @@ before(async () => {
 after(async () => {
   await app?.close();
   await feed?.close();
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("no update check, download, install or rollback; the policy is still read", async () => {

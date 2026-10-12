@@ -88,8 +88,14 @@ The app checks for a new version itself (src-tauri/src/mobile/apkupdate.rs, docs
    signature whose signed comment names the version. Builds without the key (pushes to `main`) never check
    for updates.
 2. **Feed.** The publish job of `release.yml` writes `android-latest.json` next to `latest.json`:
-   version, version code, package and signing certificate (read from the APK with `aapt2` and `apksigner`),
-   the APK's address and size, its signature and the release notes. A file of its own rather than an
+   version, version code, package and signing certificate (package and version code read with `aapt2`; the
+   certificate's SHA-256 from the APK Signing Block, v3 before v2, by `scripts/apk-signer.mjs`, compared with
+   `apksigner`, whose output and errors the log shows; 1.18.1 had no feed because build-tools 37's
+   `apksigner` prints „V2 Signer: certificate SHA-256 digest“ instead of „Signer #1 …“), the APK's address and
+   size, its signature and the release notes. The feed is written for a debug-signed APK too (no `ANDROID_*`
+   secrets): the app compares the certificate with its own and explains instead of offering an update from
+   another key. When the certificate or the package cannot be read, a warning says so and there is no
+   Android feed. A file of its own rather than an
    `android` entry in `latest.json`: the desktop's feed is read by Tauri's updater and by the app's own
    updater (`update_feed.rs`, which requires `url` and `signature` in every platform entry), and both stay
    untouched by fields only Android needs; a release whose APK failed has no Android feed and the phones

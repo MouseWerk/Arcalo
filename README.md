@@ -96,7 +96,7 @@ Get the latest version from the [**Releases page**](https://github.com/MouseWerk
 
 | System | File | Notes |
 |---|---|---|
-| **Windows 10/11** (x64) | `Arcalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
+| **Windows 10/11** (x64) | `Arcalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. If WebView2 is missing, the setup installs it with the bootstrapper it carries (needs internet; offline, install Microsoft's full WebView2 runtime first) |
 | **Windows 10/11** portable | `Arcalo_<version>_x64-portable.zip` | Unpack anywhere (a USB stick) and start `Arcalo.exe`: all data stays in `data` next to it, nothing is written to the user profile (no autostart, no jump list). Updates: unpack the new ZIP over the folder. API keys and tokens are kept in each computer's Credential Manager, not on the stick |
 | **macOS 11+** Apple Silicon | `Arcalo_<version>_aarch64.dmg` | Drag into *Applications*. Updates itself. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
 | **macOS 11+** Intel | `Arcalo_<version>_x64.dmg` | Same as above |
@@ -738,6 +738,10 @@ git tag -a v1.1.0 -m "What's new …" && git push origin v1.1.0
 
 Or, without a local tag: write the notes to `docs/releases/v1.1.0.md`, then GitHub → **Actions → Release → Run
 workflow** with the version `1.1.0`. The workflow creates the annotated tag itself.
+
+Or automatically: push `docs/releases/v1.1.0.md` to `main`; when CI has passed for that commit and it is still the
+newest on `main`, the release starts by itself ([docs/release/automatic.md](docs/release/automatic.md); switched off
+with the repository variable `AUTO_RELEASE` = `false`).
 
 The [Release workflow](.github/workflows/release.yml) builds Windows, Linux and both macOS variants, signs the update
 files and publishes everything together with `latest.json` on the Releases page.

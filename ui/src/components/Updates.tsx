@@ -7,11 +7,11 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowRight, CalendarClock, Download, ExternalLink, MoreHorizontal, Pause, Play, RefreshCw, RotateCcw, SkipForward, Sparkles, X } from "lucide-react";
+import { ArrowRight, CalendarClock, Download, ExternalLink, MoreHorizontal, Pause, Play, RefreshCw, RotateCcw, SkipForward, Sparkles, SquareTerminal, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
-import { fmtDate } from "../lib/format";
+import { fmtDate, time } from "../lib/format";
 import { autoCheckAllowed, blockedText, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
 import { bundledNotes, HIGHLIGHTS, highlightsBetween, imageOf, imageUrl, textOf, type Highlight, type VersionHighlights } from "../lib/highlights";
 import { saveUpdateSession } from "../lib/updatesession";
@@ -413,7 +413,8 @@ export function UpdateStatusItem() {
         <span>{hint.version}</span>
       </button>
     );
-  const busy = phase !== "idle";
+  // Also while the install waits for a terminal command (the quit started it).
+  const busy = phase !== "idle" || !!status?.waiting;
   return (
     <span className="sb-item sb-static sb-update sb-update-ready" data-state="ready" role="status">
       <Sparkles size={12} />
@@ -570,10 +571,28 @@ function ReleaseNotesDialog() {
   );
 }
 
-/** Everything of the updater that floats: the toast, „Neu in Arcalo“ and the release notes. */
+/** The install waits for running terminal commands (`arcalo pages list`): which ones, and what happens at the time limit. */
+export function UpdateWaitingToast() {
+  const t = useT();
+  const waiting = useUpdates((s) => s.status?.waiting ?? null);
+  if (!waiting) return null;
+  return (
+    <div className="toast toast-info update-waiting" role="status">
+      <SquareTerminal size={16} className="toast-icon" />
+      <div className="toast-body">
+        <div className="toast-title">{t("upd.waitingTitle", { n: waiting.commands.length })}</div>
+        <div className="toast-detail update-waiting-commands">{waiting.commands.join(", ")}</div>
+        <div className="toast-detail">{t(waiting.then_install ? "upd.waitingThenInstall" : "upd.waitingThenLater", { time: time(waiting.until) })}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Everything of the updater that floats: the toasts, „Neu in Arcalo“ and the release notes. */
 export function UpdateLayer() {
   return (
     <>
+      <UpdateWaitingToast />
       <UpdateToast />
       <WhatsNewDialog />
       <ReleaseNotesDialog />

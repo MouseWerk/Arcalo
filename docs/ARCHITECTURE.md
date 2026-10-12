@@ -579,6 +579,17 @@ defineWidget({
 - Right before installing, `.arcalo-update` (target version) is written into the data folder; the next start
   reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
   version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Running terminal commands (`arcalo pages list`, also of the standalone CLI) are waited for before anything is
+  installed (`core::cmdlock`): each command holds `<pid> <command words>.lock` in `commands/` of the app's local data
+  folder (`%LOCALAPPDATA%\de.mousewerk.arcalo`, `~/Library/Application Support/…`, `$XDG_DATA_HOME/…`, the same for
+  both sides whatever workspace a command names; a portable copy marks nothing), locked with the OS file lock
+  (`File::try_lock`), so a crashed command's file is unlocked and removed by the next scan (a file system without
+  locks: after 12 h). `install` waits up to 2 minutes (`ARCALO_UPDATE_WAIT_SECS` in debug builds) before the backup;
+  `update_status.waiting` names the commands and the UI shows „Das Update wartet auf einen Terminal-Befehl“. The quit
+  waits on a thread of its own so the window can show it (the main window was closed, or the process ends without the
+  UI's quit: the update waits for the next quit). After the limit macOS and Linux install beside the command; Windows
+  waits for the next quit, because the NSIS setup (`CheckIfAppIsRunning`) would end every running `arcalo.exe` of the
+  user. No command is ever ended by the app (`e2e/tests/376-update-waits-for-commands.test.js`).
 - Debug builds only: `ARCALO_UPDATE_ENDPOINT`, `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_BUNDLE=deb` point the
   updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
@@ -1286,6 +1297,12 @@ Read under the old name, written under the new one:
   when the `ARCALO_*` name is not set; test-only variables were renamed outright. `ARCALO_LOG`
   directives naming `annalo`, `annalo_core` or `annalo_lib` mean the new crates.
 - Older markers: mirrors and README titles of 1.6, `annalo-portable` markers, `annalo-…db` backups.
+
+WebView2: the NSIS setup carries Microsoft's WebView2 bootstrapper (`bundle.windows.webviewInstallMode`
+`embedBootstrapper`, silent, about 2 MB) and runs it only when the runtime is missing; the bootstrapper downloads the
+runtime with Windows' own network settings (proxy included). The setup itself downloads nothing (up to 1.18 it fetched
+the bootstrapper with NSIS' own HTTP client, which may not get through a proxy). Offline without WebView2 the full
+runtime installer is still needed. The Store package and the portable ZIP do not use this setting.
 
 Program file: `arcalo.exe` / `arcalo`. The NSIS hooks (`src-tauri/installer/hooks.nsh`) close a
 running `annalo.exe`, remove it, point the autostart Run value and the Start menu, desktop and

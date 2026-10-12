@@ -9,7 +9,7 @@ use std::time::Duration;
 use arcalo_core::cipher::{self, FileState};
 use arcalo_core::external::Change;
 use arcalo_core::settings::Settings;
-use arcalo_core::{Database, datadir, i18n, identity, trf};
+use arcalo_core::{Database, cmdlock, datadir, i18n, identity, trf};
 
 use crate::keystore;
 use crate::output::{Failure, Outcome};
@@ -58,6 +58,20 @@ pub fn locate(db: Option<PathBuf>, data_dir: Option<PathBuf>) -> Location {
     let is_portable = env.as_ref().is_none_or(|e| e.as_os_str().is_empty()) && portable.is_some();
     let dir = datadir::locate(env, portable, config.as_deref(), default);
     Location { db: dir.join(datadir::DB_FILE), data_dir: dir, explicit: false, portable: is_portable }
+}
+
+/// Marks this command as running for an update of the app (`arcalo_core::cmdlock`), in the app's
+/// local data folder. A portable copy writes nothing into the user profile (and is never updated
+/// by an installer); a mark that cannot be made does not stop the command.
+pub fn mark_running(words: &str) -> Option<cmdlock::Held> {
+    let portable = datadir::exe_dir(identity::env_os("ARCALO_EXE_DIR").map(PathBuf::from))
+        .and_then(|exe| datadir::portable_data_dir(&exe))
+        .is_some();
+    if portable {
+        return None;
+    }
+    let dir = dirs::data_local_dir()?.join(identity::IDENTIFIER).join(cmdlock::DIR);
+    cmdlock::hold(&dir, words).ok()
 }
 
 /// The language of messages until the settings are read: `ARCALO_LOCALE`, else the system's (as

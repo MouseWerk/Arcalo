@@ -1,0 +1,73 @@
+name: Auto release
+
+# Starts the release (release.yml) by itself after CI passed for a push to main, when the newest
+# docs/releases/v<version>.md is newer than every release tag and its tag does not exist yet
+# (scripts/release-pick.mjs). The commit CI tested must still be main's head; the tag is created on
+# it. Nothing else releases on its own: without a new notes file a green CI changes nothing.
+#
+# Switched off with the repository variable AUTO_RELEASE set to "false" (Settings → Secrets and
+# variables → Actions → Variables); docs/release/automatic.md.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# One at a time and never cancelled: a second green run waits and then finds the first one's tag.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    name: Pick the version
+    if: >-
+      vars.AUTO_RELEASE != 'false' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - id: pick
+        shell: bash
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          HEAD="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ -z "$HEAD" ] || [ "$HEAD" != "$SHA" ]; then
+            echo "::notice::CI passed for $SHA, but main is at ${HEAD:-?} now: no release from this run."
+            exit 0
+          fi
+          git ls-remote --tags --refs origin | sed 's#.*refs/tags/##' > "$RUNNER_TEMP/tags.txt"
+          test -s "$RUNNER_TEMP/tags.txt" || { echo "::error::The repository's tags could not be read."; exit 1; }
+          VERSION="$(node scripts/release-pick.mjs docs/releases "$RUNNER_TEMP/tags.txt")"
+          if [ -z "$VERSION" ]; then
+            echo "::notice::No release: the newest docs/releases/v*.md has a tag already."
+            exit 0
+          fi
+          echo "::notice::Releasing $VERSION from $SHA."
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Release
+    needs: pick
+    if: needs.pick.outputs.version != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.pick.outputs.version }}
+      ref: ${{ needs.pick.outputs.sha }}
+    secrets: inherit

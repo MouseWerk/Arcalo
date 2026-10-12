@@ -1182,6 +1182,13 @@ export interface UpdateStatus {
   rollback?: { from: string; to: string; created: string } | null;
   /** Reported once after a rollback. */
   rolled_back?: { from: string; to: string; database: boolean } | null;
+  /** The install waits for running terminal commands (`arcalo pages list`) until `until`; then it installs (`then_install`) or waits for the next quit (Windows). */
+  waiting?: UpdateWaiting | null;
+}
+export interface UpdateWaiting {
+  commands: string[];
+  until: string;
+  then_install: boolean;
 }
 export type UpdateMode = "auto" | "notify" | "off";
 /** Why a copy cannot update itself: macOS started it from a temporary read-only place, it is on a read-only drive, the AppImage's folder is not writable, or it was not started as an AppImage. */
