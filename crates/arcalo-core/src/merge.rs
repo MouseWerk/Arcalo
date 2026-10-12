@@ -195,9 +195,18 @@ fn same(a: &[String], b: &[String]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| key(x) == key(y))
 }
 
-/// Merges `mine` and `theirs` against their common `base` (see the module docs).
+/// `text` with LF line ends: a CRLF of a Windows computer is never a change of its own. A lone
+/// CR is text and stays.
+pub fn lf(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains("\r\n") { text.replace("\r\n", "\n").into() } else { text.into() }
+}
+
+/// Merges `mine` and `theirs` against their common `base` (see the module docs). Line ends do
+/// not count: all three are compared and merged with LF line ends.
 pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
-    let (m, t) = (blocks(mine), blocks(theirs));
+    let base = base.map(lf);
+    let (mine, theirs) = (lf(mine), lf(theirs));
+    let (m, t) = (blocks(&mine), blocks(&theirs));
     let mk: Vec<&str> = m.iter().map(|b| key(b)).collect();
     let tk: Vec<&str> = t.iter().map(|b| key(b)).collect();
     let mut chunks: Vec<Chunk> = Vec::new();
@@ -209,7 +218,7 @@ pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
         }
     };
 
-    let Some(base) = base else {
+    let Some(base) = base.as_deref() else {
         // Two-way: blocks both have are kept, every other difference is a conflict.
         let pairs = lcs(&mk, &tk);
         let (mut mi, mut ti) = (0, 0);
@@ -425,5 +434,19 @@ mod tests {
         assert_eq!(merge3(Some(""), "neu\n", "").merged().as_deref(), Some("neu\n"));
         assert_eq!(merge3(Some("alt\n"), "", "alt\n").merged().as_deref(), Some(""));
         assert_eq!(merge3(Some(""), "a\n", "b\n").conflicts, 1);
+    }
+
+    #[test]
+    fn line_ends_alone_are_no_conflict() {
+        let base = "# Notiz\r\n\r\nZeile eins\r\nZeile zwei\r\n";
+        let mine = "# Notiz\n\nZeile eins\nZeile zwei\n";
+        let theirs = "# Notiz\r\n\r\nZeile eins\r\nZeile zwei geändert\r\n";
+        assert_eq!(merge3(Some(base), mine, theirs).conflicts, 0);
+        // The merge has LF line ends; a lone CR is text and stays.
+        assert_eq!(
+            merge3(Some(base), mine, theirs).merged().as_deref(),
+            Some("# Notiz\n\nZeile eins\nZeile zwei geändert\n")
+        );
+        assert_eq!(merge3(None, "a\rb\n", "a\rb\r\n").merged().as_deref(), Some("a\rb\n"));
     }
 }

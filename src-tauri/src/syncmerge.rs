@@ -242,6 +242,11 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
             if !is_page_path(&c.path.to_lowercase()) {
                 continue;
             }
+            // Line ends never count: a note of a Windows computer (1.18.1 committed CRLF) is
+            // stored with LF, and a side that changed only its line ends did not change it.
+            let lf = |s: &Option<String>| s.as_deref().map(|t| merge::lf(t).into_owned());
+            let (base, mine, theirs) = (lf(&c.base), lf(&c.mine), lf(&c.theirs));
+            let conflict = c.conflict && !(base.is_some() && base == mine);
             // A note of a 1.15 computer below `Zeiterfassung/` (never a deletion there: 1.16
             // computers moved those notes away themselves).
             let alias = |path: &str| {
@@ -281,11 +286,11 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                 Some(id) => {
                     named.insert(id);
                     by_file.insert(lower.clone(), id);
-                    let current = db.page_doc(id)?.content;
+                    let current = merge::lf(&db.page_doc(id)?.content).into_owned();
                     // A page without text here takes the server's text as a new note.
                     let unchanged_here =
-                        c.mine.as_deref() == Some(current.as_str()) || (c.mine.is_none() && current.is_empty());
-                    match (&c.theirs, c.conflict || !unchanged_here) {
+                        mine.as_deref() == Some(current.as_str()) || (mine.is_none() && current.is_empty());
+                    match (&theirs, conflict || !unchanged_here) {
                         // A canvas the server holds as unreadable JSON stays as it is here.
                         (Some(theirs), false) if is_canvas_path(&lower) && !arcalo_core::canvas::is_valid(theirs) => {}
                         (Some(theirs), false) => {
@@ -303,7 +308,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                         (Some(theirs), true) if &current != theirs => {
                             // An open conflict keeps its original base.
                             let base =
-                                conflicts.iter().find(|x| x.page_id == id).map_or(c.base.clone(), |x| x.base.clone());
+                                conflicts.iter().find(|x| x.page_id == id).map_or(base.clone(), |x| x.base.clone());
                             conflicts.retain(|x| x.page_id != id);
                             let title = db.page(id)?.title;
                             conflicts.push(Conflict {
@@ -321,7 +326,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     }
                 }
                 None => {
-                    let Some(theirs) = &c.theirs else { continue };
+                    let Some(theirs) = &theirs else { continue };
                     let canvas = is_canvas_path(&lower);
                     if canvas && !arcalo_core::canvas::is_valid(theirs) {
                         // An unreadable canvas from another computer (or Obsidian) stays on the server.
@@ -330,7 +335,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
                     // Deleted here while the other computer edited it: the edit brings it back, as
                     // the page from the trash when it was deleted on its own.
-                    let came_back = c.mine.is_none() && c.base.is_some();
+                    let came_back = mine.is_none() && base.is_some();
                     let from_trash =
                         if came_back { restore_from_trash(db, parent, &stem(&c.path), canvas)? } else { None };
                     let id = match from_trash {
@@ -790,6 +795,57 @@ mod tests {
         db.trash_page(edited.id).unwrap();
         assert_eq!(live(&db).unwrap().len(), 1);
         assert_eq!(hold_paths(&db), ["Notiz.md"]);
+    }
+
+    /// Notes a 1.18.1 computer on Windows committed with CRLF: they are stored with LF, and line
+    /// ends alone are never a conflict. A lone CR is text and stays.
+    #[test]
+    fn pulled_crlf_notes_are_stored_with_lf_and_line_ends_are_no_conflict() {
+        let db = Database::open_in_memory().unwrap();
+        let plan = db.create_page(None, "Plan", None).unwrap();
+        db.save_page_content(plan.id, "eins\nzwei\n").unwrap();
+        let notiz = db.create_page(None, "Notiz", None).unwrap();
+        db.save_page_content(notiz.id, "meins\n").unwrap();
+        let gleich = db.create_page(None, "Gleich", None).unwrap();
+        db.save_page_content(gleich.id, "a\nb\n").unwrap();
+        let now = Local::now();
+        let out = apply(
+            &db,
+            &[
+                // Unchanged here (the mirror had CRLF): the server's edit is taken, with LF.
+                change(
+                    "Plan.md",
+                    Some("eins\r\nzwei\r\n"),
+                    Some("eins\r\nzwei\r\n"),
+                    Some("eins\r\nzwei drei\r\n"),
+                    false,
+                ),
+                // Changed here only in its line ends, edited there: taken, no conflict.
+                change("Notiz.md", Some("meins\r\n"), Some("meins\n"), Some("meins\r\nderen\r\n"), true),
+                // The same text with other line ends on both sides: nothing to do.
+                change("Gleich.md", Some("a\nb\n"), Some("a\nb\n"), Some("a\r\nb\r\n"), true),
+                change("Neu.md", None, None, Some("neu\r\nmit \r einzelnem CR\r\n"), false),
+            ],
+            now,
+        )
+        .unwrap();
+        assert!(out.conflicts.is_empty(), "line ends are no conflict: {:?}", out.conflicts);
+        assert!(load(&db).is_empty());
+        assert_eq!(db.page_doc(plan.id).unwrap().content, "eins\nzwei drei\n");
+        assert_eq!(db.page_doc(notiz.id).unwrap().content, "meins\nderen\n");
+        assert_eq!(db.page_doc(gleich.id).unwrap().content, "a\nb\n");
+        assert!(!out.pages.contains(&gleich.id));
+        assert_eq!(db.page_doc(out.created[0]).unwrap().content, "neu\nmit \r einzelnem CR\n");
+        // A real conflict keeps the server's text with LF.
+        db.save_page_content(plan.id, "hier geändert\n").unwrap();
+        let out = apply(
+            &db,
+            &[change("Plan.md", Some("eins\nzwei drei\n"), Some("eins\nzwei drei\n"), Some("dort\r\n"), true)],
+            now,
+        )
+        .unwrap();
+        assert_eq!(out.conflicts, [plan.id]);
+        assert_eq!(load(&db)[0].theirs, "dort\n");
     }
 
     #[test]
