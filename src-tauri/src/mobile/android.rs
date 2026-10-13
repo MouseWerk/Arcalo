@@ -1,6 +1,8 @@
 //! The app's Kotlin plugins around the WebView (`gen/android/.../ShellPlugin.kt`) and for its
 //! updates (`UpdatePlugin.kt`): the colors behind the system bars, the back button at the root,
-//! text shared to the app, Android's proxy and the user's certificates for the Git sync, what
+//! text shared to the app, the window and the device for the choice between the phone app and
+//! the full app, files picked with Android's document picker, Android's proxy and the user's
+//! certificates for the Git sync, what
 //! Android knows about the installed app and a downloaded APK, the network, the permission to
 //! install apps and the hand-over to Android's installer.
 //!
@@ -84,6 +86,78 @@ pub fn set_bars(dark: bool, top: &str, bottom: &str) -> Result<(), String> {
 /// The app to the background (the back button on the start screen).
 pub fn move_to_back() -> Result<(), String> {
     call::<serde_json::Value>(&SHELL, "moveToBack", NoArgs {}).map(|_| ())
+}
+
+/// What Android says about the app's window and the device, for the choice between the phone app
+/// and the full app (`ui/src/lib/uimode.ts`, `DisplayFacts`). Sizes in dp.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DisplayFacts {
+    pub width: i32,
+    pub height: i32,
+    pub smallest_width: i32,
+    pub pc: bool,
+    pub desk: bool,
+    pub freeform: bool,
+    pub multi_window: bool,
+    pub external: bool,
+    pub mouse: bool,
+    pub keyboard: bool,
+}
+
+/// The window's size, its mode and display, a mouse and a keyboard (`ShellPlugin.display`).
+pub fn display() -> Result<DisplayFacts, String> {
+    call(&SHELL, "display", NoArgs {})
+}
+
+// ------------------------------------------------------------------- files
+
+#[derive(Serialize)]
+struct UriArgs<'a> {
+    uri: &'a str,
+}
+
+#[derive(Serialize)]
+struct CopyArgs<'a> {
+    uri: &'a str,
+    path: &'a str,
+}
+
+#[derive(Deserialize)]
+struct Named {
+    name: String,
+}
+
+/// The name Android shows for a file picked with its document picker (`content://…`).
+pub fn uri_name(uri: &str) -> Result<String, String> {
+    call::<Named>(&SHELL, "uriName", UriArgs { uri }).map(|n| n.name)
+}
+
+/// Copies the picked file at `uri` into the local file `path`.
+pub fn copy_from_uri(uri: &str, path: &str) -> Result<(), String> {
+    call::<serde_json::Value>(&SHELL, "copyFromUri", CopyArgs { uri, path }).map(|_| ())
+}
+
+/// Copies the local file `path` to the file at `uri` that the document picker created.
+pub fn copy_to_uri(path: &str, uri: &str) -> Result<(), String> {
+    call::<serde_json::Value>(&SHELL, "copyToUri", CopyArgs { uri, path }).map(|_| ())
+}
+
+#[derive(Serialize)]
+struct OpenArgs<'a> {
+    path: &'a str,
+}
+
+/// Opens an attachment with the app Android has for its type: a copy in the cache's `open`
+/// folder (the only one the app hands to other apps besides the update, `res/xml/file_paths.xml`).
+pub fn open_file(cache: &std::path::Path, file: &std::path::Path) -> Result<(), String> {
+    let dir = cache.join("open");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
+    let copy = dir.join(crate::picked::safe_name(&name));
+    std::fs::copy(file, &copy).map_err(|e| e.to_string())?;
+    call::<serde_json::Value>(&SHELL, "openFile", OpenArgs { path: &copy.to_string_lossy() }).map(|_| ())
 }
 
 // ----------------------------------------------------------------- network

@@ -51,8 +51,11 @@ pub fn dashboard_inbox_move(
 /// Writes an exported board (JSON the UI built) to `path`.
 #[tauri::command(async)]
 pub fn dashboard_file_write(path: String, json: String) -> Result<()> {
-    let path = path.trim();
-    if !path.to_lowercase().ends_with(".json") {
+    crate::picked::output(&path, |p| write_board(p, json))
+}
+
+fn write_board(path: &std::path::Path, json: String) -> Result<()> {
+    if !path.to_string_lossy().to_lowercase().ends_with(".json") {
         return Err(Error::State(
             arcalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
         ));
