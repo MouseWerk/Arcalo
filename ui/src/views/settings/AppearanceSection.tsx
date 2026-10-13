@@ -19,7 +19,6 @@ import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { ThemeEditor, ThemeMock, newThemeId } from "./ThemeEditor";
 import { isComposing, isKey } from "../../lib/ime";
 import { caps } from "../../lib/capabilities";
-import { interfaceSettingChanged } from "../../lib/uiswitch";
 
 export function AppearanceSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -275,11 +274,8 @@ export function AppearanceSection({ draft, update }: SectionProps) {
                 { value: "phone", label: t("set.appearance.uiPhone") },
                 { value: "full", label: t("set.appearance.uiFull") },
               ]}
-              onChange={(v) => {
-                set({ android_interface: v });
-                // Saved with the others; the page then checks whether it is still the right one.
-                window.setTimeout(interfaceSettingChanged, 800);
-              }}
+              // Saved like the others; the page checks after the save whether it is still the right one.
+              onChange={(v) => set({ android_interface: v })}
             />
           </Row>
         )}

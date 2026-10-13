@@ -10,6 +10,7 @@
 // nothing is copied.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { chooseInterface, factsFromViewport, pageOf, switchAllowed, type DisplayFacts, type Interface, type InterfaceChoice } from "./uimode";
 
 interface AndroidDisplay {
@@ -114,7 +115,10 @@ export function followInterface(current: Interface, flush: () => Promise<boolean
   window.addEventListener(DISPLAY_EVENT, now);
   document.addEventListener("visibilitychange", onVisible);
   pointer?.addEventListener?.("change", now);
+  // The setting „Oberfläche auf Android“ saved (here, in the other interface's settings, or by a sync).
+  const settings = listen("settings://changed", now).catch(() => null);
   return () => {
+    void settings.then((off) => off?.());
     window.clearTimeout(timer);
     window.removeEventListener("resize", onResize);
     window.removeEventListener(DISPLAY_EVENT, now);
