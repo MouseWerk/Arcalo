@@ -12,6 +12,7 @@ import { useT } from "../lib/i18n";
 import { openBookmarkImport } from "./BookmarkImport";
 import { LINK_COLORS, groupChoices, insertItem, isGroup, isPath, kindOf, moveItem, newGroup, removeItem, shortUrl, updateItem, type LinkKind } from "../lib/quicklinks";
 import { isComposing } from "../lib/ime";
+import { caps } from "../lib/capabilities";
 
 /** An icon that fits the address when none was picked. */
 export function guessIcon(url: string, kind: LinkKind = "link"): string {
@@ -46,8 +47,10 @@ function IconGrid({ value, onPick, label }: { value: string; onPick: (name: stri
 }
 
 /** Link, App or Gruppe (only while adding). */
-function KindSwitch({ value, kinds, onChange }: { value: LinkKind; kinds: LinkKind[]; onChange: (k: LinkKind) => void }) {
+function KindSwitch({ value, kinds: all, onChange }: { value: LinkKind; kinds: LinkKind[]; onChange: (k: LinkKind) => void }) {
   const t = useT();
+  // Programs start only where the app can start them (not on Android).
+  const kinds = all.filter((k) => k !== "app" || caps().programs || value === "app");
   const meta: Record<LinkKind, { label: string; icon: LucideIcon }> = {
     link: { label: t("links.kindLink"), icon: Link2 },
     app: { label: t("links.kindApp"), icon: AppWindow },
@@ -309,9 +312,11 @@ function GroupFields({ draft, setDraft }: { draft: { links: QuickLink[]; gi: num
           <Button size="sm" icon={Plus} onClick={() => setSub({ index: null, link: { name: "", url: "", icon: "" } })}>
             {t("links.add")}
           </Button>
-          <Button size="sm" icon={AppWindow} onClick={() => setSub({ index: null, link: { name: "", url: "", icon: "", kind: "app" } })}>
-            {t("links.addApp")}
-          </Button>
+          {caps().programs && (
+            <Button size="sm" icon={AppWindow} onClick={() => setSub({ index: null, link: { name: "", url: "", icon: "", kind: "app" } })}>
+              {t("links.addApp")}
+            </Button>
+          )}
           {loose.length > 0 && (
             <Select
               className="group-take-over"

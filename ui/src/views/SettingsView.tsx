@@ -13,6 +13,8 @@ import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
 import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions";
+import { caps, type Capabilities } from "../lib/capabilities";
+import { AndroidUpdatesGroup } from "./settings/AndroidUpdatesGroup";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
@@ -111,6 +113,20 @@ const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: t
     ],
   },
 ];
+/**
+ * The menu for what the app can do here (lib/capabilities.ts): without voice notes, the
+ * encryption and the app lock (Android) their sections go; „Desktop“ keeps the quick capture and
+ * the reminder there and is named after them.
+ */
+export function navFor(c: Capabilities): typeof NAV {
+  return NAV.map((g) => ({
+    ...g,
+    items: g.items
+      .filter((x) => (x.id !== "voice" || c.voice) && (x.id !== "security" || c.security))
+      .map((x) => (x.id === "desktop" && !c.windowFrame ? { ...x, label: "nav.captureReminders" as TKey } : x)),
+  })).filter((g) => g.items.length > 0);
+}
+
 /** Sections with „Abschnitt zurücksetzen“ (ids as in `Settings::reset_section`). */
 const RESET = new Set<Section>(["appearance", "search", "locale", "start", "keyboard", "editor", "notes", "filing", "time", "voice", "jira", "briefing", "ai", "privacy", "network", "notifications"]);
 /** Sections that can be shared with the other workspaces (`settings_layers`): menu section → layer. */
@@ -124,7 +140,9 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   const [scrolled, setScrolled] = useState(false);
   const view = useApp((s) => s.settings);
   // Without AI the settings open on Darstellung rather than on an empty „KI & Modelle“.
-  const [section, setSection] = useState<Section>(() => (takeSettingsSection() as Section | null) ?? (aiEnabled() ? "ai" : "appearance"));
+  const menu = navFor(caps());
+  const shown = (id: Section | null) => (id && menu.some((g) => g.items.some((x) => x.id === id)) ? id : null);
+  const [section, setSection] = useState<Section>(() => shown(takeSettingsSection() as Section | null) ?? (aiEnabled() ? "ai" : "appearance"));
   // Opened on a section from elsewhere (the Kalender view, a toast) while already open.
   useEffect(() => {
     const onRequest = () => {
@@ -309,7 +327,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       key: `settings-undo-${b.id}`,
       tone: "info",
       title: opts.title ?? t("settings.changed"),
-      detail: searching ? undefined : t(NAV.flatMap((g) => g.items).find((x) => x.id === section)?.label ?? "settings.title"),
+      detail: searching ? undefined : t(menu.flatMap((g) => g.items).find((x) => x.id === section)?.label ?? "settings.title"),
       timeout: undoTimeout(destructive),
       action: {
         label: t("common.undo"),
@@ -478,7 +496,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     }
   };
 
-  const all = NAV.flatMap((g) => g.items);
+  const all = menu.flatMap((g) => g.items);
   // The menu is one stop for Tab (the open section); the arrow keys, Home and End move inside it.
   const tabStop: Section = searching ? all[0].id : section;
   const navKeys = (e: React.KeyboardEvent<HTMLElement>) => {
@@ -564,7 +582,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         <div className="settings-nav-title">{t("settings.title")}</div>
         {search}
         <div className={`settings-nav-list ${navEdges}`} ref={setNavList} onScroll={measureNav} onKeyDown={navKeys}>
-          {NAV.map((g) => {
+          {menu.map((g) => {
             const shut = collapsed.has(g.id) && !(!searching && g.items.some((x) => x.id === section));
             return (
               <div key={g.id} className={`settings-nav-group ${shut ? "collapsed" : ""}`} role="group" aria-label={t(g.label)} data-group={g.id}>
@@ -605,7 +623,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
               aria-label={t("settings.section")}
               value={searching ? "" : section}
               placeholder={t("settings.results", { n: hits })}
-              options={NAV.flatMap((g) => g.items.map((x, i) => ({ value: x.id, label: t(x.label), icon: x.icon, ...(i === 0 ? { group: t(g.label) } : {}) })))}
+              options={menu.flatMap((g) => g.items.map((x, i) => ({ value: x.id, label: t(x.label), icon: x.icon, ...(i === 0 ? { group: t(g.label) } : {}) })))}
               onChange={(e) => open(e.target.value as Section)}
             />
           </div>
@@ -928,7 +946,7 @@ function NotesSection({ draft, update }: { draft: Settings; update: (p: Partial<
           </Select>
         </Row>
       </Group>
-      <Group title="Obsidian" description={t("set.notes.obsidianDesc")}>
+      {caps().folders && <Group title="Obsidian" description={t("set.notes.obsidianDesc")}>
         <Row label={t("set.notes.importVault")}>
           <Button icon={FolderInput} onClick={() => importVault()}>
             {t("common.chooseFolder")}
@@ -945,7 +963,7 @@ function NotesSection({ draft, update }: { draft: Settings; update: (p: Partial<
             {t("set.notes.chooseTarget")}
           </Button>
         </Row>
-      </Group>
+      </Group>}
       <Group title={t("set.notes.samples")}>
         <Row label={t("set.notes.removeSamples")} description={t("set.notes.removeSamplesDesc")}>
           <Button
@@ -1018,6 +1036,19 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     }
   };
 
+  // Android: no local backups (the desktop makes them); the Git sync keeps the notes in step.
+  if (!caps().backups) {
+    return (
+      <>
+        <header className="settings-head">
+          <h1>{t("set.backup.title")}</h1>
+          <p>{t("set.backup.introAndroid")}</p>
+          <DocLink topic="backups" />
+        </header>
+        <GitSyncGroup draft={draft} update={update} dbSize={null} onSynced={reload} />
+      </>
+    );
+  }
   return (
     <>
       <header className="settings-head">
@@ -1256,7 +1287,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       <Row label={t("set.git.title")} description={git.remote_url ? undefined : t("set.git.urlFirst")}>
         <Switch label={t("set.git.title")} checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
       </Row>
-      <Row stack label={t("set.git.remote")} description={t("set.git.remoteDesc")}>
+      <Row stack label={t("set.git.remote")} description={t(caps().mobile ? "mob.set.remoteDesc" : "set.git.remoteDesc")}>
         <CommitInput value={git.remote_url} onCommit={(v) => setGit({ remote_url: v })} placeholder={t("set.git.remotePlaceholder")} aria-label={t("set.git.remote")} className="grow" />
       </Row>
       <Row label={t("set.git.branch")}>
@@ -1295,13 +1326,21 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
         </Button>
         {status?.token_set && <IconButton icon={Trash2} label={t("set.git.tokenRemove")} onClick={() => saveToken(null)} />}
       </Row>
-      <Row label={t("set.git.when")}>
-        <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label={t("set.git.whenLabel")}>
-          <option value="with_backup">{t("set.git.withBackup")}</option>
-          <option value="hourly">{t("set.git.hourly")}</option>
-        </Select>
-      </Row>
-      <Row
+      {/* Android syncs at the start, every 15 minutes and when it comes back (src-tauri/src/mobile),
+          and never uploads the database: both are the desktop's. */}
+      {caps().backups ? (
+        <Row label={t("set.git.when")}>
+          <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label={t("set.git.whenLabel")}>
+            <option value="with_backup">{t("set.git.withBackup")}</option>
+            <option value="hourly">{t("set.git.hourly")}</option>
+          </Select>
+        </Row>
+      ) : (
+        <Row label={t("set.git.when")} description={t("mob.set.syncOnDesc")}>
+          <span />
+        </Row>
+      )}
+      {caps().backups && <Row
         label={t("set.git.database")}
         description={
           git.include_database ? (
@@ -1314,7 +1353,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
         }
       >
         <Switch label={t("set.git.database")} checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
-      </Row>
+      </Row>}
       <Row label={t("set.git.syncSettings")} description={t("set.git.syncSettingsDesc")} keywords="settings.json">
         <Switch label={t("set.git.syncSettings")} checked={!!git.sync_settings} onChange={(v) => setGit({ sync_settings: v })} />
       </Row>
@@ -1388,11 +1427,13 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
           </Button>
         </Row>
       ) : null}
-      <Row label={t("set.git.restore")} description={t("set.git.restoreDesc")}>
-        <Button icon={Download} onClick={() => setRestoreUrl(restoreUrl == null ? git.remote_url : null)}>
-          {t("set.git.restoreButton")}
-        </Button>
-      </Row>
+      {caps().backups && (
+        <Row label={t("set.git.restore")} description={t("set.git.restoreDesc")}>
+          <Button icon={Download} onClick={() => setRestoreUrl(restoreUrl == null ? git.remote_url : null)}>
+            {t("set.git.restoreButton")}
+          </Button>
+        </Row>
+      )}
       {restoreUrl != null && (
         <Row stack label={t("set.git.repoUrl")} description={t("set.git.repoUrlDesc")}>
           <Input value={restoreUrl} onChange={(e) => setRestoreUrl(e.target.value)} onKeyDown={(e) => isKey(e, "Enter") && restore()} aria-label={t("set.git.repoUrlLabel")} className="grow" autoFocus />
@@ -1419,9 +1460,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
   const [info, setInfo] = useState<DesktopInfo | null>(null);
   const s = useApp.getState;
   const view = useApp((st) => st.settings);
+  const c = caps();
   useEffect(() => {
-    api.desktopInfo().then(setInfo, () => setInfo(null));
-  }, [view]);
+    if (c.tray) api.desktopInfo().then(setInfo, () => setInfo(null));
+  }, [view, c.tray]);
   const setAutostart = async (on: boolean) => {
     try {
       setInfo(await api.setAutostart(on));
@@ -1434,10 +1476,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
   return (
     <>
       <header className="settings-head">
-        <h1>{t("nav.desktop")}</h1>
-        <p>{IS_MAC ? t("set.desktop.introMac") : t("set.desktop.intro")}</p>
+        <h1>{t(c.windowFrame ? "nav.desktop" : "nav.captureReminders")}</h1>
+        <p>{!c.windowFrame ? t("set.desktop.introAndroid") : IS_MAC ? t("set.desktop.introMac") : t("set.desktop.intro")}</p>
       </header>
-      <Group title={t("set.desktop.window")}>
+      {c.windowFrame && <Group title={t("set.desktop.window")}>
         {/* macOS: closing always hides the window (the app stays in the Dock, ⌘Q quits). */}
         {!IS_MAC && (
           <Row
@@ -1470,8 +1512,8 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         >
           <Switch label={desk.autostartLabel} checked={!!info?.autostart} onChange={setAutostart} disabled={!!info?.portable} />
         </Row>
-      </Group>
-      <Group title={t("cmd.palette")}>
+      </Group>}
+      {c.globalShortcuts && <Group title={t("cmd.palette")}>
         <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.paletteDesc", { example: keys("Mod Shift K"), always: keys("Mod K") })}>
           <ShortcutField
             value={draft.palette_shortcut ?? ""}
@@ -1481,8 +1523,8 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             active={info ? (draft.palette_shortcut ?? "") === (view?.settings.palette_shortcut ?? "") && info.palette_shortcut_active : undefined}
           />
         </Row>
-      </Group>
-      <Group title={t("set.desktop.search")} description={t(timeTrackingOn(draft) ? "set.desktop.searchDesc" : "tt.searchDesc")}>
+      </Group>}
+      {c.globalShortcuts && <Group title={t("set.desktop.search")} description={t(timeTrackingOn(draft) ? "set.desktop.searchDesc" : "tt.searchDesc")}>
         <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.searchShortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+O`), search: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+F`) })}>
           <ShortcutField
             value={draft.search_shortcut}
@@ -1492,7 +1534,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             active={info ? draft.search_shortcut === view?.settings.search_shortcut && info.search_shortcut_active : undefined}
           />
         </Row>
-      </Group>
+      </Group>}
       {timeTrackingOn(draft) && <Group title={t("set.desktop.reminder")} description={t("set.desktop.reminderDesc")}>
         <Row label={t("set.desktop.remindAt")}>
           <div className="unit-input">
@@ -1514,7 +1556,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         </Row>
       </Group>}
       <Group title={t("set.capture.title")} description={t(timeTrackingOn(draft) ? "set.capture.desc" : "tt.captureDesc")}>
-        <Row label={t("set.desktop.globalShortcut")} description={IS_MAC ? t("set.capture.shortcutDescMac", { example: formatShortcut("Cmd+Shift+Space") }) : t("set.capture.shortcutDesc")}>
+        {c.globalShortcuts && <Row label={t("set.desktop.globalShortcut")} description={IS_MAC ? t("set.capture.shortcutDescMac", { example: formatShortcut("Cmd+Shift+Space") }) : t("set.capture.shortcutDesc")}>
           <ShortcutField
             value={draft.capture_shortcut}
             onChange={(v) => update({ capture_shortcut: v })}
@@ -1522,8 +1564,8 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             placeholder={t("common.pressKeys")}
             active={info ? draft.capture_shortcut === view?.settings.capture_shortcut && info.capture_shortcut_active : undefined}
           />
-        </Row>
-        <Row
+        </Row>}
+        {c.globalShortcuts && <Row
           label={t("set.capture.selection")}
           description={IS_LINUX ? t("set.capture.selectionDescLinux") : t("set.capture.selectionDesc", { copy: IS_MAC ? "⌘C" : t("keys.ctrlC") })}
         >
@@ -1536,7 +1578,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
               info ? draft.capture.selection_shortcut === view?.settings.capture?.selection_shortcut && !!info.selection_shortcut_active : undefined
             }
           />
-        </Row>
+        </Row>}
         <Row label={t("set.capture.target")} description={t("set.capture.targetDesc")}>
           <Select
             value={draft.capture.default_target}
@@ -1562,7 +1604,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             onChange={(v) => update({ capture: { ...draft.capture, meeting_target: v } })}
           />
         </Row>
-        <Row
+        {c.popupWindows && <Row
           label={t("set.capture.hide")}
           description={info?.capture_open_ms ? `${t("set.capture.hideDesc")} ${t("set.capture.openedIn", { ms: info.capture_open_ms })}` : t("set.capture.hideDesc")}
         >
@@ -1579,9 +1621,9 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
                 </option>
               ))}
           </Select>
-        </Row>
+        </Row>}
       </Group>
-      <CommandLineGroup />
+      {c.commandLine && <CommandLineGroup />}
     </>
   );
 }
@@ -1894,11 +1936,15 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
   const keymap = effectiveKeymap(view.settings.keymap);
   const shortcuts: [string, string][] = [
     ...COMMANDS.filter((c) => keymap[c.id]).map((c): [string, string] => [comboLabel(keymap[c.id]), t(c.label)]),
-    ...global(view.settings.palette_shortcut, t("keys.globalPalette")),
-    ...global(view.settings.capture_shortcut, t("keys.globalCapture")),
-    ...global(view.settings.search_shortcut, t("keys.globalSearch")),
-    ...global(view.settings.capture?.selection_shortcut, t("keys.globalSelection")),
-    ...global(view.settings.mail?.shortcut, t("keys.globalMail")),
+    ...(caps().globalShortcuts
+      ? [
+          ...global(view.settings.palette_shortcut, t("keys.globalPalette")),
+          ...global(view.settings.capture_shortcut, t("keys.globalCapture")),
+          ...global(view.settings.search_shortcut, t("keys.globalSearch")),
+          ...global(view.settings.capture?.selection_shortcut, t("keys.globalSelection")),
+          ...global(view.settings.mail?.shortcut, t("keys.globalMail")),
+        ]
+      : []),
   ];
   return (
     <>
@@ -1911,7 +1957,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           <p>{t("upd.version", { version })}</p>
         </div>
       </header>
-      <UpdatesGroup draft={draft} update={update} />
+      {caps().desktopUpdater ? <UpdatesGroup draft={draft} update={update} /> : caps().androidUpdater ? <AndroidUpdatesGroup /> : null}
       <WhatsNewGroup />
       <Group title={t("help.group")}>
         <Row label={t("help.docs")} description={t("help.docsDesc")}>
@@ -1970,18 +2016,13 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
             </div>
           </Row>
         )}
-        <Row
-          label={t("set.about.moveData")}
-          description={
-            status?.portable
-              ? t("set.data.movePortable")
-              : t("set.data.moveDesc")
-          }
-        >
-          <Button icon={FolderInput} onClick={() => moveDataDir(loadStatus)} disabled={!!status?.portable}>
-            {t("set.data.moveButton")}
-          </Button>
-        </Row>
+        {caps().folders && (
+          <Row label={t("set.about.moveData")} description={status?.portable ? t("set.data.movePortable") : t("set.data.moveDesc")}>
+            <Button icon={FolderInput} onClick={() => moveDataDir(loadStatus)} disabled={!!status?.portable}>
+              {t("set.data.moveButton")}
+            </Button>
+          </Row>
+        )}
         <DevLogAboutRow onOpen={onOpenLog} />
       </Group>
       <Group title={t("fr.about.group")}>

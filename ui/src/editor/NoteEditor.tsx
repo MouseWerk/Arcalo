@@ -48,6 +48,7 @@ import { SaveFailed } from "./SaveFailed";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
+import { caps } from "../lib/capabilities";
 import { scrollMotion } from "../lib/motion";
 import { isComposing } from "../lib/ime";
 import { consumeKey } from "../lib/keymap";
@@ -462,7 +463,7 @@ export function NoteEditor({
         // From this editor's element: only its own page view opens the summary (not another
         // view of the same page in a second pane or a tab kept open behind another one).
         onSummary: (editor) => editor.view.dom.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { bubbles: true, detail: { id: doc.id } })),
-        onVoice: () => void startVoice({ pageId: doc.id }),
+        onVoice: caps().voice ? () => void startVoice({ pageId: doc.id }) : undefined,
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
         taskNextDue: (text) => api.taskNextDue(text),

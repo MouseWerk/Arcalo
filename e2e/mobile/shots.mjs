@@ -5,7 +5,8 @@
 //   - console errors,
 //   - touch targets smaller than 44 px,
 //   - anything wider than the screen (horizontal scrolling of the page or a screen),
-//   - a command the UI invokes that the Android app does not register (src-tauri/src/mobile/mod.rs),
+//   - a command the UI invokes that the Android app does not register (`commands()` in
+//     src-tauri/src/lib.rs without its `#[cfg(desktop)]` entries),
 //   - Android's back button not closing the edit mode, then the screen, then going to „Heute“ and
 //     then to the background (never quitting),
 //   - the update banner, „Update installieren“ and the permission flow not working,
@@ -58,16 +59,24 @@ function loadPlaywright() {
   throw new Error("playwright not found (npm i -g playwright, or in e2e/)");
 }
 
-// The commands the Android app registers (its `generate_handler!` list), by their names.
+// The commands the Android app registers, by their names: the shared list of `commands()` in
+// src-tauri/src/lib.rs without the desktop-only ones (`#[cfg(desktop)]`).
 async function registeredCommands() {
-  const src = await readFile(join(root, "src-tauri/src/mobile/mod.rs"), "utf8");
-  const list = /generate_handler!\[([\s\S]*?)\]/.exec(src)?.[1] ?? "";
-  return new Set(
-    list
-      .split(",")
-      .map((s) => s.trim().split("::").pop())
-      .filter(Boolean),
-  );
+  const src = await readFile(join(root, "src-tauri/src/lib.rs"), "utf8");
+  const body = src.slice(src.indexOf("pub(crate) fn commands()"));
+  const list = /generate_handler!\[([\s\S]*?)\]\)\)/.exec(body)?.[1] ?? "";
+  const names = new Set();
+  let desktop = false;
+  for (const line of list.split("\n").map((l) => l.trim())) {
+    if (!line || line.startsWith("//")) continue;
+    if (line.startsWith("#[cfg(")) {
+      desktop = line === "#[cfg(desktop)]";
+      continue;
+    }
+    if (!desktop) names.add(line.replace(/,$/, "").split("::").pop());
+    desktop = false;
+  }
+  return names;
 }
 
 // ------------------------------------------------------------------ fixtures
@@ -319,7 +328,7 @@ async function open(size, theme, opts = {}) {
     const calls = await page.evaluate(() => window.__calls);
     for (const c of new Set(calls)) {
       if (c.startsWith("plugin:event|") || c.startsWith("plugin:app|") || c.startsWith("plugin:opener|")) continue;
-      if (!registered.has(c)) fail(where, `the UI invokes \`${c}\`, which the Android app does not register (src-tauri/src/mobile/mod.rs)`);
+      if (!registered.has(c)) fail(where, `the UI invokes \`${c}\`, which the Android app does not register (commands() in src-tauri/src/lib.rs)`);
     }
     await ctx.close();
   };

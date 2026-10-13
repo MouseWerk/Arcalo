@@ -12,6 +12,7 @@ import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
+import { caps } from "../lib/capabilities";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -58,7 +59,7 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
           { label: t("img.size"), icon: Ruler, submenu: SIZES.map((z) => ({ label: t(z.label), checked: (node.attrs.alt ?? null) === (z.width ? String(z.width) : null), onSelect: () => setWidth(z.width) })) },
           "separator",
           { label: t("file.open"), icon: ExternalLink, onSelect: () => api.openAttachment(name).catch(failed(t("img.openFailed"))) },
-          { label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) },
+          ...(caps().folders ? [{ label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) }] : []),
         ] as MenuEntry[])
       : []),
     "separator",

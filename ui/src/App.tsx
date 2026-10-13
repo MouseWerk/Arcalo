@@ -9,6 +9,7 @@ import { applyTheme } from "./lib/actions";
 import { REVEAL_EVENT, Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
+import { caps } from "./lib/capabilities";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
 import { openChatView } from "./store/chat";
@@ -90,7 +91,7 @@ export function App() {
       void checkFirstRun();
       void s.refreshConflicts();
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
-      void refreshPac(view);
+      if (caps().pac) void refreshPac(view);
     })().catch((e) => s.error(t("onb.failed"), e));
     // Shortcut hints name the keys of the actual keyboard where the engine tells its layout.
     void learnKeyboardLayout().then(refreshI18n);
@@ -108,6 +109,7 @@ export function App() {
       .catch(() => {});
     // 1.17 deletes the folders of the old app identifier in the background: what went, once.
     const showCleaned = () =>
+      caps().windowFrame &&
       void api
         .legacyCleanupNotice()
         .then((text) => text && useApp.getState().toast({ tone: "info", title: t("app.legacyCleaned"), detail: text, timeout: 12000 }))
@@ -115,7 +117,8 @@ export function App() {
     showCleaned();
 
     // Only builds with an update key look for new releases; installing always needs a click.
-    const stopUpdates = startUpdateChecks();
+    // Android updates through its own installer (Einstellungen → Über Arcalo).
+    const stopUpdates = caps().desktopUpdater ? startUpdateChecks() : () => {};
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onMedia = () => applyTheme(useApp.getState().settings?.settings.theme ?? "system");
@@ -274,7 +277,7 @@ export function App() {
       }),
     ];
     // Started from a taskbar jump-list entry: the shell sends it once everything listens.
-    void Promise.all(unlisten).then(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("jump_take")));
+    if (caps().windowFrame) void Promise.all(unlisten).then(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("jump_take")));
     return () => {
       stopUpdates();
       media.removeEventListener("change", onMedia);
@@ -332,6 +335,7 @@ export function App() {
 
   // Settings → Start: remember the window's size and position (saved shortly after moving/resizing).
   useEffect(() => {
+    if (!caps().windowFrame) return;
     const win = getCurrentWindow();
     let timer = 0;
     const later = () => {
@@ -345,8 +349,10 @@ export function App() {
     };
   }, []);
 
-  // Store pending edits before the window closes.
+  // Store pending edits before the window closes (Android ends an app on its own; the editors
+  // store their text when it goes to the background).
   useEffect(() => {
+    if (!caps().windowFrame) return;
     const win = getCurrentWindow();
     let closing = false;
     const unlisten = win
@@ -461,7 +467,7 @@ export function App() {
       <CalendarPopover />
       <WindowControls />
       <Toasts />
-      <VoiceBar />
+      {caps().voice && <VoiceBar />}
       <FocusDialogHost />
       <PlanPickerHost />
       <PresentationHost />

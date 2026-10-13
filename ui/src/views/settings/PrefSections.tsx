@@ -17,6 +17,7 @@ import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
 import { useApp } from "../../store/app";
 import { useAi } from "../../lib/aiswitch";
+import { caps } from "../../lib/capabilities";
 
 // ------------------------------------------------------------------ notes
 
@@ -255,14 +256,16 @@ export function StartSection({ draft, update }: SectionProps) {
           />
         </Row>
       </Group>
-      <Group title={t("set.start.window")}>
-        <Row label={t("set.start.restore")} description={t("set.start.restoreDesc")}>
-          <Switch label={t("set.start.restore")} checked={st.restore_window} onChange={(v) => set({ restore_window: v })} />
-        </Row>
-        <Row label={t("set.start.minimized")} description={t("set.start.minimizedDesc")}>
-          <Switch label={t("set.start.minimized")} checked={st.minimized} onChange={(v) => set({ minimized: v })} />
-        </Row>
-      </Group>
+      {caps().windowFrame && (
+        <Group title={t("set.start.window")}>
+          <Row label={t("set.start.restore")} description={t("set.start.restoreDesc")}>
+            <Switch label={t("set.start.restore")} checked={st.restore_window} onChange={(v) => set({ restore_window: v })} />
+          </Row>
+          <Row label={t("set.start.minimized")} description={t("set.start.minimizedDesc")}>
+            <Switch label={t("set.start.minimized")} checked={st.minimized} onChange={(v) => set({ minimized: v })} />
+          </Row>
+        </Group>
+      )}
       <Group title={t("set.start.ribbon")}>
         <Row label={t("bm.title")} description={t("set.start.bookmarksDesc")}>
           <Button icon={BookmarkPlus} className="set-bookmarks-import" onClick={openBookmarkImport}>

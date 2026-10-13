@@ -15,6 +15,7 @@ import { anchorPage, baseName, isFileEmbedName, isFileLinkTarget, isImageName, i
 import { titleSet } from "../lib/links";
 import { pdfAnchor } from "../lib/linking";
 import { t } from "../lib/i18n";
+import { caps } from "../lib/capabilities";
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 let root: Root | null = null;
@@ -90,7 +91,7 @@ export function fileMenu(editor: Editor, pos: number): MenuEntry[] {
   return [
     ...(isPdfName(name) ? [{ label: t("file.view"), icon: Eye, onSelect: () => openPdfViewer(name) } as MenuEntry] : []),
     { label: isPdfName(name) ? t("file.openExternal") : t("file.open"), icon: ExternalLink, onSelect: () => openFile(name) },
-    { label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) },
+    ...(caps().folders ? [{ label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) } as MenuEntry] : []),
     "separator",
     {
       label: t("file.copyEmbed"),
