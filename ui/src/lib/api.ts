@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
 import { noteSystemLang, t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
+import type * as GS from "./gitsetup";
 import type * as G from "./graph";
 import { fromGraphTable } from "./graph";
 import { fromPageRows, type PageRow } from "./tree";
@@ -280,6 +281,14 @@ export const api = {
   setGitToken: (token: string | null) => call<T.GitSyncStatus>("git_token_set", { token }),
   gitSyncTest: (url: string | null, token: string | null) => call<T.GitTest>("git_sync_test", { url, token }),
   gitRestoreImport: (url: string) => call<T.ImportReport>("git_restore_import", { url }),
+  /** Guided setup: whom the token belongs to (the typed token, else the stored one). */
+  gitSetupAccount: (server: GS.GitServer, token: string | null) => call<GS.SetupAnswer<GS.SetupAccount | null>>("git_setup_account", { server, token }),
+  /** Guided setup: the token's repositories, newest first. */
+  gitSetupRepos: (server: GS.GitServer, token: string | null) => call<GS.SetupAnswer<GS.SetupRepo[]>>("git_setup_repos", { server, token }),
+  /** Guided setup: a new private repository. */
+  gitSetupCreate: (server: GS.GitServer, token: string | null, name: string) => call<GS.SetupAnswer<GS.SetupRepo>>("git_setup_create", { server, token, name }),
+  /** Guided setup: the check before saving (server, token, rights, git, branch, content). */
+  gitSetupCheck: (server: GS.GitServer, target: GS.SetupTarget, token: string | null) => call<GS.SetupCheck>("git_setup_check", { server, target, token }),
   /** Pages with an undecided Git sync conflict. */
   gitConflicts: () => call<T.GitConflictInfo[]>("git_conflicts"),
   gitConflict: (pageId: number) => call<T.GitConflictView>("git_conflict_get", { pageId }),

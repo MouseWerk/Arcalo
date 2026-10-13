@@ -1,8 +1,8 @@
-// Einstellungen: the Git sync (repository, branch, token in the Android Keystore, sync now,
+// Einstellungen: the Git sync (the guided setup, or repository, branch, token in the Android Keystore; sync now,
 // conflicts), theme and contrast, language, the app's updates and what the app is.
 
 import { useEffect, useState } from "react";
-import { CircleCheck, KeyRound, TriangleAlert } from "lucide-react";
+import { CircleCheck, Compass, KeyRound, TriangleAlert } from "lucide-react";
 import { api } from "../../lib/api";
 import { buildResult, chooseAll } from "../../lib/conflict";
 import { relative } from "../../lib/format";
@@ -12,6 +12,8 @@ import { errorText, useMobile } from "../context";
 import { syncState } from "../model";
 import { Field, Header, Notice, Section, Segmented, Spinner, Switch } from "../ui";
 import { UpdateSection } from "../update";
+import type { SaveGit } from "../../lib/useGitSetup";
+import { GitSetupScreen } from "./GitSetup";
 
 /** The high contrast themes (lib/themes.ts) for „Hoher Kontrast“. */
 const CONTRAST = { light: "contrast-light", dark: "contrast-dark" } as const;
@@ -30,6 +32,8 @@ export function SettingsScreen() {
   const [test, setTest] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<GitConflictInfo[]>([]);
   const [confirmDeletions, setConfirmDeletions] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const [manual, setManual] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -75,6 +79,30 @@ export function SettingsScreen() {
   };
   const state = syncState(gs.enabled || !!gs.remote_url, gs.remote_url, status);
   const contrast = s.appearance?.theme_light === CONTRAST.light && s.appearance?.theme_dark === CONTRAST.dark;
+  const showForm = !!gs.remote_url || manual;
+
+  // The guided setup takes the screen; its save is the form's (the token was stored by the setup).
+  const saveFromSetup: SaveGit = async (patch) => {
+    await m.saveSettings({ ...s, git_sync: { ...gs, ...patch, include_database: false } });
+    setRemote(patch.remote_url);
+    setBranch(patch.branch);
+    setStatus(await api.gitSyncStatus());
+  };
+  if (setup) {
+    return (
+      <GitSetupScreen
+        tokenStored={!!status?.token_set}
+        remoteUrl={gs.remote_url || undefined}
+        save={saveFromSetup}
+        onClose={() => setSetup(false)}
+        onManual={() => {
+          setSetup(false);
+          setManual(true);
+        }}
+        onSyncNow={() => void m.sync()}
+      />
+    );
+  }
 
   return (
     <div className="m-screen">
@@ -82,92 +110,109 @@ export function SettingsScreen() {
       <div className="m-scroll m-form">
         <Section title={t("mob.set.sync")}>
           <p className="m-desc">{t("mob.set.syncDesc")}</p>
-          <Field label={t("set.git.remote")} htmlFor="m-git-url" hint={t("mob.set.remoteDesc")}>
-            <input id="m-git-url" className="m-input" type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={remote} placeholder={t("set.git.remotePlaceholder")} onChange={(e) => setRemote(e.target.value)} />
-          </Field>
-          <div className="m-field-pair">
-            <Field label={t("set.git.branch")} htmlFor="m-git-branch">
-              <input id="m-git-branch" className="m-input" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={branch} onChange={(e) => setBranch(e.target.value)} />
-            </Field>
-            <Field label={t("set.git.authorName")} htmlFor="m-git-author">
-              <input id="m-git-author" className="m-input" value={author} onChange={(e) => setAuthor(e.target.value)} />
-            </Field>
-          </div>
-          <Field label={t("set.git.authorEmail")} htmlFor="m-git-email">
-            <input id="m-git-email" className="m-input" type="email" inputMode="email" autoCapitalize="off" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          {dirty && (
-            <div className="m-form-actions">
-              <button type="button" className="m-btn m-btn-primary m-btn-block" onClick={saveRemote}>
-                {t("mob.set.saveRemote")}
+          {!gs.remote_url && <p className="m-desc m-faint">{t("gitsetup.entryDesc")}</p>}
+          <div className="m-form-actions m-gs-entry">
+            <button type="button" className={gs.remote_url ? "m-btn" : "m-btn m-btn-primary"} onClick={() => setSetup(true)}>
+              <Compass size={18} />
+              {gs.remote_url ? t("gitsetup.reopen") : t("gitsetup.open")}
+            </button>
+            {!gs.remote_url && !manual && (
+              <button type="button" className="m-btn m-btn-quiet" onClick={() => setManual(true)}>
+                {t("gitsetup.manual")}
               </button>
-            </div>
-          )}
-          <Field label={t("set.git.token")} htmlFor="m-git-token" hint={t("set.git.tokenDesc")}>
-            <div className="m-input-row">
-              <input id="m-git-token" className="m-input" type="password" autoComplete="off" value={token} placeholder={status?.token_set ? t("set.git.tokenReplace") : ""} onChange={(e) => setToken(e.target.value)} />
-              <button type="button" className="m-btn" disabled={!token.trim() && !status?.token_set} onClick={() => void saveToken()}>
-                {token.trim() || !status?.token_set ? t("mob.set.tokenSave") : t("common.remove")}
-              </button>
-            </div>
-          </Field>
-          {status?.token_set && (
-            <div className="m-status-line">
-              <KeyRound size={16} />
-              {t("mob.set.tokenStored")}
-            </div>
-          )}
-          <div className="m-divider" />
-          <Switch checked={gs.enabled} onChange={(v) => void saveGit({ enabled: v })} label={t("mob.set.syncOn")} desc={t("mob.set.syncOnDesc")} />
-          <div className="m-divider" />
-          <div className="m-sync-status">
-            <span className="m-row-main">
-              <span className="m-row-title">{t("set.git.last")}</span>
-              <span className="m-row-sub">
-                {status?.last_at ? relative(status.last_at) : t("set.git.never")}
-                {status && status.pending_changes > 0 ? ` · ${t("set.git.pending", { n: status.pending_changes })}` : ""}
-              </span>
-            </span>
-            {state === "ok" && <CircleCheck size={18} className="m-ok-icon" />}
+            )}
           </div>
-          {status?.last_error && (
-            <Notice tone="error" icon={<TriangleAlert size={18} />}>
-              {status.last_error}
-            </Notice>
-          )}
-          {status?.blocked_deletions ? (
-            <Notice
-              tone="warning"
-              icon={<TriangleAlert size={18} />}
-              action={
-                <button
-                  type="button"
-                  className={confirmDeletions ? "m-btn m-btn-danger" : "m-btn"}
-                  onClick={() => {
-                    if (!confirmDeletions) return setConfirmDeletions(true);
-                    setConfirmDeletions(false);
-                    void m.sync({ allowDeletions: true });
-                  }}
+          {showForm && (
+            <>
+              <div className="m-divider" />
+              <Field label={t("set.git.remote")} htmlFor="m-git-url" hint={t("mob.set.remoteDesc")}>
+                <input id="m-git-url" className="m-input" type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={remote} placeholder={t("set.git.remotePlaceholder")} onChange={(e) => setRemote(e.target.value)} />
+              </Field>
+              <div className="m-field-pair">
+                <Field label={t("set.git.branch")} htmlFor="m-git-branch">
+                  <input id="m-git-branch" className="m-input" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={branch} onChange={(e) => setBranch(e.target.value)} />
+                </Field>
+                <Field label={t("set.git.authorName")} htmlFor="m-git-author">
+                  <input id="m-git-author" className="m-input" value={author} onChange={(e) => setAuthor(e.target.value)} />
+                </Field>
+              </div>
+              <Field label={t("set.git.authorEmail")} htmlFor="m-git-email">
+                <input id="m-git-email" className="m-input" type="email" inputMode="email" autoCapitalize="off" value={email} onChange={(e) => setEmail(e.target.value)} />
+              </Field>
+              {dirty && (
+                <div className="m-form-actions">
+                  <button type="button" className="m-btn m-btn-primary m-btn-block" onClick={saveRemote}>
+                    {t("mob.set.saveRemote")}
+                  </button>
+                </div>
+              )}
+              <Field label={t("set.git.token")} htmlFor="m-git-token" hint={t("set.git.tokenDesc")}>
+                <div className="m-input-row">
+                  <input id="m-git-token" className="m-input" type="password" autoComplete="off" value={token} placeholder={status?.token_set ? t("set.git.tokenReplace") : ""} onChange={(e) => setToken(e.target.value)} />
+                  <button type="button" className="m-btn" disabled={!token.trim() && !status?.token_set} onClick={() => void saveToken()}>
+                    {token.trim() || !status?.token_set ? t("mob.set.tokenSave") : t("common.remove")}
+                  </button>
+                </div>
+              </Field>
+              {status?.token_set && (
+                <div className="m-status-line">
+                  <KeyRound size={16} />
+                  {t("mob.set.tokenStored")}
+                </div>
+              )}
+              <div className="m-divider" />
+              <Switch checked={gs.enabled} onChange={(v) => void saveGit({ enabled: v })} label={t("mob.set.syncOn")} desc={t("mob.set.syncOnDesc")} />
+              <div className="m-divider" />
+              <div className="m-sync-status">
+                <span className="m-row-main">
+                  <span className="m-row-title">{t("set.git.last")}</span>
+                  <span className="m-row-sub">
+                    {status?.last_at ? relative(status.last_at) : t("set.git.never")}
+                    {status && status.pending_changes > 0 ? ` · ${t("set.git.pending", { n: status.pending_changes })}` : ""}
+                  </span>
+                </span>
+                {state === "ok" && <CircleCheck size={18} className="m-ok-icon" />}
+              </div>
+              {status?.last_error && (
+                <Notice tone="error" icon={<TriangleAlert size={18} />}>
+                  {status.last_error}
+                </Notice>
+              )}
+              {status?.blocked_deletions ? (
+                <Notice
+                  tone="warning"
+                  icon={<TriangleAlert size={18} />}
+                  action={
+                    <button
+                      type="button"
+                      className={confirmDeletions ? "m-btn m-btn-danger" : "m-btn"}
+                      onClick={() => {
+                        if (!confirmDeletions) return setConfirmDeletions(true);
+                        setConfirmDeletions(false);
+                        void m.sync({ allowDeletions: true });
+                      }}
+                    >
+                      {confirmDeletions ? t("set.git.deleteConfirm") : t("set.git.deletionsPush")}
+                    </button>
+                  }
                 >
-                  {confirmDeletions ? t("set.git.deleteConfirm") : t("set.git.deletionsPush")}
+                  <strong>{t("set.git.deletionsHeld")}</strong>
+                  <span>{t("set.git.deletionsHeldDesc", { n: status.blocked_deletions })}</span>
+                </Notice>
+              ) : null}
+              {test && <div className="m-status-line">{test}</div>}
+              <div className="m-form-actions">
+                <button type="button" className="m-btn" disabled={testing || !remote.trim()} onClick={() => void runTest()}>
+                  {testing ? <Spinner /> : null}
+                  {t("set.git.test")}
                 </button>
-              }
-            >
-              <strong>{t("set.git.deletionsHeld")}</strong>
-              <span>{t("set.git.deletionsHeldDesc", { n: status.blocked_deletions })}</span>
-            </Notice>
-          ) : null}
-          {test && <div className="m-status-line">{test}</div>}
-          <div className="m-form-actions">
-            <button type="button" className="m-btn" disabled={testing || !remote.trim()} onClick={() => void runTest()}>
-              {testing ? <Spinner /> : null}
-              {t("set.git.test")}
-            </button>
-            <button type="button" className="m-btn m-btn-primary" disabled={m.syncing || !gs.remote_url.trim()} onClick={() => void m.sync()}>
-              {m.syncing ? <Spinner /> : null}
-              {m.syncing ? t("mob.set.syncing") : t("set.git.syncNow")}
-            </button>
-          </div>
+                <button type="button" className="m-btn m-btn-primary" disabled={m.syncing || !gs.remote_url.trim()} onClick={() => void m.sync()}>
+                  {m.syncing ? <Spinner /> : null}
+                  {m.syncing ? t("mob.set.syncing") : t("set.git.syncNow")}
+                </button>
+              </div>
+            </>
+          )}
         </Section>
 
         {conflicts.length > 0 && (

@@ -1322,3 +1322,93 @@ select.m-input {
     transform: translateY(8px);
   }
 }
+
+/* ---- guided setup of the sync (1.20): the picked provider or repository as a neutral tint */
+.m-gs .m-title {
+  font-size: var(--fs-xl);
+}
+.m-gs-mark {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+.m-gs-provider.on,
+.m-gs-repo.on {
+  background: var(--bg-current);
+}
+.m-gs-provider.on .m-row-title,
+.m-gs-repo.on .m-row-title {
+  font-weight: var(--fw-semibold);
+}
+.m-gs-provider.on .m-gs-mark {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.m-gs-check {
+  flex: none;
+  color: var(--text-2);
+}
+.m-gs-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.m-gs-search .m-input {
+  flex: 1;
+  min-width: 0;
+}
+.m-gs-repos {
+  margin: 0 calc(var(--sp-4) * -1);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.m-gs-checks {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-gs-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 36px;
+  font-size: var(--fs-md);
+  color: var(--text-2);
+}
+.m-gs-step svg,
+.m-gs-step .m-spinner {
+  flex: none;
+}
+.m-gs-step .m-gs-fail {
+  color: var(--danger);
+}
+.m-gs-detail summary {
+  display: list-item;
+  min-height: var(--touch-min);
+  line-height: var(--touch-min);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.m-gs-detail code {
+  display: block;
+  font-family: var(--font-mono); font-variant-ligatures: none;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.m-gs-done {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-2);
+}
+.m-gs-done .m-row-title {
+  margin: 0;
+  white-space: normal;
+}
+.m-gs-blocked {
+  margin-top: var(--sp-2);
+  text-align: center;
+}
