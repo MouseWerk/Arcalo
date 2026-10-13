@@ -20,6 +20,7 @@ import type { UpdateInfo, UpdateProgress, UpdateStatus } from "../lib/types";
 import { useApp } from "../store/app";
 import { Button, Dialog, IconButton, Progress, Spinner, useMenu } from "./ui";
 import { currentLang, t, useT } from "../lib/i18n";
+import { onAndroid } from "../lib/capabilities";
 
 /** `preparing`: the editors are being stored before the download (a second click waits for it). */
 type Phase = "idle" | "checking" | "preparing" | "downloading" | "installing";
@@ -489,7 +490,24 @@ function ReleaseNotes() {
 function closeWhatsNew() {
   const seen = useUpdates.getState().whatsNew?.seen;
   useUpdates.setState({ whatsNew: null });
-  if (seen) void api.updateWhatsNewSeen(seen).catch(() => {});
+  if (seen) void (onAndroid() ? api.androidWhatsNewSeen() : api.updateWhatsNewSeen(seen)).catch(() => {});
+}
+
+/**
+ * The full app on Android: „Neu in Arcalo“ after an update of the app, as on the desktop after its
+ * first start. The app's own updater knows the version it came from (the phone app does not show
+ * it; its next start in the full app does). A version without highlights is marked shown at once.
+ */
+export async function showAndroidWhatsNew(): Promise<void> {
+  try {
+    const st = await api.androidUpdateStatus();
+    if (!st.updated_from) return;
+    const versions = highlightsBetween(HIGHLIGHTS, st.updated_from, st.current);
+    if (versions.length) useUpdates.setState({ whatsNew: { versions, seen: st.current } });
+    else await api.androidWhatsNewSeen();
+  } catch {
+    // An older shell without the field: nothing to show.
+  }
 }
 
 /** Opens the action of a highlight (a view, a settings section, a command of the keymap). */

@@ -324,6 +324,10 @@ export const api = {
   updateUnskip: () => call<void>("update_unskip"),
   updateRemind: (days: number) => call<string>("update_remind", { days }),
   updateWhatsNewSeen: (version: string) => call<void>("update_whats_new_seen", { version }),
+  /** The Android app's updater (src-tauri/src/mobile/apkupdate.rs): the version running and the one
+   *  it was updated from while „Neu in Arcalo“ was not shown since. */
+  androidUpdateStatus: () => call<{ current: string; updated_from: string | null }>("apk_update_status"),
+  androidWhatsNewSeen: () => call<unknown>("apk_whats_new_seen"),
   /** „Zur vorherigen Version zurückkehren“: restores the database of before the update and the previous program. */
   updateRollback: () => call<void>("update_rollback"),
   /** Release notes (Markdown) of a version the app does not bundle, from the repository. */

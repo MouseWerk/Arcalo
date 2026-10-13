@@ -9,7 +9,7 @@ import { applyTheme } from "./lib/actions";
 import { REVEAL_EVENT, Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
-import { caps } from "./lib/capabilities";
+import { caps, onAndroid } from "./lib/capabilities";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
 import { openChatView } from "./store/chat";
@@ -34,7 +34,7 @@ import { requestPageCommand } from "./lib/pageModes";
 import { showSidebar, sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { cycleRegion } from "./lib/regions";
-import { startUpdateChecks } from "./components/Updates";
+import { showAndroidWhatsNew, startUpdateChecks } from "./components/Updates";
 import { takeUpdateSession } from "./lib/updatesession";
 import { commandAllowed, commandFor, currentKeymap, keyConsumed, learnKeyboardLayout, modalLayer } from "./lib/keymap";
 import { usesPac, withPacResults } from "./views/settings/NetworkSection";
@@ -119,6 +119,8 @@ export function App() {
     // Only builds with an update key look for new releases; installing always needs a click.
     // Android updates through its own installer (Einstellungen → Über Arcalo).
     const stopUpdates = caps().desktopUpdater ? startUpdateChecks() : () => {};
+    // The full app on Android: „Neu in Arcalo“ after an update of the app.
+    if (onAndroid()) void showAndroidWhatsNew();
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onMedia = () => applyTheme(useApp.getState().settings?.settings.theme ?? "system");

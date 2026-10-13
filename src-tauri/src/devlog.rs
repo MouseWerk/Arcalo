@@ -885,7 +885,9 @@ pub fn devlog_write(level: String, source: Option<String>, message: String) {
     }
 }
 
-#[tauri::command]
+/// Reads and parses up to 5000 lines: off the command thread (`async`; on Android every synchronous
+/// command waits in one line behind the one before, docs/android.md).
+#[tauri::command(async)]
 pub fn devlog_read(limit: Option<usize>) -> Vec<Entry> {
     LOG.get().map(|l| l.read(limit.unwrap_or(500).clamp(1, 5000))).unwrap_or_default()
 }
@@ -903,8 +905,11 @@ pub struct Stats {
     level_env: Option<&'static str>,
 }
 
-#[tauri::command]
-pub fn devlog_stats(state: State<AppState>) -> Stats {
+/// Reads the log like [`devlog_read`], off the command thread too.
+#[tauri::command(async)]
+pub fn devlog_stats(app: AppHandle) -> Stats {
+    use tauri::Manager as _;
+    let state = app.state::<AppState>();
     let since = Local::now() - chrono::TimeDelta::days(7);
     let errors_week = devlog_read(Some(5000))
         .iter()

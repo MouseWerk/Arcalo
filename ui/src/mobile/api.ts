@@ -69,6 +69,8 @@ export interface UpdateStatus {
   blocked: string | null;
   last_check: string | null;
   allow_mobile_data: boolean;
+  /** Updated from this version and „Neu in Arcalo“ not shown since (the full app shows it). */
+  updated_from?: string | null;
 }
 
 export type InstallOutcome = "started" | "needs_permission";

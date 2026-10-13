@@ -222,6 +222,23 @@ pub fn check_due(last: Option<chrono::DateTime<chrono::Utc>>, now: chrono::DateT
     }
 }
 
+/// „Neu in Arcalo“ after an update of the app (the full app shows it, as the desktop does after its
+/// first start): `seen` is the version the news was last shown for (none on the first start of an
+/// app that never recorded one), `current` the version running now. Returns the version the
+/// update came from while its news waits to be shown, and the version to record now (`None`:
+/// nothing to store). A first start shows nothing and records the version, so a new install does
+/// not greet with the news of every release.
+pub fn whats_new_from(seen: Option<&str>, current: &str) -> (Option<String>, Option<String>) {
+    let current = current.trim();
+    match seen.map(str::trim).filter(|s| !s.is_empty()) {
+        None => (None, Some(current.to_owned())),
+        Some(s) if crate::update::is_newer(s, current) => (Some(s.to_owned()), None),
+        Some(s) if s == current => (None, None),
+        // An older version installed again: recorded, nothing to show.
+        Some(_) => (None, Some(current.to_owned())),
+    }
+}
+
 /// File names in the app's update folder: the APK of `version` and its part while downloading.
 pub fn apk_name(version: &str) -> String {
     format!("Arcalo_{}_android.apk", version.trim().trim_start_matches('v'))
@@ -421,5 +438,18 @@ mod tests {
         assert_eq!(remove_stale(&dir, None), 2);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn whats_new_waits_after_an_update_until_it_was_shown() {
+        // The first start records the version and shows nothing.
+        assert_eq!(whats_new_from(None, "1.21.0"), (None, Some("1.21.0".into())));
+        assert_eq!(whats_new_from(Some(" "), "1.21.0"), (None, Some("1.21.0".into())));
+        // After an update the news waits (also across later updates) until shown.
+        assert_eq!(whats_new_from(Some("1.20.0"), "1.21.0"), (Some("1.20.0".into()), None));
+        assert_eq!(whats_new_from(Some("1.20.0"), "1.22.1"), (Some("1.20.0".into()), None));
+        // Shown: nothing more; an older version installed again is recorded.
+        assert_eq!(whats_new_from(Some("1.21.0"), "1.21.0"), (None, None));
+        assert_eq!(whats_new_from(Some("1.22.0"), "1.21.0"), (None, Some("1.21.0".into())));
     }
 }

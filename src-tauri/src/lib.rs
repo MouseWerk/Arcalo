@@ -5514,6 +5514,8 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         mobile::apkupdate::apk_update_allow_install,
         #[cfg(mobile)]
         mobile::apkupdate::apk_update_set_mobile_data,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_whats_new_seen,
     ]))
 }
 

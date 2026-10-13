@@ -97,6 +97,16 @@ plugins (Keystore, window, files) answer too; a command that reads a secret ther
 Android every command goes to one worker thread first, in the order they came (`off_main_thread` in
 `src-tauri/src/mobile/mod.rs`).
 
+The trade-off: a synchronous command runs on that thread to its end, and every command after it (also an
+`async` one, which only goes on from there) waits. One thread keeps the order the main thread had, which the
+Keystore relies on (a token stored, then the status that reads it; a setting saved, then the AI clients built
+with its keys), so it stays one thread; a pool would let a later read overtake an earlier write. What can take
+long does not run there: the sync, backups, exports, the diagnostics bundle, the network tests and the guided
+Git setup are `async` (or `#[tauri::command(async)]`) and leave the worker at once, the log viewer's read of up
+to 5000 lines too (`devlog_read`, `devlog_stats`, 1.20). The synchronous commands left are short reads and
+writes of the database or the settings. A new command that can take more than a few milliseconds is made
+`async`, unless it reads or writes a secret and must keep its place in the order.
+
 **Tests on the desktop.** A debug build started with `ARCALO_SIMULATE_ANDROID=1` reports Android's
 capabilities and refuses the desktop-only commands as Android does (`platform::guard`), and its window may
 be as narrow as a tablet; `e2e/tests/400-android-full-app.test.js` opens the ribbon, the palette, every

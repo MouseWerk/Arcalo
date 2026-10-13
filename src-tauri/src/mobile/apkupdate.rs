@@ -89,6 +89,9 @@ pub struct Status {
     pub blocked: Option<String>,
     pub last_check: Option<DateTime<Utc>>,
     pub allow_mobile_data: bool,
+    /// The app was updated from this version and „Neu in Arcalo“ was not shown since (the full
+    /// app shows it, `apk_whats_new_seen` marks it shown).
+    pub updated_from: Option<String>,
 }
 
 /// Device-local choices and memory of the updater.
@@ -101,6 +104,9 @@ struct Prefs {
     /// The version the „Update bereit“ notification was shown for (once per version).
     #[serde(default)]
     notified: Option<String>,
+    /// The version „Neu in Arcalo“ was last shown for (or the first start's).
+    #[serde(default)]
+    whats_new_seen: Option<String>,
 }
 
 /// The updater's state, managed by the app.
@@ -117,19 +123,26 @@ pub struct Updater {
 impl Updater {
     pub fn new(app: &AppHandle, data_dir: &Path) -> Updater {
         let prefs_path = data_dir.join(PREFS_FILE);
-        let prefs: Prefs =
+        let mut prefs: Prefs =
             std::fs::read_to_string(&prefs_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         // The APK goes into the cache's `updates/` folder: the only place the FileProvider
         // (res/xml/file_paths.xml) hands to the installer.
         let cache = app.path().app_cache_dir().unwrap_or_else(|_| data_dir.join("cache"));
+        let current = app.package_info().version.to_string();
+        let (updated_from, record) = core::whats_new_from(prefs.whats_new_seen.as_deref(), &current);
         let status = Status {
             configured: pubkey().is_some(),
-            current: app.package_info().version.to_string(),
+            current,
             last_check: prefs.last_check,
             allow_mobile_data: prefs.allow_mobile_data,
+            updated_from,
             ..Status::default()
         };
-        Updater {
+        let save = record.is_some();
+        if save {
+            prefs.whats_new_seen = record;
+        }
+        let up = Updater {
             status: Mutex::new(status),
             release: Mutex::new(None),
             busy: AtomicBool::new(false),
@@ -137,7 +150,11 @@ impl Updater {
             prefs: Mutex::new(prefs),
             prefs_path,
             dir: cache.join("updates"),
+        };
+        if save {
+            up.save_prefs();
         }
+        up
     }
 
     fn snapshot(&self) -> Status {
@@ -533,6 +550,16 @@ pub async fn apk_update_install(app: AppHandle) -> Result<InstallOutcome> {
 #[tauri::command]
 pub async fn apk_update_allow_install() -> Result<bool> {
     blocking(android::open_install_settings).await?.map_err(arcalo_core::Error::State)
+}
+
+/// „Neu in Arcalo“ was shown after an update (or closed): not again for this version.
+#[tauri::command]
+pub fn apk_whats_new_seen(app: AppHandle) -> Status {
+    let up = app.state::<Updater>();
+    let current = up.snapshot().current;
+    lock(&up.prefs).whats_new_seen = Some(current);
+    up.save_prefs();
+    set(&app, |s| s.updated_from = None)
 }
 
 /// „Updates auch über mobile Daten laden“.
