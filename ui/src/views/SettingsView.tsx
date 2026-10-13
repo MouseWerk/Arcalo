@@ -1437,6 +1437,12 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
             </Button>
           </Row>
           {test && !test.ok && test.error && <p className="error-note mono small">{test.error}</p>}
+          {test?.note && (
+            <div className="gs-callout git-test-note" role="status">
+              <Info size={16} aria-hidden />
+              <p>{test.note}</p>
+            </div>
+          )}
           <Row
             label={t("set.git.last")}
             description={

@@ -2025,9 +2025,12 @@ struct GitTest {
     latency_ms: u64,
     branches: Vec<String>,
     error: Option<String>,
+    /// Tested without the stored token, and why (it belongs to the saved repository's server).
+    note: Option<String>,
 }
 
-/// Checks URL and credentials with `git ls-remote`. An unsaved URL or token can be tested.
+/// Checks URL and credentials with `git ls-remote`. An unsaved URL or token can be tested; the
+/// stored token only goes to the server of the saved repository (`gitsetup::test_token`).
 #[tauri::command]
 async fn git_sync_test(app: AppHandle, url: Option<String>, token: Option<String>) -> Result<GitTest> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2039,20 +2042,24 @@ async fn git_sync_test(app: AppHandle, url: Option<String>, token: Option<String
                 latency_ms: 0,
                 branches: vec![],
                 error: Some(tr!("Keine Remote-URL", "No remote URL").into()),
+                note: None,
             });
         }
-        let token = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).or_else(|| state.git_secret.get());
+        let saved = state.settings().git_sync.remote_url;
+        let (token, note) = gitsetup::test_token(token, state.git_secret.get(), &saved, &url);
+        devlog::remember_secret(token.as_deref());
         let git = network::git(&state, token.clone(), &url);
         let start = Instant::now();
         let res = git.version().and_then(|_| git.ls_remote(&url));
         let latency_ms = start.elapsed().as_millis() as u64;
         Ok(match res {
-            Ok(branches) => GitTest { ok: true, latency_ms, branches, error: None },
+            Ok(branches) => GitTest { ok: true, latency_ms, branches, error: None, note },
             Err(e) => GitTest {
                 ok: false,
                 latency_ms,
                 branches: vec![],
                 error: Some(gitsync::redact(&e.to_string(), token.as_deref())),
+                note,
             },
         })
     })

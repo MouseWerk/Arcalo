@@ -46,6 +46,37 @@ fn pick_token(
     if own { stored() } else { None }
 }
 
+/// The token for the manual form's „Testen“ of `url` (the same rule as the setup's), and, when the
+/// stored token was left out because `url` is on another server, why (to show with the result).
+pub(crate) fn test_token(
+    typed: Option<String>,
+    stored: Option<String>,
+    saved_remote: &str,
+    url: &str,
+) -> (Option<String>, Option<String>) {
+    let typed = typed.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    let had_stored = stored.is_some();
+    let token = pick_token(typed.clone(), || stored, saved_remote, &[url]);
+    let web = |u: &str| reqwest::Url::parse(u.trim()).ok().filter(|u| matches!(u.scheme(), "http" | "https"));
+    let withheld = typed.is_none() && had_stored && token.is_none() && web(url).is_some();
+    let note = withheld.then(|| {
+        let home = web(saved_remote).and_then(|u| u.host_str().map(str::to_owned));
+        match home {
+            Some(h) => arcalo_core::trf!(
+                "Ohne den gespeicherten Token getestet: Er gehört zu {} und wird nur dort verwendet. Füge für diesen Server einen eigenen ein.",
+                "Tested without the stored token: it belongs to {} and is only used there. Enter one for this server.",
+                h
+            ),
+            None => arcalo_core::tr!(
+                "Ohne den gespeicherten Token getestet: Er wird erst mit einer gespeicherten Repository-Adresse verwendet.",
+                "Tested without the stored token: it is only used once a repository address is saved."
+            )
+            .to_owned(),
+        }
+    });
+    (token, note)
+}
+
 fn token_of(state: &AppState, token: Option<String>, urls: &[&str]) -> Option<String> {
     let saved = state.settings().git_sync.remote_url;
     let t = pick_token(token, || state.git_secret.get(), &saved, urls);
@@ -189,7 +220,33 @@ fn failed(p: Problem) -> Check {
 
 #[cfg(test)]
 mod tests {
-    use super::pick_token;
+    use super::{pick_token, test_token};
+
+    #[test]
+    fn the_manual_test_sends_the_stored_token_only_to_the_saved_server_and_says_so() {
+        let saved = "https://github.com/mia/notizen.git";
+        let stored = || Some("ghp_gespeichert".to_owned());
+        // The saved server (another repository there, too): the stored token, no note.
+        assert_eq!(test_token(None, stored(), saved, "https://github.com/mia/neu.git"), (stored(), None));
+        // Another host or port: tested without it, and the result says why.
+        for url in ["https://git.example.org/mia/notizen.git", "https://github.com:8443/mia/notizen.git"] {
+            let (token, note) = test_token(None, stored(), saved, url);
+            assert_eq!(token, None, "{url}");
+            assert!(note.as_deref().is_some_and(|n| n.contains("github.com")), "{url}: {note:?}");
+        }
+        // A token typed for the test is used wherever it goes; nothing stored: nothing to say.
+        assert_eq!(
+            test_token(Some("glpat".into()), stored(), saved, "https://git.example.org/x.git"),
+            (Some("glpat".into()), None)
+        );
+        assert_eq!(test_token(None, None, saved, "https://git.example.org/x.git"), (None, None));
+        // A local repository needs no token (and gets none).
+        assert_eq!(test_token(None, stored(), saved, "/srv/git/notizen.git"), (None, None));
+        // Nothing saved yet: the stored token stays home.
+        let (token, note) = test_token(None, stored(), "", "https://github.com/mia/notizen.git");
+        assert_eq!(token, None);
+        assert!(note.is_some());
+    }
 
     #[test]
     fn the_stored_token_only_goes_to_the_server_of_the_saved_repository() {

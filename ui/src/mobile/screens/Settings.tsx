@@ -71,7 +71,7 @@ export function SettingsScreen() {
     setTest(null);
     try {
       const r = await api.gitSyncTest(remote.trim() || null, token.trim() || null);
-      setTest(r.ok ? t("set.git.connected", { n: r.branches.length, ms: r.latency_ms }) : (r.error ?? ""));
+      setTest([r.ok ? t("set.git.connected", { n: r.branches.length, ms: r.latency_ms }) : (r.error ?? ""), r.note].filter(Boolean).join(" "));
     } catch (e) {
       setTest(errorText(e));
     } finally {

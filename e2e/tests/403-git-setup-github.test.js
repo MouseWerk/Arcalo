@@ -228,3 +228,23 @@ test("set up again on a working setup: the branch with the notes stays", async (
   assert.equal(git.branch, "arcalo");
   await app.click(".dialog-foot .btn:not(.btn-primary)");
 });
+
+test("the manual form's test sends the stored token only to the saved server", async () => {
+  const site = gh.find("mia", "website");
+  // The saved server: with the stored token, nothing to say.
+  const home = await app.invoke("git_sync_test", { url: gh.cloneUrl(site), token: null });
+  assert.equal(home.ok, true, home.error);
+  assert.equal(home.note, null);
+  // Another server (another port): without it, and the result says why.
+  const before = gh.seen.length;
+  const other = await startFakeProvider({ flavor: "github" });
+  try {
+    other.addRepo("fremd");
+    const away = await app.invoke("git_sync_test", { url: other.cloneUrl(other.find("mia", "fremd")), token: null });
+    assert.match(away.note ?? "", /Ohne den gespeicherten Token getestet.*127\.0\.0\.1/);
+    for (const r of other.seen) assert.ok(!r.authorization, `the stored token went to ${r.path}`);
+  } finally {
+    await other.close();
+  }
+  assert.equal(gh.seen.length, before);
+});

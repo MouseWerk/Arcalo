@@ -691,6 +691,8 @@ export interface GitTest {
   latency_ms: number;
   branches: string[];
   error: string | null;
+  /** Tested without the stored token (it belongs to the saved repository's server), and why. */
+  note?: string | null;
 }
 /** A widget of the start page before 1.6 (one list, three widths). */
 export interface LegacyWidget {

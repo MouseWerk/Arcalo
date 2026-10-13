@@ -595,6 +595,8 @@
 .gs-callout > svg { flex: none; margin-top: 2px; color: var(--info); }
 .gs-callout > div { display: grid; gap: 6px; min-width: 0; }
 .gs-callout > div > .btn { justify-self: start; }
+/* The manual form's „Testen“ ran without the stored token (another server). */
+.git-test-note { margin: 4px 0 0; font-size: var(--fs-sm); }
 .gs-callout p { margin: 0; overflow-wrap: anywhere; }
 .gs-callout-warn { background: var(--warning-soft); }
 .gs-callout-warn > svg { color: var(--warning); }
