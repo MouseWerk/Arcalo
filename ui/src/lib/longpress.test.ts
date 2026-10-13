@@ -62,10 +62,15 @@ describe("a long press opens the context menu", () => {
     expect(menus).toHaveLength(1);
     expect(menus[0].target).toBe(row);
     expect([menus[0].clientX, menus[0].clientY, menus[0].button]).toEqual([40, 50, 2]);
-    // The release does not click the row as well.
-    const click = new Event("click", { bubbles: true, cancelable: true });
-    row.dispatchEvent(click);
-    expect(click.defaultPrevented).toBe(true);
+    // The release does not click the row as well; the next press clicks as usual.
+    const click = () => {
+      const c = new Event("click", { bubbles: true, cancelable: true });
+      row.dispatchEvent(c);
+      return c.defaultPrevented;
+    };
+    expect(click()).toBe(true);
+    pointer("pointerdown", row, { pointerType: "mouse" });
+    expect(click()).toBe(false);
   });
 
   it("does nothing for a tap, a scroll, a mouse or in a text field", () => {

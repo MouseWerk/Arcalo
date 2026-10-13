@@ -35,6 +35,8 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   let start: { x: number; y: number; target: EventTarget | null } | null = null;
   /** When our menu went out: a native one shortly after is the same press. */
   let sentAt = -Infinity;
+  /** The release of the finger that opened the menu has not clicked yet (a new press clears it). */
+  let swallowClick = false;
   const cancel = () => {
     if (timer) timers.clear(timer);
     timer = 0;
@@ -42,6 +44,7 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   };
   const onDown = (e: Event) => {
     const p = e as PointerEvent;
+    swallowClick = false;
     if ((p.pointerType !== "touch" && p.pointerType !== "pen") || p.isPrimary === false || keepsNativePress(p.target)) return cancel();
     cancel();
     start = { x: p.clientX, y: p.clientY, target: p.target };
@@ -50,6 +53,7 @@ export function installLongPress(root: Document | HTMLElement = document, timers
       cancel();
       if (!at?.target) return;
       sentAt = timers.now();
+      swallowClick = true;
       at.target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 2, buttons: 0 }));
     }, LONG_PRESS_MS);
   };
@@ -67,9 +71,11 @@ export function installLongPress(root: Document | HTMLElement = document, timers
     }
     cancel();
   };
-  // After a long press the finger's release must not also click what it rests on.
+  // After a long press the finger's release must not also click what it rests on (only that
+  // release: the next press, a tap on the menu, clicks as usual).
   const onClick = (e: Event) => {
-    if (timers.now() - sentAt < 600) {
+    if (swallowClick && timers.now() - sentAt < 1500) {
+      swallowClick = false;
       e.preventDefault();
       e.stopImmediatePropagation();
     }
