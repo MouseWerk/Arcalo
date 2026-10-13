@@ -103,6 +103,8 @@ export function installTooltips() {
   document.addEventListener(
     "pointerover",
     (e) => {
+      // A finger has no hover: a tap shows no tooltip (the full app on Android, touch screens).
+      if ((e as PointerEvent).pointerType === "touch") return;
       const from = e.target as Element | null;
       const own = from?.closest?.("[data-tooltip]") as HTMLElement | null;
       if (own) return enter(own);

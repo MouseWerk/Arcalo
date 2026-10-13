@@ -832,6 +832,7 @@
 .coll-th:hover .coll-th-menu, .coll-th-menu:focus-visible { opacity: 1; }
 .coll-th-menu:hover { background: var(--bg-active); color: var(--text); }
 .coll-resize { position: absolute; top: 0; right: -4px; bottom: 0; z-index: 3; width: 8px; cursor: col-resize; touch-action: none; }
+@media (pointer: coarse) { .coll-resize { right: calc(var(--touch-min) / -8); width: calc(var(--touch-min) / 4); } }
 .coll-resize::after { content: ""; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: var(--r-2xs); background: var(--accent); opacity: 0; transition: opacity var(--dur-fast); }
 .coll-resize:hover::after { opacity: 1; }
 .coll-th-add { border-right: 0; }

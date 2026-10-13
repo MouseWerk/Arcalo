@@ -89,6 +89,12 @@ body.resizing .resizer:active::after { background: var(--accent); }
 .resizer:focus-visible { outline: none; }
 .resizer:focus-visible::after { inset: 0 2px; background: var(--border-focus); }
 body.resizing { cursor: col-resize; user-select: none; }
+/* A finger needs a wider grip than the line (the full app on Android, touch screens): half the
+   smallest touch target, centered on the same line. */
+@media (pointer: coarse) {
+  .resizer { width: calc(var(--touch-min) / 2); margin: 0 calc(var(--touch-min) / -4); }
+  .resizer::after { inset: 0 calc(var(--touch-min) / 4 - 1px); }
+}
 body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 
 /* workspace and panes */
