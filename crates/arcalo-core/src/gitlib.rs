@@ -748,12 +748,13 @@ fn callbacks<'a>(git: &'a Git, url: &str, attempts: &'a Cell<u32>) -> RemoteCall
     let mut cb = RemoteCallbacks::new();
     let http = super::is_http(url);
     let token = git.token().filter(|_| git.send_token && http).map(str::to_owned);
+    let user = git.token_user;
     cb.credentials(move |_url, _user, allowed| {
         let n = attempts.get();
         attempts.set(n + 1);
         match &token {
             Some(t) if n == 0 && allowed.contains(CredentialType::USER_PASS_PLAINTEXT) => {
-                Cred::userpass_plaintext("x-access-token", t)
+                Cred::userpass_plaintext(user, t)
             }
             _ => Err(git2::Error::new(ErrorCode::Auth, ErrorClass::Http, "authentication failed")),
         }

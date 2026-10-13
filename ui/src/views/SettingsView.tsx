@@ -22,6 +22,8 @@ import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsF
 import { formatShortcut, keyChips, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
+import { GitSetupWizard } from "./settings/GitSetupWizard";
+import type { SaveGit } from "../lib/useGitSetup";
 import { blockedText, effectiveMode, INTERVALS, isManaged, NOT_CONFIGURED, updateHint } from "../lib/updates";
 import { checkForUpdates, loadUpdateStatus, showReleaseNotes, undoSkip, UpdateAction, useUpdates } from "../components/Updates";
 import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
@@ -1189,9 +1191,25 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
   const [syncing, setSyncing] = useState(false);
   const [restoreUrl, setRestoreUrl] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [wizard, setWizard] = useState(false);
+  const [manual, setManual] = useState(false);
   const s = useApp.getState;
+  const showForm = !!git.remote_url || manual;
 
   const reload = () => api.gitSyncStatus().then(setStatus).catch(() => setStatus(null));
+  /** The guided setup's save: applied like every change (with its undo), and stored before the
+   *  setup says it is done (its „Jetzt synchronisieren“ needs the stored address). */
+  const saveFromWizard: SaveGit = async (patch) => {
+    setGit(patch);
+    const stored = () => {
+      const g = useApp.getState().settings?.settings.git_sync;
+      return !!g && g.remote_url === patch.remote_url && g.branch === patch.branch && g.enabled;
+    };
+    const until = Date.now() + 8000;
+    while (!stored() && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    if (!stored()) throw new Error(t("settings.saveFailed"));
+    reload();
+  };
   useEffect(() => {
     reload();
     const off = [on("gitsync://done", reload), on("gitsync://failed", reload)];
@@ -1284,126 +1302,155 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
   const fallback = status?.last_branch && status.last_branch !== git.branch ? status.last_branch : null;
   return (
     <Group title={t("set.git.title")} description={t("set.git.desc")} help="gitSync">
-      <Row label={t("set.git.title")} description={git.remote_url ? undefined : t("set.git.urlFirst")}>
-        <Switch label={t("set.git.title")} checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
-      </Row>
-      <Row stack label={t("set.git.remote")} description={t(caps().mobile ? "mob.set.remoteDesc" : "set.git.remoteDesc")}>
-        <CommitInput value={git.remote_url} onCommit={(v) => setGit({ remote_url: v })} placeholder={t("set.git.remotePlaceholder")} aria-label={t("set.git.remote")} className="grow" />
-      </Row>
-      <Row label={t("set.git.branch")}>
-        <CommitInput value={git.branch} onCommit={(v) => setGit({ branch: v || "main" })} placeholder="main" aria-label={t("set.git.branch")} />
-      </Row>
-      <Row label={t("set.git.author")} description={t("set.git.authorDesc")}>
-        <CommitInput value={git.author_name} onCommit={(v) => setGit({ author_name: v })} placeholder={t("set.git.authorName")} aria-label={t("set.git.authorNameLabel")} />
-        <CommitInput value={git.author_email} onCommit={(v) => setGit({ author_email: v })} placeholder={t("set.git.authorEmail")} aria-label={t("set.git.authorEmailLabel")} />
-      </Row>
-      <Row
-        stack
-        label={t("set.git.token")}
-        description={
-          <>
-            {status?.token_set ? <Badge tone="success">{t("common.saved")}</Badge> : <Badge>{t("common.notSet")}</Badge>}
-            <span>{t("set.git.tokenDesc")}</span>
-          </>
-        }
-      >
-        <div className="key-input">
-          <KeyRound size={14} className="faint" />
-          <input
-            type={showToken ? "text" : "password"}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder={status?.token_set ? t("set.git.tokenReplace") : "ghp_… / glpat-…"}
-            aria-label={t("set.git.tokenLabel")}
-            autoComplete="off"
-            spellCheck={false}
-            onKeyDown={(e) => isKey(e, "Enter") && token.trim() && saveToken(token.trim())}
-          />
-          <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowToken(!showToken)} />
+      <Row label={t("gitsetup.entry")} description={git.remote_url ? git.remote_url : t("gitsetup.entryDesc")} keywords="GitHub GitLab Gitea Forgejo Bitbucket Token">
+        <div className="gs-entry">
+          {!git.remote_url && !manual && (
+            <Button variant="ghost" className="gs-manual-open" onClick={() => setManual(true)}>
+              {t("gitsetup.manual")}
+            </Button>
+          )}
+          <Button variant={git.remote_url ? "secondary" : "primary"} icon={Compass} className="gs-open" onClick={() => setWizard(true)}>
+            {git.remote_url ? t("gitsetup.reopen") : t("gitsetup.open")}
+          </Button>
         </div>
-        <Button variant="primary" onClick={() => saveToken(token.trim())} disabled={!token.trim()}>
-          {t("common.save")}
-        </Button>
-        {status?.token_set && <IconButton icon={Trash2} label={t("set.git.tokenRemove")} onClick={() => saveToken(null)} />}
       </Row>
-      {/* Android syncs at the start, every 15 minutes and when it comes back (src-tauri/src/mobile),
-          and never uploads the database: both are the desktop's. */}
-      {caps().backups ? (
-        <Row label={t("set.git.when")}>
-          <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label={t("set.git.whenLabel")}>
-            <option value="with_backup">{t("set.git.withBackup")}</option>
-            <option value="hourly">{t("set.git.hourly")}</option>
-          </Select>
-        </Row>
-      ) : (
-        <Row label={t("set.git.when")} description={t("mob.set.syncOnDesc")}>
-          <span />
-        </Row>
+      {wizard && (
+        <GitSetupWizard
+          tokenStored={!!status?.token_set}
+          remoteUrl={git.remote_url || undefined}
+          save={saveFromWizard}
+          onClose={() => setWizard(false)}
+          onManual={() => {
+            setWizard(false);
+            setManual(true);
+          }}
+          onSyncNow={() => void syncNow()}
+        />
       )}
-      {caps().backups && <Row
-        label={t("set.git.database")}
-        description={
-          git.include_database ? (
-            <span className={dbSize != null && dbSize > BIG_DB ? "mirror-error" : ""}>
-              {dbSize != null ? t("set.git.databaseOnSize", { size: fileSize(dbSize) }) : t("set.git.databaseOn")}
-            </span>
+      {showForm && (
+        <>
+          <Row label={t("set.git.title")} description={git.remote_url ? undefined : t("set.git.urlFirst")}>
+            <Switch label={t("set.git.title")} checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
+          </Row>
+          <Row stack label={t("set.git.remote")} description={t(caps().mobile ? "mob.set.remoteDesc" : "set.git.remoteDesc")}>
+            <CommitInput value={git.remote_url} onCommit={(v) => setGit({ remote_url: v })} placeholder={t("set.git.remotePlaceholder")} aria-label={t("set.git.remote")} className="grow" />
+          </Row>
+          <Row label={t("set.git.branch")}>
+            <CommitInput value={git.branch} onCommit={(v) => setGit({ branch: v || "main" })} placeholder="main" aria-label={t("set.git.branch")} />
+          </Row>
+          <Row label={t("set.git.author")} description={t("set.git.authorDesc")}>
+            <CommitInput value={git.author_name} onCommit={(v) => setGit({ author_name: v })} placeholder={t("set.git.authorName")} aria-label={t("set.git.authorNameLabel")} />
+            <CommitInput value={git.author_email} onCommit={(v) => setGit({ author_email: v })} placeholder={t("set.git.authorEmail")} aria-label={t("set.git.authorEmailLabel")} />
+          </Row>
+          <Row
+            stack
+            label={t("set.git.token")}
+            description={
+              <>
+                {status?.token_set ? <Badge tone="success">{t("common.saved")}</Badge> : <Badge>{t("common.notSet")}</Badge>}
+                <span>{t("set.git.tokenDesc")}</span>
+              </>
+            }
+          >
+            <div className="key-input">
+              <KeyRound size={14} className="faint" />
+              <input
+                type={showToken ? "text" : "password"}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={status?.token_set ? t("set.git.tokenReplace") : "ghp_… / glpat-…"}
+                aria-label={t("set.git.tokenLabel")}
+                autoComplete="off"
+                spellCheck={false}
+                onKeyDown={(e) => isKey(e, "Enter") && token.trim() && saveToken(token.trim())}
+              />
+              <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowToken(!showToken)} />
+            </div>
+            <Button variant="primary" onClick={() => saveToken(token.trim())} disabled={!token.trim()}>
+              {t("common.save")}
+            </Button>
+            {status?.token_set && <IconButton icon={Trash2} label={t("set.git.tokenRemove")} onClick={() => saveToken(null)} />}
+          </Row>
+          {/* Android syncs at the start, every 15 minutes and when it comes back (src-tauri/src/mobile),
+              and never uploads the database: both are the desktop's. */}
+          {caps().backups ? (
+            <Row label={t("set.git.when")}>
+              <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label={t("set.git.whenLabel")}>
+                <option value="with_backup">{t("set.git.withBackup")}</option>
+                <option value="hourly">{t("set.git.hourly")}</option>
+              </Select>
+            </Row>
           ) : (
-            t("set.git.databaseOff")
-          )
-        }
-      >
-        <Switch label={t("set.git.database")} checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
-      </Row>}
-      <Row label={t("set.git.syncSettings")} description={t("set.git.syncSettingsDesc")} keywords="settings.json">
-        <Switch label={t("set.git.syncSettings")} checked={!!git.sync_settings} onChange={(v) => setGit({ sync_settings: v })} />
-      </Row>
-      <SettingsMergeRow />
-      <Row label={t("set.git.connection")} description={t("set.git.connectionDesc")}>
-        <div className={`conn ${test ? (test.ok ? "ok" : "fail") : ""}`}>
-          {testing ? (
-            <>
-              <Loader2 size={14} className="spin" /> {t("common.checking")}
-            </>
-          ) : test?.ok ? (
-            <span className="git-test-ok">
-              <CheckCircle2 size={14} /> {t("set.git.connected", { n: test.branches.length, ms: test.latency_ms })}
-            </span>
-          ) : test ? (
-            <span title={test.error ?? ""}>
-              <XCircle size={14} /> {t("set.ai.noConnection")}
-            </span>
-          ) : null}
-        </div>
-        <Button icon={PlugZap} onClick={runTest} disabled={testing || !git.remote_url}>
-          {t("set.git.test")}
-        </Button>
-      </Row>
-      {test && !test.ok && test.error && <p className="error-note mono small">{test.error}</p>}
-      <Row
-        label={t("set.git.last")}
-        description={
-          <span className="git-status">
-            {status?.after_restore?.checked ? (
-              <span className="mirror-error">{t("app.gitRestoreWaits")}</span>
-            ) : status?.last_error ? (
-              <span className="mirror-error">{t("common.failedWith", { msg: status.last_error })}</span>
-            ) : status?.last_at ? (
-              <span>
-                {relative(status.last_at)}
-                {status.last_commit ? ` · ${t("set.git.commit", { commit: status.last_commit })}` : ""}
-                {fallback ? ` · ${t("set.git.onBranch", { branch: fallback })}` : ""}
+            <Row label={t("set.git.when")} description={t("mob.set.syncOnDesc")}>
+              <span />
+            </Row>
+          )}
+          {caps().backups && <Row
+            label={t("set.git.database")}
+            description={
+              git.include_database ? (
+                <span className={dbSize != null && dbSize > BIG_DB ? "mirror-error" : ""}>
+                  {dbSize != null ? t("set.git.databaseOnSize", { size: fileSize(dbSize) }) : t("set.git.databaseOn")}
+                </span>
+              ) : (
+                t("set.git.databaseOff")
+              )
+            }
+          >
+            <Switch label={t("set.git.database")} checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
+          </Row>}
+          <Row label={t("set.git.syncSettings")} description={t("set.git.syncSettingsDesc")} keywords="settings.json">
+            <Switch label={t("set.git.syncSettings")} checked={!!git.sync_settings} onChange={(v) => setGit({ sync_settings: v })} />
+          </Row>
+          <SettingsMergeRow />
+          <Row label={t("set.git.connection")} description={t("set.git.connectionDesc")}>
+            <div className={`conn ${test ? (test.ok ? "ok" : "fail") : ""}`}>
+              {testing ? (
+                <>
+                  <Loader2 size={14} className="spin" /> {t("common.checking")}
+                </>
+              ) : test?.ok ? (
+                <span className="git-test-ok">
+                  <CheckCircle2 size={14} /> {t("set.git.connected", { n: test.branches.length, ms: test.latency_ms })}
+                </span>
+              ) : test ? (
+                <span title={test.error ?? ""}>
+                  <XCircle size={14} /> {t("set.ai.noConnection")}
+                </span>
+              ) : null}
+            </div>
+            <Button icon={PlugZap} onClick={runTest} disabled={testing || !git.remote_url}>
+              {t("set.git.test")}
+            </Button>
+          </Row>
+          {test && !test.ok && test.error && <p className="error-note mono small">{test.error}</p>}
+          <Row
+            label={t("set.git.last")}
+            description={
+              <span className="git-status">
+                {status?.after_restore?.checked ? (
+                  <span className="mirror-error">{t("app.gitRestoreWaits")}</span>
+                ) : status?.last_error ? (
+                  <span className="mirror-error">{t("common.failedWith", { msg: status.last_error })}</span>
+                ) : status?.last_at ? (
+                  <span>
+                    {relative(status.last_at)}
+                    {status.last_commit ? ` · ${t("set.git.commit", { commit: status.last_commit })}` : ""}
+                    {fallback ? ` · ${t("set.git.onBranch", { branch: fallback })}` : ""}
+                  </span>
+                ) : (
+                  <span>{t("set.git.never")}</span>
+                )}
+                {status && status.pending_changes > 0 && <span className="faint"> · {t("set.git.pending", { n: status.pending_changes })}</span>}
               </span>
-            ) : (
-              <span>{t("set.git.never")}</span>
-            )}
-            {status && status.pending_changes > 0 && <span className="faint"> · {t("set.git.pending", { n: status.pending_changes })}</span>}
-          </span>
-        }
-      >
-        <Button icon={Upload} onClick={() => syncNow()} loading={syncing} disabled={!git.remote_url}>
-          {t("set.git.syncNow")}
-        </Button>
-      </Row>
+            }
+          >
+            <Button icon={Upload} onClick={() => syncNow()} loading={syncing} disabled={!git.remote_url}>
+              {t("set.git.syncNow")}
+            </Button>
+          </Row>
+        </>
+      )}
       {status?.after_restore?.checked ? (
         <Row
           stack

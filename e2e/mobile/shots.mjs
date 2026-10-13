@@ -193,6 +193,34 @@ function fixtures(theme) {
     apk_update_status: updateStatus("ready"),
     apk_update_check: updateStatus("idle"),
     apk_update_set_mobile_data: updateStatus("ready", { allow_mobile_data: true }),
+    // The guided setup of the sync (ui/src/mobile/screens/GitSetup.tsx).
+    git_setup_account: { value: { login: "maurice", name: "Maurice", expires: "2027-01-31 10:00:00 UTC", scopes: ["repo"] }, problem: null },
+    git_setup_repos: {
+      value: ["notizen", "arcalo-notizen-alt", "website", "rezepte", "dotfiles", "vortrag-2026-mit-einem-sehr-langen-namen"].map((name, i) => ({
+        owner: "maurice",
+        name,
+        full_name: `maurice/${name}`,
+        private: i !== 2,
+        clone_url: `https://github.com/maurice/${name}.git`,
+        web_url: `https://github.com/maurice/${name}`,
+        default_branch: "main",
+        empty: i === 0 ? true : null,
+        can_push: i !== 3,
+        updated: at(i, 9),
+        description: null,
+      })),
+      problem: null,
+    },
+    git_setup_check: {
+      steps: ["server", "token", "repository", "write", "git", "branch"].map((id) => ({ id, state: "ok" })),
+      problem: null,
+      account: { login: "maurice", name: "Maurice", expires: null, scopes: ["repo"] },
+      branch: "main",
+      default_branch: "main",
+      branches: ["main"],
+      content: "arcalo",
+      write: true,
+    },
   };
 }
 
@@ -234,6 +262,8 @@ const ipcMock = (data) => `
         if (cmd === "mobile_shared_text") { const t = window.__shared; window.__shared = null; return t; }
         if (cmd === "apk_update_install") return window.__installAnswers.shift() ?? "started";
         if (cmd === "apk_update_allow_install") return true;
+        // The setup's check as a failure, when a test asks for one.
+        if (cmd === "git_setup_check" && window.__setupProblem) return { ...data.git_setup_check, steps: data.git_setup_check.steps.map((s) => (s.id === "write" ? { ...s, state: "fail" } : s.id === "git" || s.id === "branch" ? { ...s, state: "skipped" } : s)), problem: window.__setupProblem, branch: null, content: null };
         if (cmd in data) return structuredClone(data[cmd]);
         if (cmd === "mobile_settings_save") return { ...data.mobile_settings_get, settings: args.settings };
         return null;
@@ -537,6 +567,43 @@ async function fontScale() {
   await close();
 }
 
+/** The guided setup of the sync, step by step like on the desktop: provider, token (the token
+ *  page opens in the browser), the repository from the list, the check (a failure in plain words,
+ *  then the content explained), done; Android's back button goes one step back. */
+async function gitSetup(size, theme) {
+  const { page, tap, shot, close, where } = await open(size, theme);
+  await tap(".m-head-actions .m-icon-btn >> nth=1");
+  await tap(".m-gs-entry .m-btn >> nth=0");
+  await page.waitForSelector(".m-gs");
+  await shot("60-setup-provider");
+  await tap(".m-gs-provider >> nth=0");
+  await tap(".m-gs-actions .m-btn-primary");
+  await shot("61-setup-token");
+  await page.fill("#m-gs-token", "ghp_beispiel");
+  await tap(".m-gs-actions .m-btn-primary");
+  await page.waitForSelector(".m-gs-repo");
+  await shot("62-setup-repos");
+  await tap(".m-gs-repo >> nth=0");
+  await page.evaluate(() => (window.__setupProblem = { kind: "no_write", status: null, detail: "permissions.push = false" }));
+  await tap(".m-gs-actions .m-btn-primary");
+  await page.waitForSelector(".m-gs-problem");
+  await shot("63-setup-check-problem");
+  await page.evaluate(() => (window.__setupProblem = null));
+  await tap(".m-gs-actions .m-btn-primary");
+  await page.waitForSelector('.m-gs-step[data-step="branch"][data-state="ok"]');
+  await shot("64-setup-check-ok");
+  await page.evaluate(() => window.__pressBack());
+  await settle(page);
+  if (!(await page.locator(".m-gs-repo").count())) fail(where, "the back button did not go back to the repository step");
+  await tap(".m-gs-actions .m-btn-primary");
+  await page.waitForSelector('.m-gs-step[data-step="branch"][data-state="ok"]');
+  await tap(".m-gs-actions .m-btn-primary");
+  await page.waitForSelector(".m-gs-done");
+  await shot("65-setup-done");
+  await close();
+}
+const settle = (page) => page.waitForTimeout(300);
+
 /** Other phones, landscape and a tablet: every tab and the settings. */
 async function layouts(size) {
   const { tap, shot, close } = await open(size, "light");
@@ -554,6 +621,7 @@ async function layouts(size) {
 }
 
 for (const size of ["360x800", "412x915"]) for (const theme of ["light", "dark"]) await tour(size, theme);
+for (const size of ["360x800", "412x915"]) for (const theme of ["light", "dark"]) await gitSetup(size, theme);
 await backButton();
 await updates();
 await shared();

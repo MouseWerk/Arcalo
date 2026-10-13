@@ -240,8 +240,27 @@ page, on a blocking thread).
   which editors to reload.
   The system `git` runs without a shell (`CREATE_NO_WINDOW` on Windows), with `GIT_TERMINAL_PROMPT=0` and a 120 s
   timeout. The HTTPS token comes from the credential store (account `git-token`) and is passed as
-  `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`), only to HTTP(S) remotes;
-  git's stderr and every recorded error are redacted. Runs after `run_backup` (mode `with_backup`) or in the scheduler
+  `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`; `x-token-auth` for
+  bitbucket.org, whose access tokens want that name, `gitsync::token_user`), only to HTTP(S) remotes;
+  git's stderr and every recorded error are redacted.
+  **Guided setup** (1.20, `gitsetup.rs`, shell `gitsetup.rs`, UI `lib/gitsetup.ts` + `lib/useGitSetup.ts`, desktop
+  dialog `views/settings/GitSetupWizard.tsx`, phone screen `mobile/screens/GitSetup.tsx`): provider (GitHub, GitLab,
+  Gitea/Forgejo, Bitbucket Cloud, another server), token (the provider's token page with the scopes in the address
+  where it takes them), repository (the token's list from the REST API, paged, or a new private one, or an address;
+  the address parser takes repository pages, `.git` or not, SSH addresses with the HTTPS one offered), check, save.
+  The API base is `api.github.com` or `<web>/api/v3` (Enterprise), `<web>/api/v4`, `<web>/api/v1`,
+  `api.bitbucket.org/2.0`; requests use the Git sync's client (`client_for(Service::GitSync)`: its proxy profile,
+  certificates and timeout, 10–60 s per request), the token in a header only, pagination links only on the API's
+  own address. The check (`gitsetup::check`) stops at the first failure: server, token (`/user`), repository and
+  write right (GitHub `permissions.push` and a classic token's `X-OAuth-Scopes`, GitLab's access level ≥ 30 and
+  the token's scopes from `personal_access_tokens/self`, Gitea `permissions.push`; Bitbucket and another server:
+  the first upload proves it), `git ls-remote` through the sync's own git and network, then the branch (the
+  default branch) and what the repository holds: empty, notes of Arcalo (its `.gitattributes` marker on the
+  branch: the first sync adopts and merges), other files (left alone: the branch becomes `arcalo` when there is
+  none of that name, else the sync's fallback branch), or unknown (another server). Every failure is a
+  `ProblemKind` the UI words with its fix (`gitsetup.problem.*`, `gitsetup.fix.*`). The token typed into the setup
+  is passed to the commands and stored (`git_token_set`) only when the setup saves; the settings get the address,
+  the branch and `enabled`. The form stays as „Manuell einrichten“. Runs after `run_backup` (mode `with_backup`) or in the scheduler
   thread (mode `hourly`, mirror refreshed first); outcomes are kept in `gitsync.*` meta rows and emitted as
   `gitsync://done` / `gitsync://failed`.
 - **Versions** (`versions.rs`): a save stores the page's previous content as a snapshot when the newest
