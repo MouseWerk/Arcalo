@@ -11,6 +11,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { unsavedLeft } from "./flush";
 import { chooseInterface, factsFromViewport, pageOf, switchAllowed, type DisplayFacts, type Interface, type InterfaceChoice } from "./uimode";
 
 interface AndroidDisplay {
@@ -78,9 +79,10 @@ function typingElsewhere(): boolean {
 
 /**
  * Follows the window while the page runs; `flush` stores the unsaved text and resolves to false
- * when it could not (the page then stays). Returns the clean-up.
+ * when it could not (the page then stays). `unsaved` tells, right before the page goes, whether
+ * text was typed while the flush ran (it then flushes again first). Returns the clean-up.
  */
-export function followInterface(current: Interface, flush: () => Promise<boolean>): () => void {
+export function followInterface(current: Interface, flush: () => Promise<boolean>, unsaved: () => boolean = unsavedLeft): () => void {
   let timer = 0;
   let busy = false;
   const check = async () => {
@@ -95,6 +97,11 @@ export function followInterface(current: Interface, flush: () => Promise<boolean
       }
       if (!(await flush())) {
         schedule(5000);
+        return;
+      }
+      // Typed while the flush ran: stored first, on the next round.
+      if (unsaved()) {
+        schedule(300);
         return;
       }
       go(want);

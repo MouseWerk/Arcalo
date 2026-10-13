@@ -102,6 +102,42 @@ describe("a long press opens the context menu", () => {
     expect(keepsNativePress(null)).toBe(true);
   });
 
+  it("leaves drawing alone: a pen or finger resting on a drawing, the canvas or a grip draws or drags", () => {
+    document.body.innerHTML = `<div class="drawing-canvas"><div class="excalidraw"><canvas></canvas></div></div>
+      <div class="cv-board" data-native-press><div class="cv-card">Karte</div></div><header data-native-press><span class="dw-grip"></span></header>`;
+    pointer("pointerdown", document.querySelector(".drawing-canvas .excalidraw canvas")!, { pointerType: "pen" });
+    t.advance(LONG_PRESS_MS);
+    pointer("pointerdown", document.querySelector(".excalidraw canvas")!, { pointerType: "touch" });
+    t.advance(LONG_PRESS_MS);
+    pointer("pointerdown", document.querySelector(".cv-card")!, { pointerType: "pen" });
+    t.advance(LONG_PRESS_MS);
+    pointer("pointerdown", document.querySelector(".dw-grip")!);
+    t.advance(LONG_PRESS_MS);
+    expect(menus).toHaveLength(0);
+  });
+
+  it("drops the system's own press-and-hold menu that comes after ours, also at the release", () => {
+    const native = () => {
+      const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      Object.defineProperty(e, "isTrusted", { value: true });
+      row.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    pointer("pointerdown", row, { pointerType: "pen" });
+    t.advance(LONG_PRESS_MS);
+    expect(menus).toHaveLength(1);
+    // Windows sends its own when the pen lifts, however long it rested.
+    t.advance(2000);
+    pointer("pointerup", row, { pointerType: "pen" });
+    t.advance(100);
+    expect(native()).toBe(true);
+    expect(menus).toHaveLength(1);
+    // A right click later opens the menu as usual.
+    t.advance(2000);
+    expect(native()).toBe(false);
+    expect(menus).toHaveLength(2);
+  });
+
   it("stops listening when removed", () => {
     off();
     pointer("pointerdown", row);

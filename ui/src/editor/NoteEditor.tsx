@@ -650,7 +650,7 @@ export function NoteEditor({
       apply(editor, content, true);
     };
     handleRef?.({ editor, flush: flushNow, setFrontmatter, takeOver });
-    const unflush = registerFlusher(flushNow);
+    const unflush = registerFlusher(flushNow, () => dirty.current);
     const unregister = registerEditor(doc.id, editor);
     const flush = () => {
       window.clearTimeout(saveTimer.current);

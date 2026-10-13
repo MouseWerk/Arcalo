@@ -32,7 +32,7 @@ import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
 import { loadCapabilities, onAndroid } from "./lib/capabilities";
 import { bootInterface, followInterface } from "./lib/uiswitch";
-import { flushAll } from "./lib/flush";
+import { flushAll, unsavedLeft } from "./lib/flush";
 import { installAndroidBack } from "./lib/androidBack";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
@@ -132,10 +132,17 @@ if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode
   if (onAndroid()) {
     // Android's back button closes what is open, else the app goes to the background.
     installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
-    followInterface("full", async () => {
-      const { flushAllEditors } = await import("./editor/saves");
-      const editors = await Promise.race([flushAllEditors().then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5000))]).catch(() => false);
-      return editors && (await flushAll());
-    });
+    // Right before it goes: nothing typed while the flush ran (the editors' module is loaded by then).
+    let editorsDirty = () => false;
+    followInterface(
+      "full",
+      async () => {
+        const saves = await import("./editor/saves");
+        editorsDirty = saves.editorsDirty;
+        const editors = await Promise.race([saves.flushAllEditors().then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5000))]).catch(() => false);
+        return editors && (await flushAll());
+      },
+      () => editorsDirty() || unsavedLeft(),
+    );
   }
 }

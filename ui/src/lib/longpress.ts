@@ -2,8 +2,10 @@
 // app's menus listen to `contextmenu`, which a mouse sends with its right button. Android's
 // WebView sends one after a long press on most elements, but not everywhere and not on every
 // version; this sends it when the WebView did not, and drops the WebView's own when it comes
-// after ours (one menu per press). Text fields and the editor keep Android's long press: it
-// selects a word and shows the system's text tools.
+// after ours (one menu per press; Windows sends its press-and-hold menu of a touch screen or pen
+// at the release, also dropped). Text fields and the editor keep Android's long press: it
+// selects a word and shows the system's text tools. Drawings, the canvas board and drag grips keep
+// a resting pen or finger for drawing and dragging.
 
 /** How long a finger rests before the menu opens (Android's long-press time is about 500 ms). */
 export const LONG_PRESS_MS = 520;
@@ -22,11 +24,17 @@ const realTimers: Timers = {
   now: () => Date.now(),
 };
 
-/** Where a long press keeps Android's own meaning (text selection). */
+/** Where a press that rests keeps its own meaning: text fields and the editors (Android selects a
+ *  word), drawings (Excalidraw) and the canvas board, where a pen or finger resting is drawing or
+ *  dragging, and what is marked `data-native-press` (grips and other drag handles). */
+const NATIVE_PRESS =
+  "input, textarea, select, [contenteditable=''], [contenteditable='true'], .ProseMirror, .cm-editor, .excalidraw, .drawing-canvas, [data-native-press]";
+
+/** Where a long press keeps its own meaning (text selection, drawing, dragging). */
 export function keepsNativePress(target: EventTarget | null): boolean {
   const el = target as Element | null;
   if (!el || typeof el.closest !== "function") return true;
-  return !!el.closest("input, textarea, select, [contenteditable=''], [contenteditable='true'], .ProseMirror, .cm-editor, [data-native-press]");
+  return !!el.closest(NATIVE_PRESS);
 }
 
 /** Listens on `root`; returns the clean-up. */
@@ -37,14 +45,24 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   let sentAt = -Infinity;
   /** The release of the finger that opened the menu has not clicked yet (a new press clears it). */
   let swallowClick = false;
+  /** The finger or pen that opened our menu still rests; when it was lifted. A system that shows
+   *  its own press-and-hold menu (Windows) sends it at the release, however long it rested. */
+  let held = false;
+  let releasedAt = -Infinity;
   const cancel = () => {
     if (timer) timers.clear(timer);
     timer = 0;
     start = null;
   };
+  const onUp = () => {
+    if (held) releasedAt = timers.now();
+    held = false;
+    cancel();
+  };
   const onDown = (e: Event) => {
     const p = e as PointerEvent;
     swallowClick = false;
+    held = false;
     if ((p.pointerType !== "touch" && p.pointerType !== "pen") || p.isPrimary === false || keepsNativePress(p.target)) return cancel();
     cancel();
     start = { x: p.clientX, y: p.clientY, target: p.target };
@@ -54,6 +72,7 @@ export function installLongPress(root: Document | HTMLElement = document, timers
       if (!at?.target) return;
       sentAt = timers.now();
       swallowClick = true;
+      held = true;
       at.target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 2, buttons: 0 }));
     }, LONG_PRESS_MS);
   };
@@ -63,8 +82,10 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   };
   const onMenu = (e: Event) => {
     if (!e.isTrusted) return;
-    // The WebView's own: ours went out already (drop it), or it came first (ours is not needed).
-    if (timers.now() - sentAt < 800) {
+    // The WebView's own (or Windows' press-and-hold menu at the release): ours went out already
+    // (drop it), or it came first (ours is not needed).
+    const now = timers.now();
+    if (now - sentAt < 800 || held || now - releasedAt < 800) {
       e.preventDefault();
       e.stopImmediatePropagation();
       return;
@@ -74,7 +95,8 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   // After a long press the finger's release must not also click what it rests on (only that
   // release: the next press, a tap on the menu, clicks as usual).
   const onClick = (e: Event) => {
-    if (swallowClick && timers.now() - sentAt < 1500) {
+    const now = timers.now();
+    if (swallowClick && (now - sentAt < 1500 || held || now - releasedAt < 800)) {
       swallowClick = false;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -83,8 +105,8 @@ export function installLongPress(root: Document | HTMLElement = document, timers
   const opts = { capture: true, passive: true } as const;
   root.addEventListener("pointerdown", onDown, opts);
   root.addEventListener("pointermove", onMove, opts);
-  root.addEventListener("pointerup", cancel, opts);
-  root.addEventListener("pointercancel", cancel, opts);
+  root.addEventListener("pointerup", onUp, opts);
+  root.addEventListener("pointercancel", onUp, opts);
   root.addEventListener("contextmenu", onMenu, true);
   root.addEventListener("click", onClick, true);
   return () => {

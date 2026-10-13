@@ -33,10 +33,23 @@ export async function flushAllEditors() {
   }
 }
 
-/** Adds a save handle to `flushAllEditors`; returns the removal. */
-export function registerFlusher(f: () => Promise<void>) {
+// Whether an editor holds edits that are not saved yet (checked right before the page goes away).
+const dirtyChecks = new Set<() => boolean>();
+
+/** Adds a save handle to `flushAllEditors` (and how to tell its edits are unsaved); returns the
+ *  removal. */
+export function registerFlusher(f: () => Promise<void>, dirty?: () => boolean) {
   flushers.add(f);
-  return () => void flushers.delete(f);
+  if (dirty) dirtyChecks.add(dirty);
+  return () => {
+    flushers.delete(f);
+    if (dirty) dirtyChecks.delete(dirty);
+  };
+}
+
+/** Edits not saved yet: of an open editor (typed after the last flush) or kept from a closed one. */
+export function editorsDirty(): boolean {
+  return unsaved.size > 0 || [...dirtyChecks].some((d) => d());
 }
 
 // ---- edits of closed editors whose save failed (full disk, read-only folder)

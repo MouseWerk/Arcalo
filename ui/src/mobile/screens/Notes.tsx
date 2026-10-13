@@ -316,8 +316,19 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
       if (latest.current !== saved.current) void save(latest.current);
     };
   }, [p.doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Stored before the app switches to the full app on a larger window (lib/uiswitch.ts).
-  useEffect(() => onFlush(() => save(latest.current)), [p.doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stored before the app switches to the full app on a larger window (lib/uiswitch.ts). A save
+  // that failed (it only shows a message) or text typed on meanwhile keeps the phone app.
+  useEffect(
+    () =>
+      onFlush(
+        async () => {
+          await save(latest.current);
+          if (latest.current !== saved.current) throw new Error(t("ne.changesNotSaved"));
+        },
+        () => latest.current !== saved.current,
+      ),
+    [p.doc.id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // A task's box ticked in the page (A19): the line changes in the page's text, saved like a
   // typed edit (with the text it started from, so a sync's change meanwhile is merged). A

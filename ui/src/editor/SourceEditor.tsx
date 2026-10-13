@@ -195,10 +195,13 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       dirty.current = true;
       timer.current = window.setTimeout(save, saveDelay());
     }
-    const unregister = registerFlusher(async () => {
-      await save();
-      if (dirty.current) throw new Error(t("ne.changesNotSaved"));
-    });
+    const unregister = registerFlusher(
+      async () => {
+        await save();
+        if (dirty.current) throw new Error(t("ne.changesNotSaved"));
+      },
+      () => dirty.current,
+    );
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
       if (d.id === doc.id && d.from !== instance.current) absorbRef.current(d.content);

@@ -269,6 +269,7 @@ function GroupFields({ draft, setDraft }: { draft: { links: QuickLink[]; gi: num
               className={`group-item${drag?.from === i ? " drag-src" : ""}${drag && drag.to === i && drag.from !== i && drag.from + 1 !== i ? " drop-before" : ""}${drag && drag.to === items.length && i === items.length - 1 && drag.from !== i ? " drop-after" : ""}`}
               style={drag?.from === i ? { transform: `translateY(${drag.dy}px)` } : undefined}
               onPointerDown={(e) => onGripDown(e, i)}
+              data-native-press
               onDoubleClick={() => setSub({ index: i, link: l })}
               onKeyDown={(e) => {
                 if (isComposing(e)) return;
