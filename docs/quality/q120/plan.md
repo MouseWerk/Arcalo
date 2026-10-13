@@ -26,3 +26,25 @@ version of Android (Android on PCs). Phones keep the phone app.
   CI; screenshots of the full app at tablet sizes (portrait and landscape) and in a desktop window, and a
   manual checklist for a tablet, a phone in desktop mode on an external display, and an Android PC when
   available.
+
+## Setting up Git sync
+
+Decided by the owner on 2026-10-13: a guided setup instead of the form; sign-in stays token-only (no
+browser sign-in, the standing rule holds).
+
+- **Provider first.** GitHub, GitLab, Gitea/Forgejo, Bitbucket or another server; the address field
+  understands what people paste (`https://github.com/user/repo`, `.git` or not, `git@` SSH addresses with a
+  clear note that HTTPS is needed, a repository page URL).
+- **Token made easy.** A button opens the provider's token page with the needed scopes preselected where
+  the provider supports it (GitHub fine-grained or classic `repo`, GitLab `read_repository`/`write_repository`,
+  Gitea `repository`), with one sentence per provider on what to tick; the token goes into the OS credential
+  store as today.
+- **Pick or create the repository.** With the token, Arcalo lists the user's repositories to pick from, or
+  creates a new private one (name proposed, e.g. „arcalo-notizen“); an existing repository with other content
+  is explained before the first sync (adopt and merge, never overwrite).
+- **Check before saving.** Reach the server, the token's rights (read and write), the branch, and say in
+  plain words what is wrong (token expired, missing write right, repository not found, proxy or
+  certificate) with the fix.
+- **Same on the phone.** The phone app's Git sync setup uses the same steps in its own layout.
+- **Tests.** Fake provider servers for GitHub, GitLab and Gitea APIs; unit tests for URL parsing and error
+  mapping; e2e for the wizard (pick, create, errors); no real internet in tests.
