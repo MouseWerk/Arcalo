@@ -61,7 +61,7 @@ pub const EXCLUDED: [&str; 27] = [
 ];
 
 /// Fields of synced sections that belong to this computer or workspace.
-pub const EXCLUDED_FIELDS: [&str; 19] = [
+pub const EXCLUDED_FIELDS: [&str; 20] = [
     "router.local_provider",
     "router.standard_provider",
     "router.reasoning_provider",
@@ -72,6 +72,7 @@ pub const EXCLUDED_FIELDS: [&str; 19] = [
     "appearance.window_opacity",
     "appearance.custom_titlebar",
     "appearance.ui_scale",
+    "appearance.android_interface",
     "start.restore_window",
     "start.minimized",
     "voice.input_device",

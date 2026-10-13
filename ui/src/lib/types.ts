@@ -484,6 +484,8 @@ export interface AppearancePrefs {
   window_opacity: number;
   custom_titlebar: boolean;
   startup_animation: boolean;
+  /** Android: the phone app, the full app, or chosen from the window and the device (1.20). */
+  android_interface?: "auto" | "phone" | "full";
 }
 export interface EditorPrefs {
   spellcheck: "de" | "en" | "de-en" | "off";

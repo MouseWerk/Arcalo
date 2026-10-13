@@ -158,12 +158,29 @@
       },
       "type": "object"
     },
+    "AndroidInterface": {
+      "enum": [
+        "auto",
+        "phone",
+        "full"
+      ],
+      "type": "string"
+    },
     "AppearancePrefs": {
       "properties": {
         "accent": {
           "default": "theme",
           "description": "`theme` (the color theme's own accent), a preset name (`indigo`, `blue`, …) or `#rrggbb`.",
           "type": "string"
+        },
+        "android_interface": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AndroidInterface"
+            }
+          ],
+          "default": "auto",
+          "description": "Android: the phone app or the full app (1.20). Belongs to the device, never synced."
         },
         "code_font": {
           "allOf": [
@@ -2524,6 +2541,7 @@
       ],
       "default": {
         "accent": "theme",
+        "android_interface": "auto",
         "code_font": "jetbrains",
         "custom_themes": [],
         "custom_titlebar": true,
@@ -3247,7 +3265,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 17,
+      "default": 18,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,
