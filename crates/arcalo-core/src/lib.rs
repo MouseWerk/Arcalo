@@ -82,6 +82,7 @@ pub mod external;
 pub mod feed;
 pub mod filing;
 pub mod focus;
+pub mod gitsetup;
 pub mod gitsync;
 pub mod graph;
 pub mod i18n;

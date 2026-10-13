@@ -216,8 +216,7 @@ fn is_http(url: &str) -> bool {
 
 /// An SSH address: `ssh://…` or git's short form `user@host:path` (a Windows drive `C:\…` is a
 /// local path).
-#[cfg_attr(not(feature = "embedded-git"), allow(dead_code))]
-fn needs_ssh(url: &str) -> bool {
+pub fn needs_ssh(url: &str) -> bool {
     let l = url.trim().to_ascii_lowercase();
     if l.starts_with("ssh://") || l.starts_with("git+ssh://") || l.starts_with("ssh+git://") {
         return true;
@@ -227,11 +226,33 @@ fn needs_ssh(url: &str) -> bool {
 
 // ------------------------------------------------------------ pure helpers
 
-/// `Authorization` header for a personal access token (GitHub, GitLab, Azure DevOps
+/// `Authorization` header for a personal access token (GitHub, GitLab, Gitea, Azure DevOps
 /// accept any user name with the token as password).
 pub fn auth_header(token: &str) -> String {
-    let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
+    auth_header_as(TOKEN_USER, token)
+}
+
+/// The user name sent with the token.
+const TOKEN_USER: &str = "x-access-token";
+/// The user name of Bitbucket Cloud's access tokens (repository, project, workspace).
+const BITBUCKET_TOKEN_USER: &str = "x-token-auth";
+
+/// The user name the token signs in with at `remote_url`: Bitbucket Cloud wants `x-token-auth` for
+/// its access tokens, the others take any name.
+pub fn token_user(remote_url: &str) -> &'static str {
+    let host = reqwest::Url::parse(remote_url.trim()).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase));
+    if host.as_deref() == Some("bitbucket.org") { BITBUCKET_TOKEN_USER } else { TOKEN_USER }
+}
+
+fn auth_header_as(user: &str, token: &str) -> String {
+    let basic = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{token}"));
     format!("Authorization: Basic {basic}")
+}
+
+/// Whether `text` is the `.gitattributes` this sync writes (also the one of 1.14 and earlier): the
+/// repository holds notes of Arcalo, which a first sync adopts and merges.
+pub fn is_sync_attributes(text: &str) -> bool {
+    text.starts_with(MARKER) || text.starts_with(LEGACY_MARKER)
 }
 
 /// Removes credentials from `text`: the given secrets (and the base64 form of the token
@@ -239,8 +260,10 @@ pub fn auth_header(token: &str) -> String {
 pub fn redact(text: &str, token: Option<&str>) -> String {
     let mut secrets: Vec<String> = Vec::new();
     if let Some(t) = token.map(str::trim).filter(|t| !t.is_empty()) {
-        let header = auth_header(t);
-        secrets.push(header.trim_start_matches("Authorization: Basic ").to_owned());
+        for user in [TOKEN_USER, BITBUCKET_TOKEN_USER] {
+            let header = auth_header_as(user, t);
+            secrets.push(header.trim_start_matches("Authorization: Basic ").to_owned());
+        }
         secrets.push(t.to_owned());
     }
     let mut out: Vec<String> = Vec::new();
@@ -1129,6 +1152,8 @@ pub struct Git {
     token: Option<String>,
     /// Send the token only to HTTP(S) remotes.
     send_token: bool,
+    /// The user name sent with the token ([`token_user`]).
+    token_user: &'static str,
     timeout: Duration,
     /// Proxy and CA settings (Settings → Netzwerk).
     network: crate::network::GitNetwork,
@@ -1151,6 +1176,7 @@ impl Git {
             program: PathBuf::from("git"),
             token: token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()),
             send_token: is_http(remote_url),
+            token_user: token_user(remote_url),
             timeout: DEFAULT_TIMEOUT,
             network: crate::network::GitNetwork::default(),
             #[cfg(feature = "embedded-git")]
@@ -1243,7 +1269,7 @@ impl Git {
         }
         let mut config: Vec<(&str, String)> = vec![("protocol.ext.allow", "never".into())];
         if let (true, Some(t)) = (self.send_token, self.token()) {
-            config.push(("http.extraHeader", auth_header(t)));
+            config.push(("http.extraHeader", auth_header_as(self.token_user, t)));
         }
         for (k, v) in &self.network.config {
             config.push((k.as_str(), v.clone()));
@@ -2038,7 +2064,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         }
         let remote_ref = format!("origin/{branch}");
         let attrs = git.run(Some(repo), &["show", &format!("{remote_ref}:{ATTRIBUTES_FILE}")])?;
-        if attrs.ok && (attrs.stdout.starts_with(MARKER) || attrs.stdout.starts_with(LEGACY_MARKER)) {
+        if attrs.ok && is_sync_attributes(&attrs.stdout) {
             let adopted_tip = rev(git, repo, &remote_ref)?.unwrap_or_default();
             taken_over(repo);
             record_waiting(repo, Waiting { from: adopted_tip.clone(), adopt: true, ..Default::default() })?;
@@ -3276,6 +3302,26 @@ mod tests {
             "the old marker stays (no rewriting back and forth)"
         );
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn bitbucket_access_tokens_sign_in_as_x_token_auth() {
+        assert_eq!(token_user("https://bitbucket.org/team/notizen.git"), "x-token-auth");
+        assert_eq!(token_user("https://github.com/mia/notizen.git"), "x-access-token");
+        assert_eq!(token_user("https://bitbucket.org.evil.example/x.git"), "x-access-token");
+        assert_eq!(token_user("/srv/git/notizen.git"), "x-access-token");
+        let git = Git::new(Some("bbtok".into()), "https://bitbucket.org/team/notizen.git");
+        let cmd = git.command(None, &["ls-remote"]);
+        let header = cmd
+            .get_envs()
+            .find_map(|(_, v)| {
+                v.and_then(|v| v.to_str()).filter(|v| v.starts_with("Authorization:")).map(str::to_owned)
+            })
+            .unwrap();
+        let basic = base64::engine::general_purpose::STANDARD.encode("x-token-auth:bbtok");
+        assert_eq!(header, format!("Authorization: Basic {basic}"));
+        // Either form of the header is redacted.
+        assert!(!redact(&format!("x {basic} y"), Some("bbtok")).contains(&basic));
     }
 
     #[test]

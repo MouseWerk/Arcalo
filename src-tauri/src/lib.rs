@@ -33,6 +33,7 @@ mod feed;
 mod files;
 mod filing;
 mod focus;
+mod gitsetup;
 mod graph;
 #[cfg(desktop)]
 mod identity;
@@ -5096,6 +5097,10 @@ pub fn run() {
             git_sync_status,
             git_token_set,
             git_sync_test,
+            gitsetup::git_setup_account,
+            gitsetup::git_setup_repos,
+            gitsetup::git_setup_create,
+            gitsetup::git_setup_check,
             git_restore_import,
             syncmerge::git_conflicts,
             syncmerge::git_conflict_get,
