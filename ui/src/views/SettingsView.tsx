@@ -1200,15 +1200,28 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
   /** The guided setup's save: applied like every change (with its undo), and stored before the
    *  setup says it is done (its „Jetzt synchronisieren“ needs the stored address). */
   const saveFromWizard: SaveGit = async (patch) => {
-    setGit(patch);
-    const stored = () => {
+    const before = { remote_url: git.remote_url, branch: git.branch, enabled: git.enabled };
+    const storedAs = (p: typeof before) => {
       const g = useApp.getState().settings?.settings.git_sync;
-      return !!g && g.remote_url === patch.remote_url && g.branch === patch.branch && g.enabled;
+      return !!g && g.remote_url === p.remote_url && g.branch === p.branch && g.enabled === p.enabled;
     };
-    const until = Date.now() + 8000;
-    while (!stored() && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-    if (!stored()) throw new Error(t("settings.saveFailed"));
+    const until = async (p: typeof before) => {
+      const end = Date.now() + 8000;
+      while (!storedAs(p) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+      return storedAs(p);
+    };
+    setGit(patch);
+    if (!(await until(patch))) {
+      // Not stored in time: taken back, so a late save cannot leave the new address behind.
+      setGit(before);
+      throw new Error(t("settings.saveFailed"));
+    }
     reload();
+    return async () => {
+      setGit(before);
+      await until(before);
+      reload();
+    };
   };
   useEffect(() => {
     reload();

@@ -84,10 +84,17 @@ export function SettingsScreen() {
 
   // The guided setup takes the screen; its save is the form's (the token was stored by the setup).
   const saveFromSetup: SaveGit = async (patch) => {
+    const before = gs;
     await m.saveSettings({ ...s, git_sync: { ...gs, ...patch, include_database: false } });
     setRemote(patch.remote_url);
     setBranch(patch.branch);
-    setStatus(await api.gitSyncStatus());
+    setStatus(await api.gitSyncStatus().catch(() => null));
+    // The token could not be stored after them: the settings from before.
+    return async () => {
+      await m.saveSettings({ ...s, git_sync: before });
+      setRemote(before.remote_url);
+      setBranch(before.branch);
+    };
   };
   if (setup) {
     return (

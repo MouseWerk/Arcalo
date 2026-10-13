@@ -19,8 +19,26 @@ import {
   type WizardState,
 } from "./gitsetup";
 
-/** What the screen saves: the Git sync's settings (address, branch, switched on). */
-export type SaveGit = (git: { remote_url: string; branch: string; enabled: true }) => Promise<void>;
+/** What the screen saves: the Git sync's settings (address, branch, switched on). Resolves once
+ *  they are stored, to the way back to the settings from before (when the token cannot be stored
+ *  after them); rejects when they could not be stored (and leaves the ones from before). */
+export type SaveGit = (git: { remote_url: string; branch: string; enabled: true }) => Promise<void | (() => Promise<void>)>;
+
+/**
+ * The setup's end: the settings first, then a new token into the credential store. When the
+ * settings could not be stored the token is not replaced (no new token next to the old address);
+ * when the token could not be stored the settings go back (no new address next to the old token).
+ */
+export async function saveSetup(git: Parameters<SaveGit>[0], token: string | null, save: SaveGit, storeToken: (token: string) => Promise<unknown>): Promise<void> {
+  const undo = await save(git);
+  if (!token) return;
+  try {
+    await storeToken(token);
+  } catch (e) {
+    if (undo) await undo().catch(() => {});
+    throw e;
+  }
+}
 
 const failure = (e: unknown): SetupProblem => ({ kind: "other", status: null, detail: e instanceof Error ? e.message : String(e) });
 
@@ -71,9 +89,9 @@ export function useGitSetup(opts: { tokenStored: boolean; remoteUrl?: string; sa
     if (!target || !st.check || st.check.problem) return;
     dispatch({ type: "busy", busy: "save" });
     try {
-      // The token goes into the credential store only now (a cancelled setup leaves the old one).
-      if (st.token.trim()) await api.setGitToken(st.token.trim());
-      await save.current(savedGit(st.check, target));
+      // The token goes into the credential store only now (a cancelled setup leaves the old one),
+      // after the settings it belongs to.
+      await saveSetup(savedGit(st.check, target), st.token.trim() || null, save.current, (token) => api.setGitToken(token));
       dispatch({ type: "saved" });
     } catch (e) {
       dispatch({ type: "problem", problem: failure(e) });

@@ -581,7 +581,7 @@
 .gs-providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .gs-provider { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); color: var(--text-2); text-align: left; transition: background var(--dur-fast) ease-out, border-color var(--dur-fast) ease-out; }
 .gs-provider:hover { background: var(--bg-hover); }
-.gs-provider.on { background: var(--bg-selected); border-color: var(--border-strong); }
+.gs-provider.on { background: var(--bg-selected); }
 .gs-provider:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .gs-mark { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-sm); background: var(--bg-hover); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.02em; }
 .gs-provider.on .gs-mark { background: var(--bg-current); color: var(--text); }

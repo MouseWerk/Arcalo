@@ -230,6 +230,22 @@ describe("selection and focus look", () => {
     expect(bad).toEqual([]);
     expect(today.some(({ decls }) => decls.some(([p, v]) => p === "font-weight" && /--fw-(semibold|medium|heading)/.test(v)))).toBe(true);
   });
+
+  // The provider chosen in the Git sync setup had a darker frame (1.20 review): its choices (the
+  // provider, the repository, the current step) show by a neutral tint and the text weight only.
+  it("the Git setup's choices are a tint and the text weight, never a frame", () => {
+    const picks = [...rules("settings.css"), ...rules("mobile.css")].filter(({ selector }) => /\.(m-)?gs-[\w-]+(\.on|\s+li\.on)\b/.test(selector) && !/:focus/.test(selector));
+    expect(picks.length).toBeGreaterThan(0);
+    const bad = picks.flatMap(({ selector, decls }) => decls.filter(([p]) => FRAME.test(p)).map(([p, v]) => `${selector} { ${p}: ${v} }`));
+    expect(bad, "use --bg-selected/--bg-current and a font weight").toEqual([]);
+    const parts = (selector: string) => selector.split(",").map((s) => s.trim());
+    for (const item of [".gs-provider.on", ".gs-repo.on", ".gs-steps li.on", ".m-gs-provider.on", ".m-gs-repo.on"]) {
+      const own = picks.filter(({ selector }) => parts(selector).includes(item));
+      expect(own.some(({ decls }) => decls.some(([p, v]) => /^background(-color)?$/.test(p) && /--bg-(selected|current)/.test(v))), `${item}: tint`).toBe(true);
+      const inside = picks.filter(({ selector }) => parts(selector).some((s) => s === item || s.startsWith(`${item} `)));
+      expect(inside.some(({ decls }) => decls.some(([p, v]) => p === "font-weight" && /--fw-(semibold|medium)/.test(v))), `${item}: weight`).toBe(true);
+    }
+  });
 });
 
 // An endless animation of anything but opacity or transform repaints every frame (a box-shadow pulse on the

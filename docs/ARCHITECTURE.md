@@ -254,13 +254,20 @@ page, on a blocking thread).
   own address. The check (`gitsetup::check`) stops at the first failure: server, token (`/user`), repository and
   write right (GitHub `permissions.push` and a classic token's `X-OAuth-Scopes`, GitLab's access level ≥ 30 and
   the token's scopes from `personal_access_tokens/self`, Gitea `permissions.push`; Bitbucket and another server:
-  the first upload proves it), `git ls-remote` through the sync's own git and network, then the branch (the
-  default branch) and what the repository holds: empty, notes of Arcalo (its `.gitattributes` marker on the
-  branch: the first sync adopts and merges), other files (left alone: the branch becomes `arcalo` when there is
-  none of that name, else the sync's fallback branch), or unknown (another server). Every failure is a
-  `ProblemKind` the UI words with its fix (`gitsetup.problem.*`, `gitsetup.fix.*`). The token typed into the setup
-  is passed to the commands and stored (`git_token_set`) only when the setup saves; the settings get the address,
-  the branch and `enabled`. The form stays as „Manuell einrichten“. Runs after `run_backup` (mode `with_backup`) or in the scheduler
+  the first upload proves it), `git ls-remote` through the sync's own git and network, then the branch and what
+  the repository holds: empty, notes of Arcalo (the `.gitattributes` marker, looked for on the saved branch when
+  the setup runs again for the saved repository, then the default branch, then an existing `arcalo` branch: the
+  first one with it is synced, the sync adopts and merges), other files (left alone: the branch becomes `arcalo`
+  when there is none of that name, else the sync's fallback branch), or unknown (another server: the saved branch
+  while it exists, else the default one). Every failure is a `ProblemKind` the UI words with its fix
+  (`gitsetup.problem.*`, `gitsetup.fix.*`). The stored token is only used when the provider's address and the
+  repository are on the server of the saved repository (`pick_token` in the shell, `storedTokenFits` in the UI);
+  elsewhere the setup asks for a new one. The token typed into the setup is passed to the commands and stored
+  (`git_token_set`) only when the setup saves, after the settings (the address, the branch and `enabled`; when
+  the token cannot be stored they are taken back). Bitbucket takes access tokens of a repository, project or
+  workspace (Bearer for the API, `x-token-auth` for git); they stand for no user, so the setup offers no new
+  repository there, and personal Atlassian API tokens (Basic with the e-mail address) are not supported. The
+  form stays as „Manuell einrichten“. Runs after `run_backup` (mode `with_backup`) or in the scheduler
   thread (mode `hourly`, mirror refreshed first); outcomes are kept in `gitsync.*` meta rows and emitted as
   `gitsync://done` / `gitsync://failed`.
 - **Versions** (`versions.rs`): a save stores the page's previous content as a snapshot when the newest

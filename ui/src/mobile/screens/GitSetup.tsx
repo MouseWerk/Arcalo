@@ -15,7 +15,9 @@ import {
   contentKey,
   defaultWeb,
   filterRepos,
+  canCreate,
   hasApi,
+  tokenNote,
   pastedOf,
   problemKeys,
   stepKey,
@@ -35,6 +37,7 @@ export function GitSetupScreen({ tokenStored, remoteUrl, save, onClose, onManual
   const provider = s.provider ?? "other";
   const index = s.step === "done" ? WIZARD_STEPS.length : WIZARD_STEPS.indexOf(s.step);
   const blocked = blocker(s);
+  const note = tokenNote(s);
   const scroll = useRef<HTMLDivElement>(null);
   const back = () => (index > 0 && s.step !== "done" ? dispatch({ type: "back" }) : onClose());
   useBackLayer(true, back);
@@ -110,8 +113,8 @@ export function GitSetupScreen({ tokenStored, remoteUrl, save, onClose, onManual
                 </button>
               </>
             )}
-            <Field label={t("gitsetup.token.label")} htmlFor="m-gs-token" hint={s.tokenStored ? t("gitsetup.token.storedNote") : t("gitsetup.token.safe")}>
-              <input id="m-gs-token" className="m-input" type="password" autoComplete="off" autoCapitalize="off" spellCheck={false} value={s.token} placeholder={s.tokenStored ? t("set.git.tokenReplace") : t("gitsetup.token.placeholder")} onChange={(e) => dispatch({ type: "token", token: e.target.value })} />
+            <Field label={t("gitsetup.token.label")} htmlFor="m-gs-token" hint={t(note.key, { host: note.host })}>
+              <input id="m-gs-token" className="m-input" type="password" autoComplete="off" autoCapitalize="off" spellCheck={false} value={s.token} placeholder={note.reuse ? t("set.git.tokenReplace") : t("gitsetup.token.placeholder")} onChange={(e) => dispatch({ type: "token", token: e.target.value })} />
             </Field>
           </Section>
         )}
@@ -134,7 +137,7 @@ export function GitSetupScreen({ tokenStored, remoteUrl, save, onClose, onManual
                 onChange={(mode) => dispatch({ type: "mode", mode })}
                 options={[
                   { value: "pick", label: t("gitsetup.repo.pick") },
-                  { value: "create", label: t("gitsetup.repo.create") },
+                  ...(canCreate(provider) ? [{ value: "create" as const, label: t("gitsetup.repo.create") }] : []),
                   { value: "address", label: t("gitsetup.repo.address") },
                 ]}
               />

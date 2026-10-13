@@ -704,13 +704,14 @@ pub async fn create_repo(api: &Api<'_>, name: &str) -> std::result::Result<Repo,
             api.json(Method::POST, api.url(&["projects"], &[]), Some(body)).await?
         }
         Provider::Bitbucket => {
-            // A new repository goes into the account's own workspace.
-            let Some(me) = account(api).await? else {
-                return Err(Problem::new(ProblemKind::TokenScope, None, "no user behind this access token"));
-            };
-            let slug = name.to_ascii_lowercase();
-            let body = json!({ "scm": "git", "is_private": true, "description": description });
-            api.json(Method::POST, api.url(&["repositories", &me.login, &slug], &[]), Some(body)).await?
+            // The sync signs in to Bitbucket with an access token of a repository, project or
+            // workspace: it stands for no user and cannot create a repository (the setup does
+            // not offer it there; the repository is created in Bitbucket).
+            return Err(Problem::new(
+                ProblemKind::TokenScope,
+                None,
+                "Bitbucket access tokens cannot create repositories",
+            ));
         }
         Provider::Other => return Err(Problem::new(ProblemKind::NotApi, None, "")),
     };
@@ -951,6 +952,23 @@ pub async fn check<F>(api: Option<&Api<'_>>, target: &Target, token: Option<&str
 where
     F: FnOnce() -> Result<Vec<String>> + Send + 'static,
 {
+    check_saved(api, target, None, token, ls_remote).await
+}
+
+/// [`check`] of the repository that is set up already (the setup opened again): `saved` is the
+/// branch the sync uses now. It stays when it still exists and holds the notes (on another
+/// server, where nothing can be read, when it exists), so every computer keeps syncing the same
+/// branch.
+pub async fn check_saved<F>(
+    api: Option<&Api<'_>>,
+    target: &Target,
+    saved: Option<&str>,
+    token: Option<&str>,
+    ls_remote: F,
+) -> Check
+where
+    F: FnOnce() -> Result<Vec<String>> + Send + 'static,
+{
     let mut c = Check::new(api.is_some());
     let url = target.url.trim();
     if gitsync::needs_ssh(url) {
@@ -1020,31 +1038,83 @@ where
     };
     c.set(StepId::Git, StepState::Ok);
     let default = access.as_ref().and_then(|a| a.repo.default_branch.clone());
-    let mut branch = pick_branch(default.as_deref(), &branches);
-    let content = if branches.is_empty() {
-        Content::Empty
-    } else {
-        let holds = match (api, &access) {
-            (Some(api), Some(a)) => holds_sync(api, &a.repo.owner, &a.repo.name, &branch).await,
-            _ => None,
-        };
-        match holds {
-            Some(true) => Content::Arcalo,
-            Some(false) => Content::Other,
-            None => Content::Unknown,
-        }
-    };
-    // Other files stay as they are: the notes go to a branch of their own when there is none of
-    // that name yet (else the sync keeps them on its fallback branch, nothing is overwritten).
-    if content == Content::Other && !branches.iter().any(|b| b == OWN_BRANCH) {
-        branch = OWN_BRANCH.into();
-    }
+    let (branch, content) = branch_to_sync(api.zip(access.as_ref()), default.as_deref(), saved, &branches).await;
     c.set(StepId::Branch, StepState::Ok);
     c.default_branch = default.or_else(|| (!branches.is_empty()).then(|| pick_branch(None, &branches)));
     c.branch = Some(branch);
     c.branches = branches;
     c.content = Some(content);
     c
+}
+
+/// The branch to sync and what the repository holds. The notes are where a `.gitattributes` of
+/// the sync is, looked for in this order: the saved branch, the default one, the sync's own
+/// branch ([`OWN_BRANCH`], made by an earlier setup next to other files). Without notes: the
+/// default branch is taken when the server cannot tell; with other files on it the notes go to a
+/// branch of their own when there is none of that name yet (else the sync keeps them on its
+/// fallback branch). Nothing is overwritten either way.
+async fn branch_to_sync(
+    provider: Option<(&Api<'_>, &Access)>,
+    default: Option<&str>,
+    saved: Option<&str>,
+    branches: &[String],
+) -> (String, Content) {
+    let first = pick_branch(default, branches);
+    if branches.is_empty() {
+        return (first, Content::Empty);
+    }
+    let exists = |b: &str| branches.iter().any(|x| x == b);
+    let saved = saved.map(str::trim).filter(|b| !b.is_empty() && exists(b));
+    let Some((api, access)) = provider else {
+        // Another server says nothing about the content: the saved branch stays while it exists.
+        return (saved.unwrap_or(&first).to_owned(), Content::Unknown);
+    };
+    let mut candidates: Vec<&str> = vec![];
+    for b in [saved, Some(first.as_str()), Some(OWN_BRANCH).filter(|b| exists(b))].into_iter().flatten() {
+        if !candidates.contains(&b) {
+            candidates.push(b);
+        }
+    }
+    let mut on_first = None;
+    for b in candidates {
+        let holds = holds_sync(api, &access.repo.owner, &access.repo.name, b).await;
+        if holds == Some(true) {
+            return (b.to_owned(), Content::Arcalo);
+        }
+        if b == first {
+            on_first = holds;
+        }
+    }
+    match on_first {
+        Some(false) if !exists(OWN_BRANCH) => (OWN_BRANCH.to_owned(), Content::Other),
+        Some(false) => (first, Content::Other),
+        _ => (first, Content::Unknown),
+    }
+}
+
+/// Host and port of an http(s) address (`None` for anything else), `www.` ignored.
+fn host_port(url: &str) -> Option<(String, u16)> {
+    let u = Url::parse(url.trim()).ok()?;
+    if !matches!(u.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = u.host_str()?.trim_start_matches("www.").to_ascii_lowercase();
+    (!host.is_empty()).then(|| (host, u.port_or_known_default().unwrap_or(0)))
+}
+
+/// Whether two http(s) addresses are on the same server (host and port): the stored token only
+/// goes to the server of the saved repository.
+pub fn same_host(a: &str, b: &str) -> bool {
+    matches!((host_port(a), host_port(b)), (Some(x), Some(y)) if x == y)
+}
+
+/// Whether two addresses name the same repository: the same server and path, with or without
+/// `.git`, a trailing slash or a user name.
+pub fn same_repository(a: &str, b: &str) -> bool {
+    let path = |u: &str| {
+        Url::parse(u.trim()).ok().map(|u| u.path().trim_end_matches('/').trim_end_matches(".git").to_ascii_lowercase())
+    };
+    same_host(a, b) && path(a).is_some_and(|p| Some(p) == path(b))
 }
 
 #[cfg(test)]

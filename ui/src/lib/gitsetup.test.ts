@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   blocker,
+  canCreate,
   contentKey,
+  storedTokenFits,
+  withoutCredentials,
   filterRepos,
   initialWizard,
   normalizeWeb,
@@ -158,9 +161,64 @@ describe("the wizard", () => {
     expect(s.step).toBe("token");
   });
 
-  it("a stored token is enough to go on", () => {
-    const s = run(fresh(true), { type: "provider", provider: "gitlab" }, { type: "goto", step: "token" });
+  it("a stored token is enough to go on on the server of the saved repository", () => {
+    const s = run(fresh(true, "https://gitlab.com/g/notizen.git"), { type: "provider", provider: "gitlab" }, { type: "goto", step: "token" });
     expect(blocker(s)).toBeNull();
+  });
+
+  it("the stored token (for github.com) is not sent to another server without a new token", () => {
+    let s = initialWizard({ tokenStored: true, remoteUrl: "https://github.com/mia/notizen.git", proposedName: "arcalo-notizen" });
+    s = wizardReducer(s, { type: "provider", provider: "gitea" });
+    s = wizardReducer(s, { type: "web", web: "https://git.example.org" });
+    s = wizardReducer(s, { type: "goto", step: "token" });
+    expect(serverOf(s).web).toBe("https://git.example.org");
+    expect(blocker(s)).toBe("gitsetup.token.needed");
+    expect(storedTokenFits(s)).toBe(false);
+    s = wizardReducer(s, { type: "token", token: "gitea-neu" });
+    expect(blocker(s)).toBeNull();
+  });
+
+  it("the stored token stays home: no saved address, another port, or a repository on another host", () => {
+    // A token without a saved repository belongs to no known server.
+    expect(blocker(run(fresh(true), { type: "provider", provider: "github" }, { type: "goto", step: "token" }))).toBe("gitsetup.token.needed");
+    // The same host on another port is another server.
+    let s = run(fresh(true, "https://git.firma.de/team/notizen.git"), { type: "provider", provider: "gitea" }, { type: "web", web: "https://git.firma.de:8443" }, { type: "goto", step: "token" });
+    expect(blocker(s)).toBe("gitsetup.token.needed");
+    // The saved server, but the repository typed on another host.
+    s = run(fresh(true, "https://github.com/mia/notizen.git"), { type: "goto", step: "token" });
+    expect(blocker(s)).toBeNull();
+    s = run(s, { type: "goto", step: "repo" }, { type: "mode", mode: "address" }, { type: "address", address: "https://git.example.org/mia/notizen" });
+    expect(blocker(s)).toBe("gitsetup.token.needed");
+    // Another server without sign-in needs no token at all.
+    s = run(fresh(true, "https://github.com/mia/notizen.git"), { type: "provider", provider: "other" }, { type: "goto", step: "repo" }, { type: "address", address: "https://git.example.org/notizen.git" });
+    expect(blocker(s)).toBeNull();
+    expect(storedTokenFits(s)).toBe(false);
+  });
+
+  it("a saved address with a user name and password shows and stores neither", () => {
+    let s = fresh(true, "https://mia:ghp_geheim@github.com/mia/notizen.git");
+    expect(s.provider).toBe("github");
+    expect(JSON.stringify(s)).not.toContain("ghp_geheim");
+    expect(JSON.stringify(s)).not.toContain("mia:");
+    expect(targetOf(s)).toEqual({ url: "https://github.com/mia/notizen.git", owner: "mia", name: "notizen" });
+    // Another server: the address as typed, without what it says about the sign-in.
+    s = fresh(true, "https://bob:pw@git.firma.de/notizen.git");
+    s = run(s, { type: "provider", provider: "other" });
+    expect(JSON.stringify(s)).not.toContain("bob:pw");
+    s = run(s, { type: "address", address: "https://bob:pw@git.firma.de/notizen.git" });
+    expect(targetOf(s)).toEqual({ url: "https://git.firma.de/notizen.git", owner: null, name: null });
+    expect(withoutCredentials("https://x-token-auth:t@bitbucket.org/team/n.git")).toBe("https://bitbucket.org/team/n.git");
+    expect(withoutCredentials("git@github.com:mia/n.git")).toBe("git@github.com:mia/n.git");
+    expect(withoutCredentials("/srv/git/n.git")).toBe("/srv/git/n.git");
+  });
+
+  it("Bitbucket's access tokens cannot create a repository: an address or the list instead", () => {
+    expect(canCreate("bitbucket")).toBe(false);
+    expect(canCreate("github")).toBe(true);
+    let s = run(fresh(), { type: "provider", provider: "bitbucket" }, { type: "goto", step: "repo" }, { type: "repos", answer: { value: [], problem: null } });
+    expect(s.mode).toBe("address");
+    s = run(s, { type: "mode", mode: "create" });
+    expect(s.mode).toBe("address");
   });
 
   it("a pasted repository chooses the provider and is picked once the list has it", () => {

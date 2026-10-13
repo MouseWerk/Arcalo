@@ -105,6 +105,10 @@ export function defaultWeb(p: GitProvider): string {
 /** The provider has a REST API Arcalo uses (lists, creates and checks repositories). */
 export const hasApi = (p: GitProvider) => p !== "other";
 
+/** Arcalo can create a repository there. Not on Bitbucket: its access tokens (of a repository,
+ *  project or workspace, the kind the sync signs in with) stand for no user and cannot. */
+export const canCreate = (p: GitProvider) => hasApi(p) && p !== "bitbucket";
+
 /** The scopes or permissions a token needs, as the provider names them (for the texts). */
 export const SCOPES: Record<GitProvider, string> = {
   github: "repo",
@@ -141,6 +145,26 @@ export function normalizeWeb(raw: string): string | null {
   }
   if (!u.hostname || /[@\s]/.test(s.replace(/^https?:\/\/[^@/]*@/i, ""))) return null;
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+}
+
+/** An http(s) address without the user name and password in it (they are never shown or stored
+ *  again: the token lives in the credential store). Anything else stays as it is. */
+export function withoutCredentials(raw: string): string {
+  const s = raw.trim();
+  const m = /^(https?:\/\/)([^/@]*@)(.*)$/i.exec(s);
+  return m ? `${m[1]}${m[3]}` : raw;
+}
+
+/** `scheme://host[:port]` of an http(s) address, `www.` ignored (`null` for anything else): the
+ *  server a token is sent to. */
+function serverKey(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `${u.protocol}//${u.host.toLowerCase().replace(/^www\./, "")}`;
+  } catch {
+    return null;
+  }
 }
 
 // ------------------------------------------------------------------ addresses
@@ -320,8 +344,11 @@ export interface WizardState {
   pasted: string;
   /** The token typed into the setup (not saved before the end). */
   token: string;
-  /** A token is in the credential store already (used when the field stays empty). */
+  /** A token is in the credential store already (used when the field stays empty, on the server
+   *  of the saved repository only). */
   tokenStored: boolean;
+  /** The saved repository's address (without user name and password), `""` when none. */
+  savedRemote: string;
   account: SetupAccount | null;
   repos: SetupRepo[] | null;
   /** Why the list could not be loaded (the address field stays). */
@@ -359,6 +386,7 @@ export type WizardAction =
   | { type: "saved" };
 
 export function initialWizard(opts: { tokenStored: boolean; remoteUrl?: string; proposedName: string }): WizardState {
+  const remote = opts.remoteUrl ? withoutCredentials(opts.remoteUrl).trim() : "";
   const s: WizardState = {
     step: "provider",
     provider: null,
@@ -366,6 +394,7 @@ export function initialWizard(opts: { tokenStored: boolean; remoteUrl?: string; 
     pasted: "",
     token: "",
     tokenStored: opts.tokenStored,
+    savedRemote: remote,
     account: null,
     repos: null,
     reposProblem: null,
@@ -379,7 +408,7 @@ export function initialWizard(opts: { tokenStored: boolean; remoteUrl?: string; 
     problem: null,
   };
   // Set up again: the saved address preselects provider and server.
-  return opts.remoteUrl ? wizardReducer(s, { type: "paste", text: opts.remoteUrl }) : s;
+  return remote ? wizardReducer(s, { type: "paste", text: remote }) : s;
 }
 
 /** The server the requests go to. */
@@ -422,7 +451,7 @@ export function targetOf(s: WizardState): SetupTarget | null {
   const provider = s.provider ?? "other";
   if (!hasApi(provider)) {
     // Another server: the address as typed (git knows its form), never an SSH address.
-    const raw = (s.address.trim() || s.pasted.trim()).replace(/\/+$/, "");
+    const raw = withoutCredentials(s.address.trim() || s.pasted.trim()).replace(/\/+$/, "");
     const a = raw ? parseAddress(raw, "other") : null;
     if (!raw || a?.ssh) return null;
     const http = /^https?:\/\/[^/]+\/./i.test(raw);
@@ -438,6 +467,32 @@ export function targetOf(s: WizardState): SetupTarget | null {
   return owner && a.name ? { url: a.https, owner, name: a.name } : null;
 }
 
+/**
+ * Whether the stored token may be used: only on the server of the saved repository (the
+ * provider's address and the repository's), so a token made for one server never reaches
+ * another. The shell checks the same (src-tauri/src/gitsetup.rs `pick_token`).
+ */
+export function storedTokenFits(s: WizardState): boolean {
+  const home = serverKey(s.savedRemote);
+  if (!s.tokenStored || !home) return false;
+  const provider = s.provider ?? "other";
+  if (hasApi(provider) && serverKey(serverOf(s).web) !== home) return false;
+  const target = targetOf(s);
+  return !target || serverKey(target.url) === home;
+}
+
+/** The hint under the token field: the stored token is used, belongs to another server (its
+ *  host), or where a typed one goes. */
+export function tokenNote(s: WizardState): { key: TKey; host: string; reuse: boolean } {
+  const host = serverKey(s.savedRemote)?.replace(/^https?:\/\//, "") ?? "";
+  if (storedTokenFits(s)) return { key: "gitsetup.token.storedNote", host, reuse: true };
+  if (s.tokenStored && host) return { key: "gitsetup.token.storedOther", host, reuse: false };
+  return { key: "gitsetup.token.safe", host, reuse: false };
+}
+
+/** A token must be typed: the provider has an API and the stored one does not fit. */
+const tokenNeeded = (s: WizardState) => hasApi(s.provider ?? "other") && !s.token.trim() && !storedTokenFits(s);
+
 /** Why the current step cannot go on (`null`: it can). */
 export function blocker(s: WizardState): TKey | null {
   switch (s.step) {
@@ -450,12 +505,14 @@ export function blocker(s: WizardState): TKey | null {
       return null;
     }
     case "token":
-      return hasApi(s.provider ?? "other") && !s.token.trim() && !s.tokenStored ? "gitsetup.token.needed" : null;
+      return tokenNeeded(s) ? "gitsetup.token.needed" : null;
     case "repo":
       if (s.mode === "create") return validRepoName(s.newName) ? null : "gitsetup.repo.nameInvalid";
       if (s.mode === "pick") return s.picked ? null : "gitsetup.repo.pickOne";
       if (addressOf(s)?.ssh) return "gitsetup.repo.sshFirst";
-      return targetOf(s) ? null : "gitsetup.repo.addressNeeded";
+      if (!targetOf(s)) return "gitsetup.repo.addressNeeded";
+      // A repository on another server than the stored token's: a token for it first.
+      return tokenNeeded(s) ? "gitsetup.token.needed" : null;
     default:
       return null;
   }
@@ -510,7 +567,7 @@ export function wizardReducer(s: WizardState, a: WizardAction): WizardState {
       if (a.answer.problem) return { ...s, busy: null, problem: a.answer.problem };
       return { ...s, busy: null, problem: null, account: a.answer.value, step: "repo" };
     case "repos": {
-      if (a.answer.problem) return { ...s, busy: null, repos: [], reposProblem: a.answer.problem, mode: s.mode === "pick" ? "address" : s.mode };
+      if (a.answer.problem) return { ...s, busy: null, repos: [], reposProblem: a.answer.problem, mode: s.mode === "pick" || !canCreate(s.provider ?? "other") ? "address" : s.mode };
       const repos = a.answer.value ?? [];
       // The pasted repository, when it is in the list, is picked.
       const named = addressOf(s);
@@ -527,12 +584,13 @@ export function wizardReducer(s: WizardState, a: WizardAction): WizardState {
         reposProblem: null,
         picked: hit ?? s.picked,
         // An address on another server (the saved one of another provider) is not kept.
-        mode: hit ? "pick" : s.mode === "address" && named?.owner && onServer(named, serverOf(s)) ? "address" : repos.length ? "pick" : "create",
+        mode: hit ? "pick" : s.mode === "address" && named?.owner && onServer(named, serverOf(s)) ? "address" : repos.length ? "pick" : canCreate(s.provider ?? "other") ? "create" : "address",
       };
     }
     case "query":
       return { ...s, query: a.query };
     case "mode":
+      if (a.mode === "create" && !canCreate(s.provider ?? "other")) return s;
       return { ...s, mode: a.mode, problem: null };
     case "pick":
       return { ...s, picked: a.repo, mode: "pick", problem: null };

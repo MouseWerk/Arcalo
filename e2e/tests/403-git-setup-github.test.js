@@ -3,7 +3,8 @@
 // plain words, the list (two pages, search), pick, check (server, token, rights, git, branch,
 // content), save (address, branch, switched on; the token only in the credential store), sync;
 // then a new private repository, a name that exists, what the check says about existing content
-// and a read-only repository. Screenshots of each step in light and dark at 900 and 1280 px.
+// and a read-only repository; set up again on a working setup, the synced branch stays. Screenshots of
+// each step in light and dark at 900 and 1280 px.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
@@ -185,4 +186,45 @@ test("existing content is explained before the first sync; read only stops with 
   await app.keys(["Escape"]);
   // Nothing of this was saved.
   assert.equal((await app.invoke("settings_get")).settings.git_sync.remote_url, gh.cloneUrl(gh.find("mia", "arcalo-notizen")));
+});
+
+test("set up again on a working setup: the branch with the notes stays", async () => {
+  // Synced next to other files: the notes go to the branch „arcalo“ of mia/website.
+  const site = gh.find("mia", "website");
+  await openSetup(app);
+  await app.click('.gs-provider[data-provider="github"]');
+  await primary(app);
+  await primary(app);
+  await onStep(app, "Repository");
+  await mode(app, 0);
+  await pick(app, "mia/website");
+  await primary(app);
+  await checked(app);
+  await app.waitText(".gs-check", /^Branch: arcalo$/);
+  await primary(app);
+  await app.waitFor(".gs-done");
+  await app.click(".dialog-foot .btn-primary");
+  await app.browser.waitUntil(async () => gh.log(site, "arcalo").length >= 1, { timeout: 30000, timeoutMsg: "nothing uploaded to arcalo" });
+  assert.ok(gh.files(site, "arcalo").includes(".gitattributes"));
+  assert.deepEqual(gh.files(site), ["README.md", "index.html"], "the other files stay untouched");
+  await app.dismissToasts();
+
+  // Opened again on this setup: the saved repository is picked, the check keeps „arcalo“ (the
+  // default branch still holds other files) and saving leaves the sync where it is.
+  await openSetup(app);
+  await app.click('.gs-provider[data-provider="github"]');
+  await primary(app);
+  await primary(app);
+  await onStep(app, "Repository");
+  await app.browser.waitUntil(async () => app.browser.execute(() => document.querySelector('.gs-repo[aria-selected="true"] .gs-repo-name')?.textContent === "mia/website"), { timeoutMsg: "the saved repository is not picked" });
+  await primary(app);
+  await checked(app);
+  await app.waitText(".gs-check", /^Branch: arcalo$/);
+  await app.waitText(".gs-callout", /enthält schon Notizen aus Arcalo/);
+  await primary(app);
+  await app.waitFor(".gs-done");
+  const git = (await app.invoke("settings_get")).settings.git_sync;
+  assert.equal(git.remote_url, gh.cloneUrl(site));
+  assert.equal(git.branch, "arcalo");
+  await app.click(".dialog-foot .btn:not(.btn-primary)");
 });

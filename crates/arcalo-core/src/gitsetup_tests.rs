@@ -984,3 +984,122 @@ async fn another_server_is_checked_with_git_alone() {
     assert_eq!(c.problem.map(|p| p.kind), Some(ProblemKind::NotFound));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[tokio::test]
+async fn an_existing_arcalo_branch_with_notes_is_the_one_synced() {
+    let fake = Fake::start(Arc::new(|r: &Req| {
+        let p = r.path().strip_prefix("/api/v3").unwrap_or("");
+        match p {
+            "/user" => with(reply(200, json!({"login": "mia"})), "X-OAuth-Scopes", "repo"),
+            "/repos/mia/projekt" => reply(
+                200,
+                json!({"name": "projekt", "full_name": "mia/projekt", "owner": {"login": "mia"}, "private": true,
+                "clone_url": "https://example.invalid/mia/projekt.git", "default_branch": "main", "permissions": {"push": true}}),
+            ),
+            "/repos/mia/projekt/contents/.gitattributes" if r.query("ref").as_deref() == Some(OWN_BRANCH) => {
+                use base64::Engine;
+                reply(200, json!({"content": base64::engine::general_purpose::STANDARD.encode(MARKED)}))
+            }
+            _ => reply(404, json!({"message": "Not Found"})),
+        }
+    }));
+    let c = client();
+    let srv = server(Provider::Github, &fake.base);
+    let api = Api::new(&c, &srv, TOKEN, T).unwrap();
+    let target = Target {
+        url: "https://example.invalid/mia/projekt.git".into(),
+        owner: Some("mia".into()),
+        name: Some("projekt".into()),
+    };
+    let checked = check(Some(&api), &target, Some(TOKEN), || Ok(vec!["main".to_owned(), OWN_BRANCH.to_owned()])).await;
+    assert_eq!(checked.problem, None);
+    assert_eq!((checked.branch.as_deref(), checked.content), (Some(OWN_BRANCH), Some(Content::Arcalo)), "{checked:?}");
+}
+
+/// A fake GitHub whose repository `mia/projekt` holds the sync's `.gitattributes` on the branches
+/// `marked` and another `.gitattributes` on the others.
+fn marked_on(marked: &'static [&'static str]) -> Fake {
+    Fake::start(Arc::new(move |r: &Req| {
+        use base64::Engine;
+        let encoded = |t: &str| json!({"content": base64::engine::general_purpose::STANDARD.encode(t)});
+        let p = r.path().strip_prefix("/api/v3").unwrap_or("");
+        match p {
+            "/user" => with(reply(200, json!({"login": "mia"})), "X-OAuth-Scopes", "repo"),
+            "/repos/mia/projekt" => reply(
+                200,
+                json!({"name": "projekt", "full_name": "mia/projekt", "owner": {"login": "mia"}, "private": true,
+                "clone_url": "https://example.invalid/mia/projekt.git", "default_branch": "main", "permissions": {"push": true}}),
+            ),
+            "/repos/mia/projekt/contents/.gitattributes"
+                if r.query("ref").is_some_and(|b| marked.contains(&b.as_str())) =>
+            {
+                reply(200, encoded(MARKED))
+            }
+            "/repos/mia/projekt/contents/.gitattributes" => reply(200, encoded("*.png binary\n")),
+            _ => reply(404, json!({"message": "Not Found"})),
+        }
+    }))
+}
+
+#[tokio::test]
+async fn set_up_again_the_saved_branch_with_the_notes_stays() {
+    let target = || Target {
+        url: "https://example.invalid/mia/projekt.git".into(),
+        owner: Some("mia".into()),
+        name: Some("projekt".into()),
+    };
+    let c = client();
+    let three = || Ok(vec!["main".to_owned(), OWN_BRANCH.to_owned(), "laptop".to_owned()]);
+
+    // Notes on the default branch and on the saved one: the saved one stays (no second branch).
+    let fake = marked_on(&["main", OWN_BRANCH]);
+    let srv = server(Provider::Github, &fake.base);
+    let api = Api::new(&c, &srv, TOKEN, T).unwrap();
+    let k = check_saved(Some(&api), &target(), Some(OWN_BRANCH), Some(TOKEN), three).await;
+    assert_eq!((k.branch.as_deref(), k.content), (Some(OWN_BRANCH), Some(Content::Arcalo)), "{k:?}");
+    // A fallback branch of this computer next to other files, too.
+    let fake = marked_on(&["laptop"]);
+    let srv = server(Provider::Github, &fake.base);
+    let api = Api::new(&c, &srv, TOKEN, T).unwrap();
+    let k = check_saved(Some(&api), &target(), Some("laptop"), Some(TOKEN), three).await;
+    assert_eq!((k.branch.as_deref(), k.content), (Some("laptop"), Some(Content::Arcalo)), "{k:?}");
+
+    // A saved branch that is gone or holds no notes is not kept.
+    let fake = marked_on(&["main"]);
+    let srv = server(Provider::Github, &fake.base);
+    let api = Api::new(&c, &srv, TOKEN, T).unwrap();
+    let k = check_saved(Some(&api), &target(), Some("weg"), Some(TOKEN), three).await;
+    assert_eq!((k.branch.as_deref(), k.content), (Some("main"), Some(Content::Arcalo)), "{k:?}");
+    let k = check_saved(Some(&api), &target(), Some("laptop"), Some(TOKEN), three).await;
+    assert_eq!((k.branch.as_deref(), k.content), (Some("main"), Some(Content::Arcalo)), "{k:?}");
+
+    // Another server cannot say what a branch holds: the saved one stays while it exists.
+    let other = || Target { url: "https://example.invalid/x.git".into(), owner: None, name: None };
+    let k = check_saved(None, &other(), Some("laptop"), None, three).await;
+    assert_eq!((k.branch.as_deref(), k.content), (Some("laptop"), Some(Content::Unknown)), "{k:?}");
+    let k = check_saved(None, &other(), Some("weg"), None, three).await;
+    assert_eq!(k.branch.as_deref(), Some("main"), "{k:?}");
+}
+
+#[tokio::test]
+async fn bitbucket_access_tokens_create_no_repository() {
+    let fake = Fake::start(Arc::new(|_: &Req| reply(500, json!({}))));
+    let c = client();
+    let srv = server(Provider::Bitbucket, &fake.base);
+    let api = Api::new(&c, &srv, TOKEN, T).unwrap();
+    assert_eq!(create_repo(&api, PROPOSED_NAME).await.unwrap_err().kind, ProblemKind::TokenScope);
+    assert!(fake.seen().is_empty(), "nothing is asked");
+}
+
+#[test]
+fn servers_and_repositories_are_compared_without_user_and_form() {
+    assert!(same_host("https://github.com/mia/notizen.git", "https://www.GitHub.com"));
+    assert!(same_host("https://mia:geheim@git.firma.de/x.git", "https://git.firma.de:443/gitea"));
+    assert!(!same_host("https://github.com/mia/notizen.git", "https://git.example.org"));
+    assert!(!same_host("https://git.firma.de/x.git", "https://git.firma.de:8443/x.git"));
+    assert!(!same_host("http://git.firma.de/x.git", "https://git.firma.de/x.git"));
+    assert!(!same_host("git@github.com:mia/notizen.git", "https://github.com"));
+    assert!(!same_host("", ""));
+    assert!(same_repository("https://github.com/mia/Notizen.git", "https://mia@github.com/mia/notizen/"));
+    assert!(!same_repository("https://github.com/mia/notizen.git", "https://github.com/mia/andere.git"));
+}

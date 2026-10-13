@@ -1,8 +1,9 @@
 //! The guided setup of the Git sync, on the desktop and the phone: whom a token belongs to, the
 //! repositories to pick from, a new private one, and the check before saving
 //! (`arcalo_core::gitsetup`). The requests take the Git sync's network route; the token is the one
-//! typed into the setup (not saved yet) or the stored one, and never leaves the credential store
-//! otherwise. Saving is the UI's: the settings and `git_token_set`, as with the form.
+//! typed into the setup (not saved yet) or the stored one, which only goes to the server of the
+//! saved repository and never leaves the credential store otherwise. Saving is the UI's: the
+//! settings and `git_token_set`, as with the form.
 
 use std::time::Duration;
 
@@ -29,9 +30,25 @@ impl<T> From<std::result::Result<T, Problem>> for Answer<T> {
     }
 }
 
-/// The typed token, else the stored one.
-fn token_of(state: &AppState, token: Option<String>) -> Option<String> {
-    let t = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).or_else(|| state.git_secret.get());
+/// The typed token, else the stored one when every address the request goes to (`urls`: the
+/// provider's web address, the repository) is on the server of the saved repository: a token made
+/// for one server is never sent to another (the setup asks for a new one there).
+fn pick_token(
+    typed: Option<String>,
+    stored: impl FnOnce() -> Option<String>,
+    saved_remote: &str,
+    urls: &[&str],
+) -> Option<String> {
+    if let Some(t) = typed.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()) {
+        return Some(t);
+    }
+    let own = !urls.is_empty() && urls.iter().all(|u| gitsetup::same_host(u, saved_remote));
+    if own { stored() } else { None }
+}
+
+fn token_of(state: &AppState, token: Option<String>, urls: &[&str]) -> Option<String> {
+    let saved = state.settings().git_sync.remote_url;
+    let t = pick_token(token, || state.git_secret.get(), &saved, urls);
     devlog::remember_secret(t.as_deref());
     t
 }
@@ -46,13 +63,14 @@ fn client(state: &AppState) -> std::result::Result<reqwest::Client, Problem> {
         .map_err(|e| Problem::new(ProblemKind::Other, None, e.to_string()))
 }
 
-/// The client, the request timeout and the token for a setup request.
+/// The client, the request timeout and the token for a setup request to `server`.
 fn prepared(
     app: &AppHandle,
+    server: &Server,
     token: Option<String>,
 ) -> std::result::Result<(reqwest::Client, Duration, String), Problem> {
     let state = app.state::<AppState>();
-    let token = token_of(&state, token).unwrap_or_default();
+    let token = token_of(&state, token, &[&server.web]).unwrap_or_default();
     Ok((client(&state)?, timeout(&state), token))
 }
 
@@ -72,7 +90,7 @@ pub async fn git_setup_account(
     token: Option<String>,
 ) -> Result<Answer<Option<Account>>> {
     let res = async {
-        let (client, t, token) = prepared(&app, token)?;
+        let (client, t, token) = prepared(&app, &server, token)?;
         gitsetup::account(&Api::new(&client, &server, &token, t)?).await
     }
     .await;
@@ -86,7 +104,7 @@ pub async fn git_setup_account(
 #[tauri::command]
 pub async fn git_setup_repos(app: AppHandle, server: Server, token: Option<String>) -> Result<Answer<Vec<Repo>>> {
     let res = async {
-        let (client, t, token) = prepared(&app, token)?;
+        let (client, t, token) = prepared(&app, &server, token)?;
         gitsetup::list_repos(&Api::new(&client, &server, &token, t)?).await
     }
     .await;
@@ -106,7 +124,7 @@ pub async fn git_setup_create(
     name: String,
 ) -> Result<Answer<Repo>> {
     let res = async {
-        let (client, t, token) = prepared(&app, token)?;
+        let (client, t, token) = prepared(&app, &server, token)?;
         gitsetup::create_repo(&Api::new(&client, &server, &token, t)?, &name).await
     }
     .await;
@@ -124,12 +142,16 @@ pub async fn git_setup_create(
 #[tauri::command]
 pub async fn git_setup_check(app: AppHandle, server: Server, target: Target, token: Option<String>) -> Result<Check> {
     let state = app.state::<AppState>();
-    let token = token_of(&state, token);
     let url = target.url.trim().to_owned();
+    let other = server.provider == gitsetup::Provider::Other;
+    let token = if other { token_of(&state, token, &[&url]) } else { token_of(&state, token, &[&server.web, &url]) };
+    // Set up again: the branch the sync uses now stays while it holds the notes.
+    let gs = state.settings().git_sync;
+    let saved = gitsetup::same_repository(&gs.remote_url, &url).then_some(gs.branch).filter(|b| !b.trim().is_empty());
     let git = crate::network::git(&state, token.clone(), &url).with_timeout(Duration::from_secs(60));
     let ls_remote = move || git.version().and_then(|_| git.ls_remote(&url));
-    let check = if server.provider == gitsetup::Provider::Other {
-        gitsetup::check(None, &target, token.as_deref(), ls_remote).await
+    let check = if other {
+        gitsetup::check_saved(None, &target, saved.as_deref(), token.as_deref(), ls_remote).await
     } else {
         let client = match client(&state) {
             Ok(c) => c,
@@ -139,7 +161,7 @@ pub async fn git_setup_check(app: AppHandle, server: Server, target: Target, tok
             Ok(a) => a,
             Err(p) => return Ok(failed(p)),
         };
-        gitsetup::check(Some(&api), &target, token.as_deref(), ls_remote).await
+        gitsetup::check_saved(Some(&api), &target, saved.as_deref(), token.as_deref(), ls_remote).await
     };
     match &check.problem {
         Some(p) => log_problem("check", &server, p),
@@ -163,4 +185,30 @@ fn failed(p: Problem) -> Check {
         _ => gitsetup::StepId::Server,
     };
     gitsetup::Check::failed(step, p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_token;
+
+    #[test]
+    fn the_stored_token_only_goes_to_the_server_of_the_saved_repository() {
+        let saved = "https://github.com/mia/notizen.git";
+        let stored = || Some("ghp_gespeichert".to_owned());
+        let pick = |typed: Option<&str>, urls: &[&str]| pick_token(typed.map(str::to_owned), stored, saved, urls);
+        // The same server: the stored token (API and repository).
+        assert_eq!(
+            pick(None, &["https://github.com", "https://github.com/mia/neu.git"]).as_deref(),
+            Some("ghp_gespeichert")
+        );
+        // Another server, or the repository on another one: none (the setup asks for a new token).
+        assert_eq!(pick(None, &["https://git.example.org"]), None);
+        assert_eq!(pick(None, &["https://github.com", "https://git.example.org/mia/notizen.git"]), None);
+        assert_eq!(pick(None, &["https://github.com:8443"]), None);
+        assert_eq!(pick(None, &[]), None);
+        // A typed token is used wherever it was typed for.
+        assert_eq!(pick(Some(" glpat-neu "), &["https://git.example.org"]).as_deref(), Some("glpat-neu"));
+        // Nothing saved yet: the stored token stays home.
+        assert_eq!(pick_token(None, stored, "", &["https://github.com"]), None);
+    }
 }
