@@ -22,6 +22,7 @@ import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, onlyInVersions, renameProblem, stemLength, totalSize, type KindFilter, type ListFilter, type SortKey } from "../lib/attachments";
 import { t, useT, withLabel, type TKey } from "../lib/i18n";
 import { isKey } from "../lib/ime";
+import { caps } from "../lib/capabilities";
 
 const KINDS: { value: KindFilter; readonly label: string }[] = [
   withLabel({ value: "all" as KindFilter }, "att.kind.all"),
@@ -179,7 +180,7 @@ export function AttachmentsView() {
     ...(f.kind === "pdf" || f.kind === "drawing"
       ? [{ label: t("att.openDefault"), icon: ExternalLink, onSelect: () => api.openAttachment(f.name).catch((e) => s().error(t("att.openFailed"), e)) } as MenuEntry]
       : []),
-    { label: t("att.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(f.name, true).catch((e) => s().error(t("common.openFolderFailed"), e)) },
+    ...(caps().folders ? [{ label: t("att.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(f.name, true).catch((e) => s().error(t("common.openFolderFailed"), e)) } as MenuEntry] : []),
     "separator",
     { label: t("att.rename"), icon: Pencil, onSelect: () => setRenaming(f) },
     {

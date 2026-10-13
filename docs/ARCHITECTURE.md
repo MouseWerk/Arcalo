@@ -27,6 +27,15 @@ libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`S
 It updates itself from the release's `android-latest.json` (`mobile/apkupdate.rs`, `update_android.rs`):
 an APK checked with the desktop's update key and handed to Android's installer.
 
+On a large screen (a tablet, desktop mode, an external display, Android on a PC) the Android app shows the
+full desktop UI instead (1.20, docs/android.md → „Phone app or full app“): `ui/src/lib/uimode.ts` decides from
+the window and the device (`ShellPlugin.display`), `uiswitch.ts` goes between `mobile.html` and `index.html`
+after storing the editors' text. Both builds register one command list (`commands()` in `src-tauri/src/lib.rs`;
+the desktop-only commands are `#[cfg(desktop)]`, `platform::DESKTOP_ONLY`), and the UI hides the desktop-only
+parts after `app_capabilities` (`ui/src/lib/capabilities.ts`). On Android the commands run on one worker
+thread (Kotlin answers on the main thread); files of Android's document picker go through copies
+(`picked.rs`). `ARCALO_SIMULATE_ANDROID=1` (debug builds) gives the desktop Android's capabilities for tests.
+
 ## Data model (`crates/arcalo-core/migrations/0001_init.sql`)
 
 | Table | Purpose |

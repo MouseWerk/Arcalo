@@ -26,9 +26,14 @@ import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
 import { installReloadGuard } from "./lib/reloadGuard";
+import { installLongPress } from "./lib/longpress";
 import { collectErrors } from "./lib/errorLog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
+import { loadCapabilities, onAndroid } from "./lib/capabilities";
+import { bootInterface, followInterface } from "./lib/uiswitch";
+import { flushAll } from "./lib/flush";
+import { installAndroidBack } from "./lib/androidBack";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -38,11 +43,14 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 const presenterMode = location.hash === "#presenter";
 // The recovery screen of an encrypted database whose key is missing (instead of the app).
 const keygateMode = location.hash === "#keygate";
-// The Android companion app has an entry of its own (`mobile.html`, ui/src/mobile/main.tsx), so
-// the phone never loads this bundle; should this page open there anyway (or with `?mobile`), it
-// goes over.
-const mobileMode = /\bAndroid\b/.test(navigator.userAgent) || new URLSearchParams(location.search).has("mobile");
-if (mobileMode) location.replace(`mobile.html${location.search}`);
+// The Android app opens its phone entry (`mobile.html`, ui/src/mobile/main.tsx) and comes here on a
+// large screen (1.20, lib/uiswitch.ts); `?mobile` opens the phone app in a browser.
+const forcedMobile = new URLSearchParams(location.search).has("mobile");
+if (forcedMobile) location.replace(`mobile.html${location.search}`);
+// What the app can do here (the desktop, or Android's full app), before the first frame.
+const capabilities = forcedMobile ? null : await loadCapabilities();
+// On Android: still the right interface for this window? Otherwise to the phone app at once.
+const mobileMode = forcedMobile || (!!capabilities && onAndroid() && (await bootInterface("full")) === null);
 
 // The language the shell resolved („Wie das System“ included) holds from the first frame on.
 const boot = bootLang();
@@ -52,6 +60,8 @@ if (!mobileMode) {
   trackModKey();
   installTooltips();
   installReloadGuard();
+  // Touch screens (the full app on Android): a long press opens the context menus.
+  installLongPress();
 }
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
@@ -66,7 +76,7 @@ if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode
   applyBootAppearance();
 }
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
-if (!mobileMode) {
+if (!mobileMode && capabilities?.windowFrame) {
   import("@tauri-apps/api/core")
     .then(({ invoke }) => invoke<boolean>("window_frame"))
     .then((custom) => custom && !captureMode && !searchMode && !presenterMode && document.documentElement.classList.add("frame-custom"))
@@ -109,8 +119,23 @@ createRoot(document.getElementById("root")!).render(
 // styles are loaded by then, so there is no unstyled page and no white flash before the splash.
 // (Not after a requestAnimationFrame: hidden webviews do not run frames.)
 if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode) {
-  import("@tauri-apps/api/core")
-    .then(({ invoke }) => invoke("window_ready"))
-    .catch(() => {})
-    .finally(splashShown);
+  if (capabilities?.windowFrame) {
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("window_ready"))
+      .catch(() => {})
+      .finally(splashShown);
+  } else {
+    splashShown();
+  }
+  // Android's full app follows the window: back to the phone app when it becomes phone-sized,
+  // with the editors' text stored first.
+  if (onAndroid()) {
+    // Android's back button closes what is open, else the app goes to the background.
+    installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
+    followInterface("full", async () => {
+      const { flushAllEditors } = await import("./editor/saves");
+      const editors = await Promise.race([flushAllEditors().then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5000))]).catch(() => false);
+      return editors && (await flushAll());
+    });
+  }
 }

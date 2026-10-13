@@ -47,6 +47,8 @@ mod meetwork;
 mod network;
 #[cfg_attr(mobile, path = "mobile/notifyact.rs")]
 mod notifyact;
+mod picked;
+mod platform;
 mod policy;
 mod portable;
 mod prefs;
@@ -824,10 +826,13 @@ async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Reque
 #[tauri::command]
 async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<SavedAttachment> {
     let dir = state.attachments_dir();
-    let saved =
-        tauri::async_runtime::spawn_blocking(move || attachments::import_file(&dir, std::path::Path::new(&path)))
-            .await
-            .map_err(|e| Error::State(e.to_string()))??;
+    // Android's document picker: a copy of the file under its name, removed afterwards.
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        let file = picked::input(&path)?;
+        attachments::import_file(&dir, file.path())
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))??;
     feed::file_added(&state, &saved.name);
     Ok(saved)
 }
@@ -872,33 +877,35 @@ async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
 /// Writes a page shared as one HTML file (the path comes from the save dialog).
 #[tauri::command]
 fn html_file_write(path: String, html: String) -> Result<()> {
-    let p = std::path::Path::new(&path);
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ext != "html" && ext != "htm" {
-        return Err(Error::State(
-            tr!("Nur .html-Dateien können so gespeichert werden", "Only .html files can be saved this way").into(),
-        ));
-    }
-    std::fs::write(p, html).at(p)?;
-    Ok(())
+    picked::output(&path, |p| {
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "html" && ext != "htm" {
+            return Err(Error::State(
+                tr!("Nur .html-Dateien können so gespeichert werden", "Only .html files can be saved this way").into(),
+            ));
+        }
+        std::fs::write(p, html).at(p)?;
+        Ok(())
+    })
 }
 
 /// Writes an exported diagram (`.svg` or `.png`, from a Mermaid block) to `path`.
 #[tauri::command(async)]
 fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
-    let p = std::path::Path::new(&path);
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ext != "svg" && ext != "png" {
-        return Err(Error::State(
-            tr!(
-                "Nur .svg- und .png-Dateien können so gespeichert werden",
-                "Only .svg and .png files can be saved this way"
-            )
-            .into(),
-        ));
-    }
-    std::fs::write(p, data).at(p)?;
-    Ok(())
+    picked::output(&path, |p| {
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "svg" && ext != "png" {
+            return Err(Error::State(
+                tr!(
+                    "Nur .svg- und .png-Dateien können so gespeichert werden",
+                    "Only .svg and .png files can be saved this way"
+                )
+                .into(),
+            ));
+        }
+        std::fs::write(p, data).at(p)?;
+        Ok(())
+    })
 }
 
 /// Opens a file of the attachments folder in its default app, or shows it in the file
@@ -908,6 +915,14 @@ fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
 fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     let path = attachments::existing(&state.attachments_dir(), &name)?;
+    // Android: a copy in the cache, handed to the app Android has for its type (1.20).
+    #[cfg(target_os = "android")]
+    if !reveal && !attachments::is_executable(&name) {
+        let cache = app.path().app_cache_dir().map_err(|e| Error::State(e.to_string()))?;
+        return mobile::android::open_file(&cache, &path).map_err(|e| {
+            Error::State(trf!("„{name}“ ließ sich nicht öffnen: {e}", "“{name}” could not be opened: {e}"))
+        });
+    }
     let opened = if reveal || attachments::is_executable(&name) {
         app.opener().reveal_item_in_dir(&path)
     } else {
@@ -1587,7 +1602,7 @@ fn export_entries(
     };
     let res = export::export(&rows, format, &options)?;
     if let Some(p) = path {
-        std::fs::write(&p, &res.content).at(&p)?;
+        picked::output(&p, |f| std::fs::write(f, &res.content).at(f))?;
     }
     if mark_exported {
         db.set_entry_status(&res.exported_ids, StatusFlag::Exported)?;
@@ -1939,6 +1954,18 @@ async fn git_sync_now(
         ));
     }
     let allow = allow_deletions.unwrap_or(false);
+    // Android (the full app): the phone's sync, HTTPS only, with the desktop's projects and
+    // appointments taken over from its database copy afterwards.
+    #[cfg(mobile)]
+    {
+        mobile::https_only(&app.state::<AppState>().settings().git_sync.remote_url)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            mobile::sync_and_import(&app, allow, after_restore).map(|s| s.outcome)
+        })
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+    }
+    #[cfg(desktop)]
     tauri::async_runtime::spawn_blocking(move || run_git_sync_with(&app, false, allow, after_restore))
         .await
         .map_err(|e| Error::State(e.to_string()))?
@@ -4091,7 +4118,9 @@ fn create_main_window(
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
         .title("Arcalo")
-        .min_inner_size(900.0, 560.0)
+        // Android's windows have no minimum: the simulation (tests) lets the window go to a
+        // tablet's width.
+        .min_inner_size(if platform::simulated_android() { 320.0 } else { 900.0 }, 560.0)
         // The display language before the UI script runs (index.html cannot carry a script):
         // the splash and the first frame are in it, a first run on an English system included.
         .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", arcalo_core::i18n::lang().as_str()))
@@ -4963,421 +4992,524 @@ pub fn run() {
             identity::spawn_cleanup(app.handle());
             Ok(())
         })
-        .invoke_handler(security::guard(tauri::generate_handler![
-            security::keygate_status,
-            security::keygate_unlock,
-            security::keygate_quit,
-            security::keygate_restore,
-            security::keygate_open_folder,
-            security::cipher_status,
-            security::cipher_recovery_key,
-            security::cipher_recovery_save,
-            security::cipher_switch,
-            security::cipher_password,
-            security::cipher_rekey_prepare,
-            security::cipher_rekey,
-            security::cipher_rekey_cancel,
-            security::cipher_drop_old,
-            security::cipher_drop_plain_backups,
-            security::applock_status,
-            security::applock_configure,
-            security::applock_unlock,
-            security::applock_unlock_os,
-            security::applock_reset,
-            security::applock_lock_now,
-            security::applock_flushed,
-            security::applock_show_main,
-            security::applock_test_idle,
-            workspace_tree,
-            workspace_tree_compact,
-            page_get,
-            page_save,
-            page_collection,
-            netzplan_overview,
-            budgets_all,
-            suggestion_facts,
-            page_schema,
-            known_persons,
-            page_versions,
-            page_version_content,
-            page_snapshot,
-            page_version_restore,
-            page_create,
-            page_rename,
-            page_delete,
-            page_restore,
-            page_purge,
-            trash_list,
-            trash_empty,
-            page_move,
-            page_set_favorite,
-            page_set_icon,
-            page_resolve,
-            recent_pages,
-            daily_note,
-            daily_overview,
-            tags_list,
-            tag_pages,
-            tasks_list,
-            tasks_compact,
-            task_set_done,
-            tasks_edit,
-            tasks_undo,
-            task_next_due,
-            task_recur_preview,
-            search_workspace,
-            vault_import,
-            vault_import_cancel,
-            vault_export,
-            templates_list,
-            templates_root,
-            template_render,
-            page_from_template,
-            attachment_save,
-            attachment_store,
-            attachment_import,
-            attachment_read,
-            attachment_size,
-            page_embed,
-            diagram_file_write,
-            link_title,
-            html_file_write,
-            drawing_create,
-            drawing_read,
-            drawing_save,
-            files::attachments_list,
-            files::attachment_rename,
-            files::attachment_trash,
-            files::attachments_trashed,
-            files::attachment_restore,
-            files::attachment_purge,
-            wbs_tree,
-            project_create,
-            project_update,
-            project_delete,
-            netzplan_create,
-            netzplan_update,
-            netzplan_delete,
-            vorgang_create,
-            vorgang_update,
-            vorgang_delete,
-            leistungsarten_list,
-            leistungsart_save,
-            leistungsart_delete,
-            log_time,
-            page_work,
-            timer_status,
-            timer_start,
-            timer_stop,
-            timer_pause,
-            timer_discard,
-            time_entries,
-            time_entry_create,
-            time_entry_update,
-            set_entry_status,
-            delete_time_entry,
-            time_chip_states,
-            time_chip_delete,
-            time_chip_restore,
-            time_chip_book,
-            budget,
-            schedule,
-            export_entries,
-            backup_now,
-            backup_list,
-            backupdest::backup_destinations,
-            backupdest::backup_destination_test,
-            backupdest::backup_destination_retry,
-            backupdest::backup_remote_list,
-            backupdest::backup_restore,
-            mirror_status,
-            mirror_open,
-            git_sync_now,
-            git_sync_status,
-            git_token_set,
-            git_sync_test,
-            git_restore_import,
-            syncmerge::git_conflicts,
-            syncmerge::git_conflict_get,
-            syncmerge::git_conflict_resolve,
-            syncmerge::git_conflict_keep_both,
-            settings_get,
-            settings_save,
-            settings_scope_set,
-            settings_sync_undo,
-            api_key_set,
-            ai_test_connection,
-            provider_key_set,
-            ai_provider_models,
-            ai_provider_test,
-            ollama_detect,
-            ollama_pull,
-            ai_route_preview,
-            ai_models,
-            ai_meter,
-            ai_chat,
-            ai_transform,
-            zeit_suggest_ai,
-            ai_cancel,
-            ai_plan_tool,
-            ai_run_workspace_tool,
-            ai_run_system_tool,
-            ai_index_pending,
-            semantic::search_semantic,
-            semantic::semantic_status,
-            semantic::semantic_rebuild,
-            ai_embedding_status,
-            network::network_status,
-            network::network_test,
-            network::network_services,
-            network::network_service_test,
-            network::network_certificate,
-            network::network_legacy_probe,
-            network::network_fetch_pac,
-            network::network_ca_info,
-            network::proxy_password_set,
-            prefs::settings_export,
-            prefs::settings_file_read,
-            prefs::theme_export,
-            prefs::theme_file_read,
-            prefs::settings_defaults,
-            prefs::window_state_save,
-            prefs::ai_cost_status,
-            app_info,
-            data_dir_status,
-            data_dir_inspect,
-            data_dir_set,
-            data_dir_cancel,
-            identity::legacy_cleanup_notice,
-            app_restart,
-            demo_remove,
-            onboarding_needed,
-            onboarding_finish,
-            onboarding_status,
-            onboarding_complete,
-            onboarding_hint_shown,
-            rebrand_notice_shown,
-            onboarding_reset,
-            window_backdrop,
-            window_frame,
-            window_ready,
-            os_locale,
-            jumplist::jump_take,
-            window_set_backdrop,
-            desktop::window_hide,
-            desktop::window_close_action,
-            desktop::app_quit,
-            desktop::capture_submit,
-            desktop::capture_hide,
-            desktop::capture_show,
-            desktop::capture_ready,
-            desktop::capture_context,
-            desktop::capture_undo,
-            desktop::capture_open,
-            desktop::search_hide,
-            desktop::search_open,
-            desktop::timer_resume_last,
-            dashboard_save,
-            dashboard::dashboard_data,
-            dashboard::dashboard_file_write,
-            dashboard::dashboard_inbox_move,
-            worktime::absence_list,
-            worktime::day_targets,
-            worktime::absence_save,
-            worktime::absence_remove,
-            worktime::mail_flagged,
-            worktime::mail_flagged_open,
-            worktime::mail_flagged_available,
-            quick_links_save,
-            quick_link_open,
-            bookmarks::bookmarks_sources,
-            bookmarks::bookmarks_read,
-            bookmarks::bookmarks_read_file,
-            bookmarks::bookmarks_read_text,
-            attachment_open,
-            desktop::desktop_info,
-            desktop::autostart_set,
-            cmdpath::cli_path_info,
-            cmdpath::cli_path_set,
-            chats::chat_list,
-            chats::chat_get,
-            chats::chat_create,
-            chats::chat_append,
-            chats::chat_truncate,
-            chats::chat_update,
-            chats::chat_delete,
-            chats::chat_restore,
-            chats::chat_delete_all,
-            chats::chat_duplicate,
-            focus::focus_state,
-            focus::focus_start,
-            focus::focus_finish,
-            focus::focus_abort,
-            focus::focus_end_break,
-            focus::focus_report,
-            focus::focus_daily_line,
-            focus::focus_entry_ids,
-            feed::activity_list,
-            feed::activity_summary,
-            feed::activity_people,
-            present::presentation_begin,
-            present::presentation_end,
-            present::presenter_open,
-            present::presenter_close,
-            updates::update_status,
-            updates::update_flushed,
-            updates::update_check,
-            updates::update_install,
-            updates::update_download,
-            updates::update_pause,
-            updates::update_restart_now,
-            updates::update_skip,
-            updates::update_unskip,
-            updates::update_remind,
-            updates::update_whats_new_seen,
-            updates::update_rollback,
-            updates::update_release_notes,
-            store::store_open_updates,
-            devlog::devlog_write,
-            devlog::devlog_read,
-            devlog::devlog_stats,
-            devlog::devlog_clear,
-            devlog::devlog_open_folder,
-            diagnostics::diagnostics_bundle,
-            secrets::secrets_status,
-            notifyact::notify_test,
-            jira::jira_status,
-            jira::jira_site_save,
-            jira::jira_site_remove,
-            jira::jira_test,
-            jira::jira_wbs_set,
-            jira::jira_sync_now,
-            jira::jira_issues,
-            jira::jira_issues_compact,
-            jira::jira_index,
-            jira::jira_issue_view,
-            jira::jira_issue_fetch,
-            jira::jira_issue_detail,
-            jira::jira_issue_note,
-            filing::filing_tidy_plan,
-            filing::filing_tidy_apply,
-            filing::pages_move,
-            filing::move_last,
-            filing::move_undo,
-            filing::filing_preview,
-            filing::folder_style_get,
-            filing::folder_style_set,
-            filing::smart_counts,
-            filing::smart_pages,
-            filing::smart_groups,
-            graph::graph_data,
-            graph::graph_compact,
-            graph::graph_patch,
-            graph::graph_state_get,
-            graph::graph_state_set,
-            filing::page_create_filed,
-            canvas::canvas_create,
-            canvas::canvas_note_path,
-            linking::mentions_get,
-            linking::mentions_link,
-            linking::mentions_ignore,
-            linking::tags_suggest,
-            linking::tags_dismiss,
-            linking::tags_suggest_ai,
-            linking::duplicates_for,
-            linking::duplicates_all,
-            linking::duplicates_ignore,
-            linking::pages_merge,
-            linking::pages_merge_undo,
-            linking::pdf_highlights_list,
-            linking::pdf_highlight_add,
-            linking::pdf_highlight_update,
-            linking::pdf_highlight_delete,
-            linking::pdf_highlight_markdown,
-            linking::page_append,
-            jira::jira_add_task,
-            jira::jira_entry_issues,
-            jira::jira_projects,
-            jira::jira_issue_types,
-            jira::jira_create_issue,
-            jira::jira_sprint,
-            jira::jira_worklog_retry,
-            jira::jira_tool,
-            calsync::calendar_status,
-            calsync::calendar_events,
-            calsync::calendar_source_add,
-            calsync::calendar_source_update,
-            calsync::calendar_source_remove,
-            calsync::calendar_sync_now,
-            calsync::calendar_outlook_discover,
-            calsync::calendar_outlook_update,
-            calsync::calendar_outlook_people,
-            calsync::calendar_set_skip,
-            calsync::calendar_link_entry,
-            calsync::calendar_wbs_hint,
-            calsync::calendar_meeting_note,
-            timeblocks::blocks_list,
-            timeblocks::block_create,
-            timeblocks::block_update,
-            timeblocks::block_delete,
-            timeblocks::block_task_done,
-            timeblocks::block_free_slots,
-            timeblocks::blocks_outlook_retry,
-            weekplan::week_proposal,
-            weekplan::week_proposal_apply,
-            mail::mail_status,
-            mail::mail_outlook_current,
-            mail::mail_parse_file,
-            mail::mail_parse_text,
-            mail::mail_import,
-            mail::mail_link_info,
-            mail::mail_open,
-            mail::mail_suggest,
-            dayreview::day_review,
-            dayreview::day_review_summary,
-            weekreview::week_review,
-            weekreview::week_review_summary,
-            weekreview::week_report_save,
-            weekreview::week_report_template,
-            briefing::briefing,
-            briefing::briefing_summary,
-            meetwork::meeting_prep,
-            meetwork::meeting_prep_page,
-            meetwork::meeting_prep_key,
-            meetwork::status_scopes,
-            meetwork::status_templates,
-            meetwork::status_template_save,
-            meetwork::status_template_delete,
-            meetwork::status_last,
-            meetwork::status_report,
-            meetwork::page_markdown_write,
-            meetwork::page_markdown_text,
-            meetwork::mail_draft_available,
-            meetwork::mail_draft,
-            meetwork::followup_build,
-            meetwork::followup_polish,
-            briefing::briefing_start,
-            voice::voice_devices,
-            voice::voice_start,
-            voice::voice_pause,
-            voice::voice_stop,
-            voice::voice_discard,
-            voice::voice_status,
-            voice::voice_job_cancel,
-            voice::voice_summary_apply,
-            voice::voice_models,
-            voice::voice_model_download,
-            voice::voice_model_cancel,
-            voice::voice_model_import,
-            voice::voice_model_delete,
-            voice::voice_transcribe_again,
-            voice::voice_unfinished,
-            voice::voice_unfinished_save,
-            voice::voice_unfinished_discard,
-        ]))
+        .invoke_handler(commands())
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
         .run(on_run_event);
+}
+
+/// The app's commands, on the desktop and on Android (1.20: the Android app shows the full app on
+/// large screens, so it registers every command but the desktop-only ones, `#[cfg(desktop)]`,
+/// listed in `platform::DESKTOP_ONLY`; the phone app's own are `#[cfg(mobile)]`). While the app
+/// lock is on, other commands are refused (`security::guard`).
+pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    platform::guard(security::guard(tauri::generate_handler![
+        security::keygate_status,
+        security::keygate_unlock,
+        security::keygate_quit,
+        security::keygate_restore,
+        security::keygate_open_folder,
+        security::cipher_status,
+        security::cipher_recovery_key,
+        security::cipher_recovery_save,
+        security::cipher_switch,
+        security::cipher_password,
+        security::cipher_rekey_prepare,
+        security::cipher_rekey,
+        security::cipher_rekey_cancel,
+        security::cipher_drop_old,
+        security::cipher_drop_plain_backups,
+        security::applock_status,
+        security::applock_configure,
+        security::applock_unlock,
+        security::applock_unlock_os,
+        security::applock_reset,
+        security::applock_lock_now,
+        security::applock_flushed,
+        security::applock_show_main,
+        security::applock_test_idle,
+        workspace_tree,
+        workspace_tree_compact,
+        page_get,
+        page_save,
+        page_collection,
+        netzplan_overview,
+        budgets_all,
+        suggestion_facts,
+        page_schema,
+        known_persons,
+        page_versions,
+        page_version_content,
+        page_snapshot,
+        page_version_restore,
+        page_create,
+        page_rename,
+        page_delete,
+        page_restore,
+        page_purge,
+        trash_list,
+        trash_empty,
+        page_move,
+        page_set_favorite,
+        page_set_icon,
+        page_resolve,
+        recent_pages,
+        daily_note,
+        daily_overview,
+        tags_list,
+        tag_pages,
+        tasks_list,
+        tasks_compact,
+        task_set_done,
+        tasks_edit,
+        tasks_undo,
+        task_next_due,
+        task_recur_preview,
+        search_workspace,
+        vault_import,
+        vault_import_cancel,
+        vault_export,
+        templates_list,
+        templates_root,
+        template_render,
+        page_from_template,
+        attachment_save,
+        attachment_store,
+        attachment_import,
+        attachment_read,
+        attachment_size,
+        page_embed,
+        diagram_file_write,
+        link_title,
+        html_file_write,
+        drawing_create,
+        drawing_read,
+        drawing_save,
+        files::attachments_list,
+        files::attachment_rename,
+        files::attachment_trash,
+        files::attachments_trashed,
+        files::attachment_restore,
+        files::attachment_purge,
+        wbs_tree,
+        project_create,
+        project_update,
+        project_delete,
+        netzplan_create,
+        netzplan_update,
+        netzplan_delete,
+        vorgang_create,
+        vorgang_update,
+        vorgang_delete,
+        leistungsarten_list,
+        leistungsart_save,
+        leistungsart_delete,
+        log_time,
+        page_work,
+        timer_status,
+        timer_start,
+        timer_stop,
+        timer_pause,
+        timer_discard,
+        time_entries,
+        time_entry_create,
+        time_entry_update,
+        set_entry_status,
+        delete_time_entry,
+        time_chip_states,
+        time_chip_delete,
+        time_chip_restore,
+        time_chip_book,
+        budget,
+        schedule,
+        export_entries,
+        backup_now,
+        backup_list,
+        backupdest::backup_destinations,
+        backupdest::backup_destination_test,
+        backupdest::backup_destination_retry,
+        backupdest::backup_remote_list,
+        backupdest::backup_restore,
+        mirror_status,
+        mirror_open,
+        git_sync_now,
+        git_sync_status,
+        git_token_set,
+        git_sync_test,
+        git_restore_import,
+        syncmerge::git_conflicts,
+        syncmerge::git_conflict_get,
+        syncmerge::git_conflict_resolve,
+        syncmerge::git_conflict_keep_both,
+        settings_get,
+        settings_save,
+        settings_scope_set,
+        settings_sync_undo,
+        api_key_set,
+        ai_test_connection,
+        provider_key_set,
+        ai_provider_models,
+        ai_provider_test,
+        ollama_detect,
+        ollama_pull,
+        ai_route_preview,
+        ai_models,
+        ai_meter,
+        ai_chat,
+        ai_transform,
+        zeit_suggest_ai,
+        ai_cancel,
+        ai_plan_tool,
+        ai_run_workspace_tool,
+        ai_run_system_tool,
+        ai_index_pending,
+        semantic::search_semantic,
+        semantic::semantic_status,
+        semantic::semantic_rebuild,
+        ai_embedding_status,
+        network::network_status,
+        network::network_test,
+        network::network_services,
+        network::network_service_test,
+        network::network_certificate,
+        network::network_legacy_probe,
+        network::network_fetch_pac,
+        network::network_ca_info,
+        network::proxy_password_set,
+        prefs::settings_export,
+        prefs::settings_file_read,
+        prefs::theme_export,
+        prefs::theme_file_read,
+        prefs::settings_defaults,
+        prefs::window_state_save,
+        prefs::ai_cost_status,
+        app_info,
+        data_dir_status,
+        data_dir_inspect,
+        data_dir_set,
+        data_dir_cancel,
+        #[cfg(desktop)]
+        identity::legacy_cleanup_notice,
+        app_restart,
+        demo_remove,
+        onboarding_needed,
+        onboarding_finish,
+        onboarding_status,
+        onboarding_complete,
+        onboarding_hint_shown,
+        rebrand_notice_shown,
+        onboarding_reset,
+        window_backdrop,
+        window_frame,
+        #[cfg(desktop)]
+        window_ready,
+        os_locale,
+        #[cfg(desktop)]
+        jumplist::jump_take,
+        window_set_backdrop,
+        #[cfg(desktop)]
+        desktop::window_hide,
+        #[cfg(desktop)]
+        desktop::window_close_action,
+        #[cfg(desktop)]
+        desktop::app_quit,
+        desktop::capture_submit,
+        #[cfg(desktop)]
+        desktop::capture_hide,
+        #[cfg(desktop)]
+        desktop::capture_show,
+        #[cfg(desktop)]
+        desktop::capture_ready,
+        #[cfg(desktop)]
+        desktop::capture_context,
+        #[cfg(desktop)]
+        desktop::capture_undo,
+        #[cfg(desktop)]
+        desktop::capture_open,
+        #[cfg(desktop)]
+        desktop::search_hide,
+        #[cfg(desktop)]
+        desktop::search_open,
+        #[cfg(desktop)]
+        desktop::timer_resume_last,
+        dashboard_save,
+        dashboard::dashboard_data,
+        dashboard::dashboard_file_write,
+        dashboard::dashboard_inbox_move,
+        worktime::absence_list,
+        worktime::day_targets,
+        worktime::absence_save,
+        worktime::absence_remove,
+        worktime::mail_flagged,
+        worktime::mail_flagged_open,
+        worktime::mail_flagged_available,
+        quick_links_save,
+        quick_link_open,
+        bookmarks::bookmarks_sources,
+        bookmarks::bookmarks_read,
+        bookmarks::bookmarks_read_file,
+        bookmarks::bookmarks_read_text,
+        attachment_open,
+        #[cfg(desktop)]
+        desktop::desktop_info,
+        #[cfg(desktop)]
+        desktop::autostart_set,
+        #[cfg(desktop)]
+        cmdpath::cli_path_info,
+        #[cfg(desktop)]
+        cmdpath::cli_path_set,
+        chats::chat_list,
+        chats::chat_get,
+        chats::chat_create,
+        chats::chat_append,
+        chats::chat_truncate,
+        chats::chat_update,
+        chats::chat_delete,
+        chats::chat_restore,
+        chats::chat_delete_all,
+        chats::chat_duplicate,
+        focus::focus_state,
+        focus::focus_start,
+        focus::focus_finish,
+        focus::focus_abort,
+        focus::focus_end_break,
+        focus::focus_report,
+        focus::focus_daily_line,
+        focus::focus_entry_ids,
+        feed::activity_list,
+        feed::activity_summary,
+        feed::activity_people,
+        #[cfg(desktop)]
+        present::presentation_begin,
+        #[cfg(desktop)]
+        present::presentation_end,
+        #[cfg(desktop)]
+        present::presenter_open,
+        #[cfg(desktop)]
+        present::presenter_close,
+        #[cfg(desktop)]
+        updates::update_status,
+        #[cfg(desktop)]
+        updates::update_flushed,
+        #[cfg(desktop)]
+        updates::update_check,
+        #[cfg(desktop)]
+        updates::update_install,
+        #[cfg(desktop)]
+        updates::update_download,
+        #[cfg(desktop)]
+        updates::update_pause,
+        #[cfg(desktop)]
+        updates::update_restart_now,
+        #[cfg(desktop)]
+        updates::update_skip,
+        #[cfg(desktop)]
+        updates::update_unskip,
+        #[cfg(desktop)]
+        updates::update_remind,
+        #[cfg(desktop)]
+        updates::update_whats_new_seen,
+        #[cfg(desktop)]
+        updates::update_rollback,
+        #[cfg(desktop)]
+        updates::update_release_notes,
+        #[cfg(desktop)]
+        store::store_open_updates,
+        devlog::devlog_write,
+        devlog::devlog_read,
+        devlog::devlog_stats,
+        devlog::devlog_clear,
+        devlog::devlog_open_folder,
+        diagnostics::diagnostics_bundle,
+        secrets::secrets_status,
+        #[cfg(desktop)]
+        notifyact::notify_test,
+        jira::jira_status,
+        jira::jira_site_save,
+        jira::jira_site_remove,
+        jira::jira_test,
+        jira::jira_wbs_set,
+        jira::jira_sync_now,
+        jira::jira_issues,
+        jira::jira_issues_compact,
+        jira::jira_index,
+        jira::jira_issue_view,
+        jira::jira_issue_fetch,
+        jira::jira_issue_detail,
+        jira::jira_issue_note,
+        filing::filing_tidy_plan,
+        filing::filing_tidy_apply,
+        filing::pages_move,
+        filing::move_last,
+        filing::move_undo,
+        filing::filing_preview,
+        filing::folder_style_get,
+        filing::folder_style_set,
+        filing::smart_counts,
+        filing::smart_pages,
+        filing::smart_groups,
+        graph::graph_data,
+        graph::graph_compact,
+        graph::graph_patch,
+        graph::graph_state_get,
+        graph::graph_state_set,
+        filing::page_create_filed,
+        canvas::canvas_create,
+        canvas::canvas_note_path,
+        linking::mentions_get,
+        linking::mentions_link,
+        linking::mentions_ignore,
+        linking::tags_suggest,
+        linking::tags_dismiss,
+        linking::tags_suggest_ai,
+        linking::duplicates_for,
+        linking::duplicates_all,
+        linking::duplicates_ignore,
+        linking::pages_merge,
+        linking::pages_merge_undo,
+        linking::pdf_highlights_list,
+        linking::pdf_highlight_add,
+        linking::pdf_highlight_update,
+        linking::pdf_highlight_delete,
+        linking::pdf_highlight_markdown,
+        linking::page_append,
+        jira::jira_add_task,
+        jira::jira_entry_issues,
+        jira::jira_projects,
+        jira::jira_issue_types,
+        jira::jira_create_issue,
+        jira::jira_sprint,
+        jira::jira_worklog_retry,
+        jira::jira_tool,
+        calsync::calendar_status,
+        calsync::calendar_events,
+        calsync::calendar_source_add,
+        calsync::calendar_source_update,
+        calsync::calendar_source_remove,
+        calsync::calendar_sync_now,
+        calsync::calendar_outlook_discover,
+        calsync::calendar_outlook_update,
+        calsync::calendar_outlook_people,
+        calsync::calendar_set_skip,
+        calsync::calendar_link_entry,
+        calsync::calendar_wbs_hint,
+        calsync::calendar_meeting_note,
+        timeblocks::blocks_list,
+        timeblocks::block_create,
+        timeblocks::block_update,
+        timeblocks::block_delete,
+        timeblocks::block_task_done,
+        timeblocks::block_free_slots,
+        timeblocks::blocks_outlook_retry,
+        weekplan::week_proposal,
+        weekplan::week_proposal_apply,
+        mail::mail_status,
+        mail::mail_outlook_current,
+        mail::mail_parse_file,
+        mail::mail_parse_text,
+        mail::mail_import,
+        mail::mail_link_info,
+        mail::mail_open,
+        mail::mail_suggest,
+        dayreview::day_review,
+        dayreview::day_review_summary,
+        weekreview::week_review,
+        weekreview::week_review_summary,
+        weekreview::week_report_save,
+        weekreview::week_report_template,
+        briefing::briefing,
+        briefing::briefing_summary,
+        meetwork::meeting_prep,
+        meetwork::meeting_prep_page,
+        meetwork::meeting_prep_key,
+        meetwork::status_scopes,
+        meetwork::status_templates,
+        meetwork::status_template_save,
+        meetwork::status_template_delete,
+        meetwork::status_last,
+        meetwork::status_report,
+        meetwork::page_markdown_write,
+        meetwork::page_markdown_text,
+        meetwork::mail_draft_available,
+        meetwork::mail_draft,
+        meetwork::followup_build,
+        meetwork::followup_polish,
+        briefing::briefing_start,
+        #[cfg(desktop)]
+        voice::voice_devices,
+        #[cfg(desktop)]
+        voice::voice_start,
+        #[cfg(desktop)]
+        voice::voice_pause,
+        #[cfg(desktop)]
+        voice::voice_stop,
+        #[cfg(desktop)]
+        voice::voice_discard,
+        #[cfg(desktop)]
+        voice::voice_status,
+        #[cfg(desktop)]
+        voice::voice_job_cancel,
+        #[cfg(desktop)]
+        voice::voice_summary_apply,
+        #[cfg(desktop)]
+        voice::voice_models,
+        #[cfg(desktop)]
+        voice::voice_model_download,
+        #[cfg(desktop)]
+        voice::voice_model_cancel,
+        #[cfg(desktop)]
+        voice::voice_model_import,
+        #[cfg(desktop)]
+        voice::voice_model_delete,
+        #[cfg(desktop)]
+        voice::voice_transcribe_again,
+        #[cfg(desktop)]
+        voice::voice_unfinished,
+        #[cfg(desktop)]
+        voice::voice_unfinished_save,
+        #[cfg(desktop)]
+        voice::voice_unfinished_discard,
+        platform::app_capabilities,
+        // The Android app's own: the phone app's screens, the window and its updates.
+        #[cfg(mobile)]
+        mobile::mobile_settings_get,
+        #[cfg(mobile)]
+        mobile::mobile_settings_save,
+        #[cfg(mobile)]
+        mobile::mobile_today,
+        #[cfg(mobile)]
+        mobile::mobile_daily,
+        #[cfg(mobile)]
+        mobile::mobile_book,
+        #[cfg(mobile)]
+        mobile::mobile_capture,
+        #[cfg(mobile)]
+        mobile::mobile_timer_stop,
+        #[cfg(mobile)]
+        mobile::mobile_recent_targets,
+        #[cfg(mobile)]
+        mobile::mobile_sync,
+        #[cfg(mobile)]
+        mobile::mobile_shared_text,
+        #[cfg(mobile)]
+        mobile::mobile_bars,
+        #[cfg(mobile)]
+        mobile::mobile_to_background,
+        #[cfg(mobile)]
+        mobile::android_display,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_status,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_check,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_download,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_install,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_allow_install,
+        #[cfg(mobile)]
+        mobile::apkupdate::apk_update_set_mobile_data,
+    ]))
 }
 
 #[cfg(desktop)]

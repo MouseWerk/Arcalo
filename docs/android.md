@@ -1,7 +1,9 @@
-# Arcalo for Android (companion app)
+# Arcalo for Android
 
-The Android app is a companion to Arcalo on the desktop, not the whole desktop app on a phone. It shows
-what matters during the day and keeps your notes in step with the desktop through the same Git repository.
+On a phone the Android app is a companion to Arcalo on the desktop, not the whole desktop app: it shows what
+matters during the day and keeps your notes in step with the desktop through the same Git repository. On a
+large screen (a tablet, Android's desktop mode on an external display, Android on a PC) the same app shows the
+full desktop app (1.20, see „Phone app or full app“ below).
 
 Application id: `de.mousewerk.arcalo` (the identifier the desktop takes with 1.15, see
 `docs/quality/plan115-rename.md`). Minimum Android version: 8.0 (API 26).
@@ -24,6 +26,84 @@ on Heute it sends the app to the background, as Android apps do, and never quits
 Not in this version: AI, voice notes, Outlook and Jira, the start page boards, the projects view, canvas
 and drawings (a canvas page shows a notice), templates, the calendar's own subscriptions, the app lock and
 the database encryption.
+
+## Phone app or full app (1.20)
+
+The Android window opens the phone app's page (`mobile.html`, `src-tauri/tauri.android.conf.json`). Before
+it shows anything, the page asks which interface fits (`ui/src/lib/uiswitch.ts`, `bootInterface`) and goes
+over to the full app's page (`index.html`) when that one fits; the full app's page asks the same and goes back
+to the phone app. Both pages are entries of one build (`ui/vite.config.ts`) and run on the same shell, state
+and workspace in the same process: switching loads the other page, nothing is copied or synced.
+
+**The decision** (`ui/src/lib/uimode.ts`, `chooseInterface`, tested in `uimode.test.ts`) uses what Android
+reports through `ShellPlugin.kt` (`display`, read by `android_display` in `src-tauri/src/mobile/mod.rs`): the
+window's size in dp (`Configuration.screenWidthDp`/`screenHeightDp`), the display's smallest width, Android on
+a PC (`FEATURE_PC`), desktop mode (`UI_MODE_TYPE_DESK`), a freely sized window (in multi-window mode and
+smaller than the display on both sides, from `WindowMetrics`), split screen, an external display (not
+`DEFAULT_DISPLAY`), a mouse or touchpad (`InputDevice`) and a hardware keyboard (`Configuration.keyboard`).
+
+| Situation | Interface |
+|---|---|
+| The shorter side of the window at least 600 dp (a tablet, half of a landscape tablet) | full app |
+| A desktop setting (desktop mode, a desktop window, an external display, mouse and keyboard): at least 480 dp | full app |
+| Android on a PC | full app, at any size |
+| Otherwise (a phone, a third of a tablet, a phone-sized window) | phone app |
+| Einstellungen → Darstellung → „Oberfläche auf Android“ (also in the phone app's settings): „Telefon“ or „Vollständig“ | that one |
+
+The full app stays until the window is 48 dp below its line, so a window resized around the line does not
+switch back and forth; after three switches within 30 seconds the interface stays for the session.
+
+**Following the window.** The manifest keeps the activity when the size, the display, the density or the
+input devices change (`configChanges`), so the page stays and `ShellPlugin` announces the change to it (the
+DOM event `arcalo-display`, also on a mouse or keyboard plugged in or out); the page also listens to its own
+`resize`. A change is decided once the window rests (0.6 s). Before the page goes over, the unsaved text is
+stored: the full app's editors (`flushAllEditors`) and the phone app's page editor (`lib/flush.ts`); while a
+dialog is open or a field outside the editors holds typed text, the switch waits; when storing fails it waits
+and tries again. The setting „Oberfläche auf Android“ (`appearance.android_interface`, settings step 18)
+belongs to the device and is not synced with the settings.
+
+**What the full app does on Android.** Everything that works there: notes, tasks, the calendar (its
+subscriptions sync as on the desktop), time tracking, the assistant (its keys in the Android Keystore, read a
+few seconds after the start), Git sync (as the phone syncs: HTTPS with an access token, the desktop's
+projects and appointments from its database copy; `git_sync_now` uses the phone's sync), split panes, the file
+sidebar, keyboard shortcuts, drag and drop. The shell registers every shared command on Android too (one list,
+`commands()` in `src-tauri/src/lib.rs`); only the desktop's own are left out (`#[cfg(desktop)]`, named in
+`platform::DESKTOP_ONLY`, a test keeps both in step). The UI asks `app_capabilities` once
+(`ui/src/lib/capabilities.ts`) and hides what Android does not have instead of failing: voice notes, the
+encryption and the app lock, tray, autostart, global shortcuts, the command line, the desktop's updater (Über
+Arcalo shows Android's updates, `AndroidUpdatesGroup`), the quick-capture, quick-search and presenter windows,
+local folders (data folder, backups and their destinations, the Markdown copy, Obsidian vaults, calendar
+files, CA files, „Im Ordner zeigen“), programs as quick links, PAC scripts and the window's frame and
+backdrop.
+
+**Files.** The file dialog is Android's document picker (the dialog plugin), which answers with `content://`
+addresses: a file to read is copied into the app's cache under its own name and read from there, a file to
+write is written there and copied to the address the picker created (`src-tauri/src/picked.rs`,
+`ShellPlugin.kt`: `uriName`, `copyFromUri`, `copyToUri`). So inserting files and images, importing bookmarks,
+settings and themes, and saving exports (time tracking, HTML, diagrams, settings, themes, the diagnostics
+package) work. „Öffnen“ on an attachment hands a copy (cache folder `open`, `res/xml/file_paths.xml`) to the
+app Android has for its type.
+
+**Input.** Mouse, trackpad, keyboard and touch together. Hover styles apply only where a pointer can hover: at
+build time every `:hover` rule of the app's stylesheets goes into `@media (hover: hover)`, and a rule that only
+reveals a control shows it without the hover under `(hover: none)` (`ui/src/lib/hoverMedia.ts`), so a tap
+leaves no tinted row. A long press sends `contextmenu` where the WebView did not (`ui/src/lib/longpress.ts`;
+text fields and the editor keep Android's selection), a tap shows no tooltip, and splitters and table column
+handles get a finger-wide grip on coarse pointers. Android's back button closes a dialog, menu or popover
+first and otherwise sends the app to the background (`ui/src/lib/androidBack.ts`).
+
+**Commands off the main thread.** Android runs a command without `async` on its main thread, where the Kotlin
+plugins (Keystore, window, files) answer too; a command that reads a secret there would wait forever. On
+Android every command goes to one worker thread first, in the order they came (`off_main_thread` in
+`src-tauri/src/mobile/mod.rs`).
+
+**Tests on the desktop.** A debug build started with `ARCALO_SIMULATE_ANDROID=1` reports Android's
+capabilities and refuses the desktop-only commands as Android does (`platform::guard`), and its window may
+be as narrow as a tablet; `e2e/tests/400-android-full-app.test.js` opens the ribbon, the palette, every
+settings section, the sidebar's menus (right click and long press) and split panes with it, checks the
+console, and takes the screenshots of the full app at 800x1280, 1280x800 and in a 1480x920 window, light and
+dark (`e2e/screenshots/android-*`). What only a device shows is in the manual checklist of
+docs/release/android.md.
 
 ## How bookings reach the desktop
 
@@ -85,12 +165,12 @@ editor saves against the text it started from, and the two are merged.
   replaced by small stand-ins in `src-tauri/src/mobile/` (`#[cfg_attr(mobile, path = …)]`). The desktop-only
   crates (tray-dependent plugins, global shortcuts, updater, autostart, single instance, clipboard, Whisper,
   audio input) are target dependencies for non-mobile targets only. `run()` is the desktop's; the app's entry
-  point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the list of commands the
-  phone uses.
+  point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the shared command list
+  (`commands()`, since 1.20 for both interfaces).
 - **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, Android's back button through Tauri's
   `onBackButtonPress`, see `backAction` in `mobile/model.ts`) with a page of its own: the Android window opens
-  `mobile.html` (`src-tauri/tauri.android.conf.json`), whose entry `ui/src/mobile/main.tsx` loads the mobile
-  shell, the design tokens and `mobile.css`, never the desktop app's bundle and stylesheets (1.19: 1.46 MB
+  `mobile.html` (`src-tauri/tauri.android.conf.json`), whose entry `ui/src/mobile/main.tsx` decides first
+  whether the full app fits (then it goes to `index.html`, above) and otherwise loads the mobile shell, the design tokens and `mobile.css`, never the desktop app's bundle and stylesheets (1.19: 1.46 MB
   in 11 files at the start instead of 3.44 MB in 69, of it 36 KB of CSS instead of 499 KB); it uses the desktop's API
   wrappers, i18n catalogs (`mob.*` keys), design tokens, Markdown rendering, task and capture helpers.
   Editing a page is plain Markdown text in v1: the TipTap editor's menus, popovers and drag handles are
@@ -120,8 +200,10 @@ editor saves against the text it started from, and the two are merged.
   `SecretsPlugin.kt` in `src-tauri/gen/android`).
 - **Window and updates.** `mobile/android.rs` talks to two more Kotlin plugins: `ShellPlugin.kt` (the
   colors behind the system bars after the app's theme, the app to the background on the root's back
-  button, text shared to the app) and `UpdatePlugin.kt` (what Android knows about the installed app and a
-  downloaded APK, metered network, the permission to install apps, the hand-over to the installer).
+  button, text shared to the app, since 1.20 the window and the device for the choice of the interface,
+  picked files and opening an attachment in another app) and `UpdatePlugin.kt` (what Android knows about the
+  installed app and a downloaded APK, metered network, the permission to install apps, the hand-over to the
+  installer).
 - **Android project.** `src-tauri/gen/android` is generated by `cargo tauri android init` and committed as
   Tauri recommends, with the app's changes: the Keystore, window and update plugins, the share target, insets for the system bars and the keyboard,
   window colors of the app, the launcher icon from the Arcalo mark, no backup of the app data (the Keystore
@@ -179,6 +261,10 @@ folder: they belong to this phone and never sync.
 - The Kotlin plugins (Keystore, window, updates) are reviewed against Tauri's plugin API but compiled only by
   the CI workflow; the Rust side is type-checked for Android on the host. None of it has run on a
   device yet: see the manual checklist in docs/release/android.md.
+- The full app on large screens (1.20) is tested on the desktop with Android's capabilities simulated; its
+  Android-only parts (the window's facts, the switch on a real resize, the document picker, opening a file in
+  another app, touch and a long press in Android's WebView) need a device: the checklist names them. Android
+  offers no public flag for a freely sized window; the app infers it from the window's bounds.
 - Bookings made on the phone reach the desktop's time tracking only through „Erneut buchen“ on their chip.
 - Meetings and Netzpläne need „Datenbank mitsichern“ on the desktop; an encrypted database copy is skipped.
 - HTTPS remotes only (no SSH keys on the phone); a pinned server key (Einstellungen → Netzwerk on the desktop)

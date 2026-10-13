@@ -131,6 +131,47 @@ Before or after a release, on a phone with Android 8 or newer (and, if at hand, 
 - Close and reopen the app: the token is still set (Android Keystore).
 - German and English.
 
+The full app on large screens (1.20, docs/android.md → „Phone app or full app“). On a tablet (Android 12+,
+ideally 15 with desktop windowing), on a phone with desktop mode on an external display (e.g. Samsung DeX or
+Android 15/16 „Desktop-Modus“ with a USB-C monitor, mouse and keyboard), and on an Android PC when one is at
+hand:
+
+- Tablet upright and sideways: the full app opens (sidebar, tabs, start page), not the phone app; no console
+  error page, nothing wider than the screen; the system bars keep the app's colors.
+- Split screen: a half of a landscape tablet keeps the full app; a third (phone-sized) switches to the phone
+  app, back to a half switches again; typed text in an open note survives each switch (type, then resize at
+  once).
+- A freely sized window (desktop windowing): shrinking it to phone size switches to the phone app, growing it
+  switches back; dragging the edge slowly does not flicker between the two.
+- Einstellungen → Darstellung → „Oberfläche auf Android“: „Telefon“ switches to the phone app at once and
+  stays there on the tablet; the phone app's Einstellungen → „Oberfläche auf Android“ → „Vollständig“ goes
+  back; „Automatisch“ follows the window again. Also on a phone: „Vollständig“ shows the full app.
+- Phone in desktop mode on an external display: the window on the monitor shows the full app; moving the app
+  back to the phone's screen shows the phone app; plugging a mouse and keyboard into a tablet keeps the full
+  app (and with a small window, switches to it).
+- Mouse and trackpad: hover tints rows and buttons, right click opens the tree's, tab's, editor's and table's
+  menus, the wheel and two-finger scroll the panes; touch: a tap leaves no tinted row, a long press on a tree
+  row, a tab or a task opens its menu (in the editor a long press selects a word with Android's text tools),
+  a finger drags the pane divider and the sidebar's edge.
+- Keyboard: Ctrl+K opens the palette, Ctrl+N a page, Ctrl+, the settings, Tab and the arrows move the focus
+  (the focus ring shows only when moving with keys); Android's own shortcuts (Meta, Alt+Tab) still work.
+- Drag and drop with a mouse: pages in the tree, tabs between panes, tasks on the start page; with a finger
+  where Android's WebView offers it (a long press starts the drag on newer WebViews).
+- Notes, tasks, the calendar, time tracking (timer, `/zeit`, Zeiterfassung), the assistant with a provider
+  key (the key is kept after a restart), the Git sync („Jetzt synchronisieren“ in Einstellungen → Sicherung;
+  an SSH address is refused), split panes, the file sidebar.
+- Files: „Datei einfügen“ opens Android's document picker and the file lands in the note; „Öffnen“ on an
+  attachment opens it in the app Android has for its type (a PDF viewer, an office app); exporting the time
+  tracking as CSV, a page as HTML, a diagram as SVG/PNG, the settings or a theme saves through Android's
+  „Speichern unter“ to the chosen place; the diagnostics package as well.
+- Not offered on Android, and nowhere broken: voice notes, the encryption and the app lock, tray, autostart,
+  global shortcuts, the command line, the desktop's updater (Über Arcalo shows Android's updates), the
+  quick-capture and quick-search windows, choosing local folders (data folder, backups, Markdown copy,
+  Obsidian vaults, calendar files), programs as quick links, PAC scripts.
+- Back button in the full app: closes a dialog or menu first, then sends the app to the background (it does
+  not quit); reopening shows the same tabs.
+- Android PC (when available): the full app at any window size, keyboard shortcuts, external displays.
+
 Updates (needs two release-signed versions, e.g. a test tag; see „Signing“):
 
 - Install version N. Einstellungen → Updates shows „Arcalo ist aktuell“ and the time of the last check.

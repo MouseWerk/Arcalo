@@ -53,6 +53,7 @@ import { startFirstRun } from "../onboarding/state";
 import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help";
 import { newChat, openChatView, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
+import { caps } from "../lib/capabilities";
 import { isComposing } from "../lib/ime";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
@@ -311,8 +312,13 @@ export function CommandPalette() {
       { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("arcalo.panel", v); } },
       { id: "focus", title: t("cmd.focusMode"), icon: ic(Focus), hint: hint("focus_mode"), run: () => s().set({ focusMode: !s().focusMode }) },
       { id: "theme", title: t("cmd.theme"), icon: ic(Moon), run: () => toggleTheme() },
-      { id: "import", title: t("cmd.importVault"), icon: ic(FolderInput), run: () => importVault() },
-      { id: "export", title: t("cmd.exportMd"), icon: ic(Download), run: () => exportVault() },
+      // Obsidian vaults are folders on this computer (not on Android).
+      ...(caps().folders
+        ? [
+            { id: "import", title: t("cmd.importVault"), icon: ic(FolderInput), run: () => importVault() },
+            { id: "export", title: t("cmd.exportMd"), icon: ic(Download), run: () => exportVault() },
+          ]
+        : []),
       {
         id: "index",
         title: t("cmd.reindex"),
@@ -517,6 +523,7 @@ export function askWeeklyReport(now = new Date()) {
 
 /** „Sprachnotiz aufnehmen“ (a new page, or into the open page) or „Aufnahme beenden“. */
 function voiceCommands(): { id: string; title: string; subtitle?: string; icon: React.ReactNode; run: () => void }[] {
+  if (!caps().voice) return [];
   if (useVoice.getState().status.recording) return [{ id: "voice-stop", title: t("voice.stopRecording"), icon: ic(Square), run: () => void stopVoice() }];
   const st = useApp.getState();
   const tab = st.tabs.find((x) => x.id === st.activeTabId);

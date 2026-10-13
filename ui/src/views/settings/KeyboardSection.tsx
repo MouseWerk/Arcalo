@@ -13,6 +13,7 @@ import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { TIME_SHORTCUTS, timeTrackingOn } from "../../lib/timetracking";
 import { isComposing } from "../../lib/ime";
+import { caps } from "../../lib/capabilities";
 
 export function KeyboardSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -22,7 +23,8 @@ export function KeyboardSection({ draft, update }: SectionProps) {
   const policyOff = useApp((s) => !!s.settings?.ai_policy_off);
   const ai = aiSwitchOn(draft) && !policyOff;
   const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
-  const conflicts = findConflicts(map, { capture: draft.capture_shortcut, palette: draft.palette_shortcut, selection: draft.capture?.selection_shortcut, mail: draft.mail?.shortcut });
+  // Without global shortcuts (Android) the window's keys meet no other ones.
+  const conflicts = findConflicts(map, caps().globalShortcuts ? { capture: draft.capture_shortcut, palette: draft.palette_shortcut, selection: draft.capture?.selection_shortcut, mail: draft.mail?.shortcut } : {});
   const conflictOf = (id: string) => conflicts.filter((c) => c.commands.includes(id));
   const setCombo = (id: string, combo: string) => update({ keymap: keymapOverrides({ ...map, [id]: combo }) });
   const otherLabel = (other: NonNullable<(typeof conflicts)[number]["other"]>) =>

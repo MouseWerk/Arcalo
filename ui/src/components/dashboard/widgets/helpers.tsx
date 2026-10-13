@@ -24,6 +24,7 @@ import { useBoard } from "../board";
 import { useLazyData } from "../data";
 import { Loadable, Ring, s, useNow } from "../common";
 import type { WidgetProps } from "../registry";
+import { caps } from "../../../lib/capabilities";
 
 // ------------------------------------------------------------------ Fokus-Timer
 
@@ -247,7 +248,7 @@ function StatusWidget({ widget }: WidgetProps) {
         const dests = d.destinations.filter((x) => x.enabled);
         return (
           <div className="dw-status">
-            <section className="dw-status-block" aria-label={t("dash.h.backup")}>
+            {caps().backups && <section className="dw-status-block" aria-label={t("dash.h.backup")}>
               <div className="dw-status-head">
                 <DatabaseBackup size={14} aria-hidden className="faint" />
                 <span className="dw-status-name">{t("dash.h.backup")}</span>
@@ -268,7 +269,7 @@ function StatusWidget({ widget }: WidgetProps) {
                   ))}
                 </ul>
               )}
-            </section>
+            </section>}
             <section className="dw-status-block" aria-label={t("dash.h.sync")}>
               <div className="dw-status-head">
                 <GitBranch size={14} aria-hidden className="faint" />

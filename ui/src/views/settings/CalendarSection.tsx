@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { caps } from "../../lib/capabilities";
 import { FileUp, FolderOpen, Link2, MoreHorizontal, Palette, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { api, on } from "../../lib/api";
 import { useApp } from "../../store/app";
@@ -148,9 +149,12 @@ export function CalendarSection({ draft, update }: SectionProps) {
             <Button icon={Link2} onClick={() => setAdding("url")} disabled={busy}>
               {t("calset.addUrl")}
             </Button>
-            <Button icon={FileUp} variant="ghost" onClick={() => setAdding("file")} disabled={busy}>
-              {t("calset.addFile")}
-            </Button>
+            {/* A file source is read again at every sync: a path of this computer (not on Android). */}
+            {caps().folders && (
+              <Button icon={FileUp} variant="ghost" onClick={() => setAdding("file")} disabled={busy}>
+                {t("calset.addFile")}
+              </Button>
+            )}
           </div>
           <p className="calset-note faint">{t("calset.secretNote", { store: status?.secret_storage ?? t("calset.secretStore") })}</p>
         </Unfiltered>

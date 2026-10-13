@@ -7,7 +7,6 @@
 //! never stops the page or the mail: they are written without the paragraph.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use arcalo_core::ai::availability;
@@ -281,15 +280,18 @@ pub async fn status_report(
 /// „Als Markdown exportieren“: the page without the markers of its generated part.
 #[tauri::command(async)]
 pub fn page_markdown_write(state: State<AppState>, page_id: i64, path: String) -> Result<()> {
-    let path = path.trim();
-    if !path.to_lowercase().ends_with(".md") {
+    crate::picked::output(&path, |p| write_markdown(&state, page_id, p))
+}
+
+fn write_markdown(state: &AppState, page_id: i64, path: &std::path::Path) -> Result<()> {
+    if !path.to_string_lossy().to_lowercase().ends_with(".md") {
         return Err(Error::State(tr!("Bitte eine .md-Datei wählen", "Please choose a .md file").into()));
     }
     let doc = state.reader().page_doc(page_id)?;
     // The file carries the page title as its heading.
     let body = block::strip_markers(&doc.content);
     let text = if body.trim_start().starts_with("# ") { body } else { format!("# {}\n\n{body}", doc.page.title) };
-    std::fs::write(PathBuf::from(path), text)?;
+    std::fs::write(path, text)?;
     Ok(())
 }
 

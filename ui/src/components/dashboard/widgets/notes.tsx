@@ -26,6 +26,7 @@ import { Empty, hhmm, Loadable, PageRows, s } from "../common";
 import { PagePicker } from "../WidgetSettings";
 import { bodyOf as stripFrontmatter } from "../pages";
 import type { WidgetProps } from "../registry";
+import { caps } from "../../../lib/capabilities";
 
 const opt = (value: string, label: TKey) => ({ value, label: t(label) });
 
@@ -206,7 +207,7 @@ function InboxWidget({ widget }: WidgetProps) {
         const d = data!;
         if (!d.items.length)
           return (
-            <Empty icon={Inbox} action={<Button size="sm" variant="ghost" onClick={() => void api.captureShow().catch((e) => useApp.getState().error(t("common.actionFailed"), e))}>{t("dash.n.capture")}</Button>}>
+            <Empty icon={Inbox} action={caps().popupWindows ? <Button size="sm" variant="ghost" onClick={() => void api.captureShow().catch((e) => useApp.getState().error(t("common.actionFailed"), e))}>{t("dash.n.capture")}</Button> : undefined}>
               {t("dash.n.inboxEmpty", { title: d.title })}
             </Empty>
           );

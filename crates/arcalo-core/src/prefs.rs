@@ -58,6 +58,12 @@ choice!(CodeFont { #[default] JetBrains = "jetbrains", System = "system" } defau
 choice!(Density { Compact = "compact", #[default] Normal = "normal", Comfortable = "comfortable" } default Normal);
 choice!(LineWidth { Narrow = "narrow", #[default] Normal = "normal", Wide = "wide", Full = "full" } default Normal);
 choice!(WindowEffect { #[default] None = "none", Mica = "mica", Acrylic = "acrylic" } default None);
+choice!(
+    /// Which interface the Android app shows: chosen from the window and the device (`auto`: the
+    /// full app on a tablet, in a desktop window or on an external display, the phone app on a
+    /// phone), or always the phone app or the full app.
+    AndroidInterface { #[default] Auto = "auto", Phone = "phone", Full = "full" } default Auto
+);
 
 /// Lowest backdrop opacity: below it the backdrop shows so strongly that text loses contrast.
 pub const WINDOW_OPACITY_MIN: u32 = 40;
@@ -97,6 +103,8 @@ pub struct AppearancePrefs {
     pub custom_titlebar: bool,
     /// The animated logo while the app starts.
     pub startup_animation: bool,
+    /// Android: the phone app or the full app (1.20). Belongs to the device, never synced.
+    pub android_interface: AndroidInterface,
 }
 
 impl Default for AppearancePrefs {
@@ -117,6 +125,7 @@ impl Default for AppearancePrefs {
             window_opacity: WINDOW_OPACITY_DEFAULT,
             custom_titlebar: true,
             startup_animation: true,
+            android_interface: AndroidInterface::Auto,
         }
     }
 }

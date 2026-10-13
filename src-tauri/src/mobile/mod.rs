@@ -1,11 +1,14 @@
-//! The Android companion app: the same state and commands as the desktop shell, without its
-//! windows, tray, shortcuts and voice notes (see docs/android.md). Its updates are its own
-//! (`apkupdate.rs`): an APK checked and handed to Android's installer.
+//! The Android app: the same state and commands as the desktop shell, without its windows, tray,
+//! shortcuts and voice notes (see docs/android.md). Its updates are its own (`apkupdate.rs`): an
+//! APK checked and handed to Android's installer.
 //!
-//! The UI (`ui/src/mobile/`) uses the shared commands for pages, tasks, time and the Git sync,
-//! and the few below for what a phone does differently: the start screen in one call, bookings
-//! that go into the daily note as chips, the sync followed by the reference data from the
-//! desktop's database copy, the window around the WebView and text shared to the app.
+//! Two interfaces share this shell: the phone app (`ui/src/mobile/`, `mobile.html`) and, on large
+//! screens (a tablet, desktop mode, an external display, Android on a PC), the full desktop app
+//! (`index.html`, 1.20; `ui/src/lib/uiswitch.ts` chooses with [`android_display`]). Both use every
+//! shared command but the desktop-only ones ([`crate::platform::DESKTOP_ONLY`]); the phone app
+//! also uses the few below for what a phone does differently: the start screen in one call,
+//! bookings that go into the daily note as chips, the sync followed by the reference data from
+//! the desktop's database copy, the window around the WebView and text shared to the app.
 
 pub mod android;
 pub mod apkupdate;
@@ -40,6 +43,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        // The full app's questions and Android's document picker for files (1.20).
+        .plugin(tauri_plugin_dialog::init())
         .plugin(keystore::plugin())
         .plugin(android::plugin())
         .register_uri_scheme_protocol("arcalo-asset", |ctx, request| {
@@ -49,55 +54,7 @@ pub fn run() {
             setup(app.handle())?;
             Ok(())
         })
-        .invoke_handler(crate::security::guard(tauri::generate_handler![
-            crate::workspace_tree,
-            crate::workspace_tree_compact,
-            crate::page_get,
-            crate::page_save,
-            crate::page_create,
-            crate::page_resolve,
-            crate::recent_pages,
-            crate::search_workspace,
-            crate::tasks_list,
-            crate::tasks_compact,
-            crate::task_set_done,
-            crate::task_next_due,
-            crate::wbs_tree,
-            crate::leistungsarten_list,
-            crate::timer_status,
-            crate::timer_start,
-            crate::timer_pause,
-            crate::timer_discard,
-            crate::time_entries,
-            crate::delete_time_entry,
-            crate::git_sync_status,
-            crate::git_token_set,
-            crate::git_sync_test,
-            crate::syncmerge::git_conflicts,
-            crate::syncmerge::git_conflict_get,
-            crate::syncmerge::git_conflict_resolve,
-            crate::syncmerge::git_conflict_keep_both,
-            crate::app_info,
-            crate::os_locale,
-            mobile_settings_get,
-            mobile_settings_save,
-            mobile_today,
-            mobile_daily,
-            mobile_book,
-            mobile_capture,
-            mobile_timer_stop,
-            mobile_recent_targets,
-            mobile_sync,
-            mobile_shared_text,
-            mobile_bars,
-            mobile_to_background,
-            apkupdate::apk_update_status,
-            apkupdate::apk_update_check,
-            apkupdate::apk_update_download,
-            apkupdate::apk_update_install,
-            apkupdate::apk_update_allow_install,
-            apkupdate::apk_update_set_mobile_data,
-        ]))
+        .invoke_handler(off_main_thread(crate::commands()))
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
         .run(|app, event| {
@@ -116,6 +73,9 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     arcalo_core::i18n::set_lang(system);
     std::fs::create_dir_all(&dir)?;
     devlog::init(&dir);
+    if let Ok(cache) = app.path().app_cache_dir() {
+        crate::picked::init(cache);
+    }
     devlog::info(
         "core",
         format!("Arcalo {} (Android) started, data folder {}", env!("CARGO_PKG_VERSION"), dir.display()),
@@ -164,13 +124,63 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     });
     app.manage(crate::calsync::CalendarSync::default());
     app.manage(crate::jira::JiraSync::default());
+    app.manage(crate::semantic::Semantic::default());
     // Saving the settings tells the backup destinations (none on the phone) about it.
     app.manage(crate::backupdest::Destinations::default());
     app.manage(apkupdate::Updater::new(app, &app.state::<AppState>().data_dir));
     spawn_sync_scheduler(app.clone());
     apkupdate::spawn_scheduler(app.clone());
     spawn_network_watch(app.clone());
+    // What the full app does in the background as on the desktop (each only when set up):
+    // calendar subscriptions, Jira, the calendar's focus blocks, the index for search by meaning.
+    crate::calsync::spawn_scheduler(app.clone());
+    crate::jira::spawn_scheduler(app.clone());
+    crate::timeblocks::spawn_scheduler(app.clone());
+    crate::semantic::spawn_indexer(app.clone());
+    spawn_ai_keys(app.clone());
     Ok(())
+}
+
+/// The assistant's keys are in the Android Keystore, which answers once the UI runs: read a few
+/// seconds after the start, on a worker thread, and the AI clients built with them.
+fn spawn_ai_keys(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(3));
+        let state = app.state::<AppState>();
+        if state.settings().providers.iter().any(|p| p.enabled) {
+            crate::rebuild_ai(&state, state.settings());
+        }
+    });
+}
+
+/// Android runs a command without `async` on the main thread, where the Kotlin plugins (the
+/// Keystore, the window, the files picked) answer too: such a command that reads a secret would
+/// wait forever. The full app's commands run on one worker thread instead, in the order they
+/// came, as they would one after the other on the main thread; `async` ones go on from there.
+fn off_main_thread<F>(inner: F) -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel::<tauri::ipc::Invoke<tauri::Wry>>();
+    let worker = std::thread::Builder::new().name("commands".into()).spawn(move || {
+        for invoke in rx {
+            let resolver = invoke.resolver.clone();
+            let command = invoke.message.command().to_owned();
+            if !inner(invoke) {
+                resolver.reject(format!("Command {command} not found"));
+            }
+        }
+    });
+    if let Err(e) = &worker {
+        devlog::error("mobile", format!("no thread for the commands: {e}"));
+    }
+    move |invoke| {
+        let resolver = invoke.resolver.clone();
+        if tx.send(invoke).is_err() {
+            resolver.reject("the app's commands are not available");
+        }
+        true
+    }
 }
 
 /// How often Android's proxy and the user's certificates are read again (a Wi-Fi can bring a
@@ -255,12 +265,12 @@ fn spawn_sync_scheduler(app: AppHandle) {
 #[derive(Serialize)]
 pub struct MobileSync {
     #[serde(flatten)]
-    outcome: SyncOutcome,
+    pub outcome: SyncOutcome,
     reference: ReferenceImport,
 }
 
 /// The sync (mirror, commit, merge with the server, pull) followed by the reference data.
-fn sync_and_import(
+pub(crate) fn sync_and_import(
     app: &AppHandle,
     allow_deletions: bool,
     after_restore: Option<gitsync::AfterRestore>,
@@ -299,13 +309,13 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 
 /// The settings (on a worker thread: the view names which secrets are set).
 #[tauri::command(async)]
-fn mobile_settings_get(state: State<AppState>) -> crate::SettingsView {
+pub fn mobile_settings_get(state: State<AppState>) -> crate::SettingsView {
     crate::settings_get(state)
 }
 
 /// Saves the settings like the desktop (on a worker thread, see [`mobile_settings_get`]).
 #[tauri::command(async)]
-fn mobile_settings_save(
+pub fn mobile_settings_save(
     app: AppHandle,
     state: State<AppState>,
     settings: serde_json::Value,
@@ -315,7 +325,7 @@ fn mobile_settings_save(
 
 /// „Heute“: date, booked time and target, the timer, due tasks and today's appointments.
 #[tauri::command(async)]
-fn mobile_today(state: State<AppState>) -> Result<Today> {
+pub fn mobile_today(state: State<AppState>) -> Result<Today> {
     let settings = state.settings();
     companion::today(&state.reader(), &settings, Utc::now(), &Local)
 }
@@ -323,14 +333,14 @@ fn mobile_today(state: State<AppState>) -> Result<Today> {
 /// The daily note of `date` (today without one); created only with `create`, so looking at an
 /// empty day does not make a note that would meet the desktop's one as a conflict.
 #[tauri::command(async)]
-fn mobile_daily(state: State<AppState>, date: Option<NaiveDate>, create: bool) -> Result<Option<Page>> {
+pub fn mobile_daily(state: State<AppState>, date: Option<NaiveDate>, create: bool) -> Result<Option<Page>> {
     let date = date.unwrap_or_else(|| Local::now().date_naive());
     companion::daily(&state.db(), date, create)
 }
 
 /// Books a `/zeit` line; its chip goes into the daily note.
 #[tauri::command(async)]
-fn mobile_book(app: AppHandle, state: State<AppState>, line: String) -> Result<LogOutcome> {
+pub fn mobile_book(app: AppHandle, state: State<AppState>, line: String) -> Result<LogOutcome> {
     let settings = state.settings();
     settings.require_time_tracking()?;
     let out = companion::book(&state.db(), &line, Utc::now(), &Local, &settings.thresholds)?;
@@ -340,7 +350,7 @@ fn mobile_book(app: AppHandle, state: State<AppState>, line: String) -> Result<L
 
 /// Schnellerfassung of a note or a task: into today's daily note or the inbox.
 #[tauri::command(async)]
-fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: bool) -> Result<Page> {
+pub fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: bool) -> Result<Page> {
     let settings = state.settings();
     let target =
         if inbox { arcalo_core::capture::CaptureTarget::Inbox } else { arcalo_core::capture::CaptureTarget::Daily };
@@ -369,7 +379,7 @@ fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: b
 /// Stops the timer; its booking (one per day over midnight) goes into the daily note as a chip
 /// ([`companion::stop_timer`]).
 #[tauri::command(async)]
-fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<arcalo_core::model::TimeEntry>> {
+pub fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<arcalo_core::model::TimeEntry>> {
     let db = state.db();
     let kept = companion::stop_timer(&db, Utc::now(), &Local)?;
     lock(&state.idle).reset();
@@ -380,13 +390,13 @@ fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<arcal
 
 /// The references booked most recently (Netzplan, Vorgang, Leistungsart), newest first.
 #[tauri::command(async)]
-fn mobile_recent_targets(state: State<AppState>) -> Result<Vec<RecentTarget>> {
+pub fn mobile_recent_targets(state: State<AppState>) -> Result<Vec<RecentTarget>> {
     companion::recent_targets(&state.reader(), 8)
 }
 
 /// „Jetzt synchronisieren“: the sync, then the desktop's projects and appointments.
 #[tauri::command]
-async fn mobile_sync(
+pub async fn mobile_sync(
     app: AppHandle,
     allow_deletions: Option<bool>,
     after_restore: Option<gitsync::AfterRestore>,
@@ -407,7 +417,7 @@ async fn mobile_sync(
 
 /// The phone's git (libgit2 without SSH) reaches HTTP(S) remotes only; an SSH address gets a
 /// message that says so instead of libgit2's „unsupported URL protocol“.
-fn https_only(remote: &str) -> Result<()> {
+pub(crate) fn https_only(remote: &str) -> Result<()> {
     let l = remote.trim().to_ascii_lowercase();
     if l.starts_with("https://") || l.starts_with("http://") {
         return Ok(());
@@ -423,7 +433,7 @@ fn https_only(remote: &str) -> Result<()> {
 
 /// Text shared to the app from another one („Teilen“ → Arcalo), once; the UI opens a capture.
 #[tauri::command(async)]
-fn mobile_shared_text() -> Option<String> {
+pub fn mobile_shared_text() -> Option<String> {
     android::shared_text().unwrap_or_else(|e| {
         devlog::warn("mobile", format!("shared text not read: {e}"));
         None
@@ -432,15 +442,30 @@ fn mobile_shared_text() -> Option<String> {
 
 /// The colors behind the system bars follow the app's theme (`#rrggbb`).
 #[tauri::command(async)]
-fn mobile_bars(dark: bool, top: String, bottom: String) {
+pub fn mobile_bars(dark: bool, top: String, bottom: String) {
     if let Err(e) = android::set_bars(dark, &top, &bottom) {
         devlog::warn("mobile", format!("system bar colors not set: {e}"));
     }
 }
 
+/// What the UI needs to choose between the phone app and the full app (`ui/src/lib/uiswitch.ts`):
+/// the window and the device as Android reports them (none when it does not answer) and the
+/// setting „Oberfläche“.
+#[derive(Serialize)]
+pub struct AndroidDisplay {
+    facts: Option<android::DisplayFacts>,
+    choice: &'static str,
+}
+
+#[tauri::command(async)]
+pub fn android_display(state: State<AppState>) -> AndroidDisplay {
+    let facts = android::display().map_err(|e| devlog::warn("mobile", format!("window and device not read: {e}"))).ok();
+    AndroidDisplay { facts, choice: state.settings().appearance.android_interface.as_str() }
+}
+
 /// The back button on the start screen: the app goes to the background and keeps its state.
 #[tauri::command(async)]
-fn mobile_to_background() {
+pub fn mobile_to_background() {
     if let Err(e) = android::move_to_back() {
         devlog::warn("mobile", format!("not moved to the background: {e}"));
     }

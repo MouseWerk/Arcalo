@@ -12,6 +12,7 @@ import { errorText, useMobile } from "../context";
 import { syncState } from "../model";
 import { Field, Header, Notice, Section, Segmented, Spinner, Switch } from "../ui";
 import { UpdateSection } from "../update";
+import { interfaceSettingChanged } from "../../lib/uiswitch";
 
 /** The high contrast themes (lib/themes.ts) for „Hoher Kontrast“. */
 const CONTRAST = { light: "contrast-light", dark: "contrast-dark" } as const;
@@ -202,6 +203,21 @@ export function SettingsScreen() {
             label={t("mob.set.contrast")}
             desc={t("mob.set.contrastDesc")}
           />
+        </Section>
+
+        {/* The phone app or the full app (lib/uiswitch.ts follows the change at once). */}
+        <Section title={t("set.appearance.ui")}>
+          <Segmented
+            label={t("set.appearance.ui")}
+            value={s.appearance?.android_interface ?? "auto"}
+            onChange={(v) => void save({ ...s, appearance: { ...s.appearance, android_interface: v } }).then(interfaceSettingChanged)}
+            options={[
+              { value: "auto", label: t("set.appearance.uiAuto") },
+              { value: "phone", label: t("set.appearance.uiPhone") },
+              { value: "full", label: t("set.appearance.uiFull") },
+            ]}
+          />
+          <p className="m-desc">{t("set.appearance.uiDesc")}</p>
         </Section>
 
         <Section title={t("mob.set.language")}>

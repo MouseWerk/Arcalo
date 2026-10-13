@@ -18,6 +18,7 @@ import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { ThemeEditor, ThemeMock, newThemeId } from "./ThemeEditor";
 import { isComposing, isKey } from "../../lib/ime";
+import { caps } from "../../lib/capabilities";
 
 export function AppearanceSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -263,6 +264,21 @@ export function AppearanceSection({ draft, update }: SectionProps) {
         <Row label={t("set.appearance.startup")} description={t("set.appearance.startupDesc")}>
           <Switch label={t("set.appearance.startup")} checked={a.startup_animation} onChange={(v) => set({ startup_animation: v })} />
         </Row>
+        {caps().mobile && (
+          <Row label={t("set.appearance.ui")} description={t("set.appearance.uiDesc")}>
+            <Segmented
+              label={t("set.appearance.ui")}
+              value={a.android_interface ?? "auto"}
+              options={[
+                { value: "auto", label: t("set.appearance.uiAuto") },
+                { value: "phone", label: t("set.appearance.uiPhone") },
+                { value: "full", label: t("set.appearance.uiFull") },
+              ]}
+              // Saved like the others; the page checks after the save whether it is still the right one.
+              onChange={(v) => set({ android_interface: v })}
+            />
+          </Row>
+        )}
         <BackdropRows a={a} set={set} windows={platform === "windows"} />
         {platform === "windows" && (
           <Row label={t("set.appearance.titlebar")} description={t("set.appearance.titlebarDesc")}>
