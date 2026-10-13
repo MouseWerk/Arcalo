@@ -1579,7 +1579,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             }
           />
         </Row>}
-        <Row label={t("set.capture.target")} description={t("set.capture.targetDesc")}>
+        {c.popupWindows && <Row label={t("set.capture.target")} description={t("set.capture.targetDesc")}>
           <Select
             value={draft.capture.default_target}
             onChange={(e) => update({ capture: { ...draft.capture, default_target: e.target.value as Settings["capture"]["default_target"] } })}
@@ -1589,7 +1589,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             <option value="inbox">{t("capture.inbox")}</option>
             <option value="last">{t("set.capture.lastPage")}</option>
           </Select>
-        </Row>
+        </Row>}
         <Row label={t("capture.inbox")} description={t("set.capture.inboxDesc")}>
           <CommitInput
             value={draft.capture.inbox_title}
@@ -1597,13 +1597,13 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             aria-label={t("set.capture.inboxTitle")}
           />
         </Row>
-        <Row label={t("set.capture.meeting")} description={t("set.capture.meetingDesc")}>
+        {c.popupWindows && <Row label={t("set.capture.meeting")} description={t("set.capture.meetingDesc")}>
           <Switch
             label={t("set.capture.meeting")}
             checked={draft.capture.meeting_target}
             onChange={(v) => update({ capture: { ...draft.capture, meeting_target: v } })}
           />
-        </Row>
+        </Row>}
         {c.popupWindows && <Row
           label={t("set.capture.hide")}
           description={info?.capture_open_ms ? `${t("set.capture.hideDesc")} ${t("set.capture.openedIn", { ms: info.capture_open_ms })}` : t("set.capture.hideDesc")}

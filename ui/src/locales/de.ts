@@ -6156,7 +6156,7 @@ export const de: Catalog = {
   "mob.set.langEn": "English",
   "mob.set.about": "Über Arcalo",
   "mob.set.version": "Version {version}",
-  "mob.set.aboutText": "Die Begleit-App zu Arcalo: Heute, Schnellerfassung, Tagesnotiz, Aufgaben, Zeit und Notizen unterwegs. Projekte, KI, Kalender-Abgleich und Zeichnungen bleiben am Desktop.",
+  "mob.set.aboutText": "Die Telefon-App von Arcalo: Heute, Schnellerfassung, Tagesnotiz, Aufgaben, Zeit und Notizen unterwegs. Projekte, KI, Kalender-Abgleich und Zeichnungen hat die vollständige App: am Desktop und auf einem Tablet, siehe „Oberfläche auf Android“.",
   "mob.set.secrets": "Geheimnisse: {store}",
   "mob.set.remoteDesc": "Die HTTPS-Adresse des Repositorys, wie am Desktop. SSH gibt es auf dem Telefon nicht.",
   "mob.set.httpsOnly": "Auf dem Telefon geht nur eine HTTPS-Adresse mit Zugangstoken, kein SSH",

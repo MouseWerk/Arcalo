@@ -6158,7 +6158,7 @@ export const en = {
   "mob.set.langEn": "English",
   "mob.set.about": "About",
   "mob.set.version": "Version {version}",
-  "mob.set.aboutText": "The companion app of Arcalo: today, quick capture, daily note, tasks, time and notes on the go. Projects, AI, the calendar sync and drawings stay on the desktop.",
+  "mob.set.aboutText": "The phone app of Arcalo: today, quick capture, daily note, tasks, time and notes on the go. Projects, AI, the calendar sync and drawings are in the full app: on the desktop and on a tablet, see “Interface on Android”.",
   "mob.set.secrets": "Secrets: {store}",
   "mob.set.remoteDesc": "The repository's HTTPS address, as on the desktop. SSH is not available on the phone.",
   "mob.set.httpsOnly": "The phone supports HTTPS addresses with an access token only, no SSH",

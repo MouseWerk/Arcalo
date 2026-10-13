@@ -30,6 +30,7 @@ import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, fmt, hhmm, hrs, Loadable, More, Ring, s, TaskRow, TimerBlock, until, useNow } from "./common";
 import type { WidgetProps } from "./registry";
 import { isComposing } from "../../lib/ime";
+import { caps } from "../../lib/capabilities";
 
 const EntryDialog = lazy(() => import("../../views/TimesheetView").then((m) => ({ default: m.EntryDialog })));
 
@@ -299,9 +300,12 @@ export function TodayWidget({ widget }: WidgetProps) {
                 <Button size="sm" variant="ghost" icon={NotebookPen} onClick={() => openDailyNote(todayIso)}>
                   {t("dash.act.daily")}
                 </Button>
-                <Button size="sm" variant="ghost" icon={PenLine} onClick={() => api.captureShow().catch((e) => s().error(t("dash.captureFailed"), e))}>
-                  {t("dash.act.capture")}
-                </Button>
+                {/* The quick-capture window is the desktop's (Android has the phone app's capture). */}
+                {caps().popupWindows && (
+                  <Button size="sm" variant="ghost" icon={PenLine} onClick={() => api.captureShow().catch((e) => s().error(t("dash.captureFailed"), e))}>
+                    {t("dash.act.capture")}
+                  </Button>
+                )}
                 {timeOn && (
                   <Button
                     size="sm"

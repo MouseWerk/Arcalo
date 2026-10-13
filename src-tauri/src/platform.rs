@@ -144,7 +144,6 @@ pub const DESKTOP_ONLY: &[&str] = &[
     "window_hide",
     "window_close_action",
     "app_quit",
-    "capture_submit",
     "capture_hide",
     "capture_show",
     "capture_ready",

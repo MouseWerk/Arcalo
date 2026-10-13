@@ -4118,7 +4118,9 @@ fn create_main_window(
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
         .title("Arcalo")
-        .min_inner_size(900.0, 560.0)
+        // Android's windows have no minimum: the simulation (tests) lets the window go to a
+        // tablet's width.
+        .min_inner_size(if platform::simulated_android() { 320.0 } else { 900.0 }, 560.0)
         // The display language before the UI script runs (index.html cannot carry a script):
         // the splash and the first frame are in it, a first run on an English system included.
         .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", arcalo_core::i18n::lang().as_str()))
@@ -5211,7 +5213,6 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         desktop::window_close_action,
         #[cfg(desktop)]
         desktop::app_quit,
-        #[cfg(desktop)]
         desktop::capture_submit,
         #[cfg(desktop)]
         desktop::capture_hide,
