@@ -33,6 +33,7 @@ import { bootLang, setLang } from "./lib/i18n";
 import { loadCapabilities, onAndroid } from "./lib/capabilities";
 import { bootInterface, followInterface } from "./lib/uiswitch";
 import { flushAll } from "./lib/flush";
+import { installAndroidBack } from "./lib/androidBack";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -129,6 +130,8 @@ if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode
   // Android's full app follows the window: back to the phone app when it becomes phone-sized,
   // with the editors' text stored first.
   if (onAndroid()) {
+    // Android's back button closes what is open, else the app goes to the background.
+    installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
     followInterface("full", async () => {
       const { flushAllEditors } = await import("./editor/saves");
       const editors = await Promise.race([flushAllEditors().then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5000))]).catch(() => false);
