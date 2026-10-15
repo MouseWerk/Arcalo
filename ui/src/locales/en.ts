@@ -503,7 +503,7 @@ export const en = {
   "set.git.imported": "Imported from Git",
   "set.git.restoreFailed": "Restore failed",
   "set.git.title": "Git sync",
-  "set.git.desc": "Pushes the Markdown copy (and optionally the database) as a commit to a Git repository, e.g. on GitHub, GitLab or Azure DevOps. Needs Git installed (git-scm.com).",
+  "set.git.desc": "Pushes the Markdown copy (and optionally the database) as a commit to a Git repository, e.g. on GitHub, GitLab, Gitea or Bitbucket. Needs Git installed (git-scm.com).",
   "set.git.urlFirst": "Enter the remote URL first.",
   "set.git.remote": "Remote URL",
   "set.git.remoteDesc": "HTTPS with an access token, or SSH (git@…): SSH URLs use the system's SSH keys or SSH agent.",

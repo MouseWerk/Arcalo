@@ -77,7 +77,7 @@ Without options the command line opens the workspace the app uses, found the way
 
 1. `--data-dir <folder>` or the environment variable `ARCALO_DATA_DIR`,
 2. a portable copy: the `data` folder next to the program (marker `arcalo-portable`),
-3. the folder `location.json` names (Settings → Sicherung → „Speicherort ändern…“), when it holds a
+3. the folder `location.json` names (Settings → Über → „Speicherort ändern…“), when it holds a
    workspace; a move chosen there but not done yet stays for the app's next start,
 4. the app's default folder: `%APPDATA%\de.mousewerk.arcalo` (Windows),
    `~/Library/Application Support/de.mousewerk.arcalo` (macOS), `~/.local/share/de.mousewerk.arcalo`

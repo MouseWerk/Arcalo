@@ -500,7 +500,7 @@ export const de: Catalog = {
   "set.git.imported": "Aus Git importiert",
   "set.git.restoreFailed": "Wiederherstellen fehlgeschlagen",
   "set.git.title": "Git-Synchronisierung",
-  "set.git.desc": "Überträgt die Markdown-Kopie (und optional die Datenbank) als Commit in ein Git-Repository, z. B. auf GitHub, GitLab oder Azure DevOps. Benötigt ein installiertes Git (git-scm.com).",
+  "set.git.desc": "Überträgt die Markdown-Kopie (und optional die Datenbank) als Commit in ein Git-Repository, z. B. auf GitHub, GitLab, Gitea oder Bitbucket. Benötigt ein installiertes Git (git-scm.com).",
   "set.git.urlFirst": "Zuerst die Remote-URL eintragen.",
   "set.git.remote": "Remote-URL",
   "set.git.remoteDesc": "HTTPS mit Zugangstoken oder SSH (git@…): SSH-URLs verwenden die SSH-Schlüssel bzw. den SSH-Agenten des Systems.",
