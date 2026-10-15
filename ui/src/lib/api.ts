@@ -10,6 +10,7 @@ import type * as G from "./graph";
 import { fromGraphTable } from "./graph";
 import { fromPageRows, type PageRow } from "./tree";
 import { fromTaskTable, type TaskTable } from "./tasks";
+import { IS_LINUX } from "./platform";
 
 // App-Sperre: a command refused while locked never settles (the app behind the lock screen is
 // unmounted; its last requests are simply dropped instead of showing errors).
@@ -547,6 +548,21 @@ export function attachmentUrl(name: string) {
   } catch {
     return `attachments/${encodeURIComponent(base)}`;
   }
+}
+
+/**
+ * Address of a stored audio file for a player, and a release for when the player goes.
+ * WebKitGTK (Linux) hands media to GStreamer, which loads only http(s), file, data and blob
+ * addresses, never the app's `arcalo-asset:` scheme (the load ends with a format error). There
+ * the bytes come through IPC and play from a `blob:` address of the given media type. WebView2,
+ * WKWebView and Android load the scheme's address directly (with ranges for seeking).
+ */
+export async function attachmentMedia(name: string, type: string): Promise<{ src: string; release: () => void }> {
+  const src = attachmentUrl(name);
+  if (!IS_LINUX || !/^arcalo-asset:/i.test(src)) return { src, release: () => {} };
+  const bytes = await api.readAttachment(name.split(/[\\/]/).pop() ?? name);
+  const blob = URL.createObjectURL(new Blob([bytes], { type }));
+  return { src: blob, release: () => URL.revokeObjectURL(blob) };
 }
 
 /** Reads a file as base64 (without the `data:` prefix) and stores it as an attachment. */

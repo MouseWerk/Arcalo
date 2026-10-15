@@ -88,11 +88,23 @@ const KINDS: [FileKind, string[]][] = [
   ["code", ["json", "xml", "yaml", "yml", "html", "htm", "css", "js", "ts", "py", "sql", "sh", "ps1", "bat", "log", "ini", "toml", "drawio", "bpmn", "vsdx"]],
 ];
 
-/** Audio files the webview plays inline (voice notes are FLAC). */
-const PLAYABLE = new Set(["flac", "wav", "mp3", "m4a", "ogg", "opus"]);
+/** Audio files the webview plays inline (voice notes are FLAC), with their media types. */
+const PLAYABLE = new Map([
+  ["flac", "audio/flac"],
+  ["wav", "audio/wav"],
+  ["mp3", "audio/mpeg"],
+  ["m4a", "audio/mp4"],
+  ["ogg", "audio/ogg"],
+  ["opus", "audio/ogg"],
+]);
 
 export function isPlayableAudio(name: string): boolean {
   return PLAYABLE.has(fileExtension(name) ?? "");
+}
+
+/** Media type of a playable audio file (empty for others). */
+export function audioType(name: string): string {
+  return PLAYABLE.get(fileExtension(name) ?? "") ?? "";
 }
 
 export function fileKind(name: string): FileKind {
@@ -117,8 +129,9 @@ export interface FileEmbedOptions {
   onOpenPdf: (name: string, page: number | null) => void;
   /** Draws the first page of a PDF into `canvas` (`width` CSS pixels), resolves to its page count. */
   renderPdfPreview: ((name: string, canvas: HTMLCanvasElement, width: number) => Promise<number>) | null;
-  /** Address of an attachment, for the audio player of voice notes and other recordings. */
-  audioUrl: ((name: string) => string) | null;
+  /** Address of an attachment for the audio player of voice notes and other recordings (`type`:
+   *  its media type), and a release for when the player goes. */
+  audioSource: ((name: string, type: string) => Promise<{ src: string; release: () => void }>) | null;
 }
 
 /** Sent (bubbling) by the „Neu transkribieren“ button of a voice note's audio; detail: the name. */
@@ -145,7 +158,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
   draggable: true,
 
   addOptions() {
-    return { size: async () => null, onOpen: () => {}, onOpenPdf: () => {}, renderPdfPreview: null, audioUrl: null };
+    return { size: async () => null, onOpen: () => {}, onOpenPdf: () => {}, renderPdfPreview: null, audioSource: null };
   },
   addAttributes() {
     return { name: { default: "" }, anchor: { default: null }, alt: { default: null } };
@@ -178,7 +191,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
   renderMarkdown: (node, _h, ctx) => embedMarkdown(node.attrs, !!ctx?.meta?.parentAttrs?.__inTableCell),
 
   addNodeView() {
-    const { size, onOpen, onOpenPdf, renderPdfPreview, audioUrl } = this.options;
+    const { size, onOpen, onOpenPdf, renderPdfPreview, audioSource } = this.options;
     return ({ node }) => {
       const name: string = node.attrs.name;
       const base = baseName(name);
@@ -220,6 +233,19 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
       );
 
       let observer: IntersectionObserver | null = null;
+      let release = () => {};
+      /** Runs `load` once the card scrolls into view, not with every note that has the file. */
+      const whenVisible = (load: () => void) => {
+        if (typeof IntersectionObserver === "undefined") return load();
+        observer = new IntersectionObserver((entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            observer?.disconnect();
+            observer = null;
+            load();
+          }
+        }, { rootMargin: "200px" });
+        observer.observe(dom);
+      };
       if (pdf) {
         const page = document.createElement("span");
         page.className = "pdf-embed-page";
@@ -247,32 +273,40 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
             },
           );
         };
-        if (typeof IntersectionObserver === "undefined") render();
-        else {
-          observer = new IntersectionObserver((entries) => {
-            if (entries.some((e) => e.isIntersecting)) {
-              observer?.disconnect();
-              observer = null;
-              render();
-            }
-          }, { rootMargin: "200px" });
-          observer.observe(dom);
-        }
-      } else if (audioUrl && isPlayableAudio(base)) {
+        whenVisible(render);
+      } else if (audioSource && isPlayableAudio(base)) {
         // Voice notes: a player under the name; the name still opens the file in its app.
         dom.className = "file-embed audio-embed";
         const player = document.createElement("audio");
         player.className = "audio-embed-player";
         player.controls = true;
         player.preload = "metadata";
-        player.src = audioUrl(base);
         player.setAttribute("aria-label", t("file.audioPlayer", { name: base }));
         // No decoder or no audio output (e.g. a server without sound): a hint instead of a broken player.
         const hint = document.createElement("span");
         hint.className = "audio-embed-hint";
         hint.textContent = t("file.audioUnplayable");
-        player.addEventListener("error", () => {
+        const unplayable = () => {
           if (alive) dom.classList.add("is-unplayable");
+        };
+        player.addEventListener("error", unplayable);
+        // WebKitGTK sometimes reports the metadata of a blob before GStreamer knows the length
+        // (mostly while the note is still opening): the player then shows 0:00 and cannot seek,
+        // for good. A reload a moment later finds the length.
+        let reloads = 0;
+        player.addEventListener("loadedmetadata", () => {
+          if (reloads >= 5 || player.duration !== 0 || !player.currentSrc.startsWith("blob:")) return;
+          setTimeout(() => {
+            if (alive) player.load();
+          }, 150 * 2 ** reloads++);
+        });
+        // On Linux the bytes are read for the player, so only for a card in view.
+        whenVisible(() => {
+          audioSource(base, audioType(base)).then((m) => {
+            if (!alive) return m.release();
+            release = m.release;
+            player.src = m.src;
+          }, unplayable);
         });
         // A voice note's audio: „Neu transkribieren“ (the editor opens the dialog).
         if (/\.(flac|wav)$/i.test(base)) {
@@ -307,6 +341,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
         destroy: () => {
           alive = false;
           observer?.disconnect();
+          release();
         },
       };
     };
