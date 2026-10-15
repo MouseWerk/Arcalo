@@ -1,6 +1,8 @@
-// Screenshots for the README (not part of the test suite): realistic sample content, no test
-// leftovers. Run after building the app, with the output folder of your choice:
-//   ARCALO_SHOTS=../docs/screenshots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
+// German screenshots of boards, blocks, the presentation and themes (not part of the test suite):
+// realistic sample content, no test leftovers. The README's pictures come from
+// readme-shots-16.test.js; these are for other uses. Run after building the app, with the output
+// folder of your choice:
+//   ARCALO_SHOTS=/tmp/shots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
 import { test, before, after } from "node:test";
 import { launch } from "./lib/harness.js";
 
