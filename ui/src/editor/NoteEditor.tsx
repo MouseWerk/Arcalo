@@ -7,7 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { mailLinkId, openMailLink } from "../lib/mail";
 import { AudioLines, Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight, Ticket } from "lucide-react";
 import { jiraReady, requestCreateIssue } from "./taskIssue";
-import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
+import { api, attachmentMedia, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
 import { drawPdfPreview } from "../lib/pdf";
 import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
 import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
@@ -418,6 +418,7 @@ export function NoteEditor({
         zeitRefs: zeitRefItems,
         zeitLeistungsarten: zeitLaItems,
         attachmentUrl,
+        attachmentMedia,
         uploadImage: async (file) => {
           try {
             return (await uploadAttachment(file)).name;

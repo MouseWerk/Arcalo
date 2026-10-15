@@ -615,6 +615,8 @@ export interface SchemaOptions {
   onZeitLost?: (res: ZeitResult) => void;
   /** URL of an attachment name. */
   attachmentUrl?: (name: string) => string;
+  /** Address of an audio attachment for a player (`type`: its media type), released when the player goes. */
+  attachmentMedia?: (name: string, type: string) => Promise<{ src: string; release: () => void }>;
   /** Stores a pasted/dropped image, returns the attachment name. */
   uploadImage?: (file: File) => Promise<string | null>;
   /** Stores any other pasted/dropped file under its name, returns the attachment name. */
@@ -734,7 +736,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       size: o.attachmentSize ?? (async () => null),
       onOpen: o.onOpenFile ?? (() => {}),
       onOpenPdf: o.onOpenPdf ?? (() => {}),
-      audioUrl: o.attachmentUrl ?? null,
+      audioSource: o.attachmentMedia ?? (o.attachmentUrl ? async (n: string) => ({ src: o.attachmentUrl!(n), release: () => {} }) : null),
       renderPdfPreview: o.renderPdfPreview ?? null,
     }),
     PageEmbed.configure({ mount: o.embedPage ?? null }),

@@ -1586,10 +1586,8 @@ async function voiceNote() {
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed", 10000);
   await app.dismissToasts();
   await sleep(1500);
-  // WebKitGTK plays media only from http(s), file and blob addresses, not from the app's
-  // arcalo-asset: scheme, so on Linux the audio file shows a hint instead of the player (an audio
-  // output does not change that). Then the picture is the note below the audio file: transcript,
-  // summary, decisions, tasks and open points, whole.
+  // A file the WebView cannot decode shows a hint instead of the player. Then the picture is the
+  // note below the audio file: transcript, summary, decisions, tasks and open points, whole.
   const unplayable = await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed.is-unplayable"));
   if (!unplayable) {
     await fit();
