@@ -241,7 +241,7 @@ Face, each checked against its SHA-256); the audio is kept as FLAC and never upl
 summary, decisions and the action items as real tasks with `@Person` and `due:`; `#privat` notes stay on the
 local model.
 
-<p align="center"><img src="docs/screenshots/voice-note-dark.png" width="70%" alt="A voice note with the audio file, the collapsed transcript, a summary, a decision, two tasks and an open point"></p>
+<p align="center"><img src="docs/screenshots/voice-note-dark.png" width="60%" alt="A summarized voice note: the collapsed transcript, a summary, a decision, two tasks with person and due date and an open point"></p>
 
 ### AI that stays on your server
 

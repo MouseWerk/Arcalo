@@ -513,6 +513,10 @@ async function shotOf(sel, name, pad = 0) {
     [sel].flat(),
     pad,
   );
+  await shotRect(r, name);
+}
+/** Saves the part `r` ({ x, y, w, h, dpr }, CSS pixels) of the window. */
+async function shotRect(r, name) {
   const img = readPng(await app.browser.takeScreenshot());
   const [x0, y0, w, h] = [r.x, r.y, r.w, r.h].map((v) => Math.round(v * r.dpr));
   const raw = Buffer.alloc((w * 3 + 1) * h);
@@ -1581,11 +1585,34 @@ async function voiceNote() {
   await app.waitText(".toast-title", /Summary added to the voice note/, 30000);
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed", 10000);
   await app.dismissToasts();
-  await sleep(600);
-  await fit();
-  await settle();
-  await shot("voice-note-dark");
-  await unfit();
+  await sleep(1500);
+  // WebKitGTK plays media only from http(s), file and blob addresses, not from the app's
+  // arcalo-asset: scheme, so on Linux the audio file shows a hint instead of the player (an audio
+  // output does not change that). Then the picture is the note below the audio file: transcript,
+  // summary, decisions, tasks and open points, whole.
+  const unplayable = await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed.is-unplayable"));
+  if (!unplayable) {
+    await fit();
+    await settle();
+    await shot("voice-note-dark");
+    await unfit();
+  } else {
+    await settle();
+    const box = await app.browser.execute(() => {
+      const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+      const blocks = [...root.children];
+      const at = blocks.findIndex((b) => b.querySelector(".audio-embed") || b.classList.contains("audio-embed"));
+      if (at < 0 || at === blocks.length - 1) return null;
+      const first = blocks[at + 1].getBoundingClientRect();
+      const last = blocks[blocks.length - 1].getBoundingClientRect();
+      const col = root.getBoundingClientRect();
+      // Little room above: the audio file's box ends just above the transcript.
+      const [pad, top] = [24, 8];
+      return { x: col.left - pad, y: first.top - top, w: col.width + 2 * pad, h: last.bottom - first.top + top + pad, dpr: window.devicePixelRatio };
+    });
+    if (!box) throw new Error("no blocks below the voice note's audio file");
+    await shotRect(box, "voice-note-dark");
+  }
   await closeTabs();
 }
 
