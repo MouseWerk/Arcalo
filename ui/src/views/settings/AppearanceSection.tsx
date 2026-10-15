@@ -8,7 +8,7 @@ import { Check, Download, Palette, Pencil, Plus, Trash2, Upload } from "lucide-r
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
-import { OPACITY_DEFAULT, OPACITY_MIN, backdropState, onBackdrop, previewOpacity, type Backdrop } from "../../lib/backdrop";
+import { OPACITY_DEFAULT, backdropState, onBackdrop, type Backdrop } from "../../lib/backdrop";
 import { ACCENT_PRESETS, accentHex, accentTokens, contrast } from "../../lib/color";
 import { useT, type TKey } from "../../lib/i18n";
 import { decimalSep } from "../../lib/format";
@@ -19,6 +19,7 @@ import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { ThemeEditor, ThemeMock, newThemeId } from "./ThemeEditor";
 import { isComposing, isKey } from "../../lib/ime";
 import { caps } from "../../lib/capabilities";
+import { OpacitySlider } from "./OpacitySlider";
 
 export function AppearanceSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -320,38 +321,6 @@ function BackdropRows({ a, set, windows }: { a: AppearancePrefs; set: (p: Partia
         <OpacitySlider value={a.window_opacity ?? OPACITY_DEFAULT} disabled={off} label={t("set.appearance.opacity")} onCommit={(v) => set({ window_opacity: v })} />
       </Row>
     </>
-  );
-}
-
-/** Applies while dragged (nothing saved yet), saves once let go. */
-function OpacitySlider({ value, disabled, label, onCommit }: { value: number; disabled: boolean; label: string; onCommit: (v: number) => void }) {
-  const [v, setV] = useState(value);
-  useEffect(() => setV(value), [value]);
-  const live = (n: number) => {
-    setV(n);
-    previewOpacity(n);
-  };
-  const commit = () => v !== value && onCommit(v);
-  const fill = ((v - OPACITY_MIN) / (100 - OPACITY_MIN)) * 100;
-  return (
-    <span className={`opacity-slider ${disabled ? "off" : ""}`}>
-      <input
-        type="range"
-        min={OPACITY_MIN}
-        max={100}
-        step={1}
-        value={v}
-        disabled={disabled}
-        aria-label={label}
-        aria-valuetext={`${v} %`}
-        style={{ "--fill": `${fill}%` } as React.CSSProperties}
-        onChange={(e) => live(Number(e.target.value))}
-        onPointerUp={commit}
-        onKeyUp={commit}
-        onBlur={commit}
-      />
-      <output className="opacity-value num">{v} %</output>
-    </span>
   );
 }
 

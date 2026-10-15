@@ -2,7 +2,8 @@
 // so ARCALO_TEST_BACKDROP=1 makes the shell offer Mica and Acrylic and report the chosen one as
 // active without touching the window; the page then paints its translucent layers, and a
 // magenta page background stands in for the desktop. Checked: the effect choice, the slider
-// (live while dragged, saved when let go, off without an effect), one base layer with every
+// (live while dragged, saved when let go, off without an effect, a render while it moves keeps
+// the thumb), one base layer with every
 // panel transparent over it, and in the pixels of screenshots: no column between the ribbon,
 // the sidebar, the split panes and the side panel lets more of the backdrop through than the
 // panels beside it (the reported see-through line), at 40, 80 and 100 %, light and dark.
@@ -199,9 +200,26 @@ test("screenshots over a colorful desktop (for review)", async () => {
     await pick("Modus", mode);
     for (const pct of [40, 80, 100]) {
       await drag(pct, true);
-      await app.browser.waitUntil(async () => (await settings()).window_opacity === pct);
+      await app.browser.waitUntil(async () => (await settings()).window_opacity === pct, { timeoutMsg: `${mode} ${pct} not saved` });
       await app.dismissToasts();
       await app.shot(`backdrop-${mode === "Hell" ? "light" : "dark"}-${pct}`);
     }
   }
+});
+
+test("a render between the thumb's move and the change handler keeps the thumb; the release saves it", async () => {
+  // WebKit runs pending work between the listeners of one event: a settings save that finishes
+  // (or a change from another window) renders the slider again right after the browser moved the
+  // thumb. Here a mode switch in the event's capture phase stands in for it.
+  assert.equal((await slider()).disabled, false);
+  const pct = (await settings()).window_opacity === 55 ? 65 : 55;
+  await app.browser.execute(() => {
+    const other = [...document.querySelectorAll('.settings [role="radiogroup"][aria-label="Modus"] [role="radio"]')].find((b) => ["Hell", "Dunkel"].includes(b.textContent) && b.getAttribute("aria-checked") !== "true");
+    window.addEventListener("input", () => other.click(), { capture: true, once: true });
+  });
+  await drag(pct, true);
+  await app.browser.waitUntil(async () => (await settings()).window_opacity === pct, { timeoutMsg: `${pct} not saved (${(await settings()).window_opacity})` });
+  assert.deepEqual(await slider(), { value: pct, disabled: false, shown: `${pct} %` });
+  assert.equal(await glass(), String(pct / 100));
+  assert.deepEqual(await app.consoleErrors(), []);
 });
