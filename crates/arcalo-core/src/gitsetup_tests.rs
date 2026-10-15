@@ -526,6 +526,20 @@ fn git_and_connection_errors_are_classified() {
             "error sending request for url (https://api.github.com/user): client error (Connect): unsuccessful tunnel",
             Proxy,
         ),
+        // A port or a path that holds a status code is neither.
+        (
+            "Anmeldung am Git-Server fehlgeschlagen (fatal: could not read Username for 'http://127.0.0.1:40325': terminal prompts disabled)",
+            TokenInvalid,
+        ),
+        (
+            "fatal: could not read Username for 'https://git.firma.de:4031/team/x.git': terminal prompts disabled",
+            TokenInvalid,
+        ),
+        ("fatal: repository 'https://git.firma.de/404-notizen.git/' not found", NotFound),
+        (
+            "fatal: unable to access 'https://git.firma.de:4071/x.git/': The requested URL returned error: 403",
+            TokenScope,
+        ),
         ("something else entirely", Other),
     ];
     for (text, want) in cases {

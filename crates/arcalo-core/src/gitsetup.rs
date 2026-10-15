@@ -162,8 +162,20 @@ impl Problem {
 /// connection error. Checked in this order, because the texts nest (a proxy's 407 is also an
 /// authentication, a certificate error also says „unable to access“).
 pub fn classify_text(text: &str) -> ProblemKind {
-    let t = text.to_lowercase();
-    let any = |ps: &[&str]| ps.iter().any(|p| t.contains(p));
+    let t = without_urls(&text.to_lowercase());
+    // A status code counts as a number of its own, never as part of a longer one.
+    let any = |ps: &[&str]| {
+        ps.iter().any(|p| {
+            if !p.bytes().all(|b| b.is_ascii_digit()) {
+                return t.contains(p);
+            }
+            t.match_indices(p).any(|(i, _)| {
+                let before = t[..i].bytes().next_back();
+                let after = t[i + p.len()..].bytes().next();
+                !before.is_some_and(|b| b.is_ascii_digit()) && !after.is_some_and(|b| b.is_ascii_digit())
+            })
+        })
+    };
     if any(&[
         "kein ssh",
         "no ssh",
@@ -219,6 +231,22 @@ pub fn classify_text(text: &str) -> ProblemKind {
     } else {
         ProblemKind::Other
     }
+}
+
+/// The text without the addresses in it: a port or a path (`http://127.0.0.1:40325`,
+/// `/repos/404-notes`) is not a status code or an error.
+fn without_urls(t: &str) -> String {
+    t.split(' ')
+        .map(|w| {
+            let bare = w.trim_start_matches(['\'', '"', '(', '<', '`']);
+            if ["http://", "https://", "ssh://", "git://", "file://"].iter().any(|s| bare.starts_with(s)) {
+                "<url>"
+            } else {
+                w
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A request that got no answer.
