@@ -1637,11 +1637,12 @@ mod tests {
         std::thread::sleep(Duration::from_millis(2500));
         assert!(list_own(&slow.join("pc")).is_empty());
         // A slow but steady copy is not given up: progress keeps it alive, also when the whole copy
-        // takes longer than the limit. The limit leaves room for the real writes and syncs of a busy
-        // machine next to each slow step.
-        let steady: Hook = Arc::new(|_: &Path| std::thread::sleep(Duration::from_millis(150)));
+        // takes longer than the limit (11 steps of 0.4 s against 3 s). The limit leaves room for the
+        // real writes and syncs of a busy machine next to each slow step: on a Windows runner one
+        // sync took longer than the 0.85 s an earlier 1 s limit left.
+        let steady: Hook = Arc::new(|_: &Path| std::thread::sleep(Duration::from_millis(400)));
         let job2 = job(&b, &root.join("stetig"), "pc", 3);
-        let limit = Duration::from_secs(1);
+        let limit = Duration::from_secs(3);
         let begun = Instant::now();
         let ok = run_watched(&root.join("stetig"), limit, Activity::new(Some(steady)), move |a| deliver(&job2, a));
         assert!(ok.is_ok(), "{ok:?}");
