@@ -1,11 +1,14 @@
-// Screenshots for the README of 1.6 (not part of the test suite): the app in English with
-// English sample content, a week of SAP project work (meetings in several Outlook calendars,
-// bookings, focus sessions, page editing, chats), in light and dark. Run after building the app:
+// Screenshots for the README (not part of the test suite): the app in English with English
+// sample content, a week of SAP project work (meetings in several Outlook calendars, bookings,
+// focus sessions, page editing, chats, Jira issues, a voice note), in light and dark; also the
+// work widgets (1.7), the file tree (1.19) and the guided Git sync setup (1.20). Every picture
+// shows the whole window or one whole dialog, panel or card. Run after building the app:
 //   ARCALO_SHOTS=../docs/screenshots ARCALO_APP=../target/debug/arcalo node --test readme-shots-16.test.js
 // ARCALO_SCENES=split,calendar,… takes only some scenes (names in SCENES below; "firstrun" is the
 // intro and the setup on a fresh workspace). ARCALO_SCALE sets the device scale factor (default
-// 1; at 2 the X display must be at least 2960x1840). The week is the current one; the pictures
-// tell their story best from Wednesday to Friday (the daily review shows the day before).
+// 1). Views longer than the window are taken with a taller window (up to 1360 px), so the X
+// display must be at least 1600x1400 (at scale 2: 2960x2760). The week is the current one; the
+// pictures tell their story best from Wednesday to Friday (the daily review shows the day before).
 import { test, before, after } from "node:test";
 import fs from "node:fs";
 import http from "node:http";
@@ -17,6 +20,9 @@ import { launch, SHOTS } from "./lib/harness.js";
 import { week, outlookItem } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { readPng } from "./lib/png.js";
+import { startFakeJira } from "./lib/fake-jira.js";
+import { startFakeProvider } from "./lib/fake-gitprovider.js";
+import { voiceFixtures } from "./lib/voice.js";
 
 const SCALE = process.env.ARCALO_SCALE ?? "1";
 const ONLY = process.env.ARCALO_SCENES?.split(",") ?? null;
@@ -31,7 +37,7 @@ const prev = week(-1);
 const prev2 = week(-2);
 const at = cur.at;
 
-let app, llm, tmp;
+let app, llm, tmp, jira, git, voice;
 
 // ---------------------------------------------------------------- a fake AI server in English
 
@@ -70,6 +76,25 @@ function startFakeAI() {
       }
       const reference = best.match(/^- (\S+) \|/)?.[1] ?? "NP-0000";
       text = JSON.stringify({ reference, leistungsart: "DEV", confidence: 0.84, reason: `Mapping work was booked on ${reference} three times this week` });
+    } else if (/You edit texts|Du bearbeitest Texte/.test(sys) && user.includes("Short update on the order portal")) {
+      text = [
+        "## Summary",
+        "",
+        "The delta load runs stable since Monday. Still open are the test data for partial deliveries and the key user training.",
+        "",
+        "## Decisions",
+        "",
+        "- The go-live stays at the end of October",
+        "",
+        "## Tasks",
+        "",
+        `- [ ] Send the test data for partial deliveries @Anna due:${iso(at(7, 0))}`,
+        `- [ ] Book the room for the key user training @George due:${iso(at(9, 0))}`,
+        "",
+        "## Open points",
+        "",
+        "- Date of the dress rehearsal",
+      ].join("\n");
     } else if (/You edit texts|Du bearbeitest Texte/.test(sys) && /meeting|Besprechung/i.test(user.split("<text>")[0])) {
       text = [
         "## Summary",
@@ -123,6 +148,12 @@ function startFakeAI() {
 
 /** Outlook with three calendars: the own one, the sub-calendar „Project X“ and a colleague's. */
 function outlookFixture() {
+  const soon = (min) => new Date(Date.now() + min * 60e3);
+  const today = (days) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return new Date(d.getTime() + days * 86400e3);
+  };
   const teams = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_readme%40thread.v2/0";
   const safe = `https://eur02.safelinks.protection.outlook.com/?url=${encodeURIComponent(teams)}&data=05%7C02&reserved=0`;
   const items = [
@@ -155,8 +186,9 @@ function outlookFixture() {
     },
     folders: {
       "E-PROJ": { items: [outlookItem("PS1", "Project X sync", at(2, 15), at(2, 15, 30)), outlookItem("DM", "Data migration dry run", at(4, 9), at(4, 11))] },
-      "E-ANNA": { items: [outlookItem("SA", "Sales round", at(1, 11), at(1, 12)), outlookItem("WP", "Workshop preparation", at(3, 15, 30), at(3, 16, 30))] },
-      "George White": { freeBusy: true, mode: "freebusy", items: [] },
+      // Anna is in a meeting right now and George out of office today (team availability).
+      "E-ANNA": { items: [outlookItem("SA", "Sales round", at(1, 11), at(1, 12)), outlookItem("SN", "Sales round", soon(-30), soon(45)), outlookItem("WP", "Workshop preparation", at(3, 15, 30), at(3, 16, 30))] },
+      "George White": { freeBusy: true, mode: "freebusy", items: [outlookItem("", "", today(0), today(1), { globalId: "fb-george", freeBusy: true, busy: 3 })] },
       "E-ROOM": { items: [] },
     },
   });
@@ -464,12 +496,27 @@ const scrollToGroup = (title) =>
     h?.scrollIntoView({ block: "start" });
     return !!h;
   }, title);
-/** Saves the part of the window that `sel` covers (WebKit's element screenshots run past it). */
-async function shotOf(sel, name) {
-  const r = await app.browser.execute((s) => {
-    const b = document.querySelector(s).getBoundingClientRect();
-    return { x: b.left, y: b.top, w: b.width, h: b.height, dpr: window.devicePixelRatio };
-  }, sel);
+/**
+ * Saves the part of the window that `sel` covers (WebKit's element screenshots run past it); a
+ * list of selectors takes the box around all of them, `pad` pixels more on every side.
+ */
+async function shotOf(sel, name, pad = 0) {
+  const r = await app.browser.execute(
+    (list, p) => {
+      const boxes = list.map((s) => document.querySelector(s).getBoundingClientRect());
+      const x = Math.max(0, Math.min(...boxes.map((b) => b.left)) - p);
+      const y = Math.max(0, Math.min(...boxes.map((b) => b.top)) - p);
+      const w = Math.min(window.innerWidth, Math.max(...boxes.map((b) => b.right)) + p) - x;
+      const h = Math.min(window.innerHeight, Math.max(...boxes.map((b) => b.bottom)) + p) - y;
+      return { x, y, w, h, dpr: window.devicePixelRatio };
+    },
+    [sel].flat(),
+    pad,
+  );
+  await shotRect(r, name);
+}
+/** Saves the part `r` ({ x, y, w, h, dpr }, CSS pixels) of the window. */
+async function shotRect(r, name) {
   const img = readPng(await app.browser.takeScreenshot());
   const [x0, y0, w, h] = [r.x, r.y, r.w, r.h].map((v) => Math.round(v * r.dpr));
   const raw = Buffer.alloc((w * 3 + 1) * h);
@@ -506,6 +553,75 @@ async function shotOf(sel, name) {
 const shot = async (name) => {
   await app.shot(name);
 };
+const WIDTH = 1480;
+const HEIGHT = 920;
+/**
+ * Makes the window as tall as the open view's content (at most `max`), so no card or list is cut
+ * at the bottom edge of the picture. `unfit` goes back to the usual size.
+ */
+async function fit(max = 1360) {
+  const extra = await app.browser.execute(() => {
+    // The view's own scroller: the tallest scrolling element of the open pane.
+    let main = null;
+    for (const root of document.querySelectorAll(".pane.active > .pane-content:not([hidden])"))
+      for (const el of [root, ...root.querySelectorAll("*")]) {
+        const o = getComputedStyle(el).overflowY;
+        if ((o === "auto" || o === "scroll") && (!main || el.clientHeight > main.clientHeight)) main = el;
+      }
+    return main ? main.scrollHeight - main.clientHeight : 0;
+  });
+  if (extra > 0) {
+    await app.browser.setWindowSize(WIDTH, Math.min(max, HEIGHT + extra + 24));
+    await sleep(800);
+  }
+}
+/** Makes the window end just below the element `sel` (a card of a long view), so nothing is cut. */
+async function fitTo(sel) {
+  const delta = await app.browser.execute((s) => {
+    const el = document.querySelector(s);
+    let scroller = el.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    return Math.round(el.getBoundingClientRect().bottom + 8 - (scroller ?? document.documentElement).getBoundingClientRect().bottom);
+  }, sel);
+  const h = await app.browser.execute(() => window.innerHeight);
+  await app.browser.setWindowSize(WIDTH, Math.min(1360, h + delta));
+  await sleep(800);
+}
+const unfit = async () => {
+  await app.browser.setWindowSize(WIDTH, HEIGHT);
+  await sleep(500);
+};
+/**
+ * Saves the settings group (heading and card) that holds `inner` (a selector, or `text:…` for
+ * a text in it), whole: scrolled to the top of the settings, the window made taller when needed.
+ */
+async function shotGroup(inner, name) {
+  const mark = () =>
+    app.browser.execute((sel) => {
+      document.querySelectorAll("[data-e2e-group]").forEach((g) => g.removeAttribute("data-e2e-group"));
+      const g = [...document.querySelectorAll("section.set-group")].find((x) => (sel.startsWith("text:") ? x.innerText.includes(sel.slice(5)) : x.querySelector(sel)));
+      if (!g) return null;
+      g.dataset.e2eGroup = "1";
+      g.scrollIntoView({ block: "start" });
+      const scroller = (() => {
+        for (let el = g.parentElement; el; el = el.parentElement) if (/(auto|scroll)/.test(getComputedStyle(el).overflowY)) return el;
+        return null;
+      })();
+      if (scroller) scroller.scrollTop -= 24;
+      const r = g.getBoundingClientRect();
+      return { over: Math.ceil(r.bottom + 16 - (scroller ?? document.documentElement).getBoundingClientRect().bottom) };
+    }, inner);
+  const box = await mark();
+  if (!box) throw new Error(`no settings group with ${inner}`);
+  if (box.over > 0) {
+    await app.browser.setWindowSize(WIDTH, Math.min(1360, HEIGHT + box.over + 24));
+    await sleep(700);
+    await mark();
+  }
+  await sleep(300);
+  await shotOf('[data-e2e-group="1"]', name, 14);
+  await unfit();
+}
 
 // ---------------------------------------------------------------- seed
 
@@ -676,9 +792,12 @@ async function split() {
   await clickText(".menu-item", "/Open (to|on) the right/");
   await sleep(800);
   await panel(true);
+  // Without the page tree, so the panes are wide enough for the code block.
+  await sidebar(false);
   await sleep(600);
   await settle();
   await shot("split-view");
+  await sidebar(true);
 }
 
 async function note() {
@@ -696,8 +815,12 @@ async function preview() {
   await setTheme("light");
   await closeTabs();
   await panel(false);
+  // A link to a section: its preview shows that section, whole.
+  const page = await app.invoke("page_resolve", { title: "PRJ-2026-X Rollout", create: false });
+  const original = (await app.invoke("page_get", { id: page.id })).content;
+  await app.invoke("page_save", { id: page.id, content: original.replace("Technical details in [[Architecture]]", "Technical details in [[Architecture#Components]]") });
   await openTree("PRJ-2026-X Rollout");
-  const link = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror a[data-wikilink][data-target="Architecture"]');
+  const link = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror a[data-wikilink][data-target^="Architecture"]');
   await settle();
   await link.moveTo();
   await app.waitText(".link-preview-title", /Architecture/);
@@ -705,6 +828,8 @@ async function preview() {
   await shot("link-preview");
   await calm();
   await sleep(400);
+  await app.invoke("page_save", { id: page.id, content: original });
+  await closeTabs();
 }
 
 async function tableToolbar() {
@@ -777,7 +902,17 @@ async function board() {
   await closeTabs();
   await panel(false);
   await openTree("Go-live sprint");
+  // Without the sidebar and a little wider, so all five columns (with „No value“) fit.
+  await sidebar(false);
+  await app.browser.setWindowSize(1580, HEIGHT);
+  await sleep(800);
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll .board-col");
+  const cut = await app.browser.execute(() => {
+    const b = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll .board-col:last-child")?.getBoundingClientRect();
+    const box = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll")?.getBoundingClientRect();
+    return b && box ? Math.ceil(b.right - box.right) : 0;
+  });
+  if (cut > 0) throw new Error(`the board's last column is cut by ${cut} px`);
   await settle();
   await shot("board-view");
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Table")?.click());
@@ -785,6 +920,8 @@ async function board() {
   await settle();
   await shot("table-view");
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Board")?.click());
+  await unfit();
+  await sidebar(true);
 }
 
 async function blocks() {
@@ -825,8 +962,10 @@ async function activity() {
   await app.waitFor(".activity-item");
   await clickText(".pane.active > .pane-content:not([hidden]) button", "Yesterday");
   await sleep(800);
+  await fit();
   await settle();
   await shot("activity-feed");
+  await unfit();
   await panel(false);
 }
 
@@ -840,21 +979,48 @@ async function review() {
   await app.keys(["ArrowLeft"]);
   await app.waitText(".rv-date", /Yesterday|Wednesday/);
   await sleep(800);
+  await fit();
   await settle();
   await shot("day-review-dark");
+  await unfit();
 }
 
 async function dashboard() {
   await setTheme("light");
   await closeTabs();
   await panel(false);
+  // The boards of a new start page („Today“ and „Projects“), the second row of „Today“ two cells
+  // taller so the budgets show all three without scrolling.
+  const dash = (await settings()).dashboard;
+  const W = (kind, x, y, w, h, config = {}) => ({ id: kind, kind, x, y, w, h, title: "", config });
+  const boards = [
+    {
+      id: "heute",
+      name: "Today",
+      widgets: [W("today", 0, 0, 8, 13), W("agenda", 8, 0, 4, 13, { days: 2 }), W("week", 0, 13, 6, 9), W("budget", 6, 13, 3, 9, { count: 3 }), W("recent", 9, 13, 3, 9, { limit: 6 })],
+    },
+    {
+      id: "projekte",
+      name: "Projects",
+      widgets: [W("budget", 0, 0, 6, 8, { count: 5 }), W("week", 6, 0, 6, 8, { mode: "wbs" }), W("project", 0, 8, 6, 9), W("tasks", 6, 8, 6, 9, { due: "week" }), W("agenda", 0, 17, 4, 7, { days: 7 }), W("activity", 4, 17, 4, 7), W("proposal", 8, 17, 4, 7)],
+    },
+  ];
+  await app.invoke("dashboard_save", { dashboard: { ...dash, version: 2, notes: dash.notes ?? {}, boards, active: "heute" } });
+  await app.browser.refresh();
+  await ready();
   await app.keys(["Control", "t"]);
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid .dw");
   await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .dw-skel")).length === 0, { timeout: 15000 });
   await sleep(1200);
+  await fit();
   await settle();
   await app.browser.execute(() => document.querySelector(".home")?.scrollTo(0, 0));
   await shot("dashboard");
+  await unfit();
+  if (dash.boards?.length) await app.invoke("dashboard_save", { dashboard: dash });
+  await closeTabs();
+  await app.browser.refresh();
+  await ready();
 }
 
 async function timeSuggest() {
@@ -865,15 +1031,27 @@ async function timeSuggest() {
   const original = (await app.invoke("page_get", { id: page.id })).content;
   await openTree("Weekly sync 22.09.");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
-  await app.caretToEnd();
+  // A new line below the first paragraph: the suggestions open below it with room to spare.
+  await app.browser.execute(() => {
+    const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+    const p = root.querySelector(":scope > p");
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    range.collapse(false);
+    root.focus();
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+  await sleep(200);
   await app.keys(["Enter"]);
-  await app.type("/time NP-88");
+  await app.type("/time NP-8801/10");
   await app.browser.waitUntil(async () => app.browser.execute(() => [...document.querySelectorAll(".sugg-host .sugg-item")].some((e) => e.offsetParent)), { timeout: 8000 });
   await calm();
   await sleep(500);
   await shot("time-suggest");
   await app.keys(["Escape"]);
-  for (let i = 0; i < 11; i++) await app.keys(["Backspace"]);
+  for (let i = 0; i < 16; i++) await app.keys(["Backspace"]);
   // Smart /time: a line without a reference asks the AI.
   await app.type("/time 1h Mapping workshop");
   await app.keys(["Escape"]);
@@ -903,8 +1081,11 @@ async function timesheet() {
   await panel(false);
   await app.click('.ribbon [aria-label="Time tracking"]');
   await app.waitFor(".week-grid");
+  await app.waitFor(".ts-meetings");
+  await fitTo(".ts-meetings");
   await settle();
   await shot("timesheet-dark");
+  await unfit();
   await app.click('.ribbon [aria-label="Projects"]');
   await app.waitFor(".vorgaenge");
   await settle();
@@ -1017,10 +1198,9 @@ async function outlookSettings() {
   await panel(false);
   await openSettings("calendar");
   await app.waitFor(".olcal-row");
-  await app.browser.execute(() => document.querySelector(".olcal-row")?.scrollIntoView({ block: "center" }));
   await sleep(600);
   await settle();
-  await shot("outlook-calendars");
+  await shotGroup(".olcal-row", "outlook-calendars");
   await closeTabs();
 }
 
@@ -1060,7 +1240,7 @@ async function mail() {
   await panel(false);
   await openTree("Integration test plan");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
-  await palette("current e-mail", /Take over current e-mail/);
+  await palette("current e-mail", /Import current e-mail/);
   await app.waitFor(".dialog .mailx-card");
   await sleep(400);
   for (const b of await app.$$(".mailx-chip"))
@@ -1137,7 +1317,7 @@ async function dailyCalendar() {
   await app.waitFor(".calendar");
   await sleep(500);
   await settle();
-  await shot("daily-calendar");
+  await shotOf(".calendar", "daily-calendar");
   await app.keys(["Escape"]);
   await app.browser.refresh();
   await ready();
@@ -1151,7 +1331,7 @@ async function search() {
   await app.browser.refresh();
   await ready();
   await app.waitFor(".search-app input, input.pal-input, .pal-input input");
-  await app.type("IDoc");
+  await app.type("OpenAPI");
   await app.waitFor(".pal-snippet mark");
   await sleep(500);
   await shotOf(".qs-panel", "quick-search");
@@ -1166,7 +1346,7 @@ async function themes() {
   await openSettings("appearance");
   await app.waitFor(".theme-card");
   await settle();
-  await shot("theme-picker");
+  await shotGroup(".theme-card", "theme-picker");
   await closeTabs();
   const s = await settings();
   await save((x) => ({ theme: "dark", appearance: { ...x.appearance, theme_dark: "tokyo-night" } }));
@@ -1190,10 +1370,9 @@ async function backdrop() {
   await app.browser.refresh();
   await ready();
   await openSettings("appearance");
-  await app.browser.execute(() => document.querySelector('.settings input[type="range"]')?.closest(".set-row, .set-group, section")?.scrollIntoView({ block: "center" }));
   await sleep(700);
   await settle();
-  await shot("settings-backdrop-dark");
+  await shotGroup("text:Window backdrop", "settings-backdrop-dark");
   await save((s) => ({ appearance: { ...s.appearance, window_effect: "none", window_opacity: 80 } }));
   await app.browser.refresh();
   await ready();
@@ -1204,29 +1383,299 @@ async function network() {
   await closeTabs();
   await panel(false);
   const before = (await settings()).network;
-  await save((s) => ({ network: { ...s.network, mode: "manual", http_proxy: "proxy.example.com:8080", https_proxy: "proxy.example.com:8080", no_proxy: "<local>, *.example.com, 10.0.0.0/8", proxy_user: "mkleindienst" } }));
+  // The default profile set to a company proxy (never the proxy of the machine taking the pictures).
+  await save((s) => ({
+    network: {
+      ...s.network,
+      profiles: s.network.profiles.map((p) => (p.id === "standard" ? { ...p, name: "Company", mode: "manual", http_proxy: "proxy.example.com:8080", https_proxy: "proxy.example.com:8080", no_proxy: "<local>, *.example.com, 10.0.0.0/8", proxy_user: "mkleindienst" } : p)),
+    },
+  }));
   await openSettings("network");
   await sleep(600);
   await settle();
-  await shot("settings-network");
+  await shotGroup("text:Proxy mode", "settings-network");
   await closeTabs();
   await save(() => ({ network: before }));
 }
 
+const GIT_TOKEN = "ghp_readmeArcaloToken2026";
+/** Sets an input like typing (React sees the change). */
+const fill = (sel, value) =>
+  app.browser.execute(
+    (s, v) => {
+      const el = document.querySelector(s);
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    sel,
+    value,
+  );
+const primary = async () => {
+  await app.browser.waitUntil(async () => app.browser.execute(() => !document.querySelector(".gs-primary")?.disabled), { timeout: 15000, timeoutMsg: "the setup's main button stays disabled" });
+  await app.click(".gs-primary");
+};
+const onStep = (name) =>
+  app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector('.gs-steps li[aria-current="step"]')?.textContent?.replace(/^\d/, "").trim())) === name, {
+    timeout: 15000,
+    timeoutMsg: `the setup did not reach ${name}`,
+  });
+
+/** The guided Git sync setup (1.20) against a GitHub on this computer: the repository list, then the check. */
 async function gitSync() {
   await setTheme("light");
   await closeTabs();
   await panel(false);
   const before = (await settings()).git_sync;
-  await save((s) => ({ git_sync: { ...s.git_sync, enabled: true, remote_url: "https://github.com/example/arcalo-notes.git", branch: "main", author_name: "Maurice Kleindienst", author_email: "maurice@example.com" } }));
   await openSettings("backup");
-  await sleep(500);
-  await scrollToGroup("Git sync");
-  await sleep(500);
+  const open = await app.waitFor(".gs-open");
+  await open.scrollIntoView({ block: "center" });
+  await app.click(".gs-open");
+  await app.waitFor(".gs-body");
+  await app.click('.gs-provider[data-provider="github"]');
+  await fill('.gs-body input[aria-label="Server address"]', git.base);
+  await primary();
+  await onStep("Token");
+  await fill('.gs-body input[aria-label="Access token"]', GIT_TOKEN);
+  await primary();
+  await onStep("Repository");
+  await app.waitFor(".gs-repo");
+  await app.browser.execute(() => [...document.querySelectorAll(".gs-repo")].find((r) => r.querySelector(".gs-repo-name").textContent === "maurice/arcalo-notes")?.click());
+  await app.waitFor('.gs-repo[aria-selected="true"]');
   await settle();
+  // Overlay scrollbars fade out.
+  await sleep(1500);
   await shot("settings-git-sync");
+  await primary();
+  await onStep("Check");
+  await app.browser.waitUntil(
+    async () => app.browser.execute(() => {
+      const rows = [...document.querySelectorAll(".gs-check")];
+      return rows.length > 0 && rows.every((r) => r.dataset.state !== "running");
+    }),
+    { timeout: 30000, timeoutMsg: "the check did not end" },
+  );
+  await sleep(400);
+  await settle();
+  await sleep(1500);
+  await shot("git-sync-check");
+  await app.keys(["Escape"]);
+  await app.browser.waitUntil(async () => app.browser.execute(() => !document.querySelector(".gs-body")), { timeout: 8000 });
   await closeTabs();
   await save(() => ({ git_sync: before }));
+}
+
+/** The file tree (1.19): the open page shown in its folder, page counts, and the „New“ menu. */
+async function tree() {
+  await setTheme("light");
+  await closeTabs();
+  await panel(false);
+  await sidebar(true);
+  await openTree("Integration test plan");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await settle();
+  await app.click(".side-toolbar [data-new-menu]");
+  await app.waitFor(".menu");
+  await sleep(400);
+  await shot("file-tree-new");
+  await app.keys(["Escape"]);
+  await sleep(200);
+}
+
+const JIRA_ISSUES = (() => {
+  const day = (n) => iso(new Date(Date.now() + n * 86400e3));
+  const ago = (days) => new Date(Date.now() - days * 86400e3).toISOString().replace("Z", "+0000");
+  const me = "Maurice Kleindienst";
+  return [
+    {
+      key: "PORTAL-142",
+      summary: "Partial deliveries missing in the delta load",
+      type: "Bug",
+      status: "In Progress",
+      category: "indeterminate",
+      priority: "High",
+      assignee: me,
+      project: "PORTAL",
+      projectName: "Order portal",
+      due: day(1),
+      sprint: "Sprint 4",
+      description: "For partial deliveries only the first item reaches the portal.\n\nAffects ORDERS05 with the extension ZORD.",
+      comments: [
+        { author: "Anna Miller", created: ago(1), body: "Reproduced in the QA system, the log is attached." },
+        { author: "George White", created: ago(0.2), body: "The mapping skips the second E1EDP01 segment. Fix is in review." },
+      ],
+    },
+    { key: "PORTAL-139", summary: "OpenAPI specification for the order status", type: "Story", status: "In Review", category: "indeterminate", priority: "Medium", assignee: me, project: "PORTAL", projectName: "Order portal", due: day(4), sprint: "Sprint 4", description: "", comments: [] },
+    { key: "PORTAL-145", summary: "Retry for the error queue", type: "Task", status: "To Do", category: "new", priority: "Medium", assignee: me, project: "PORTAL", projectName: "Order portal", due: day(6), sprint: "Sprint 4", description: "", comments: [] },
+    { key: "PORTAL-150", summary: "Monitoring dashboard for the interfaces", type: "Task", status: "To Do", category: "new", priority: "Low", assignee: me, project: "PORTAL", projectName: "Order portal", due: null, sprint: "Sprint 4", description: "", comments: [] },
+    { key: "OPS-31", summary: "Renew the middleware certificate", type: "Task", status: "In Review", category: "indeterminate", priority: "Highest", assignee: me, project: "OPS", projectName: "Operations", due: day(3), sprint: "", description: "", comments: [] },
+  ];
+})();
+
+async function jiraSetup() {
+  if ((await app.invoke("jira_issues", { filter: { site: "", query: "", all: true, limit: null } })).length) return;
+  await app.invoke("jira_site_save", {
+    site: { id: "", name: "Company Jira", color: "", kind: "cloud", url: jira.url, email: "maurice@example.com", enabled: true, log_work: false, allow_writes: false },
+    token: "jira-readme-token",
+  });
+  await app.invoke("jira_sync_now", { site: null });
+  await app.browser.waitUntil(async () => (await app.invoke("jira_issues", { filter: { site: "", query: "", all: true, limit: null } })).length >= 5, { timeout: 20000, timeoutMsg: "Jira not synced" });
+  // PORTAL issues book on the system integration.
+  const db = new DatabaseSync(path.join(app.dataDir, "workspace.db"));
+  db.exec("PRAGMA busy_timeout = 5000");
+  db.prepare("INSERT OR REPLACE INTO issue_wbs_map (kind, key, reference, learned, created_at) VALUES ('project', 'PORTAL', 'NP-8801/1020', 0, ?)").run(new Date().toISOString());
+  db.close();
+}
+
+/** The Issues page with the opened bug, and its key in a note as a chip with the hover card. */
+async function jiraScene() {
+  await setTheme("dark");
+  await closeTabs();
+  await panel(false);
+  await jiraSetup();
+  const page = await app.invoke("page_resolve", { title: "Integration test plan", create: false });
+  const original = (await app.invoke("page_get", { id: page.id })).content;
+  await app.invoke("page_save", { id: page.id, content: original.replace("Integration test of the order flow portal → middleware → SAP.", "Integration test of the order flow portal → middleware → SAP.\nOpen bug: PORTAL-142") });
+  await app.browser.refresh();
+  await ready();
+  await sleep(600);
+
+  await sidebar(false);
+  await app.click(".ribbon-issues");
+  await app.waitFor('[data-issue-row="PORTAL-142"]');
+  await app.click('[data-issue-row="PORTAL-142"] .issue-row-main');
+  await app.waitText('[data-issue-row="PORTAL-142"] .issue-detail', /Reproduced in the QA system/, 15000);
+  await app.waitText('[data-issue-row="PORTAL-142"] .issue-detail-side', /Integration test plan/, 15000);
+  await sleep(500);
+  await fit();
+  await settle();
+  await shot("jira-issues-dark");
+  await unfit();
+  await sidebar(true);
+
+  await closeTabs();
+  await openTree("Integration test plan");
+  const chip = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip[data-issue="PORTAL-142"]', 15000);
+  await settle();
+  await chip.moveTo();
+  await app.waitFor(".issue-preview", 8000);
+  await app.waitText(".issue-preview", /first item reaches the portal/, 10000);
+  await sleep(600);
+  await shot("jira-chip-dark");
+  await calm();
+  await sleep(300);
+  await app.invoke("page_save", { id: page.id, content: original });
+  await closeTabs();
+}
+
+/** A voice note: recorded from the palette, transcribed, summarized with tasks. */
+async function voiceNote() {
+  await setTheme("dark");
+  await closeTabs();
+  await panel(false);
+  await save((s) => ({ voice: { ...s.voice, language: "en", auto_summary: true } }));
+  await sleep(400);
+  await app.keys(["Control", "k"]);
+  await app.waitFor(".palette input");
+  await app.type("Record voice note");
+  await sleep(300);
+  await app.keys(["Enter"]);
+  await app.waitFor(".voice-bar .voice-rec", 10000);
+  await sleep(3000);
+  await app.click(".voice-stop");
+  await app.waitText(".toast-title", /Summary added to the voice note/, 30000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed", 10000);
+  await app.dismissToasts();
+  await sleep(1500);
+  // WebKitGTK plays media only from http(s), file and blob addresses, not from the app's
+  // arcalo-asset: scheme, so on Linux the audio file shows a hint instead of the player (an audio
+  // output does not change that). Then the picture is the note below the audio file: transcript,
+  // summary, decisions, tasks and open points, whole.
+  const unplayable = await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed.is-unplayable"));
+  if (!unplayable) {
+    await fit();
+    await settle();
+    await shot("voice-note-dark");
+    await unfit();
+  } else {
+    await settle();
+    const box = await app.browser.execute(() => {
+      const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+      const blocks = [...root.children];
+      const at = blocks.findIndex((b) => b.querySelector(".audio-embed") || b.classList.contains("audio-embed"));
+      if (at < 0 || at === blocks.length - 1) return null;
+      const first = blocks[at + 1].getBoundingClientRect();
+      const last = blocks[blocks.length - 1].getBoundingClientRect();
+      const col = root.getBoundingClientRect();
+      // Little room above: the audio file's box ends just above the transcript.
+      const [pad, top] = [24, 8];
+      return { x: col.left - pad, y: first.top - top, w: col.width + 2 * pad, h: last.bottom - first.top + top + pad, dpr: window.devicePixelRatio };
+    });
+    if (!box) throw new Error("no blocks below the voice note's audio file");
+    await shotRect(box, "voice-note-dark");
+  }
+  await closeTabs();
+}
+
+/** A start page board with the work widgets of 1.7; the overtime balance and vacation also on their own. */
+async function widgets() {
+  await setTheme("dark");
+  await closeTabs();
+  await panel(false);
+  const s0 = await settings();
+  const year = new Date().getFullYear();
+  await save((s) => ({ time: { ...s.time, balance: { ...s.time.balance, weekday_hours: [8, 8, 8, 8, 8, 0, 0], start: iso(cur.monday), opening_hours: 15.25, vacation_days: 30, carry_over: 2, state: "BW" } } }));
+  // Vacation taken in spring and summer, and a week planned in November.
+  const vac = (from, to) => app.invoke("absence_save", { from, to, kind: "vacation", half: false, note: "" });
+  if (!(await app.invoke("absence_list", { from: `${year}-01-01`, to: `${year}-12-31` })).absences.length) {
+    await vac(`${year}-05-26`, `${year}-05-29`);
+    await vac(`${year}-08-10`, `${year}-08-21`);
+    await vac(iso(at(21, 0)), iso(at(25, 0)));
+  }
+  // George's free/busy calendar for the team.
+  const rows = (await app.invoke("calendar_status")).outlook_calendars ?? [];
+  const george = rows.find((r) => r.owner === "George White");
+  if (george && !george.enabled) {
+    await app.invoke("calendar_outlook_update", { id: george.id, enabled: true, color: null, booking: null });
+    await app.invoke("calendar_sync_now", { source: null });
+    await app.browser.waitUntil(async () => (await app.invoke("calendar_status")).sources.every((x) => !x.enabled || (x.status?.synced_at && !x.syncing)), { timeout: 20000 });
+  }
+  const W = (id, kind, x, y, w, h, config = {}, title = "") => ({ id, kind, x, y, w, h, title, config });
+  const dash = s0.dashboard;
+  const board = {
+    id: "work",
+    name: "Work",
+    widgets: [
+      W("balance", "balance", 0, 0, 4, 8),
+      W("vacation", "vacation", 4, 0, 4, 8),
+      W("next_meeting", "next_meeting", 8, 0, 4, 8),
+      W("chart", "chart", 0, 8, 6, 10, { type: "bar", chart: { source: "bookings", group: "vorgang", weeks: 4 } }, "Hours per activity"),
+      W("deadlines", "deadlines", 6, 8, 3, 10, { days: 2 }),
+      W("team", "team", 9, 8, 3, 10),
+    ],
+  };
+  await app.invoke("dashboard_save", { dashboard: { ...dash, version: 2, boards: [...dash.boards.filter((b) => b.id !== "work"), board], active: "work" } });
+  await app.browser.refresh();
+  await ready();
+  await sidebar(false);
+  await app.keys(["Control", "t"]);
+  const pane = ".pane.active > .pane-content:not([hidden])";
+  await app.waitFor(`${pane} [data-widget="balance"] .wb-value`, 15000);
+  await app.waitFor(`${pane} [data-widget="chart"] .wc-bar`, 15000);
+  await app.waitText(`${pane} [data-widget="next_meeting"]`, /Customer meeting Miller/, 15000);
+  await app.waitText(`${pane} [data-widget="team"]`, /Anna Miller/, 15000);
+  await app.browser.waitUntil(async () => (await app.$$(`${pane} .dw-skel`)).length === 0, { timeout: 15000 });
+  await sleep(1200);
+  await fit();
+  await settle();
+  await shot("dashboard-widgets-dark");
+  await unfit();
+  await settle();
+  await shotOf([`${pane} [data-widget="balance"]`, `${pane} [data-widget="vacation"]`], "balance-vacation-dark", 6);
+  await sidebar(true);
+  await app.invoke("dashboard_save", { dashboard: dash });
+  await closeTabs();
+  await app.browser.refresh();
+  await ready();
 }
 
 async function capture() {
@@ -1286,6 +1735,10 @@ const SCENES = {
   backdrop,
   network,
   git: gitSync,
+  tree,
+  jira: jiraScene,
+  voice: voiceNote,
+  widgets,
   search,
   capture,
 };
@@ -1301,6 +1754,15 @@ before(async () => {
   fs.writeFileSync(mailFile, JSON.stringify(MAIL));
   const home = path.join(tmp, "home");
   bookmarkProfiles(home);
+  // Jira Cloud, a GitHub with a few repositories and the voice recorder's stand-ins, all on this computer.
+  jira = await startFakeJira({ flavor: "cloud", email: "maurice@example.com", token: "jira-readme-token", me: "Maurice Kleindienst", issues: JIRA_ISSUES });
+  git = await startFakeProvider({ flavor: "github", token: GIT_TOKEN, owner: "maurice" });
+  git.addRepo("website", { files: { "README.md": "# Website\n", "index.html": "<h1>Website</h1>" }, privateRepo: false, description: "Team website" });
+  git.addRepo("scripts", { files: { "README.md": "# Scripts\n" }, description: "PowerShell scripts for the SAP landscape" });
+  git.addRepo("arcalo-notes", { description: "My notes from Arcalo" });
+  voice = voiceFixtures(
+    "[00:00] Short update on the order portal.\n[00:03] The delta load runs stable since Monday.\n[00:06] Still open are the test data for partial deliveries and the key user training.\n",
+  );
   const env = {
     ARCALO_LOCALE: "en-US",
     GDK_SCALE: SCALE,
@@ -1310,6 +1772,8 @@ before(async () => {
     ARCALO_CALENDAR_DELAY_SECS: "3600",
     ARCALO_TEST_HOME: home,
     ARCALO_TEST_BACKDROP: "1",
+    ARCALO_JIRA_DELAY_SECS: "3600",
+    ...voice.env,
   };
   // The workspace is set to English before the demo is seeded (as on a first start in English).
   const dataDir = path.join(tmp, "data");
@@ -1324,6 +1788,9 @@ before(async () => {
 after(async () => {
   await app?.close();
   await llm?.close();
+  await jira?.close();
+  await git?.close();
+  if (voice) fs.rmSync(voice.dir, { recursive: true, force: true });
   if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -1352,7 +1819,7 @@ test("first run", { skip: !want("firstrun") }, async () => {
   app = fresh;
   await app.waitFor(".fr-intro");
   // The scene about time tracking, most of its motion done.
-  await app.click(".fr-seg:nth-child(3)");
+  await app.click(".fr-seg:nth-child(4)");
   await sleep(3300);
   await shot("first-run-intro");
   await app.click(".fr-setup");
