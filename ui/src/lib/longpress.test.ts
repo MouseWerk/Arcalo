@@ -138,10 +138,36 @@ describe("a long press opens the context menu", () => {
     expect(menus).toHaveLength(2);
   });
 
+  it("leaves sliders and splitters to the drag that follows a resting finger", () => {
+    document.body.innerHTML = `<input type="range" min="40" max="100" /><div role="slider" tabindex="0"><span class="thumb"></span></div>
+      <div role="separator" aria-orientation="vertical" class="resizer side-resizer"></div><span class="coll-resize" role="separator"></span>`;
+    for (const sel of ["input[type=range]", "[role=slider] .thumb", ".side-resizer", ".coll-resize"]) {
+      for (const pointerType of ["touch", "pen"]) {
+        pointer("pointerdown", document.querySelector(sel)!, { pointerType });
+        t.advance(LONG_PRESS_MS * 2);
+        pointer("pointerup", document.querySelector(sel)!, { pointerType });
+      }
+    }
+    expect(menus).toHaveLength(0);
+  });
+
   it("stops listening when removed", () => {
     off();
     pointer("pointerdown", row);
     t.advance(LONG_PRESS_MS);
     expect(menus).toHaveLength(0);
+  });
+
+  it("removes every listener it added", () => {
+    const el = document.createElement("div");
+    const added: [string, EventListenerOrEventListenerObject][] = [];
+    const removed: [string, EventListenerOrEventListenerObject][] = [];
+    const add = el.addEventListener.bind(el);
+    const remove = el.removeEventListener.bind(el);
+    el.addEventListener = (type: string, f: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions) => (added.push([type, f]), add(type, f, o));
+    el.removeEventListener = (type: string, f: EventListenerOrEventListenerObject, o?: boolean | EventListenerOptions) => (removed.push([type, f]), remove(type, f, o));
+    installLongPress(el, t)();
+    expect(added.length).toBeGreaterThan(0);
+    expect(removed).toEqual(added);
   });
 });

@@ -26,9 +26,10 @@ const realTimers: Timers = {
 
 /** Where a press that rests keeps its own meaning: text fields and the editors (Android selects a
  *  word), drawings (Excalidraw) and the canvas board, where a pen or finger resting is drawing or
- *  dragging, and what is marked `data-native-press` (grips and other drag handles). */
+ *  dragging, sliders and splitters (a finger rests before it drags), and what is marked
+ *  `data-native-press` (grips and other drag handles). */
 const NATIVE_PRESS =
-  "input, textarea, select, [contenteditable=''], [contenteditable='true'], .ProseMirror, .cm-editor, .excalidraw, .drawing-canvas, [data-native-press]";
+  "input, textarea, select, [contenteditable=''], [contenteditable='true'], .ProseMirror, .cm-editor, .excalidraw, .drawing-canvas, [role='slider'], [role='separator'], [data-native-press]";
 
 /** Where a long press keeps its own meaning (text selection, drawing, dragging). */
 export function keepsNativePress(target: EventTarget | null): boolean {
@@ -113,8 +114,8 @@ export function installLongPress(root: Document | HTMLElement = document, timers
     cancel();
     root.removeEventListener("pointerdown", onDown, opts);
     root.removeEventListener("pointermove", onMove, opts);
-    root.removeEventListener("pointerup", cancel, opts);
-    root.removeEventListener("pointercancel", cancel, opts);
+    root.removeEventListener("pointerup", onUp, opts);
+    root.removeEventListener("pointercancel", onUp, opts);
     root.removeEventListener("contextmenu", onMenu, true);
     root.removeEventListener("click", onClick, true);
   };
