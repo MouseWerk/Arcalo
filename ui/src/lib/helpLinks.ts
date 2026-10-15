@@ -16,9 +16,9 @@ export const DOC_PAGES = {
   troubleshooting: "help/troubleshooting",
   updates: "getting-started/updates",
   aiProviders: "ai/providers",
-  network: "data/network",
+  network: "admin/network",
   backups: "data/backups",
-  encryption: "data/encryption",
+  encryption: "admin/encryption",
   gitSync: "data/git-sync",
   calendars: "meetings/calendars",
 } as const;
