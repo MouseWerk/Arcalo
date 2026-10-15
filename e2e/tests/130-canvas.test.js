@@ -96,7 +96,13 @@ test("Textkarte per Doppelklick, Notizkarte aus der Auswahl, verbinden durch Zie
   const text = await rect(".cv-card[data-kind=text]");
   await drag({ x: head.cx - 60, y: head.cy }, { x: text.x + text.w + 260, y: text.y + 10 });
 
-  let doc = await waitStored((d) => d.nodes.length === 2, "two cards stored");
+  // Autosave runs 600 ms after the last change: on a slow machine the added card is stored
+  // before the drag starts, so two stored cards alone do not mean the move is stored yet.
+  const moved = (d) => {
+    const [t, n] = ["text", "file"].map((type) => d.nodes.find((x) => x.type === type));
+    return d.nodes.length === 2 && !!t && !!n && n.x > t.x + t.width;
+  };
+  let doc = await waitStored(moved, "two cards stored, the note moved");
   const t = doc.nodes.find((n) => n.type === "text");
   const note = doc.nodes.find((n) => n.type === "file");
   assert.equal(t.text, "# Phase 1\nKickoff mit [[Architektur]]");
