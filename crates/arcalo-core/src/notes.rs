@@ -711,22 +711,34 @@ impl Database {
     /// Returns the daily note for `date`, creating it (and the Journal parent) if needed.
     pub fn daily_note(&self, date: NaiveDate) -> Result<Page> {
         let key = date.format("%Y-%m-%d").to_string();
-        if let Some(p) = self
+        if let Some(p) = self.daily_page(&key)? {
+            return Ok(p);
+        }
+        // All or nothing, under the write lock: the command line may make the same note at the
+        // same moment (looked up again here), and a failed step leaves no half-made note.
+        self.atomic(|| match self.daily_page(&key)? {
+            Some(p) => Ok(p),
+            None => self.create_daily_note(date, &key),
+        })
+    }
+
+    fn daily_page(&self, key: &str) -> Result<Option<Page>> {
+        Ok(self
             .conn()
             .query_row(
                 &format!("SELECT {} FROM pages WHERE daily_date = ?1 AND deleted_at IS NULL", crate::db::PAGE_COLS),
-                [&key],
+                [key],
                 crate::db::map_page,
             )
-            .optional()?
-        {
-            return Ok(p);
-        }
+            .optional()?)
+    }
+
+    fn create_daily_note(&self, date: NaiveDate, key: &str) -> Result<Page> {
         let settings = self.load_settings().unwrap_or_default();
         // The title follows Settings → Notizen; `daily_date` always keeps the ISO date.
         let mut title = settings.notes.daily_title.title(date);
         if self.page_by_title(&title)?.is_some() {
-            title = key.clone();
+            title = key.to_owned();
         }
         let page = self.create_page(None, &title, Some("calendar"))?;
         self.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![page.id, key])?;
@@ -833,6 +845,52 @@ pub fn clean_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The app and the command line make the same day's note at once (midnight): one note,
+    /// no error and no stray page.
+    #[test]
+    fn two_processes_making_the_same_daily_note_get_one() {
+        let dir = std::env::temp_dir().join(format!("arcalo-daily-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("workspace.db");
+        drop(Database::open(&file).unwrap());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let days = 40;
+        let run = |barrier: std::sync::Arc<std::sync::Barrier>, file: std::path::PathBuf| {
+            std::thread::spawn(move || {
+                let db = Database::open(&file).unwrap();
+                (0..days)
+                    .map(|n| {
+                        barrier.wait();
+                        let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + chrono::Days::new(n);
+                        db.daily_note(date).map(|p| p.id).map_err(|e| e.to_string())
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let a = run(barrier.clone(), file.clone());
+        let b = run(barrier, file.clone());
+        let (a, b) = (a.join().unwrap(), b.join().unwrap());
+        for (n, (x, y)) in a.iter().zip(&b).enumerate() {
+            assert!(x.is_ok() && x == y, "day {n}: {x:?} / {y:?}");
+        }
+        let db = Database::open(&file).unwrap();
+        let pages: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM pages WHERE kind IS NULL OR kind <> 'folder'", [], |r| r.get(0))
+            .unwrap();
+        let daily: i64 =
+            db.conn().query_row("SELECT count(*) FROM pages WHERE daily_date IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(daily, days as i64);
+        let titled: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM pages WHERE daily_date IS NULL AND icon = 'calendar'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(titled, 0, "no stray page ({pages} pages)");
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A link written with a decomposed „ü“ (macOS file names, text pasted from Finder) is the
     /// link typed with the keyboard: it resolves, counts as a backlink, follows a rename and never
