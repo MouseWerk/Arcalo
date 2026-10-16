@@ -649,9 +649,11 @@ fn redact_prefixed(text: &str) -> String {
     redact_after(text, &PREFIXES, |before| !before.ends_with(|c: char| c.is_ascii_alphanumeric()))
 }
 
-/// `token=abc`, `password: abc`, `"api_key":"abc"` → the value becomes `***`.
+/// `token=abc`, `password: abc`, `"api_key":"abc"`, `?key=abc` → the value becomes `***`; a quoted
+/// value as a whole (`password: "two words"`). `key` alone (also an issue or map key) only as
+/// `key=…` or as a quoted JSON key.
 fn redact_assignments(text: &str) -> String {
-    const KEYS: [&str; 7] = ["token", "password", "passwd", "secret", "api_key", "apikey", "api-key"];
+    const KEYS: [&str; 8] = ["token", "password", "passwd", "secret", "api_key", "apikey", "api-key", "key"];
     let lower = text.to_ascii_lowercase();
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -663,6 +665,7 @@ fn redact_assignments(text: &str) -> String {
             continue;
         };
         let word_start = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+        let quoted_key = i > 0 && matches!(bytes[i - 1], b'"' | b'\'');
         let mut j = i + key.len();
         // Optional closing quote of a JSON key, spaces, then `=` or `:`.
         if bytes.get(j) == Some(&b'"') || bytes.get(j) == Some(&b'\'') {
@@ -671,7 +674,12 @@ fn redact_assignments(text: &str) -> String {
         while bytes.get(j) == Some(&b' ') {
             j += 1;
         }
-        if !word_start || !matches!(bytes.get(j), Some(b'=') | Some(b':')) {
+        let assigned = match bytes.get(j) {
+            Some(b'=') => true,
+            Some(b':') => *key != "key" || quoted_key,
+            _ => false,
+        };
+        if !word_start || !assigned {
             i += key.len();
             continue;
         }
@@ -679,11 +687,23 @@ fn redact_assignments(text: &str) -> String {
         while bytes.get(j) == Some(&b' ') {
             j += 1;
         }
-        if bytes.get(j) == Some(&b'"') || bytes.get(j) == Some(&b'\'') {
+        let quote = bytes.get(j).copied().filter(|c| matches!(c, b'"' | b'\''));
+        if quote.is_some() {
             j += 1;
         }
-        let end = text[j..].find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ';' | '}' | ')'));
-        let end = end.map_or(text.len(), |e| j + e);
+        let end = match quote {
+            // Up to the closing quote (not an escaped one).
+            Some(q) => {
+                let mut k = j;
+                while k < bytes.len() && !(bytes[k] == q && bytes[k - 1] != b'\\') {
+                    k += 1;
+                }
+                k
+            }
+            None => text[j..]
+                .find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ';' | '}' | ')'))
+                .map_or(text.len(), |e| j + e),
+        };
         out.push_str(&text[pos..j]);
         if end > j {
             out.push_str("***");
@@ -1070,12 +1090,30 @@ mod tests {
             ("password = geheim; user=bob", "password = ***; user=bob"),
             (r#"{"api_key":"k-1","model":"m"}"#, r#"{"api_key":"***","model":"m"}"#),
             ("access_token: xyz", "access_token: ***"),
+            // Whole values, also quoted with spaces or escaped quotes.
+            (r#"password: "zwei Wörter hier" ok"#, r#"password: "***" ok"#),
+            (r#"{"secret":"a \"b\" c","n":1}"#, r#"{"secret":"***","n":1}"#),
+            ("client_secret='mit leer zeichen'", "client_secret='***'"),
+            // `key=` parameters (a key in the address of a custom endpoint) and JSON keys.
+            (
+                "POST https://x.example/v1/chat?key=AIzaSyA-1_b&alt=sse",
+                "POST https://x.example/v1/chat?key=***&alt=sse",
+            ),
+            ("private_key=abc def", "private_key=*** def"),
+            (r#"{"key": "k-77", "id": 2}"#, r#"{"key": "***", "id": 2}"#),
         ];
         for (input, expected) in cases {
             assert_eq!(redact(input), expected, "{input}");
         }
         // Words that only look similar stay.
-        for text in ["task-list risk-free", "Tokens: 1200 verbraucht", "API-Token fehlt", "Passwort falsch"] {
+        for text in [
+            "task-list risk-free",
+            "Tokens: 1200 verbraucht",
+            "API-Token fehlt",
+            "Passwort falsch",
+            "issue key: PROJ-123",
+            "monkey=3 turkey: 4",
+        ] {
             assert_eq!(redact(text), text);
         }
         // Stored credentials without a known format.
