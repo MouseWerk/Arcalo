@@ -13,6 +13,7 @@ import { isoDay, time } from "../lib/format";
 import { attendeeName, sourceName } from "../lib/agenda";
 import { moved, resized, SNAP } from "../lib/blocks";
 import { isComposing } from "../lib/ime";
+import { DateInput, TimeInput } from "../components/DateInput";
 import type { CalendarEvent, CalendarSettings, Editability, EntryFields } from "../lib/types";
 
 /** Whether the appointment can be changed here (organized meetings after a confirmation). */
@@ -223,7 +224,7 @@ export function EntryItem(props: {
       role="button"
       tabIndex={0}
       data-key={e.key}
-      className={`${props.className} calv-entry ${drag?.active ? "dragging" : ""}`}
+      className={`${props.className} calv-appt ${drag?.active ? "dragging" : ""}`}
       style={{ ...props.style, top, height, transform: shift?.days ? `translateX(${shift.days * shift.colWidth}px)` : undefined }}
       aria-label={props.label}
       aria-description={t("blocks.keys")}
@@ -272,35 +273,49 @@ function fromInputs(date: string, from: string, to: string): { start: Date; end:
   return { start, end };
 }
 
-/** Date, start and end of an appointment as inputs; `onCommit` gets the new times (when they changed). */
-function WhenInputs({ start, end, onCommit, disabled }: { start: Date; end: Date; onCommit: (s: Date, e: Date) => void; disabled?: boolean }) {
+/**
+ * Date, start and end of an appointment in the app's formats; `onCommit` gets the new times when
+ * the focus leaves them (a new start keeps the length, a day picked in the calendar applies at once).
+ */
+function WhenInputs({ start, end, onCommit }: { start: Date; end: Date; onCommit: (s: Date, e: Date) => void }) {
   const t = useT();
   const [date, setDate] = useState(isoDay(start));
   const [from, setFrom] = useState(hm(start));
   const [to, setTo] = useState(hm(end));
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setDate(isoDay(start));
     setFrom(hm(start));
     setTo(hm(end));
   }, [start.getTime(), end.getTime()]);
-  const commit = (next: { date?: string; from?: string; to?: string }) => {
-    const r = fromInputs(next.date ?? date, next.from ?? from, next.to ?? to);
+  const commit = (next: { date?: string } = {}) => {
+    let r = fromInputs(next.date ?? date, from, to);
     if (!r) return;
-    // A new start keeps the length.
-    if (next.from && r) {
-      const len = end.getTime() - start.getTime();
-      r.end = new Date(r.start.getTime() + len);
-    }
+    // A new start keeps the length (unless the end was changed too).
+    if (from !== hm(start) && to === hm(end)) r = { start: r.start, end: new Date(r.start.getTime() + (end.getTime() - start.getTime())) };
     if (r.start.getTime() !== start.getTime() || r.end.getTime() !== end.getTime()) onCommit(r.start, r.end);
   };
   return (
-    <div className="calv-entry-when">
-      <Input type="date" aria-label={t("entries.date")} value={date} disabled={disabled} onChange={(e) => setDate(e.target.value)} onBlur={() => commit({ date })} />
-      <Input type="time" step={300} aria-label={t("entries.start")} value={from} disabled={disabled} onChange={(e) => setFrom(e.target.value)} onBlur={() => from !== hm(start) && commit({ from })} />
+    <div
+      ref={box}
+      className="calv-entry-when"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit();
+      }}
+    >
+      <DateInput
+        aria-label={t("entries.date")}
+        value={date}
+        onChange={(iso) => {
+          setDate(iso);
+          if (!box.current?.contains(document.activeElement)) commit({ date: iso });
+        }}
+      />
+      <TimeInput aria-label={t("entries.start")} value={from} onChange={setFrom} />
       <span className="faint" aria-hidden>
         –
       </span>
-      <Input type="time" step={300} aria-label={t("entries.end")} value={to} disabled={disabled} onChange={(e) => setTo(e.target.value)} onBlur={() => to !== hm(end) && commit({ to })} />
+      <TimeInput aria-label={t("entries.end")} value={to} onChange={setTo} />
     </div>
   );
 }

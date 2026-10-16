@@ -214,6 +214,16 @@ export function CalendarView() {
   const booked = useMemo(() => new Map(shown.map((e) => [e.key, timeOn ? bookedEntry(e, entries) : null])), [shown, entries, timeOn]);
   const days = useMemo(() => (timeOn ? overview : new Map([...overview].map(([k, d]) => [k, { ...d, booked_minutes: 0 }]))), [overview, timeOn]);
   const current = shown.find((e) => e.key === selected) ?? null;
+  // A new appointment gets its real key once Outlook has it: the selection follows it.
+  const lastShown = useRef<CalendarEvent | null>(null);
+  if (current) lastShown.current = current;
+  useEffect(() => {
+    const was = lastShown.current;
+    if (!selected?.includes("|arcalo-entry-") || current || was?.key !== selected) return;
+    const now = events.find((e) => e.source === was.source && e.title === was.title && e.start === was.start && !e.key.includes("|arcalo-entry-"));
+    if (now) setSelected(now.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]);
   const { blocks, patch: patchBlock } = useBlocks(range.from, range.to, version);
   const currentBlock = blocks.find((b) => b.id === blockIdOf(selected)) ?? null;
   const changeBlock = (b: FocusBlock, p: BlockPatch) => void saveBlock(b, p, patchBlock);
@@ -1243,15 +1253,18 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
             {e.title}
           </h2>
         )}
-        <div className="calv-detail-when">
-          <span>{when}</span>
-          {e.recurring && (
-            <span className="calv-detail-series">
-              <Repeat size={12} aria-hidden />
-              {t("calv.partOfSeries")}
-            </span>
-          )}
-        </div>
+        {/* An appointment that can be changed shows its times as fields below. */}
+        {!(canEdit(e) && !e.all_day) && (
+          <div className="calv-detail-when">
+            <span>{when}</span>
+            {e.recurring && (
+              <span className="calv-detail-series">
+                <Repeat size={12} aria-hidden />
+                {t("calv.partOfSeries")}
+              </span>
+            )}
+          </div>
+        )}
         {e.link && (
           <Button icon={Video} variant={past ? "secondary" : "primary"} className="calv-join" onClick={() => void openUrl(e.link!).catch((err) => useApp.getState().error(t("links.openFailed"), err))}>
             {t("calv.join", { kind: linkKind })}
@@ -1264,6 +1277,8 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           <EntryFieldsEdit e={e} onSave={onSave} />
         </section>
       )}
+
+      {(e.editable && e.editable !== "ics") || e.write ? <EntryState e={e} onLocal={onLocal} /> : null}
 
       {((e.location && !canEdit(e)) || e.organizer || e.attendees.length > 0) && (
         <section className="calv-detail-sec calv-detail-rows">
@@ -1391,8 +1406,6 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           )}
         </div>
       </section>
-
-      {(e.editable && e.editable !== "ics") || e.write ? <EntryState e={e} onLocal={onLocal} /> : null}
 
       {e.body && (
         <details className="calv-detail-sec calv-body-text">
