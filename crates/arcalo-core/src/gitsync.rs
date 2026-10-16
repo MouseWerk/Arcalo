@@ -70,6 +70,34 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// copy over a slow line), only one that hangs without the HTTP check (SSH) is, after this.
 pub const NETWORK_LIMIT: Duration = Duration::from_secs(60 * 60);
 
+/// Environment variables that point git at another repository, index or object store, or change
+/// how it reads paths and configuration (git's `rev-parse --local-env-vars` and the pathspec
+/// switches); removed for every git of the sync.
+const REPOSITORY_VARS: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_GRAFT_FILE",
+    "GIT_SHALLOW_FILE",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_PREFIX",
+    "GIT_QUARANTINE_PATH",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_GLOB_PATHSPECS",
+    "GIT_NOGLOB_PATHSPECS",
+    "GIT_ICASE_PATHSPECS",
+];
+
 /// Whether git command `args` talks to the server.
 fn is_network(args: &[&str]) -> bool {
     matches!(subcommand(args), "fetch" | "push" | "clone" | "ls-remote")
@@ -1284,7 +1312,18 @@ impl Git {
             "-c",
             "core.precomposeunicode=true",
         ]);
+        // No hooks: neither the user's global ones (`core.hooksPath`: a secret scanner that
+        // blocks or stalls the push) nor any in the working tree. The path is this program's
+        // own file, never a folder that could hold a hook.
+        if let Ok(exe) = std::env::current_exe() {
+            cmd.arg("-c").arg(format!("core.hooksPath={}", exe.display()));
+        }
         cmd.args(args);
+        // The app started from a git hook, `git rebase -x` or an IDE terminal: the repository
+        // those name is never the one the sync works on.
+        for var in REPOSITORY_VARS {
+            cmd.env_remove(var);
+        }
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
         }
@@ -3488,6 +3527,31 @@ mod tests {
         assert!(cmd.get_envs().all(|(_, v)| !v.is_some_and(|v| v.to_string_lossy().contains("Authorization"))));
     }
 
+    /// A git of the sync never works on another repository named by the app's environment (the
+    /// app started from a git hook or an IDE terminal with `GIT_DIR`, `GIT_WORK_TREE`, …) and runs
+    /// no hooks (the user's global `core.hooksPath`: git-secrets, Talisman).
+    #[test]
+    fn the_environment_of_another_repository_and_hooks_do_not_reach_git() {
+        let cmd = Git::new(None, "").command(None, &["push"]);
+        let removed: Vec<String> =
+            cmd.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        for var in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_COMMON_DIR",
+            "GIT_NAMESPACE",
+            "GIT_CONFIG_PARAMETERS",
+        ] {
+            assert!(removed.iter().any(|r| r == var), "{var} is not removed: {removed:?}");
+        }
+        let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let hooks = args.iter().find_map(|a| a.strip_prefix("core.hooksPath=")).expect("core.hooksPath");
+        assert!(!Path::new(hooks).is_dir(), "no folder that could hold hooks: {hooks}");
+    }
+
     /// Commands that talk to the server stop when the transfer stalls (`http.lowSpeedLimit` for
     /// `http.lowSpeedTime`, the timeout), not after a total time: a first fetch of a long history or
     /// a push of a large database copy over a slow line takes as long as it takes.
@@ -5437,6 +5501,28 @@ mod safety_tests {
         let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
         assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// Hooks (here a pre-push hook that refuses everything, like a secret scanner set up for all
+    /// repositories) do not run for the sync.
+    #[cfg(unix)]
+    #[test]
+    fn hooks_do_not_stop_the_sync() {
+        use std::os::unix::fs::PermissionsExt;
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("hooks");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        let hook = r.base.join("a").join(REPO_DIR).join(".git/hooks/pre-push");
+        put(&hook, "#!/bin/sh\necho 'blocked by hook' >&2\nexit 1\n");
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        put(&a.join("Notiz.md"), "zwei\n");
+        r.sync("a").unwrap();
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "zwei\n");
     }
 
     /// Only `! [rejected] … (non-fast-forward)` or `(fetch first)` is a server that moved on.
