@@ -17,23 +17,29 @@ export function outgoingLinks(md: string, isPage: (title: string) => boolean = (
   const pages = new Map<string, string>();
   const files = new Map<string, string>();
   for (const m of md.matchAll(/(!?)\[\[([^\]|#\n]+)/g)) {
-    const name = m[2].trim();
+    const name = m[2].trim().normalize("NFC");
     if (!name) continue;
     const file = m[1] ? fileExtension(name) != null : isFileLinkTarget(name) && !isPage(name);
     const into = file ? files : pages;
-    if (!into.has(name.toLowerCase())) into.set(name.toLowerCase(), name);
+    if (!into.has(linkKey(name))) into.set(linkKey(name), name);
   }
   return { pages: [...pages.values()], files: [...files.values()] };
 }
 
+/** A link target or title as `titleSet` holds it: trimmed, composed (a decomposed „ü“ from a macOS
+ *  file name is the „ü“ of a title, as in the core) and lower-cased. */
+export function linkKey(title: string): string {
+  return title.trim().normalize("NFC").toLowerCase();
+}
+
 const titleSets = new WeakMap<Map<number, { title: string }>, Set<string>>();
 
-/** Lower-cased titles of `pages`, built once per page map (the store replaces it on changes). */
+/** The titles of `pages` as `linkKey` spells them, built once per page map (the store replaces it on changes). */
 export function titleSet(pages: Map<number, { title: string }>): Set<string> {
   let set = titleSets.get(pages);
   if (!set) {
     set = new Set();
-    for (const p of pages.values()) set.add(p.title.toLowerCase());
+    for (const p of pages.values()) set.add(linkKey(p.title));
     titleSets.set(pages, set);
   }
   return set;

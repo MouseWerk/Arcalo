@@ -45,7 +45,7 @@ import { replaceChanged } from "./replaceChanged";
 import { chipsParked } from "./timeChip";
 import { flushAllEditors, keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
 import { SaveFailed } from "./SaveFailed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
 import { caps } from "../lib/capabilities";
@@ -330,7 +330,7 @@ export function NoteEditor({
         richBlock: richMount(pageTitle),
         onOpenLink: (t, newTab, anchor) => openWiki(t, newTab, anchor),
         onOpenTag: (t) => cb.current.onOpenTag(t),
-        isKnown: (t) => titleSet(useApp.getState().pages).has(t.toLowerCase()),
+        isKnown: (t) => titleSet(useApp.getState().pages).has(linkKey(t)),
         searchPages: async (q) => {
           // `Seite#`: the page's headings, `Seite#^`: its block ids.
           const anchors = await anchorItems(q);
@@ -347,7 +347,7 @@ export function NoteEditor({
             .slice(0, 8)
             .map((p) => pageSuggestItem(p, p.parent_id ? useApp.getState().pages.get(p.parent_id)?.title : undefined));
           const items: LinkSuggestItem[] = matches;
-          if (lower && !titleSet(useApp.getState().pages).has(lower)) {
+          if (lower && !titleSet(useApp.getState().pages).has(linkKey(q))) {
             items.push({ id: "create", title: tr("cap.linkNew", { title: q.trim() }), subtitle: tr("cap.linkNewSub"), target: q.trim(), create: true });
           }
           return items;

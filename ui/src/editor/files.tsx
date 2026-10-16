@@ -12,7 +12,7 @@ import type { MenuEntry } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { anchorPage, baseName, isFileEmbedName, isFileLinkTarget, isImageName, isPdfName } from "./fileEmbed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { pdfAnchor } from "../lib/linking";
 import { t } from "../lib/i18n";
 import { caps } from "../lib/capabilities";
@@ -48,7 +48,7 @@ export function openFile(name: string) {
  * PDFs in the viewer, other files in their default app. Returns false for a page link.
  */
 export function openIfFileLink(target: string, anchor: string | null = null): boolean {
-  if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(target.trim().toLowerCase())) return false;
+  if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(linkKey(target))) return false;
   const name = baseName(target.trim());
   if (isPdfName(name)) openPdfViewer(name, anchorPage(anchor == null ? null : `#${anchor}`), pdfAnchor(anchor).highlight);
   else openFile(name);

@@ -94,7 +94,7 @@ pub fn links(content: &str) -> Vec<String> {
         if str_field(n, "type") == Some("file")
             && let Some(title) = str_field(n, "file").and_then(note_title)
         {
-            push(title.to_owned());
+            push(crate::nfc::nfc(title));
         }
     }
     for text in texts(&d) {
@@ -217,7 +217,9 @@ pub fn rename_page(content: &str, old: &str, new: &str) -> String {
     rewrite_strings(content, |key, value| match key {
         "file" => {
             let title = note_title(value)?;
-            if !title.eq_ignore_ascii_case(old) && title.to_lowercase() != old.to_lowercase() {
+            if !title.eq_ignore_ascii_case(old)
+                && crate::nfc::nfc(title).to_lowercase() != crate::nfc::nfc(old).to_lowercase()
+            {
                 return None;
             }
             let dir = &value[..value.len() - base_name(value).len()];
@@ -247,7 +249,7 @@ pub fn with_paths(content: &str, paths: &std::collections::HashMap<String, Strin
         if key != "file" {
             return None;
         }
-        paths.get(&note_title(value)?.to_lowercase()).cloned()
+        paths.get(&crate::nfc::nfc(note_title(value)?).to_lowercase()).cloned()
     })
 }
 

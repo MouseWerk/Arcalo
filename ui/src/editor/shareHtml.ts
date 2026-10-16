@@ -13,7 +13,7 @@ import { highlightCodeBlocks } from "./languages";
 import { splitFrontmatter } from "./extensions";
 import { tocTree, type TocTree } from "./blocks";
 import { baseName, formatSize, isFileLinkTarget } from "./fileEmbed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { EMBED_FILE_BYTES, buildHtmlDocument, dataUri, htmlFileName, mimeOf, type ExportSection } from "../lib/htmlExport";
 import { api } from "../lib/api";
 import { fmtDate } from "../lib/format";
@@ -175,7 +175,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   const titles = titleSet(useApp.getState().pages);
   for (const a of root.querySelectorAll<HTMLElement>("a[data-wikilink]")) {
     const target = (a.getAttribute("data-target") ?? "").trim();
-    if (!isFileLinkTarget(target) || ctx.anchors.has(target.toLowerCase()) || titles.has(target.toLowerCase())) continue;
+    if (!isFileLinkTarget(target) || ctx.anchors.has(target.toLowerCase()) || titles.has(linkKey(target))) continue;
     const label = a.textContent ?? "";
     a.replaceWith(el(doc, "span", { "data-file": baseName(target), ...(label && label !== target ? { "data-alt": label } : {}) }));
   }

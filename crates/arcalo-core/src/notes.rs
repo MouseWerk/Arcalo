@@ -113,7 +113,8 @@ fn strip_inline_code(line: &str) -> String {
     out
 }
 
-/// Link targets of `[[Target]]`, `[[Target|Alias]]` and `[[Target#Heading]]`.
+/// Link targets of `[[Target]]`, `[[Target|Alias]]` and `[[Target#Heading]]`, composed like
+/// titles ([`clean_title`]: a decomposed „ü“ is the „ü“ of the title).
 pub fn wiki_links(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     // Lower-cased targets already in `out` (a long note has thousands of links).
@@ -128,11 +129,11 @@ pub fn wiki_links(markdown: &str) -> Vec<String> {
             let after = &rest[start + 2..];
             let Some(end) = after.find("]]") else { break };
             let inner = &after[..end];
-            let target = inner[..link_target_len(inner)].trim();
+            let target = crate::nfc::nfc(inner[..link_target_len(inner)].trim());
             // `![[bild.png]]`, `![[x.excalidraw]]`, `![[doc.pdf]]` embed an attachment, they do not link a page.
-            let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(target);
+            let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(&target);
             if !embed && !target.is_empty() && seen.insert(target.to_lowercase()) {
-                out.push(target.to_owned());
+                out.push(target);
             }
             rest = &after[end + 2..];
         }
@@ -446,27 +447,28 @@ impl Database {
         }
         let conn = self.conn();
         let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Composed like titles: a decomposed „ü“ names the page with „ü“.
+        let key = |t: &str| crate::nfc::nfc(t.trim()).to_lowercase();
+        let composed: Vec<String> = targets.iter().map(|t| crate::nfc::nfc(t.trim())).collect();
         // Well below SQLite's limit of bound parameters.
-        for part in targets.chunks(500) {
+        for part in composed.chunks(500) {
             let marks = vec!["?"; part.len()].join(",");
             let mut st = conn.prepare_cached(&format!(
                 "SELECT title FROM pages WHERE deleted_at IS NULL AND title COLLATE NOCASE IN ({marks})"
             ))?;
-            let titles =
-                st.query_map(rusqlite::params_from_iter(part.iter().map(|t| t.trim())), |r| r.get::<_, String>(0))?;
+            let titles = st.query_map(rusqlite::params_from_iter(part.iter()), |r| r.get::<_, String>(0))?;
             for t in titles {
-                found.insert(t?.to_lowercase());
+                found.insert(key(&t?));
             }
         }
-        let mut missing: Vec<String> =
-            targets.into_iter().filter(|t| !found.contains(&t.trim().to_lowercase())).collect();
+        let mut missing: Vec<String> = targets.into_iter().filter(|t| !found.contains(&key(t))).collect();
         if missing.iter().any(|t| !t.trim().is_ascii()) {
             // SQLite's NOCASE folds ASCII only: compare the other titles once, in Rust.
             let mut st = conn.prepare_cached("SELECT title FROM pages WHERE deleted_at IS NULL")?;
             let all: std::collections::HashSet<String> =
-                st.query_map([], |r| r.get::<_, String>(0))?.filter_map(|t| t.ok()).map(|t| t.to_lowercase()).collect();
+                st.query_map([], |r| r.get::<_, String>(0))?.filter_map(|t| t.ok()).map(|t| key(&t)).collect();
             missing.retain(|t| {
-                let needle = t.trim().to_lowercase();
+                let needle = key(t);
                 needle.is_ascii() || !all.contains(&needle)
             });
         }
@@ -508,7 +510,10 @@ impl Database {
             .ok_or_else(|| Error::not_found("page", id.to_string()))
     }
 
+    /// The page titled `title` (any case; a decomposed „ü“ is the „ü“ of the title).
     pub fn page_by_title(&self, title: &str) -> Result<Option<Page>> {
+        let title = crate::nfc::nfc(title.trim());
+        let title = title.as_str();
         let found = self
             .conn()
             .query_row(
@@ -537,7 +542,7 @@ impl Database {
         let id = st
             .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
             .filter_map(|r| r.ok())
-            .find(|(_, t)| t.to_lowercase() == needle)
+            .find(|(_, t)| crate::nfc::nfc(t).to_lowercase() == needle)
             .map(|(id, _)| id);
         id.map(|id| self.page(id)).transpose()
     }
@@ -557,7 +562,7 @@ impl Database {
                 "SELECT p.id, p.title, p.icon, p.content, p.kind FROM page_links l JOIN pages p ON p.id = l.from_page
                  WHERE l.target = ?1 AND p.id <> ?2 AND p.deleted_at IS NULL ORDER BY p.updated_at DESC",
             )?;
-            let needle = page.title.to_lowercase();
+            let needle = crate::nfc::nfc(&page.title).to_lowercase();
             st.query_map(params![needle, id], |r| {
                 let content: String = r.get(3)?;
                 if r.get::<_, Option<String>>(4)?.as_deref() == Some(crate::canvas::KIND) {
@@ -567,7 +572,7 @@ impl Database {
                 let context = content
                     .lines()
                     .find(|l| {
-                        let l = l.to_lowercase();
+                        let l = crate::nfc::nfc(l).to_lowercase();
                         l.contains(&format!("[[{needle}]]"))
                             || l.contains(&format!("[[{needle}|"))
                             || l.contains(&format!("[[{needle}#"))
@@ -602,7 +607,8 @@ impl Database {
                 let mut st = self.conn().prepare(
                     "SELECT p.id, p.content FROM page_links l JOIN pages p ON p.id = l.from_page WHERE l.target = ?1",
                 )?;
-                st.query_map([old.to_lowercase()], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+                st.query_map([crate::nfc::nfc(&old).to_lowercase()], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<rusqlite::Result<_>>()?
             };
             let mut changed = 0;
             let now = chrono::Utc::now();
@@ -747,7 +753,8 @@ impl Database {
     }
 }
 
-/// Rewrites `[[old]]`, `[[old|alias]]` and `[[old#heading]]` (case-insensitive) to `new`.
+/// Rewrites `[[old]]`, `[[old|alias]]` and `[[old#heading]]` (case-insensitive, decomposed
+/// letters as composed ones) to `new`.
 /// Code (fenced blocks and inline spans) stays as written, as it is no link ([`wiki_links`]).
 pub fn replace_link_target(content: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(content.len());
@@ -790,7 +797,7 @@ fn replace_in_prose(text: &str, old: &str, new: &str, out: &mut String) {
         };
         let inner = &after[..end];
         let (target, suffix) = inner.split_at(link_target_len(inner));
-        if target.trim().to_lowercase() == old.to_lowercase() {
+        if crate::nfc::nfc(target.trim()).to_lowercase() == crate::nfc::nfc(old.trim()).to_lowercase() {
             out.push_str("[[");
             out.push_str(new);
             out.push_str(suffix);
@@ -826,6 +833,57 @@ pub fn clean_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link written with a decomposed „ü“ (macOS file names, text pasted from Finder) is the
+    /// link typed with the keyboard: it resolves, counts as a backlink, follows a rename and never
+    /// makes a second page „Müller 2“.
+    #[test]
+    fn links_in_decomposed_unicode_resolve_like_typed_ones() {
+        let db = Database::open_in_memory().unwrap();
+        let nfd = "Mu\u{308}ller";
+        let m = db.create_page(None, "Müller", None).unwrap();
+        let n = db.create_page(None, "Notiz", None).unwrap();
+        db.save_page_content(n.id, &format!("Bei [[{nfd}]] und [[{nfd}|Herrn M.]] anrufen.\n")).unwrap();
+        assert_eq!(wiki_links(&format!("[[{nfd}]]")), ["Müller"]);
+        let doc = db.page_doc(m.id).unwrap();
+        assert_eq!(doc.backlinks.len(), 1, "a backlink");
+        assert!(doc.backlinks[0].context.contains("anrufen"), "{:?}", doc.backlinks[0].context);
+        let out = db.outgoing_links(n.id, &db.page_doc(n.id).unwrap().content).unwrap();
+        assert!(db.unresolved_links(out).unwrap().is_empty(), "resolved");
+        assert!(db.unresolved_links(vec![nfd.to_owned()]).unwrap().is_empty());
+        assert_eq!(db.page_by_title(nfd).unwrap().map(|p| p.id), Some(m.id), "followed, not created anew");
+        assert_eq!(db.page_by_title("mu\u{308}ller").unwrap().map(|p| p.id), Some(m.id));
+        assert_eq!(replace_link_target(&format!("[[{nfd}#Kontakt]]"), "Müller", "Meier"), "[[Meier#Kontakt]]");
+        assert_eq!(db.rename_page_linked(m.id, "Meier", true).unwrap(), 1);
+        assert_eq!(
+            db.page_doc(n.id).unwrap().content,
+            "Bei [[Meier]] und [[Meier|Herrn M.]] anrufen.\n",
+            "the rename rewrote the decomposed links"
+        );
+        // A canvas card of a note file named on macOS.
+        let card =
+            format!(r#"{{"nodes":[{{"id":"a","type":"file","file":"{nfd}.md","x":0,"y":0,"width":1,"height":1}}]}}"#);
+        assert_eq!(crate::canvas::links(&card), ["Müller"]);
+        // Links stored by an older version (decomposed) are composed by the re-index of the
+        // migration.
+        let old = db.create_page(None, "Alt", None).unwrap();
+        db.conn()
+            .execute("UPDATE pages SET content = ?2 WHERE id = ?1", params![old.id, format!("[[{nfd}]]")])
+            .unwrap();
+        db.conn()
+            .execute("INSERT INTO page_links (from_page, target) VALUES (?1, ?2)", params![old.id, "mu\u{308}ller"])
+            .unwrap();
+        db.reindex_all().unwrap();
+        let rows: Vec<String> = db
+            .conn()
+            .prepare("SELECT target FROM page_links WHERE from_page = ?1")
+            .unwrap()
+            .query_map([old.id], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows, ["müller"]);
+    }
 
     #[test]
     fn an_editor_save_keeps_a_change_made_since_its_base() {
