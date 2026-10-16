@@ -166,16 +166,18 @@ describe("block start() without regexes over the rest", () => {
       const s = sample();
       expect(markerLine(s, "<!-- spalten -->", true), JSON.stringify(s)).toBe(/^[ \t]*<!-- spalten -->[ \t]*$/m.exec(s)?.index ?? -1);
       expect(markerLine(s, "[TOC]", false), JSON.stringify(s)).toBe(/^\[TOC\][ \t]*$/m.exec(s)?.index ?? -1);
+      // As a block start(): index 0 is the second character of a line (see markerLine).
+      expect(markerLine(s, "[TOC]", false, false), JSON.stringify(s)).toBe(/(?<=[\n\r\u2028\u2029])\[TOC\][ \t]*$/m.exec(s)?.index ?? -1);
     }
   });
 
-  it("finds footnote definitions where the regex did", () => {
+  it("finds footnote definitions where the regex did (not at index 0, see markerLine)", () => {
     const ed = editor();
     const ext = ed.extensionManager.extensions.find((e) => e.name === "footnoteDefinition")!;
     const start = (ext.config as { markdownTokenizer: { start: (s: string) => number } }).markdownTokenizer.start;
     for (let n = 0; n < 3000; n++) {
       const s = sample();
-      expect(start(s), JSON.stringify(s)).toBe(/^\[\^[^\]\s^]+\]:/m.exec(s)?.index ?? -1);
+      expect(start(s), JSON.stringify(s)).toBe(/(?<=[\n\r\u2028\u2029])\[\^[^\]\s^]+\]:/.exec(s)?.index ?? -1);
     }
     ed.destroy();
   });

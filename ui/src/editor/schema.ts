@@ -62,7 +62,8 @@ export { lowlight };
  */
 export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean } = {}): string {
   let s = t
-    .replace(/\\(?=[\\`*_[\]~=#<>!|.)+-])/g, "\\\\")
+    // A backslash before any ASCII punctuation is an escape in CommonMark: doubled to stay one.
+    .replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\")
     .replace(/`/g, "\\`")
     .replace(/\[\[/g, "\\[\\[")
     .replace(/\[\^/g, "\\[^")
@@ -101,8 +102,11 @@ function flanking(prev: string | undefined, next: string | undefined): boolean {
   return opens || closes;
 }
 
-/** Escapes what would turn a line into a block (heading, list, quote, setext underline). */
+/** Escapes what would turn a line into a block (heading, list, quote, setext underline, indented code). */
 function escapeLineStart(line: string): string {
+  // Four columns of indentation (a tab reaches the next stop) make indented code, and a paragraph
+  // drops its leading blanks: the first one is written as its entity, the rest stays as typed.
+  if (/^(?: {0,3}\t| {4})/.test(line)) return (line[0] === "\t" ? "&#9;" : "&#32;") + line.slice(1);
   if (/^\s{0,3}(?:-+|=+)\s*$/.test(line)) return line.replace(/^(\s*)/, "$1\\");
   return line.replace(/^(\s{0,3})(#{1,6}(?=\s|$)|[-+*](?=\s|$)|>)/, "$1\\$2").replace(/^(\s{0,3}\d+)([.)])(?=\s|$)/, "$1\\$2");
 }
@@ -428,7 +432,9 @@ const MarkdownFidelity = Extension.create({
       spec.renderMarkdown = (node, ...rest) => {
         const [h, ctx] = rest as [ListHelpers, ListContext];
         const prefix = listMarker(ctx);
-        return renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
+        const out = renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
+        // Text that starts with a box (`[ ] `) would make the item a task when read again.
+        return /^\[[ xX]\](?=\s|$)/.test(out.slice(prefix.length)) ? `${prefix}\\${out.slice(prefix.length)}` : out;
       };
     }
     // An empty task keeps the space after its box, which makes it a task when read again.
@@ -448,7 +454,9 @@ const MarkdownFidelity = Extension.create({
         const text = (rest[0] as ListHelpers).renderChildren(node.content);
         const setext = node.attrs?.setext;
         if (typeof setext === "string" && setext[0] === (level === 1 ? "=" : level === 2 ? "-" : "") && text.trim() && !text.includes("\n")) return `${text}\n${setext}`;
-        return `${"#".repeat(level)} ${text}${typeof node.attrs?.close === "string" ? node.attrs.close : ""}`;
+        if (typeof node.attrs?.close === "string") return `${"#".repeat(level)} ${text}${node.attrs.close}`;
+        // Hashes after a space at the end would be read as the closing sequence and dropped.
+        return `${"#".repeat(level)} ${text.replace(/(^|[ \t])#(#*[ \t]*)$/, "$1\\#$2")}`;
       };
     }
     for (const spec of manager.nodeTypeRegistry.get("horizontalRule") ?? []) {
@@ -517,7 +525,7 @@ const MarkdownFidelity = Extension.create({
 });
 
 /** Unescapes what `escapeText` added, to compare link text with its href. */
-const unescapeText = (t: string) => t.replace(/\\([\\`*_[\]~=#<>!|().+-])/g, "$1").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+const unescapeText = (t: string) => t.replace(/\\([!-/:-@[-`{-~])/g, "$1").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
 
 // Marks are serialized as opening/closing strings without seeing their text,
 // so links are bracketed with sentinels and resolved in `cleanMarkdown`.
@@ -578,6 +586,29 @@ const MarkdownLink = Link.extend({
     return `${LINK_OPEN}${meta}[${h.renderChildren(node)}](${linkDestination(href)}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})${LINK_CLOSE}`;
   },
 });
+
+/**
+ * A link label with the brackets escaped that would end it early or stay open; balanced pairs stay
+ * as typed. Escaped characters and inline code (still between its sentinels) do not count.
+ */
+export function labelBrackets(label: string): string {
+  const open: number[] = [];
+  const lone = new Set<number>();
+  let code = false;
+  for (let i = 0; i < label.length; i++) {
+    const c = label[i];
+    if (c === CODE_OPEN || c === CODE_CLOSE) code = c === CODE_OPEN;
+    else if (code) continue;
+    else if (c === "\\") i++;
+    else if (c === "[") open.push(i);
+    else if (c === "]" && open.pop() === undefined) lone.add(i);
+  }
+  for (const i of open) lone.add(i);
+  if (!lone.size) return label;
+  let out = "";
+  for (let i = 0; i < label.length; i++) out += (lone.has(i) ? "\\" : "") + label[i];
+  return out;
+}
 
 const LINK_RE = new RegExp(
   `${LINK_OPEN}(${FORM_INLINE}|${FORM_ANGLE}|${FORM_REF}[fcs][^${FORM_REF_END}]*${FORM_REF_END})?\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()<>]|\\([^\\s()<>]*\\))*|<[^<>\\n]*>)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`,
@@ -838,6 +869,11 @@ export function collapseBlankLines(md: string): string {
 export function cleanMarkdown(md: string, raws: string[] = []): string {
   return (
     resolveUnderscores(collapseBlankLines(md
+      // Link labels first, while inline code in them is still between its sentinels.
+      .replace(LINK_RE, (m, meta: string | undefined, text: string) => {
+        const at = 2 + (meta?.length ?? 0);
+        return m.slice(0, at) + labelBrackets(text) + m.slice(at + text.length);
+      })
       .replace(CODE_RE, (_m, text: string) => codeSpan(text))
       .replace(LINK_RE, (m, meta: string | undefined, text: string, href: string, title: string | undefined, at: number, all: string) => {
         const out = writeLink(meta, text, href, title);
