@@ -189,9 +189,10 @@ test("„Rückgängig“ after leaving the settings keeps the theme switched mea
   await settingsSettled(app);
   assert.equal((await storedSettings(app)).editor.smart_quotes, !before.editor.smart_quotes);
   await app.waitText(".toast-title", /Einstellung geändert/);
-  // Another page in the same tab: the settings view is gone, its undo toast stays.
+  // The settings tab closed: the settings view is gone, its undo toast stays.
   const page = await app.invoke("page_create", { title: "Nach den Einstellungen", parentId: null, content: "Text" });
-  await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
+  await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: true } });
+  await app.browser.execute(() => [...document.querySelectorAll(".tab")].filter((x) => /Einstellungen/.test(x.textContent)).forEach((t) => t.querySelector(".tab-close")?.click()));
   await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".settings")), { timeoutMsg: "the settings view is still mounted" });
   // „Hell / Dunkel wechseln“ from the palette.
   await app.keys(["Control", "k"]);
