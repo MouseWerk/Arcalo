@@ -26,11 +26,12 @@ const FRESH: Duration = Duration::from_secs(5);
 /// How long an update waits for running commands before it goes on.
 pub const WAIT_LIMIT: Duration = Duration::from_secs(120);
 
-/// The lock of this process, held until it is dropped (the file goes with it).
+/// The lock of this process, held until it is dropped (the file goes with it). A second mark of
+/// the same command owns neither: the first one's file and lock stay until that one is dropped.
 #[derive(Debug)]
 pub struct Held {
     file: Option<File>,
-    path: PathBuf,
+    path: Option<PathBuf>,
 }
 
 impl Drop for Held {
@@ -38,7 +39,9 @@ impl Drop for Held {
         if let Some(file) = self.file.take() {
             let _ = file.unlock();
         }
-        let _ = std::fs::remove_file(&self.path);
+        if let Some(path) = self.path.take() {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -75,15 +78,17 @@ pub fn hold(dir: &Path, command: &str) -> std::io::Result<Held> {
     let path = dir.join(file_name(std::process::id(), command));
     let file = OpenOptions::new().read(true).write(true).create(true).truncate(true).open(&path)?;
     match file.try_lock() {
-        Ok(()) => Ok(Held { file: Some(file), path }),
+        Ok(()) => Ok(Held { file: Some(file), path: Some(path) }),
         // No locks on this file system: the file alone marks it (its age decides when it is stale).
-        Err(TryLockError::Error(e)) if e.kind() == std::io::ErrorKind::Unsupported => Ok(Held { file: None, path }),
+        Err(TryLockError::Error(e)) if e.kind() == std::io::ErrorKind::Unsupported => {
+            Ok(Held { file: None, path: Some(path) })
+        }
         Err(TryLockError::Error(e)) => {
             let _ = std::fs::remove_file(&path);
             Err(e)
         }
         // This process marked itself already (a second mark of the same command).
-        Err(TryLockError::WouldBlock) => Ok(Held { file: Some(file), path }),
+        Err(TryLockError::WouldBlock) => Ok(Held { file: None, path: None }),
     }
 }
 
@@ -270,6 +275,24 @@ mod tests {
         age(&fresh, Duration::from_secs(30));
         assert_eq!(running(&dir), vec![]);
         assert_eq!(running(&dir.join("missing")), vec![]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A second mark of the same command (a nested helper) ends without taking the first one's
+    /// file and lock along.
+    #[test]
+    fn a_second_mark_of_the_same_command_leaves_the_first_in_place() {
+        let dir = scratch("twice");
+        let outer = hold(&dir, "time add").unwrap();
+        let inner = hold(&dir, "time add").unwrap();
+        let path = dir.join(file_name(std::process::id(), "time add"));
+        drop(inner);
+        assert!(path.is_file(), "the first mark is still there");
+        let other = OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)), "and still locked");
+        drop(other);
+        drop(outer);
+        assert!(!path.exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
