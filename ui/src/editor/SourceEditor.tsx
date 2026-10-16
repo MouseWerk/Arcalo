@@ -116,7 +116,8 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         // Reported once per failure series, not on every retry.
         if (!failed.current) useApp.getState().error(t("editor.saveFailed"), e);
         failed.current = true;
-        if (unmounted.current) return keepUnsaved(doc.id, content, api.savePage);
+        // Closed meanwhile: kept unless a newer save of this editor follows (it holds these edits too).
+        if (unmounted.current) return void (saving.current === p && keepUnsaved(doc.id, content, api.savePage, base.current));
         setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(timer.current);
@@ -189,7 +190,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   useEffect(() => {
     unmounted.current = false;
     // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
-    const kept = takeUnsaved(doc.id);
+    const kept = takeUnsaved(doc.id, latest.current);
     if (kept !== undefined && kept !== latest.current) {
       replaceText(kept);
       dirty.current = true;

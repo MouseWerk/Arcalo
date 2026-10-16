@@ -1,6 +1,7 @@
 // Pending saves of all editors (rename, mode switch, window close wait for them).
 
 import { t } from "../lib/i18n";
+import { merge3 } from "../lib/merge3";
 import { useApp } from "../store/app";
 
 /** Autosave delay after the last change (Settings → Editor, 250–3000 ms), for both editors. */
@@ -54,10 +55,11 @@ export function editorsDirty(): boolean {
 
 // ---- edits of closed editors whose save failed (full disk, read-only folder)
 
-type SaveFn = (pageId: number, content: string) => Promise<unknown>;
+type SaveFn = (pageId: number, content: string, base?: string) => Promise<unknown>;
 
-/** The newest text of each page whose editor was closed while its save failed. */
-const unsaved = new Map<number, string>();
+/** The newest text of each page whose editor was closed while its save failed, and the page as
+ *  that editor knew it (its saves merge with changes made elsewhere since, as the editor's would). */
+const unsaved = new Map<number, { content: string; base?: string }>();
 /** Saves a kept text (set by the first editor that keeps one; tests pass their own). */
 let saver: SaveFn | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -75,19 +77,22 @@ function schedule() {
  * Keeps the edits of a closed editor whose save failed: they are saved again every few seconds
  * until it works, `flushAllEditors` (quit, lock) reports them, and an editor that opens the
  * page again starts from them (`takeUnsaved`). Without this they were gone with the editor.
+ * Only the editor's last save may keep its text: an older one that fails while a newer one is
+ * queued would later be written over the newer text.
  */
-export function keepUnsaved(pageId: number, content: string, save: SaveFn) {
+export function keepUnsaved(pageId: number, content: string, save: SaveFn, base?: string) {
   saver = save;
-  unsaved.set(pageId, content);
+  unsaved.set(pageId, { content, base });
   schedule();
 }
 
-/** The kept text of `pageId`, handed over to an editor that opens the page (it saves it). */
-export function takeUnsaved(pageId: number): string | undefined {
-  const content = unsaved.get(pageId);
-  if (content === undefined) return undefined;
+/** The kept text of `pageId`, handed over to an editor that opens the page (it saves it): merged
+ *  with `current`, what the page holds now, so changes saved meanwhile stay. */
+export function takeUnsaved(pageId: number, current?: string): string | undefined {
+  const kept = unsaved.get(pageId);
+  if (kept === undefined) return undefined;
   unsaved.delete(pageId);
-  return content;
+  return current !== undefined && kept.base !== undefined ? merge3(kept.base, kept.content, current) : kept.content;
 }
 
 /** Pages with kept, not yet saved edits. */
@@ -101,18 +106,20 @@ let retrying: Promise<void> | null = null;
 export function retryUnsaved(): Promise<void> {
   if (retrying) return retrying;
   retrying = (async () => {
-    for (const [pageId, content] of [...unsaved]) {
+    for (const [pageId, kept] of [...unsaved]) {
       if (!saver) break;
+      let saved: unknown;
       try {
-        await trackSave(saver(pageId, content));
+        saved = await trackSave(saver(pageId, kept.content, kept.base));
       } catch {
         continue;
       }
       // An editor may have taken it over (or a newer text was kept) meanwhile.
-      if (unsaved.get(pageId) !== content) continue;
+      if (unsaved.get(pageId) !== kept) continue;
       unsaved.delete(pageId);
-          // Editors showing the page take the saved text over.
-      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content, from: "unsaved" } }));
+      // Editors showing the page take the saved text over (merged with changes made elsewhere).
+      const merged = (saved as { merged?: string } | null | undefined)?.merged;
+      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content: merged ?? kept.content, from: "unsaved" } }));
     }
   })().finally(() => {
     retrying = null;

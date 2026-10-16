@@ -301,8 +301,9 @@ export function NoteEditor({
         // Reported once per failure series, not on every retry.
         if (!failed.current) useApp.getState().error(tr("editor.saveFailed"), e);
         failed.current = true;
-        // Closed meanwhile: the edits outlive the editor and are saved again from there.
-        if (unmounted.current) return keepUnsaved(doc.id, md, api.savePage);
+        // Closed meanwhile: the edits outlive the editor and are saved again from there, unless a
+        // newer save of this editor follows (it holds these edits too).
+        if (unmounted.current) return void (saving.current === p && keepUnsaved(doc.id, md, api.savePage, base.current));
         setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(saveTimer.current);
@@ -620,7 +621,7 @@ export function NoteEditor({
     editorRef.current = editor;
     if (!editor) return;
     // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
-    const kept = takeUnsaved(doc.id);
+    const kept = takeUnsaved(doc.id, doc.content);
     if (kept !== undefined && kept !== doc.content) {
       apply(editor, kept);
       dirty.current = true;
