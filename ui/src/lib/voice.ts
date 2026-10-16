@@ -21,6 +21,8 @@ export interface RecStatus {
   title: string | null;
   device: string;
   system_audio: boolean;
+  /** Seconds of nothing but digital silence: the microphone is most likely blocked. */
+  silent: boolean;
 }
 
 export type JobStage = "waiting" | "audio" | "model" | "transcribe";
@@ -194,9 +196,9 @@ const v = useVoice.getState;
 export function listenVoice(): () => void {
   const subs = [
     on<VoiceStatus>("voice://status", (status) => v().set({ status })),
-    on<{ id: string; level: number; elapsed_ms: number; paused: boolean }>("voice://level", (l) => {
+    on<{ id: string; level: number; elapsed_ms: number; paused: boolean; silent: boolean }>("voice://level", (l) => {
       const rec = v().status.recording;
-      if (rec && rec.id === l.id) v().set({ status: { ...v().status, recording: { ...rec, level: l.level, elapsed_ms: l.elapsed_ms, paused: l.paused } } });
+      if (rec && rec.id === l.id) v().set({ status: { ...v().status, recording: { ...rec, level: l.level, elapsed_ms: l.elapsed_ms, paused: l.paused, silent: l.silent } } });
     }),
     on<{ page_id: number }>("voice://stopped", (s) => {
       // A new voice-note page (or meeting note) joins the tree before it opens.
@@ -292,6 +294,9 @@ export function aiReady(): boolean {
 
 // ------------------------------------------------------------ flows
 
+/** `startVoice` runs (it may wait for the model question or the device). */
+let starting = false;
+
 /**
  * Starts a recording: into `pageId`, into the meeting note of `meetingKey`, or into a new voice-note
  * page. Without the Whisper model it offers the download first (the recording may start meanwhile).
@@ -302,6 +307,9 @@ export async function startVoice(target: { pageId?: number | null; meetingKey?: 
     s.toast({ tone: "info", title: t("voice.alreadyRecording") });
     return false;
   }
+  // A second click (or the shortcut) while this one still asks or opens the device.
+  if (starting) return false;
+  starting = true;
   try {
     const models = await voiceApi.models();
     const downloading = models.download && !models.download.done;
@@ -327,6 +335,8 @@ export async function startVoice(target: { pageId?: number | null; meetingKey?: 
   } catch (e) {
     s.error(t("voice.startFailed"), e);
     return false;
+  } finally {
+    starting = false;
   }
 }
 

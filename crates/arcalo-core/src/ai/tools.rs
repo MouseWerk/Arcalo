@@ -3,7 +3,8 @@
 //! Workspace tools (logging time, searching, budget lookups, time summaries) run directly.
 //! System tools (PowerShell, Git, REST) never run on the model's say-so alone:
 //! [`classify`] marks them [`Risk::RequiresApproval`] and the shell must show
-//! the exact command to the user before calling [`execute_system_tool`].
+//! the exact command to the user before calling [`execute_system_tool`], with a one-time token
+//! of [`Approvals`] issued for exactly that call.
 
 use crate::{tr, trf};
 use std::process::Command;
@@ -31,6 +32,69 @@ pub enum Risk {
 
 /// Read-only git subcommands the model may request.
 const GIT_ALLOWED: &[&str] = &["status", "log", "diff", "show", "branch", "blame", "shortlog", "rev-parse"];
+
+/// Options of `git branch` that only list (alone, or as the short cluster `-av`).
+const BRANCH_LISTING: &[&str] = &[
+    "--list",
+    "-l",
+    "-a",
+    "--all",
+    "-r",
+    "--remotes",
+    "-v",
+    "-vv",
+    "--verbose",
+    "--show-current",
+    "-i",
+    "--ignore-case",
+];
+/// Listing options of `git branch` with a value: `--sort=x` or `--sort x`.
+const BRANCH_FILTERS: &[&str] =
+    &["--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format"];
+/// Listing options of `git branch` with an optional `=value` only.
+const BRANCH_DISPLAY: &[&str] =
+    &["--color", "--no-color", "--column", "--no-column", "--abbrev", "--no-abbrev", "--omit-empty"];
+
+/// `git branch` may only list: creating, deleting (`-d`/`-D`), renaming and copying (`-m`/`-c`),
+/// forcing, setting the upstream and `--edit-description` (it starts an editor) are refused; a
+/// name is only allowed as a pattern of `--list`.
+fn branch_listing_only(args: &[String]) -> Result<()> {
+    let refused = |a: &str| {
+        Error::State(trf!(
+            "„git branch {a}“ ist nicht erlaubt: Branches werden nur aufgelistet",
+            "“git branch {a}” is not allowed: branches are only listed"
+        ))
+    };
+    let (mut listing, mut names) = (false, Vec::new());
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        let a = a.as_str();
+        let name = a.split_once('=').map_or(a, |(n, _)| n);
+        if a == "--list" || a == "-l" {
+            listing = true;
+        } else if BRANCH_LISTING.contains(&a) || BRANCH_DISPLAY.contains(&name) {
+        } else if BRANCH_FILTERS.contains(&name) {
+            // `--contains HEAD`: the next word is the value.
+            if !a.contains('=') && it.as_slice().first().is_some_and(|v| !v.starts_with('-')) {
+                it.next();
+            }
+        } else if a.len() > 1
+            && a.starts_with('-')
+            && !a.starts_with("--")
+            && a[1..].chars().all(|c| "arvli".contains(c))
+        {
+            listing |= a.contains('l');
+        } else if a.starts_with('-') {
+            return Err(refused(a));
+        } else {
+            names.push(a);
+        }
+    }
+    match names.first() {
+        Some(name) if !listing => Err(refused(name)),
+        _ => Ok(()),
+    }
+}
 
 pub fn definitions() -> Vec<Value> {
     let f = |name: &str, description: &str, parameters: Value| json!({ "type": "function", "function": { "name": name, "description": description, "parameters": parameters } });
@@ -255,17 +319,22 @@ impl SystemCall {
                         "The git command “{sub}” is not allowed (read-only commands only)"
                     )));
                 }
-                // Options that can execute programs or write files.
+                // Options that can execute programs, write files or read files outside the
+                // repository (`diff --no-index`).
                 if list.iter().any(|a| {
                     a.starts_with("--output")
                         || a.starts_with("--ext-diff")
                         || a.starts_with("--textconv")
                         || a.starts_with("-c")
                         || a.starts_with("--exec")
+                        || a.starts_with("--no-index")
                 }) {
                     return Err(Error::State(
                         tr!("Diese git-Option ist nicht erlaubt", "This git option is not allowed").into(),
                     ));
+                }
+                if sub == "branch" {
+                    branch_listing_only(&list[1..])?;
                 }
                 SystemCall::Git {
                     args: list,
@@ -338,6 +407,57 @@ impl SystemCall {
             SystemCall::JiraTransition { key, status } => {
                 trf!("Status von {key} → {status}", "Status of {key} → {status}")
             }
+        }
+    }
+}
+
+/// Approvals the shell holds for system tool calls it showed the user: a one-time token per
+/// call. Running a system tool takes a token issued for exactly that call, so a script in a
+/// webview cannot run a call of its own, nor one the user approved a second time.
+pub struct Approvals {
+    pending: std::sync::Mutex<Vec<(String, SystemCall)>>,
+}
+
+/// Approvals kept at most (the oldest go): enough for every card a chat can show at once.
+const MAX_APPROVALS: usize = 32;
+
+impl Default for Approvals {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Approvals {
+    pub const fn new() -> Self {
+        Self { pending: std::sync::Mutex::new(Vec::new()) }
+    }
+
+    /// A new token for `call` (128 random bits, hex).
+    pub fn issue(&self, call: &SystemCall) -> Result<String> {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).map_err(|e| Error::State(format!("random: {e}")))?;
+        let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if pending.len() >= MAX_APPROVALS {
+            pending.remove(0);
+        }
+        pending.push((token.clone(), call.clone()));
+        Ok(token)
+    }
+
+    /// Uses up `token`: fine only when it was issued for exactly `call` and not used before.
+    pub fn take(&self, token: &str, call: &SystemCall) -> Result<()> {
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let found = pending.iter().position(|(t, _)| !token.is_empty() && t == token).map(|i| pending.remove(i));
+        match found {
+            Some((_, approved)) if approved == *call => Ok(()),
+            _ => Err(Error::State(
+                tr!(
+                    "Dieser Werkzeugaufruf ist nicht freigegeben (oder lief schon). Er wird nicht ausgeführt.",
+                    "This tool call is not approved (or has run already). It is not run."
+                )
+                .into(),
+            )),
         }
     }
 }
@@ -421,7 +541,8 @@ async fn run(cmd: Command) -> Result<String> {
 const NULL_FILE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 
 /// `git` in `repo` with a neutral configuration: no system or global config, no pager,
-/// no hooks, no fsmonitor, no external diff, no global attributes.
+/// no hooks, no fsmonitor, no external diff, no global attributes, and an editor that does
+/// nothing (`true`), whatever the repository or the environment name.
 fn git_command(repo: &str) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).arg("--no-pager");
@@ -430,6 +551,8 @@ fn git_command(repo: &str) -> Command {
         format!("core.hooksPath={NULL_FILE}"),
         format!("core.attributesFile={NULL_FILE}"),
         "core.pager=cat".to_owned(),
+        "core.editor=true".to_owned(),
+        "sequence.editor=true".to_owned(),
         "diff.external=".to_owned(),
         "core.sshCommand=".to_owned(),
         "protocol.allow=never".to_owned(),
@@ -442,6 +565,10 @@ fn git_command(repo: &str) -> Command {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_PAGER", "cat")
+        .env("GIT_EDITOR", "true")
+        .env("GIT_SEQUENCE_EDITOR", "true")
+        .env_remove("VISUAL")
+        .env_remove("EDITOR")
         .env_remove("GIT_EXTERNAL_DIFF")
         .env_remove("GIT_CONFIG_PARAMETERS")
         .env_remove("GIT_CONFIG_COUNT")
@@ -592,6 +719,79 @@ mod tests {
         assert!(SystemCall::from_tool_call("git", r#"{"args":["push","--force"],"repo":"."}"#).is_err());
         assert!(SystemCall::from_tool_call("git", r#"{"args":["diff","--ext-diff"],"repo":"."}"#).is_err());
         assert!(SystemCall::from_tool_call("git", r#"{"args":["log","-c","core.pager=evil"],"repo":"."}"#).is_err());
+        assert!(
+            SystemCall::from_tool_call("git", r#"{"args":["diff","--no-index","/etc/passwd","x"],"repo":"."}"#)
+                .is_err()
+        );
+        // `git branch` lists only.
+        let branch = |args: &[&str]| {
+            let all = [&["branch"][..], args].concat();
+            let json = serde_json::json!({ "args": all, "repo": "." }).to_string();
+            SystemCall::from_tool_call("git", &json)
+        };
+        for ok in [
+            &[][..],
+            &["-a"],
+            &["-vv"],
+            &["-av"],
+            &["--list", "feature/*"],
+            &["-l", "fix-*"],
+            &["--merged", "main"],
+            &["--contains=HEAD", "-r"],
+            &["--sort=-committerdate", "--format=%(refname:short)"],
+            &["--show-current"],
+            &["--no-color", "--column=never"],
+        ] {
+            assert!(branch(ok).is_ok(), "{ok:?}");
+        }
+        for bad in [
+            &["-D", "main"][..],
+            &["-d", "x"],
+            &["--delete", "x"],
+            &["-m", "a", "b"],
+            &["-M", "b"],
+            &["-C", "a", "b"],
+            &["-f", "main", "HEAD~3"],
+            &["--force"],
+            &["neu"],
+            &["neu", "HEAD"],
+            &["-u", "origin/main"],
+            &["--set-upstream-to=origin/main"],
+            &["--unset-upstream"],
+            &["--edit-description"],
+            &["-t", "x", "origin/x"],
+            &["--track", "x"],
+            &["-ad", "x"],
+        ] {
+            assert!(branch(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_system_call_runs_once_with_the_token_issued_for_it() {
+        let approvals = Approvals::new();
+        let call =
+            SystemCall::from_tool_call("http_request", r#"{"method":"GET","url":"https://api.example.com"}"#).unwrap();
+        let other =
+            SystemCall::from_tool_call("http_request", r#"{"method":"DELETE","url":"https://api.example.com"}"#)
+                .unwrap();
+        let token = approvals.issue(&call).unwrap();
+        assert_eq!(token.len(), 32);
+        assert_ne!(approvals.issue(&call).unwrap(), token);
+        // Another call with this token: refused, and the token is used up.
+        assert!(approvals.take(&token, &other).is_err());
+        assert!(approvals.take(&token, &call).is_err());
+        let token = approvals.issue(&call).unwrap();
+        assert!(approvals.take("", &call).is_err());
+        assert!(approvals.take("0123456789abcdef0123456789abcdef", &call).is_err());
+        assert!(approvals.take(&token, &call).is_ok());
+        assert!(approvals.take(&token, &call).is_err(), "a second run of an approved call");
+        // Only the newest are kept.
+        let first = approvals.issue(&call).unwrap();
+        for _ in 0..MAX_APPROVALS {
+            approvals.issue(&other).unwrap();
+        }
+        assert!(approvals.take(&first, &call).is_err());
     }
 
     #[test]
@@ -660,6 +860,40 @@ mod tests {
         let call = SystemCall::Git { args: vec!["status".into()], repo };
         assert!(execute_system_tool(&call, &http, Duration::from_secs(5)).await.is_err());
         assert!(SystemCall::from_tool_call("git", r#"{"args":["diff","--textconv"],"repo":"."}"#).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A repository whose own config names a program as its editor: no git call of the tool
+    /// starts it (the editor is `true` for every call), and `--edit-description` is refused.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn git_tool_never_starts_an_editor() {
+        if !git_available() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("arcalo-editorrepo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        sh(&dir, &["init", "-q"]);
+        std::fs::write(dir.join("f.txt"), "a\n").unwrap();
+        sh(&dir, &["add", "-A"]);
+        sh(&dir, &["commit", "-q", "-m", "eins"]);
+        let pwned = dir.join("PWNED");
+        sh(&dir, &["config", "core.editor", &format!("touch {}", pwned.display())]);
+        let repo = dir.display().to_string();
+        assert!(
+            SystemCall::from_tool_call(
+                "git",
+                &serde_json::json!({ "args": ["branch", "--edit-description"], "repo": repo }).to_string()
+            )
+            .is_err()
+        );
+        // Even past the policy (defense in depth), git gets an editor that does nothing.
+        let _ = run_git(&["branch".into(), "--edit-description".into()], &repo).await;
+        assert!(!pwned.exists(), "the repository's editor ran");
+        let call = SystemCall::Git { args: vec!["branch".into(), "-v".into()], repo };
+        let out = execute_system_tool(&call, &HttpClient::new(), Duration::from_secs(5)).await.unwrap();
+        assert!(out.contains("eins") && out.contains("[exit code: 0]"), "{out}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

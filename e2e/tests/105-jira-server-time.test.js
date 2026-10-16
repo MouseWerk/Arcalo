@@ -132,8 +132,16 @@ test("the assistant's Jira tools: read, and comment only when allowed and confir
   const plan = await app.invoke("ai_plan_tool", { name: "jira_comment", arguments: JSON.stringify({ key: "PROJ-123", body: "Fixed in build 42" }) });
   assert.equal(plan.risk, "requires_approval");
   assert.match(plan.summary, /Comment on PROJ-123:\nFixed in build 42/);
-  assert.match(await app.invoke("ai_run_system_tool", { call: plan.call }), /Comment on PROJ-123 saved/);
+  // Without the plan's one-time token, or with it for another call: not run.
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: "", call: plan.call }), /not approved/);
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: plan.token, call: { ...plan.call, body: "Something else" } }), /not approved/);
+  const again = await app.invoke("ai_plan_tool", { name: "jira_comment", arguments: JSON.stringify({ key: "PROJ-123", body: "Fixed in build 42" }) });
+  assert.match(await app.invoke("ai_run_system_tool", { token: again.token, call: again.call }), /Comment on PROJ-123 saved/);
   assert.equal(jira.issues.find((i) => i.key === "PROJ-123").comments.at(-1).body, "Fixed in build 42");
+  // Approved once, run once.
+  const comments = jira.issues.find((i) => i.key === "PROJ-123").comments.length;
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: again.token, call: again.call }), /not approved/);
+  assert.equal(jira.issues.find((i) => i.key === "PROJ-123").comments.length, comments);
 });
 
 test("the Issues page in English; time tracking off refuses bookings", async () => {

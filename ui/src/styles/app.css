@@ -3288,6 +3288,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .voice-label { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
 .voice-state { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-target { font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-hint { flex: 1; min-width: 0; padding: 4px 0; font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
 .voice-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .voice-icon { flex: none; color: var(--text-3); }
 .voice-icon.ok { color: var(--success); }

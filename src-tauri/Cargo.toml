@@ -50,7 +50,8 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 # Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
 arboard = { version = "3", default-features = false }
-whisper-rs = "0.16"
+# raw-api: the abort, progress and log callbacks are set up here (see voice.rs).
+whisper-rs = { version = "0.16", features = ["raw-api"] }
 cpal = "0.16"
 
 # Android: the Git sync runs on libgit2 (no `git` program on a phone).

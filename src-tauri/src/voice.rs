@@ -16,6 +16,7 @@
 // (`<github>|<huggingface>`).
 
 use std::collections::HashMap;
+use std::ffi::{c_int, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -28,7 +29,7 @@ use arcalo_core::error::{Error, Result};
 use arcalo_core::voice::{audio, download, models, transcript};
 use arcalo_core::{tr, trf};
 use chrono::Local;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, lock};
@@ -44,11 +45,16 @@ fn test_var(name: &str) -> Option<String> {
 #[derive(Default)]
 pub struct Voice {
     rec: Mutex<Option<Recording>>,
+    /// A recording is being started (the device may take a while): a second start is refused,
+    /// so no recording runs on unseen.
+    starting: AtomicBool,
     jobs: Mutex<Vec<JobInfo>>,
     job_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     download: Mutex<Option<(DownloadStatus, Arc<AtomicBool>)>>,
     /// One Whisper run at a time (they would only slow each other down).
     whisper: Mutex<()>,
+    /// The app quits: cancelled jobs say „unterbrochen“, not „abgebrochen“.
+    closing: AtomicBool,
 }
 
 fn voice(app: &AppHandle) -> &Voice {
@@ -76,7 +82,16 @@ struct Ctl {
     samples: AtomicU64,
     /// Level 0..1 as f32 bits.
     level: AtomicU32,
+    /// Anything but digital silence arrived (a microphone without permission delivers zeros).
+    heard: AtomicBool,
     error: Mutex<Option<String>>,
+}
+
+impl Ctl {
+    /// Recorded for a few seconds and nothing but zeros: the microphone is most likely blocked.
+    fn silent(&self) -> bool {
+        !self.heard.load(Ordering::Relaxed) && self.samples.load(Ordering::Relaxed) >= u64::from(audio::RATE) * 3
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,6 +104,8 @@ pub struct RecStatus {
     title: Option<String>,
     device: String,
     system_audio: bool,
+    /// Only silence so far (see [`Ctl::silent`]).
+    silent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,6 +143,7 @@ struct Level {
     level: f32,
     elapsed_ms: u64,
     paused: bool,
+    silent: bool,
 }
 
 /// A finished (or failed) transcription.
@@ -160,6 +178,7 @@ fn rec_status(r: &Recording) -> RecStatus {
         title: r.title.clone(),
         device: r.device.clone(),
         system_audio: r.system_audio,
+        silent: r.ctl.silent(),
     }
 }
 
@@ -221,6 +240,63 @@ fn no_microphone() -> Error {
         tr!(
             "Kein Mikrofon gefunden. Schließe ein Mikrofon an oder wähle in Einstellungen → Sprachnotizen ein anderes Eingabegerät.",
             "No microphone found. Connect a microphone or choose another input device in Settings → Voice notes."
+        )
+        .into(),
+    )
+}
+
+/// Where the microphone permission is switched on, on this system.
+fn permission_hint() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!(
+            "Erlaube es in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon für Arcalo (nach einem Update eventuell aus- und wieder einschalten).",
+            "Allow it in System Settings → Privacy & Security → Microphone for Arcalo (after an update, switch it off and on again if needed)."
+        )
+    } else if cfg!(windows) {
+        tr!(
+            "Erlaube es in den Windows-Einstellungen → Datenschutz und Sicherheit → Mikrofon („Mikrofonzugriff“ und „Desktop-Apps Zugriff auf das Mikrofon erlauben“) und prüfe, ob das Mikrofon stummgeschaltet ist.",
+            "Allow it in Windows Settings → Privacy & security → Microphone (“Microphone access” and “Let desktop apps access your microphone”) and check that the microphone is not muted."
+        )
+    } else {
+        tr!(
+            "Prüfe in den Toneinstellungen des Systems, ob das richtige Eingabegerät gewählt und nicht stummgeschaltet ist.",
+            "Check in the system's sound settings that the right input device is chosen and not muted."
+        )
+    }
+}
+
+/// The system refused the microphone (Windows: `E_ACCESSDENIED`, 0x80070005).
+fn is_access_denied(error: &str) -> bool {
+    let e = error.to_ascii_lowercase();
+    ["0x80070005", "-2147024891", "access is denied", "access denied", "permission denied", "not permitted"]
+        .iter()
+        .any(|m| e.contains(m))
+}
+
+fn microphone_denied() -> Error {
+    Error::State(trf!(
+        "Arcalo darf das Mikrofon nicht verwenden. {}",
+        "Arcalo may not use the microphone. {}",
+        permission_hint()
+    ))
+}
+
+/// The recording holds nothing but digital silence: the system gave the app zeros instead of
+/// the microphone (no permission, or muted).
+fn only_silence() -> Error {
+    Error::State(trf!(
+        "Die Aufnahme ist völlig still: Das Mikrofon hat nichts geliefert, meist weil der Zugriff fehlt. {}",
+        "The recording is completely silent: the microphone delivered nothing, usually because access is missing. {}",
+        permission_hint()
+    ))
+}
+
+/// The device did not open in time (macOS: the question for microphone access may be waiting).
+fn microphone_timeout() -> Error {
+    Error::State(
+        tr!(
+            "Das Mikrofon antwortet nicht. Wartet eine Frage zum Mikrofonzugriff auf dich? Beantworte sie und starte die Aufnahme noch einmal.",
+            "The microphone does not respond. Is a question about microphone access waiting for you? Answer it and start the recording again."
         )
         .into(),
     )
@@ -303,7 +379,12 @@ fn open_stream(device: &cpal::Device, mic: bool, tx: mpsc::Sender<Chunk>, ctl: A
             )));
         }
     }
-    .map_err(|e| Error::State(trf!("Mikrofon lässt sich nicht öffnen: {e}", "Cannot open the microphone: {e}")))?;
+    .map_err(|e| {
+        if is_access_denied(&e.to_string()) {
+            return microphone_denied();
+        }
+        Error::State(trf!("Mikrofon lässt sich nicht öffnen: {e}", "Cannot open the microphone: {e}"))
+    })?;
     Ok(stream)
 }
 
@@ -338,7 +419,12 @@ fn record(
         .ok_or_else(no_microphone)?;
         let name = device.name().unwrap_or_default();
         let mic = open_stream(&device, true, tx.clone(), ctl.clone())?;
-        mic.play().map_err(|e| Error::State(trf!("Aufnahme startet nicht: {e}", "Recording does not start: {e}")))?;
+        mic.play().map_err(|e| {
+            if is_access_denied(&e.to_string()) {
+                return microphone_denied();
+            }
+            Error::State(trf!("Aufnahme startet nicht: {e}", "Recording does not start: {e}"))
+        })?;
         streams.push(mic);
         // Windows: an input stream on the output device records what plays (WASAPI loopback).
         if system_audio && cfg!(windows) {
@@ -356,7 +442,8 @@ fn record(
     drop(tx);
     let failed = opened.is_err();
     let _ = ready.send(opened);
-    if failed {
+    // Not opened, or opened too late (`voice_start` gave up): the streams close right here.
+    if failed || ctl.stop.load(Ordering::SeqCst) {
         return Ok(0);
     }
     let mut writer = audio::WavWriter::create(&wav)?;
@@ -376,6 +463,10 @@ fn record(
                 let take = chunk.len().min(system.len());
                 let other: Vec<f32> = system.drain(..take).collect();
                 audio::mix_into(&mut chunk, &other);
+                // Below half a step of 16 bits it is stored as 0.
+                if !ctl.heard.load(Ordering::Relaxed) && chunk.iter().any(|s| s.abs() * 32_767.0 >= 0.5) {
+                    ctl.heard.store(true, Ordering::Relaxed);
+                }
                 writer.write(&chunk)?;
                 ctl.samples.store(u64::from(writer.samples()), Ordering::Relaxed);
                 window.extend_from_slice(&chunk);
@@ -406,6 +497,7 @@ fn record(
                     level,
                     elapsed_ms: ctl.samples.load(Ordering::Relaxed) * 1000 / u64::from(audio::RATE),
                     paused: ctl.paused.load(Ordering::Relaxed),
+                    silent: ctl.silent(),
                 },
             );
         }
@@ -428,9 +520,21 @@ pub fn voice_start(
     meeting_key: Option<String>,
 ) -> Result<VoiceStatus> {
     let v = voice(&app);
-    if lock(&v.rec).is_some() {
-        return Err(Error::State(tr!("Es läuft bereits eine Aufnahme", "A recording is already running").into()));
+    // Checked and reserved under the lock: two starts at once (a double click, the shortcut
+    // and the ribbon) never open two recordings.
+    {
+        let rec = lock(&v.rec);
+        if rec.is_some() || v.starting.swap(true, Ordering::SeqCst) {
+            return Err(Error::State(tr!("Es läuft bereits eine Aufnahme", "A recording is already running").into()));
+        }
     }
+    struct Starting<'a>(&'a AtomicBool);
+    impl Drop for Starting<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    let _starting = Starting(&v.starting);
     let (page_id, title) = match (page_id, meeting_key) {
         (_, Some(key)) => {
             let (page, _) = state.db().calendar_meeting_note(&key, &Zone::Local)?;
@@ -459,11 +563,18 @@ pub fn voice_start(
         Ok(Ok(name)) => name,
         Ok(Err(e)) => {
             let _ = thread.join();
+            crate::devlog::warn("voice", format!("recording not started: {e}"));
             return Err(e);
         }
         Err(_) => {
-            ctl.stop.store(true, Ordering::Relaxed);
-            return Err(no_microphone());
+            // The thread lets go of the device as soon as it opens; a file it began goes.
+            ctl.stop.store(true, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                let _ = thread.join();
+                let _ = std::fs::remove_file(&wav);
+            });
+            crate::devlog::warn("voice", "recording not started: the input device did not open within 10 s");
+            return Err(microphone_timeout());
         }
     };
     *lock(&v.rec) = Some(Recording {
@@ -553,6 +664,14 @@ pub fn stop(app: &AppHandle) -> Result<Stopped> {
             None => tr!("Die Aufnahme ist leer", "The recording is empty").into(),
         }));
     }
+    // Nothing but zeros: no voice note (Whisper would only say „Keine Sprache erkannt“), but why.
+    if !rec.ctl.heard.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(&rec.wav);
+        emit_status(app);
+        let secs = samples / audio::RATE;
+        crate::devlog::warn("voice", format!("recording of {secs} s held only silence (device {})", rec.device));
+        return Err(only_silence());
+    }
     let stopped = store_recording(app, &rec.id, rec.page_id, rec.started, &rec.wav, samples)?;
     let _ = app.emit("voice://stopped", &stopped);
     if let Some(e) = device_error {
@@ -598,7 +717,114 @@ fn store_recording(
     Ok(Stopped { page_id: page.id, title: page.title, job_id: id.to_owned() })
 }
 
+/// A transcription job on disk (`<data>/voice/jobs/<id>.json`) while it runs: a crash or a forced
+/// quit leaves it behind, and [`recover_interrupted`] puts the page right at the next start.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JobMark {
+    token: String,
+    page_id: i64,
+    /// The FLAC attachment of the voice note.
+    audio: String,
+    /// The recording's WAV in the voice folder (a new recording; empty when transcribing again).
+    #[serde(default)]
+    wav: String,
+    /// „Neu transkribieren“: the transcript to put back.
+    #[serde(default)]
+    previous: String,
+}
+
+fn jobs_dir(state: &AppState) -> PathBuf {
+    voice_dir(state).join("jobs")
+}
+
+fn mark_path(state: &AppState, token: &str) -> PathBuf {
+    jobs_dir(state).join(format!("{token}.json"))
+}
+
+fn write_mark(state: &AppState, spec: &JobSpec) {
+    let wav = if spec.encode { spec.wav.file_name().map(|n| n.to_string_lossy().into_owned()) } else { None };
+    let mark = JobMark {
+        token: spec.id.clone(),
+        page_id: spec.page_id,
+        audio: spec.audio.clone(),
+        wav: wav.unwrap_or_default(),
+        previous: spec.previous.clone(),
+    };
+    let written = std::fs::create_dir_all(jobs_dir(state))
+        .map_err(Error::Io)
+        .and_then(|()| Ok(serde_json::to_vec(&mark)?))
+        .and_then(|bytes| arcalo_core::drawings::write_atomic(&mark_path(state, &spec.id), &bytes));
+    if let Err(e) = written {
+        crate::devlog::warn("voice", format!("job not noted on disk: {e}"));
+    }
+}
+
+/// Transcriptions a crash or a forced quit cut off (their [`JobMark`]s; from before 1.22 the
+/// status lines whose recording's WAV is still in the voice folder): the status line gives way
+/// to „Transkription unterbrochen …“ (or the transcript it replaced), and a WAV whose audio is
+/// stored as FLAC goes (it is no unfinished recording; saving it would make a second note).
+fn recover_interrupted(app: &AppHandle, state: &AppState) {
+    let running: Vec<String> = lock(&voice(app).jobs).iter().map(|j| j.id.clone()).collect();
+    let mut marks: Vec<JobMark> = std::fs::read_dir(jobs_dir(state))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+                .filter_map(|e| {
+                    let mark = std::fs::read(e.path()).ok().and_then(|b| serde_json::from_slice::<JobMark>(&b).ok());
+                    if mark.is_none() {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                    mark
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let pending = state.db().voice_pending().unwrap_or_default();
+    for (page_id, token) in pending {
+        let wav = format!("rec-{token}.wav");
+        if marks.iter().any(|m| m.token == token) || !voice_dir(state).join(&wav).is_file() {
+            continue;
+        }
+        let content = state.db().page_doc(page_id).map(|d| d.content).unwrap_or_default();
+        let audio = arcalo_core::voice::pending_audio(&content, &token).unwrap_or_default();
+        marks.push(JobMark { token, page_id, audio, wav, previous: String::new() });
+    }
+    for mark in marks.into_iter().filter(|m| !running.contains(&m.token)) {
+        let flac = state.attachments_dir().join(&mark.audio);
+        let wav = (!mark.wav.is_empty()).then(|| voice_dir(state).join(&mark.wav)).filter(|w| w.is_file());
+        if let Some(wav) = &wav
+            && !mark.audio.is_empty()
+            && !mark.audio.contains(['/', '\\', ':'])
+        {
+            if !flac.is_file()
+                && let Err(e) = audio::repair_wav(wav).and_then(|_| audio::encode_flac(wav, &flac))
+            {
+                crate::devlog::warn("voice", format!("audio of an interrupted transcription not stored: {e}"));
+            }
+            if flac.is_file() {
+                let _ = std::fs::remove_file(wav);
+            }
+        }
+        let line = if mark.previous.trim().is_empty() {
+            arcalo_core::voice::interrupted_line()
+        } else {
+            mark.previous.trim_end().to_owned()
+        };
+        match state.db().voice_interrupted(mark.page_id, &mark.token, &line) {
+            Ok(true) => {
+                crate::devlog::info("voice", format!("interrupted transcription marked on page {}", mark.page_id));
+                let _ = app.emit("data://pages", [mark.page_id]);
+            }
+            Ok(false) => {}
+            Err(e) => crate::devlog::warn("voice", format!("interrupted transcription not marked: {e}")),
+        }
+        let _ = std::fs::remove_file(mark_path(state, &mark.token));
+    }
+}
+
 fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
+    write_mark(&app.state::<AppState>(), &spec);
     let job = JobInfo {
         id: spec.id.clone(),
         page_id: spec.page_id,
@@ -610,10 +836,13 @@ fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
     lock(&voice(app).jobs).push(job);
     lock(&voice(app).job_cancels).insert(spec.id.clone(), spec.cancel.clone());
     let handle = app.clone();
-    std::thread::Builder::new()
-        .name("arcalo-voice-job".into())
-        .spawn(move || run_job(&handle, spec))
-        .map_err(Error::Io)?;
+    let id = spec.id.clone();
+    if let Err(e) = std::thread::Builder::new().name("arcalo-voice-job".into()).spawn(move || run_job(&handle, spec)) {
+        lock(&voice(app).jobs).retain(|j| j.id != id);
+        lock(&voice(app).job_cancels).remove(&id);
+        let _ = std::fs::remove_file(mark_path(&app.state::<AppState>(), &id));
+        return Err(Error::Io(e));
+    }
     emit_status(app);
     Ok(())
 }
@@ -633,7 +862,8 @@ pub fn voice_transcribe_again(
 ) -> Result<String> {
     let info = self::model(&model)?;
     let path = state.attachments_dir().join(&audio);
-    if audio.contains(['/', '\\']) || !path.is_file() {
+    // A plain file name of the attachments folder (Windows: „C:x.flac“ would leave it).
+    if audio.contains(['/', '\\', ':']) || !path.is_file() {
         return Err(Error::State(
             tr!("Die Aufnahme ist nicht mehr gespeichert", "The recording is no longer stored").into(),
         ));
@@ -695,6 +925,8 @@ fn busy_files(app: &AppHandle) -> Vec<String> {
 /// Recordings a crash or a forced quit left in `<data>/voice/` (offered after the start).
 #[tauri::command(async)]
 pub fn voice_unfinished(app: AppHandle, state: State<'_, AppState>) -> Vec<arcalo_core::voice::Unfinished> {
+    // Asked once after the start: transcriptions cut off last time are put right first.
+    recover_interrupted(&app, &state);
     arcalo_core::voice::unfinished(&voice_dir(&state), &busy_files(&app))
 }
 
@@ -715,7 +947,12 @@ pub fn voice_unfinished_save(app: AppHandle, state: State<'_, AppState>, name: S
     let modified = std::fs::metadata(&path).and_then(|m| m.modified()).map(chrono::DateTime::<Local>::from);
     let ended = modified.unwrap_or_else(|_| Local::now());
     let started = ended - chrono::Duration::milliseconds(i64::from(samples) * 1000 / i64::from(audio::RATE));
-    let id = format!("{:x}", Local::now().timestamp_millis());
+    // The recording's own id: its WAV stays tied to the note if this job is cut off too.
+    let own = name
+        .strip_prefix("rec-")
+        .and_then(|n| n.strip_suffix(".wav"))
+        .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    let id = own.map_or_else(|| format!("{:x}", Local::now().timestamp_millis()), str::to_owned);
     let stopped = store_recording(&app, &id, None, started, &path, samples)?;
     let _ = app.emit("voice://stopped", &stopped);
     Ok(stopped)
@@ -742,13 +979,30 @@ pub fn on_shortcut(app: &AppHandle) {
     let _ = app.emit("voice://start", ());
 }
 
+/// The app did not end after all (a restart or an update could not start): a cancel is a
+/// cancel again.
+pub fn resume(app: &AppHandle) {
+    if let Some(v) = app.try_state::<Voice>() {
+        v.closing.store(false, Ordering::SeqCst);
+    }
+}
+
 /// The app quits while recording: the WAV file is closed properly (kept under `voice/`).
 pub fn shutdown(app: &AppHandle) {
-    if app.try_state::<Voice>().is_some() {
-        let _ = end_recording(app);
-        for c in lock(&voice(app).job_cancels).values() {
-            c.store(true, Ordering::Relaxed);
-        }
+    if app.try_state::<Voice>().is_none() {
+        return;
+    }
+    let _ = end_recording(app);
+    let v = voice(app);
+    v.closing.store(true, Ordering::SeqCst);
+    for c in lock(&v.job_cancels).values() {
+        c.store(true, Ordering::Relaxed);
+    }
+    // Whisper stops within a pass: the jobs write „unterbrochen“ to their pages. One still
+    // storing its FLAC is left to the next start (`recover_interrupted`).
+    let until = Instant::now() + Duration::from_secs(5);
+    while !lock(&v.jobs).is_empty() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -798,16 +1052,37 @@ fn cancelled_error() -> Error {
 }
 
 fn run_job(app: &AppHandle, job: JobSpec) {
+    let started = Instant::now();
     let result = transcribe_job(app, &job);
     let state = app.state::<AppState>();
     let cancelled = job.cancel.load(Ordering::Relaxed);
+    // Why there is no transcript, for the dev log (never the text itself).
+    match &result {
+        Err(e) if !cancelled => crate::devlog::warn(
+            "voice",
+            format!("transcription failed (model {}, after {} s): {e}", job.model.id, started.elapsed().as_secs()),
+        ),
+        Ok(t) => crate::devlog::info(
+            "voice",
+            format!(
+                "transcribed {} s of audio in {} s (model {}, {} segments)",
+                t.duration_ms / 1000,
+                started.elapsed().as_secs(),
+                job.model.id,
+                t.segments.len()
+            ),
+        ),
+        Err(_) => crate::devlog::info("voice", "transcription cancelled"),
+    }
     let (markdown, text, error) = match &result {
         Ok(t) => (transcript::to_markdown(t), transcript::plain_text(t), None),
         Err(e) if job.again && !job.previous.trim().is_empty() => {
             (job.previous.trim_end().to_owned(), String::new(), Some(e.to_string()))
         }
         Err(e) => {
-            let line = if cancelled {
+            let line = if cancelled && voice(app).closing.load(Ordering::SeqCst) {
+                arcalo_core::voice::interrupted_line()
+            } else if cancelled {
                 format!("*{}*", tr!("Transkription abgebrochen.", "Transcription cancelled."))
             } else {
                 format!("*{}: {e}*", tr!("Kein Transkript", "No transcript"))
@@ -830,6 +1105,7 @@ fn run_job(app: &AppHandle, job: JobSpec) {
     let _ = app.emit("data://pages", [job.page_id]);
     lock(&voice(app).jobs).retain(|j| j.id != job.id);
     lock(&voice(app).job_cancels).remove(&job.id);
+    let _ = std::fs::remove_file(mark_path(&state, &job.id));
     emit_status(app);
     let _ = app.emit(
         "voice://done",
@@ -853,7 +1129,7 @@ fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcri
         audio::encode_flac(&job.wav, &state.attachments_dir().join(&job.audio))?;
     }
     // Transcribing again: the stored audio is read now (its length is not known before).
-    let mut decoded = if job.samples == 0 { Some(audio::read_16k_any(&job.wav)?) } else { None };
+    let mut decoded = if job.samples == 0 { Some(audio::read_16k_pcm(&job.wav)?) } else { None };
     let count = decoded.as_ref().map_or(job.samples as usize, Vec::len);
     let duration_ms = count as i64 * 1000 / i64::from(audio::RATE);
     if let Some(fake) = test_var("ARCALO_TEST_TRANSCRIPT") {
@@ -898,67 +1174,204 @@ fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcri
         return Err(cancelled_error());
     }
     set_job(app, &job.id, "transcribe", 0);
-    let mut samples = match decoded.take() {
+    let pcm = match decoded.take() {
         Some(s) => s,
-        None => audio::read_16k_any(&job.wav)?,
+        None => audio::read_16k_pcm(&job.wav)?,
     };
-    // whisper.cpp needs at least a second.
-    if samples.len() < audio::RATE as usize * 11 / 10 {
-        samples.resize(audio::RATE as usize * 11 / 10, 0.0);
-    }
-    let (segments, language) = whisper(app, job, &path, &samples)?;
+    let mut progress = |p: u8| set_job(app, &job.id, "transcribe", p);
+    let (segments, language) = whisper(&path, &pcm, job.language, &job.cancel, &mut progress)?;
     Ok(transcript::Transcript { segments, language, duration_ms })
 }
 
+/// Audio Whisper gets at a time: 10 minutes, cut where it is quiet (see [`audio::windows`]).
+const WINDOW: usize = audio::RATE as usize * 600;
+const WINDOW_SEARCH: usize = audio::RATE as usize * 15;
+
+/// whisper.cpp's abort callback, asked after every encoder and decoder pass: `user_data` is the
+/// job's cancel flag. (whisper-rs 0.16's `set_abort_callback_safe` is not used: its trampoline
+/// takes the boxed closure for the closure itself and reads past the flag, so runs aborted at
+/// random with „Error code: -6“ and a real cancel went unnoticed.)
+unsafe extern "C" fn abort_requested(user_data: *mut c_void) -> bool {
+    // SAFETY: `whisper` passes a pointer to an `AtomicBool` it borrows for the whole run.
+    !user_data.is_null() && unsafe { &*(user_data as *const AtomicBool) }.load(Ordering::Relaxed)
+}
+
+/// whisper.cpp's progress callback: `user_data` points to a `&mut dyn FnMut(i32)`.
+unsafe extern "C" fn progress_made(
+    _: *mut whisper_rs::WhisperSysContext,
+    _: *mut whisper_rs::WhisperSysState,
+    progress: c_int,
+    user_data: *mut c_void,
+) {
+    if user_data.is_null() {
+        return;
+    }
+    // SAFETY: `whisper` passes a pointer to a closure reference on its stack; whisper.cpp calls
+    // this on the thread running `full`, during that call.
+    let report = unsafe { &mut *(user_data as *mut &mut dyn FnMut(i32)) };
+    report(progress);
+}
+
+/// Points whisper.cpp's abort callback at `cancel` and its progress callback at `report`.
+///
+/// # Safety
+/// `cancel` and `report` must outlive the `full` call that consumes `params`.
+unsafe fn set_callbacks(params: &mut whisper_rs::FullParams, cancel: &AtomicBool, report: &mut &mut dyn FnMut(i32)) {
+    // SAFETY: the callbacks match whisper.cpp's signatures; the caller keeps the data alive.
+    unsafe {
+        params.set_progress_callback(Some(progress_made));
+        params.set_progress_callback_user_data(report as *mut &mut dyn FnMut(i32) as *mut c_void);
+        params.set_abort_callback(Some(abort_requested));
+        params.set_abort_callback_user_data(cancel as *const AtomicBool as *mut c_void);
+    }
+}
+
+/// whisper.cpp's and ggml's own log (model loading, failures) into the dev log: errors and
+/// warnings as such, the rest at debug level. It holds no transcript text (whisper.cpp logs that
+/// only when built with `WHISPER_DEBUG`).
+unsafe extern "C" fn whisper_log(
+    level: whisper_rs::whisper_rs_sys::ggml_log_level,
+    text: *const std::ffi::c_char,
+    _: *mut c_void,
+) {
+    use whisper_rs::whisper_rs_sys as sys;
+    if text.is_null() {
+        return;
+    }
+    // SAFETY: whisper.cpp passes a NUL-terminated string that lives during the call.
+    let text = unsafe { std::ffi::CStr::from_ptr(text) }.to_string_lossy();
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    match level {
+        sys::ggml_log_level_GGML_LOG_LEVEL_ERROR => crate::devlog::error("whisper", text),
+        sys::ggml_log_level_GGML_LOG_LEVEL_WARN => crate::devlog::warn("whisper", text),
+        _ => crate::devlog::debug("whisper", text),
+    }
+}
+
+/// Instruction set extensions of `built` (name, compiled in) that `present` says the processor
+/// lacks.
+fn lacking(built: &[(&'static str, bool)], present: impl Fn(&str) -> bool) -> Vec<&'static str> {
+    built.iter().filter(|(name, on)| *on && !present(name)).map(|(name, _)| *name).collect()
+}
+
+/// The extensions whisper.cpp was built with (the release builds assume AVX2, `GGML_NATIVE=OFF`)
+/// that this processor does not have: running it anyway ends the app („illegal instruction“).
+pub fn missing_cpu_features() -> Vec<&'static str> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        use whisper_rs::whisper_rs_sys as sys;
+        // SAFETY: these only return how ggml was compiled (constants); they run no vector code.
+        let built = unsafe {
+            [
+                ("AVX", sys::ggml_cpu_has_avx() != 0),
+                ("AVX2", sys::ggml_cpu_has_avx2() != 0),
+                ("FMA", sys::ggml_cpu_has_fma() != 0),
+                ("F16C", sys::ggml_cpu_has_f16c() != 0),
+                ("BMI2", sys::ggml_cpu_has_bmi2() != 0),
+            ]
+        };
+        lacking(&built, |name| match name {
+            "AVX" => std::arch::is_x86_feature_detected!("avx"),
+            "AVX2" => std::arch::is_x86_feature_detected!("avx2"),
+            "FMA" => std::arch::is_x86_feature_detected!("fma"),
+            "F16C" => std::arch::is_x86_feature_detected!("f16c"),
+            "BMI2" => std::arch::is_x86_feature_detected!("bmi2"),
+            _ => true,
+        })
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        let _ = lacking;
+        Vec::new()
+    }
+}
+
+/// Transcribes 16 kHz mono `pcm` with the model file `model`: piece by piece (see [`WINDOW`]),
+/// the text of one piece the context of the next. `cancel` stops it within one Whisper pass,
+/// `progress` gets percent of the whole.
 fn whisper(
-    app: &AppHandle,
-    job: &JobSpec,
     model: &Path,
-    samples: &[f32],
+    pcm: &[i16],
+    language: Option<&str>,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(u8),
 ) -> Result<(Vec<transcript::Segment>, Option<String>)> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+    let missing = missing_cpu_features();
+    if !missing.is_empty() {
+        let list = missing.join(", ");
+        crate::devlog::error("voice", format!("whisper not started: the processor lacks {list}"));
+        return Err(Error::State(trf!(
+            "Dieser Prozessor kann Whisper nicht ausführen: Ihm fehlen die Befehlssätze {list}. Die Aufnahme bleibt erhalten.",
+            "This processor cannot run Whisper: it lacks the instruction sets {list}. The recording is kept."
+        )));
+    }
     static HOOKS: std::sync::Once = std::sync::Once::new();
-    // whisper.cpp's own log goes through `log` (not printed) instead of stderr.
-    HOOKS.call_once(whisper_rs::install_logging_hooks);
-    let failed = |e: whisper_rs::WhisperError| Error::State(trf!("Whisper: {e}", "Whisper: {e}"));
+    // SAFETY: `whisper_log` is a plain function that lives as long as the process.
+    HOOKS.call_once(|| unsafe { whisper_rs::whisper_rs_sys::whisper_log_set(Some(whisper_log), std::ptr::null_mut()) });
+    let failed = |e: whisper_rs::WhisperError| {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled_error()
+        } else {
+            Error::State(trf!("Whisper: {e}", "Whisper: {e}"))
+        }
+    };
     let ctx = WhisperContext::new_with_params(model, WhisperContextParameters::default()).map_err(failed)?;
     let mut state = ctx.create_state().map_err(failed)?;
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(Some(job.language.unwrap_or("auto")));
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8);
-    params.set_n_threads(threads as i32);
-    params.set_print_progress(false);
-    params.set_print_realtime(false);
-    params.set_print_special(false);
-    params.set_print_timestamps(false);
-    {
-        let (app, id) = (app.clone(), job.id.clone());
-        params.set_progress_callback_safe(move |p: i32| set_job(&app, &id, "transcribe", p.clamp(0, 100) as u8));
-    }
-    {
-        let cancel = job.cancel.clone();
-        params.set_abort_callback_safe(move || cancel.load(Ordering::Relaxed));
-    }
-    state
-        .full(params, samples)
-        .map_err(|e| if job.cancel.load(Ordering::Relaxed) { cancelled_error() } else { failed(e) })?;
-    if job.cancel.load(Ordering::Relaxed) {
-        return Err(cancelled_error());
-    }
+    let total = pcm.len().max(1) as u64;
+    let mut language = language.map(str::to_owned);
     let mut segments = Vec::new();
-    for i in 0..state.full_n_segments() {
-        let Some(seg) = state.get_segment(i) else { continue };
-        let text = seg.to_str_lossy().map(|t| t.into_owned()).unwrap_or_default();
-        // Timestamps in 10 ms steps.
-        segments.push(transcript::Segment {
-            start_ms: seg.start_timestamp() * 10,
-            end_ms: seg.end_timestamp() * 10,
-            text,
-        });
+    for (i, piece) in audio::windows(pcm, WINDOW, WINDOW_SEARCH).into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(cancelled_error());
+        }
+        let mut samples = audio::pcm_to_f32(&pcm[piece.clone()]);
+        // whisper.cpp needs at least a second.
+        if samples.len() < audio::RATE as usize * 11 / 10 {
+            samples.resize(audio::RATE as usize * 11 / 10, 0.0);
+        }
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        // Detected in the first piece, then kept (as for one run over all of it).
+        params.set_language(Some(language.as_deref().unwrap_or("auto")));
+        params.set_no_context(i == 0);
+        params.set_n_threads(threads as i32);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_special(false);
+        params.set_print_timestamps(false);
+        let (from, len) = (piece.start as u64, piece.len() as u64);
+        let mut on_progress = |p: i32| {
+            let done = from + len * u64::from(p.clamp(0, 100) as u32) / 100;
+            progress((done * 100 / total).min(100) as u8);
+        };
+        let mut report: &mut dyn FnMut(i32) = &mut on_progress;
+        // SAFETY: `cancel` is borrowed for the whole function and `report` lives on this stack
+        // frame: both outlive `full`, which consumes `params`.
+        unsafe { set_callbacks(&mut params, cancel, &mut report) };
+        state.full(params, &samples).map_err(failed)?;
+        drop(samples);
+        if cancel.load(Ordering::Relaxed) {
+            return Err(cancelled_error());
+        }
+        // Timestamps in 10 ms steps, from the start of the piece.
+        let offset = piece.start as i64 * 1000 / i64::from(audio::RATE);
+        for n in 0..state.full_n_segments() {
+            let Some(seg) = state.get_segment(n) else { continue };
+            let text = seg.to_str_lossy().map(|t| t.into_owned()).unwrap_or_default();
+            segments.push(transcript::Segment {
+                start_ms: offset + seg.start_timestamp() * 10,
+                end_ms: offset + seg.end_timestamp() * 10,
+                text,
+            });
+        }
+        if language.is_none() {
+            language = whisper_rs::get_lang_str(state.full_lang_id_from_state()).map(str::to_owned);
+        }
     }
-    let language = whisper_rs::get_lang_str(state.full_lang_id_from_state())
-        .map(str::to_owned)
-        .or(job.language.map(str::to_owned));
     Ok((segments, language))
 }
 
@@ -1147,4 +1560,124 @@ pub fn voice_model_delete(app: AppHandle, id: String) -> Result<ModelsView> {
         }
     }
     Ok(models_view(&app))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Some freed small blocks with non-zero bytes, as anywhere in a running app: what made the
+    /// old callback read „abort“ next to a flag that said no.
+    fn heap_churn(round: usize) {
+        let junk: Vec<Vec<u8>> = (0..32).map(|n| vec![0xff; 8 + (n + round) % 64]).collect();
+        std::hint::black_box(&junk);
+    }
+
+    #[test]
+    fn the_abort_callback_answers_with_the_cancel_flag() {
+        for round in 0..2_000 {
+            heap_churn(round);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let user_data = Arc::as_ptr(&cancel) as *mut c_void;
+            heap_churn(round + 1);
+            assert!(!unsafe { abort_requested(user_data) }, "round {round}: abort without a cancel");
+            cancel.store(true, Ordering::Relaxed);
+            assert!(unsafe { abort_requested(user_data) }, "round {round}: the cancel was not seen");
+        }
+        assert!(!unsafe { abort_requested(std::ptr::null_mut()) });
+        let mut seen = Vec::new();
+        let mut on = |p: i32| seen.push(p);
+        let mut report: &mut dyn FnMut(i32) = &mut on;
+        let user_data = &mut report as *mut &mut dyn FnMut(i32) as *mut c_void;
+        unsafe {
+            progress_made(std::ptr::null_mut(), std::ptr::null_mut(), 40, user_data);
+            progress_made(std::ptr::null_mut(), std::ptr::null_mut(), 100, user_data);
+            progress_made(std::ptr::null_mut(), std::ptr::null_mut(), 7, std::ptr::null_mut());
+        }
+        assert_eq!(seen, [40, 100]);
+    }
+
+    #[test]
+    fn a_blocked_or_silent_microphone_is_told_apart() {
+        assert!(is_access_denied("A backend-specific error has occurred: 0x80070005"));
+        assert!(is_access_denied("The requested device is not available (os error -2147024891)"));
+        assert!(is_access_denied("ALSA function 'snd_pcm_open' failed with error 'Permission denied (13)'"));
+        assert!(!is_access_denied("ALSA function 'snd_pcm_open' failed with error 'Device or resource busy'"));
+        // Three distinct messages: denied, no answer in time, nothing connected.
+        let texts = [microphone_denied(), microphone_timeout(), no_microphone(), only_silence()].map(|e| e.to_string());
+        for (i, a) in texts.iter().enumerate() {
+            assert!(texts[i + 1..].iter().all(|b| b != a), "{a}");
+        }
+        assert!(only_silence().to_string().contains(permission_hint()));
+        let ctl = Ctl::default();
+        ctl.samples.store(u64::from(audio::RATE) * 2, Ordering::Relaxed);
+        assert!(!ctl.silent(), "too short to tell");
+        ctl.samples.store(u64::from(audio::RATE) * 3, Ordering::Relaxed);
+        assert!(ctl.silent());
+        ctl.heard.store(true, Ordering::Relaxed);
+        assert!(!ctl.silent());
+    }
+
+    #[test]
+    fn missing_processor_features_are_named() {
+        let built = [("AVX", true), ("AVX2", true), ("FMA", true), ("F16C", false)];
+        assert_eq!(lacking(&built, |n| n == "AVX"), ["AVX2", "FMA"]);
+        assert!(lacking(&built, |_| true).is_empty());
+        // This machine runs the tests with the library it built: nothing may be missing.
+        assert_eq!(missing_cpu_features(), Vec::<&str>::new());
+    }
+
+    /// A real whisper.cpp run with the model file `ARCALO_TEST_WHISPER_MODEL` (e.g. ggml-tiny.bin;
+    /// skipped without it): several runs in a row complete, a cancel aborts within one pass.
+    #[test]
+    fn whisper_runs_and_cancels_with_a_real_model() {
+        let Some(model) = std::env::var_os("ARCALO_TEST_WHISPER_MODEL").map(PathBuf::from) else {
+            eprintln!("skipped: ARCALO_TEST_WHISPER_MODEL is not set");
+            return;
+        };
+        assert!(model.is_file(), "{} is no file", model.display());
+        let tone: Vec<i16> = (0..audio::RATE as usize * 3)
+            .map(|i| ((i as f32 * 440.0 * std::f32::consts::TAU / audio::RATE as f32).sin() * 0.3 * 32_767.0) as i16)
+            .collect();
+        let cancel = AtomicBool::new(false);
+        for round in 0..5 {
+            heap_churn(round);
+            let mut most = 0u8;
+            let result = whisper(&model, &tone, None, &cancel, &mut |p| most = most.max(p));
+            assert!(result.is_ok(), "round {round}: {}", result.err().map(|e| e.to_string()).unwrap_or_default());
+            assert!(most <= 100);
+        }
+
+        // The callbacks inside whisper.cpp: a set flag aborts the first encoder pass.
+        use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+        let ctx = WhisperContext::new_with_params(&model, WhisperContextParameters::default()).unwrap();
+        let samples = audio::pcm_to_f32(&tone);
+        for (flag, aborts) in [(false, false), (true, true), (false, false)] {
+            let mut state = ctx.create_state().unwrap();
+            let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+            params.set_language(Some("en"));
+            let cancel = AtomicBool::new(flag);
+            let mut calls = 0;
+            let mut on = |_: i32| calls += 1;
+            let mut report: &mut dyn FnMut(i32) = &mut on;
+            heap_churn(usize::from(flag));
+            unsafe { set_callbacks(&mut params, &cancel, &mut report) };
+            let result = state.full(params, &samples);
+            assert_eq!(result.is_err(), aborts, "cancel {flag}: {result:?}");
+        }
+
+        // Cancelled while it runs (after its first 30 s pass): it ends as cancelled, not failed.
+        let long: Vec<i16> = tone.iter().copied().cycle().take(audio::RATE as usize * 120).collect();
+        let cancel = AtomicBool::new(false);
+        let mut reports = 0;
+        let result = whisper(&model, &long, Some("en"), &cancel, &mut |_| {
+            reports += 1;
+            if reports == 2 {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        });
+        let error = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert_eq!(error, cancelled_error().to_string());
+        assert_eq!(reports, 2, "whisper.cpp went on after the cancel");
+    }
 }

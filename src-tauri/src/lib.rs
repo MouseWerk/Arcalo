@@ -3774,8 +3774,16 @@ fn ai_cancel(state: State<AppState>, request_id: String) {
 #[serde(tag = "risk", rename_all = "snake_case")]
 enum ToolPlan {
     Workspace,
-    RequiresApproval { call: SystemCall, summary: String },
+    /// `token`: the one-time approval `ai_run_system_tool` needs for exactly this call.
+    RequiresApproval {
+        call: SystemCall,
+        summary: String,
+        token: String,
+    },
 }
+
+/// System tool calls shown to the user for approval (see [`tools::Approvals`]).
+static TOOL_APPROVALS: tools::Approvals = tools::Approvals::new();
 
 /// Classifies a tool call so the UI knows whether to ask the user first.
 #[tauri::command(async)]
@@ -3785,7 +3793,8 @@ fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Resu
         Risk::Workspace => ToolPlan::Workspace,
         Risk::RequiresApproval => {
             let call = SystemCall::from_tool_call(&name, &arguments)?;
-            ToolPlan::RequiresApproval { summary: call.describe(), call }
+            let token = TOOL_APPROVALS.issue(&call)?;
+            ToolPlan::RequiresApproval { summary: call.describe(), call, token }
         }
     })
 }
@@ -3855,10 +3864,16 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
 }
 
-/// Executes a system tool. The UI calls this only after the user approved
-/// the exact summary returned by `ai_plan_tool`.
+/// Executes a system tool after the user approved the exact summary returned by `ai_plan_tool`:
+/// only with the token issued there for exactly this call, and only once.
 #[tauri::command]
-async fn ai_run_system_tool(app: AppHandle, state: State<'_, AppState>, call: SystemCall) -> Result<String> {
+async fn ai_run_system_tool(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    token: String,
+    call: SystemCall,
+) -> Result<String> {
+    TOOL_APPROVALS.take(&token, &call)?;
     let name = match &call {
         SystemCall::RunPowershell { .. } => "run_powershell",
         SystemCall::Git { .. } => "git",
@@ -4480,6 +4495,7 @@ pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
     if !EXIT_PREPARED.swap(false, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
+    voice::resume(app);
     if let Some(state) = app.try_state::<AppState>() {
         let file = state.data_dir.join(datadir::DB_FILE);
         match Database::open(&file) {
@@ -5547,6 +5563,9 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
         // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI
         // never hears of (macOS: Dock menu „Beenden“, logging out).
         tauri::RunEvent::Exit => {
+            // A running recording is closed properly (offered at the next start), a transcription
+            // marked as interrupted, as for a restart or an update.
+            voice::shutdown(app);
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);

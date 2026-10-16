@@ -1307,17 +1307,31 @@ quelle: "[[Konzept]]"
   recording and the jobs. The tray menu gets „Aufnahme beenden“ first while recording.
 - **Stopping** adds the block `## Sprachnotiz HH:MM`, `![[… .flac]]` and a status line with the recording's id
   to the target page (`Database::voice_begin`: a new page below „Sprachnotizen“, the meeting note, or the page of
-  `/voice`). A job thread encodes the FLAC attachment (`audio::encode_flac`, flacenc, streamed from the WAV),
-  runs whisper.cpp (whisper-rs; one run at a time, progress and abort callbacks) and replaces the status line
-  with the transcript callout (`voice_finish`). The UI summarizes through `ai_transform` with the meeting-summary
+  `/voice`). A job thread encodes the FLAC attachment (`audio::encode_flac`, flacenc, frames written to a temp
+  file as they are encoded), reads the audio as 16 kHz 16-bit (`audio::read_16k_pcm`), runs whisper.cpp
+  (whisper-rs; one run at a time) on pieces of about 10 minutes cut at a quiet spot (`audio::windows`; the text
+  of one piece is the context of the next) and replaces the status line with the transcript callout
+  (`voice_finish`). The abort and progress callbacks are set up in `voice.rs` with the raw API: whisper-rs 0.16's
+  `set_abort_callback_safe` reads past its flag (random „Error code: -6“, no cancel). whisper.cpp's log goes
+  to the dev log (source `whisper`), a failed transcription is logged by `voice` (never its text).
+- **Interrupted jobs**: a job notes itself in `<data>/voice/jobs/<id>.json` while it runs. After a crash or a
+  forced quit, `voice_unfinished` (asked once after the start) replaces the leftover status line with
+  „Transkription unterbrochen …“ (or puts back the transcript a „Neu transkribieren“ replaced), stores the
+  recording's WAV as the FLAC of the block when that is missing, and removes the WAV, so it is not offered as an
+  unfinished recording (that would make a second note). Status lines from older versions are handled the same
+  when `voice/rec-<token>.wav` is still there. A normal quit (`RunEvent::Exit`) calls `voice::shutdown` like a
+  restart: the WAV is closed and kept, running jobs are cancelled and write „unterbrochen“ (up to 5 s). The UI summarizes through `ai_transform` with the meeting-summary
   prompt (privacy routing as for every page) and `voice_summary_apply` appends it, every action item a task line.
 - **Models** (`voice::models`): base, small, large-v3-turbo q5 with fixed size and SHA-256, in
   `<data>/models/whisper/` (not in backups, the Markdown mirror or Git sync). `download::fetch` tries the admin
   source (`settings.voice.source_url`: URL or folder), the GitHub release `whisper-models-v1`, then Hugging Face;
   writes `<file>.part`, resumes with HTTP ranges, verifies and renames. The client uses Einstellungen → Netzwerk
-  (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline).
+  (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline):
+  `voice::missing_cpu_features` compares what ggml was built with (`ggml_cpu_has_*`) with the processor before a
+  model is loaded and refuses with a message instead of crashing on an illegal instruction.
 - **Test hooks** (debug builds): `ARCALO_TEST_AUDIO_FILE`, `ARCALO_TEST_TRANSCRIPT`, `ARCALO_TEST_MODEL_BASES`
-  (see docs/testing/voice-notes.md).
+  (see docs/testing/voice-notes.md). `ARCALO_TEST_WHISPER_MODEL` (a model file, e.g. ggml-tiny.bin) lets the unit
+  tests of `voice.rs` run real whisper.cpp; without it that test is skipped.
 
 ## How the concept spec maps to this implementation
 
@@ -1329,7 +1343,7 @@ quelle: "[[Konzept]]"
 | < 5 ms cold start | The core opens the DB, runs queries and exits in ~6 ms (release CLI, Linux) | The desktop app's cold start is dominated by WebView2 initialisation, typically around a few hundred ms. That has not been measured here |
 | Win32 hooks for idle and active window | `GetLastInputInfo` and `GetForegroundWindow` sampled every 5 s | No global keyboard/mouse hooks: same result, far less invasive |
 | Export SAP PS (CATS), Jira, JSON, CSV | `export.rs` | CATS as an upload file (CATSDB field names). Jira as payloads for `POST /rest/api/3/issue/{key}/worklog`. Nothing is uploaded automatically |
-| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval and runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
+| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval: `ai_plan_tool` issues a one-time token for exactly the call it shows (`tools::Approvals`), `ai_run_system_tool` runs only with it, once. Runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands (`branch` only lists; no `--no-index`) with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes, editor `true`; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
 | Database views | Timesheet (week grid + entries), Projects (tables with budget, ETC, critical path) | Graphical network diagrams and graph views were dropped in favour of tables |
 
 ## Names kept from Annalo
