@@ -7,7 +7,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { splitFrontmatter } from "../editor/extensions";
 import { useApp } from "../store/app";
 import { isFileLinkTarget } from "../editor/fileEmbed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { PageIcon } from "./icons";
 import type { EmbedView, PageDoc } from "../lib/types";
 import { t } from "../lib/i18n";
@@ -109,7 +109,7 @@ export function LinkPreview() {
       const here = !a.dataset.target && anchor ? pageOfElement(a) : null;
       const target = here != null ? useApp.getState().pages.get(here)?.title : a.dataset.target;
       // `[[Angebot.pdf]]` links a file, not a page: nothing to preview.
-      if (!target || a.dataset.fileLink != null || (isFileLinkTarget(target) && !titleSet(useApp.getState().pages).has(target.trim().toLowerCase()))) return;
+      if (!target || a.dataset.fileLink != null || (isFileLinkTarget(target) && !titleSet(useApp.getState().pages).has(linkKey(target)))) return;
       window.clearTimeout(hideTimer.current);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(async () => {

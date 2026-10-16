@@ -383,7 +383,7 @@ fn fsync(path: &Path) {
     }
 }
 
-fn fsync_dir(dir: &Path) {
+pub(crate) fn fsync_dir(dir: &Path) {
     #[cfg(unix)]
     if let Ok(f) = fs::File::open(dir) {
         let _ = f.sync_all();
@@ -698,6 +698,8 @@ pub struct WrappedKey {
 
 /// Argon2id cost of the password: 64 MiB, 3 passes (about half a second on a laptop).
 pub const WRAP_COST: (u32, u32, u32) = (64 * 1024, 3, 1);
+/// The highest cost a wrapped key may ask for (1 GiB, 10 passes, 4 lanes).
+pub const MAX_WRAP_COST: (u32, u32, u32) = (1024 * 1024, 10, 4);
 
 fn kek(password: &str, salt: &[u8], (m, t, p): (u32, u32, u32)) -> Result<Zeroizing<[u8; 32]>> {
     let params = argon2::Params::new(m, t, p, Some(32)).map_err(|e| Error::State(e.to_string()))?;
@@ -737,7 +739,11 @@ impl WrappedKey {
         use aes_gcm::aead::{Aead, KeyInit};
         let bad = || Error::State(tr!("Das Passwort ist falsch", "The password is wrong").into());
         let d = |s: &str| data_encoding::BASE64.decode(s.as_bytes()).map_err(|_| bad());
-        if self.v != 1 || self.kdf != "argon2id" {
+        // The cost comes from the file: a folder from someone else must not ask for gigabytes of
+        // memory or hours of passes when the password is typed. Bounds well above WRAP_COST.
+        let (m, t, p) = (self.m_kib, self.t, self.p);
+        let bounded = m <= MAX_WRAP_COST.0 && t <= MAX_WRAP_COST.1 && p <= MAX_WRAP_COST.2;
+        if self.v != 1 || self.kdf != "argon2id" || !bounded {
             return Err(Error::State(tr!("Unbekanntes Schlüsselformat", "Unknown key format").into()));
         }
         let (salt, nonce, ct) = (d(&self.salt)?, d(&self.nonce)?, d(&self.ct)?);

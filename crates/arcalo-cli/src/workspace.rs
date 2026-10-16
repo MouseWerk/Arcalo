@@ -9,7 +9,7 @@ use std::time::Duration;
 use arcalo_core::cipher::{self, FileState};
 use arcalo_core::external::Change;
 use arcalo_core::settings::Settings;
-use arcalo_core::{Database, cmdlock, datadir, i18n, identity, trf};
+use arcalo_core::{Database, cmdlock, datadir, i18n, identity, tr, trf};
 
 use crate::keystore;
 use crate::output::{Failure, Outcome};
@@ -58,6 +58,36 @@ pub fn locate(db: Option<PathBuf>, data_dir: Option<PathBuf>) -> Location {
     let is_portable = env.as_ref().is_none_or(|e| e.as_os_str().is_empty()) && portable.is_some();
     let dir = datadir::locate(env, portable, config.as_deref(), default);
     Location { db: dir.join(datadir::DB_FILE), data_dir: dir, explicit: false, portable: is_portable }
+}
+
+/// [`locate`] with a share of the workspace (`arcalo_core::cmdlock::share`), held while the
+/// command runs: the app does not replace the database meanwhile (a data folder move, a restore,
+/// an encryption switch at its start), and while it does, the command is refused. The place is
+/// looked up again under the share, so a move that finished just before is followed. A database
+/// named with `--db` is not shared (the app swaps only its data folder).
+pub fn locate_shared(db: Option<PathBuf>, data_dir: Option<PathBuf>) -> Outcome<(Location, Option<cmdlock::Share>)> {
+    let swapping = || {
+        Failure::Locked(
+            tr!(
+                "Arcalo stellt gerade die Daten um (Umzug, Wiederherstellung oder Verschlüsselung). Bitte gleich noch \
+                 einmal versuchen.",
+                "Arcalo is switching the data right now (a move, a restore or the encryption). Please try again in a \
+                 moment."
+            )
+            .to_owned(),
+        )
+    };
+    for _ in 0..3 {
+        let loc = locate(db.clone(), data_dir.clone());
+        if loc.explicit {
+            return Ok((loc, None));
+        }
+        let share = cmdlock::share(&loc.data_dir).map_err(|_| swapping())?;
+        if locate(db.clone(), data_dir.clone()).data_dir == loc.data_dir {
+            return Ok((loc, Some(share)));
+        }
+    }
+    Err(swapping())
 }
 
 /// Marks this command as running for an update of the app (`arcalo_core::cmdlock`), in the app's

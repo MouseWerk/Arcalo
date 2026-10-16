@@ -296,6 +296,11 @@ as one object:
 - **Writes wait for the app.** Every change runs in one transaction that takes the database's write lock
   first; while the app writes, the command waits (up to 15 s, then exit code 3). The app's own writes
   wait for the command the same way. Reads never wait (the database runs in WAL mode).
+- **Swaps at the app's start wait for commands.** A data folder move, a restore and an encryption switch
+  replace the database file when the app starts. The app waits up to 30 s for running commands (and
+  postpones the swap to the next start if they do not end); a command started while the swap runs is
+  refused with exit code 3 (`locked`) and can simply be repeated. Each command holds a shared lock on
+  `.arcalo-workspace.lock` in the data folder for this.
 - **The app shows changes at once.** Each command records what it changed in the same transaction
   (`arcalo_core::external`). The app notices other processes' commits within a second
   (`PRAGMA data_version`) and reloads what the command named: the tree, the task view, open notes,

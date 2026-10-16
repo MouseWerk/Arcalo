@@ -947,10 +947,8 @@ pub fn capture_submit(
         }
         Err(e) if cap::is_retryable(&e) => {
             let path = state.data_dir.join(cap::QUEUE_FILE);
-            let mut queue = cap::load_queue(&path);
-            queue.push(QueuedCapture { text, target, at: now, attempts: 1, error: e.to_string() });
             // Not even the queue file can be written: the window keeps the text and shows why.
-            cap::save_queue(&path, &queue)?;
+            cap::enqueue(&path, QueuedCapture { text, target, at: now, attempts: 1, error: e.to_string() })?;
             crate::devlog::warn("desktop", format!("capture queued: {e}"));
             let _ = app.emit_to(MAIN, "capture://queued", e.to_string());
             schedule_retry(&app, Duration::from_secs(5));
@@ -1005,8 +1003,7 @@ pub fn retry_queue(app: &AppHandle) {
     let settings = state.settings();
     let zone = Zone::Local;
     let opts = capture_options(&settings, &zone);
-    let mut left = vec![];
-    for mut q in cap::load_queue(&path) {
+    let stored = cap::retry_queued(&path, |q| {
         let first = cap::capture_to(&state.db(), &q.text, &q.target, &opts, q.at, &Local);
         let result = match first {
             Err(e) if !cap::is_retryable(&e) && !matches!(q.target, CaptureTarget::Inbox | CaptureTarget::Daily) => {
@@ -1018,19 +1015,17 @@ pub fn retry_queue(app: &AppHandle) {
             Ok((out, undo)) => {
                 announce(app, &out, true);
                 remember(app, &q.text, &out, undo, q.at);
+                Ok(())
             }
-            Err(e) if cap::is_retryable(&e) => {
-                q.attempts += 1;
-                q.error = e.to_string();
-                left.push(q);
-            }
+            Err(e) if cap::is_retryable(&e) => Err(e.to_string()),
             Err(e) => {
                 crate::devlog::error("desktop", format!("queued capture not stored: {e}"));
                 let _ = app.emit_to(MAIN, "capture://failed", (e.to_string(), q.text.clone()));
+                Ok(())
             }
         }
-    }
-    if let Err(e) = cap::save_queue(&path, &left) {
+    });
+    if let Err(e) = stored {
         crate::devlog::error("desktop", format!("capture queue not written: {e}"));
     }
     RETRYING.store(false, Ordering::Relaxed);

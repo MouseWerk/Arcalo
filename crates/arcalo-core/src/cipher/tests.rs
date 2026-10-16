@@ -374,6 +374,25 @@ fn a_password_wraps_the_key() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// A wrapped key from a data folder someone else made asks for an unbounded cost (gigabytes of
+/// memory, hours of passes): it is refused at once instead of tried.
+#[test]
+fn a_wrapped_key_with_an_excessive_cost_is_refused() {
+    let key = DbKey::generate().unwrap();
+    let w = WrappedKey::wrap(&key, "Passwort", (8, 1, 1)).unwrap();
+    for (m_kib, t, p) in [(8, 200_000, 1), (4 * 1024 * 1024, 1_000_000, 1), (8, 1, 64)] {
+        let costly = WrappedKey { m_kib, t, p, ..w.clone() };
+        let start = std::time::Instant::now();
+        let err = costly.unwrap_key("Passwort").unwrap_err().to_string();
+        assert!(start.elapsed() < std::time::Duration::from_secs(1), "{m_kib}/{t}/{p} took {:?}", start.elapsed());
+        assert!(err.contains("Schlüsselformat") || err.contains("key format"), "{err}");
+    }
+    // The app's own cost and the test's small ones still open it.
+    assert_eq!(w.unwrap_key("Passwort").unwrap(), key);
+    let (m, t, p) = WRAP_COST;
+    assert!(WrappedKey { m_kib: m, t, p, ..w.clone() }.unwrap_key("Passwort").is_err(), "other cost, other key");
+}
+
 #[test]
 fn a_failed_password_change_keeps_the_wrapped_key() {
     let dir = tmp("wrap-fail");

@@ -54,6 +54,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0037_page_line_ends.sql"),
     include_str!("../migrations/0038_move_undo_order.sql"),
     include_str!("../migrations/0039_calendar_writes.sql"),
+    include_str!("../migrations/0040_composed_links.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

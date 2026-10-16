@@ -131,11 +131,16 @@ pub struct Prepared {
     pub blocked: Option<Access>,
 }
 
-pub fn prepare(dir: &Path) -> Prepared {
+/// `may_switch`: false while a terminal command works on the workspace; a requested switch waits
+/// for the next start then (one that began already is finished).
+pub fn prepare(dir: &Path, may_switch: bool) -> Prepared {
     let key = take_handoff(dir).or_else(|| stored_key(dir));
     cipher::set_key(key.clone());
     let mut notice = None;
-    match cipher::run_pending_keys(dir, key.as_ref(), next_key(dir).as_ref(), &|_| false) {
+    let wait = !may_switch && cipher::read_marker(dir).is_some_and(|m| m.step == cipher::Step::Requested);
+    let ran =
+        if wait { Ok(None) } else { cipher::run_pending_keys(dir, key.as_ref(), next_key(dir).as_ref(), &|_| false) };
+    match ran {
         Ok(Some(o)) if o.direction == Direction::Rekey => {
             devlog::info("cipher", "database key changed");
             notice = Some(datadir::Notice::titled(
