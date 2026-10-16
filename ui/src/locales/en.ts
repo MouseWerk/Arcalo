@@ -1209,7 +1209,7 @@ export const en = {
   "net.testOk": "Connected · {ms} ms",
   "net.testFail": "No connection",
   "net.direct": "direct",
-  "net.limits": "PAC limits: no DNS resolution (isInNet only for IP addresses, dnsResolve only returns IP literals, myIpAddress = 127.0.0.1). Other targets (tools) use the answer for the AI server. Git on Windows checks certificates with the Windows certificate store; install the root certificate there.",
+  "net.limits": "PAC limits: no DNS resolution (isInNet only for IP addresses, dnsResolve only returns IP literals, myIpAddress = 127.0.0.1). Other targets (tools) use the answer for the AI server. Git gets the additional root certificate on every system, also on Windows and on the phone.",
   "net.pacUnavailable": "PAC evaluation is not available",
   "net.pacSlow": "PAC evaluation takes too long",
   "net.proxyPh": "proxy.company.com:8080",

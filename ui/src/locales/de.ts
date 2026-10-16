@@ -1206,7 +1206,7 @@ export const de: Catalog = {
   "net.testOk": "Verbunden · {ms} ms",
   "net.testFail": "Keine Verbindung",
   "net.direct": "direkt",
-  "net.limits": "PAC-Grenzen: ohne DNS-Auflösung (isInNet nur für IP-Adressen, dnsResolve gibt nur IP-Literale zurück, myIpAddress = 127.0.0.1). Für andere Ziele (Werkzeuge) gilt die Antwort für den KI-Server. Git unter Windows prüft Zertifikate mit dem Windows-Zertifikatspeicher; das Stammzertifikat dort installieren.",
+  "net.limits": "PAC-Grenzen: ohne DNS-Auflösung (isInNet nur für IP-Adressen, dnsResolve gibt nur IP-Literale zurück, myIpAddress = 127.0.0.1). Für andere Ziele (Werkzeuge) gilt die Antwort für den KI-Server. Git erhält das zusätzliche Stammzertifikat auf jedem System, auch unter Windows und auf dem Telefon.",
   "net.pacUnavailable": "PAC-Auswertung nicht verfügbar",
   "net.pacSlow": "PAC-Auswertung dauert zu lange",
   "net.proxyPh": "proxy.firma.de:8080",

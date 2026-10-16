@@ -660,8 +660,11 @@ defineWidget({
   settings save, API-key or proxy-password change; the updater gets it through `configure_client` for check and
   download; the connection test builds one from unsaved settings and reports the proxy the plan chose.
 - Git: `git_network` turns the plan for the remote URL into `http_proxy`/`https_proxy`/`no_proxy` (or removes the proxy
-  variables and sets `NO_PROXY=*` for a direct remote), `http.sslCAInfo` (a bundle of the extra CA and the system CAs,
-  not on Windows where Git uses schannel) and `http.sslVerify=false` when invalid certificates are accepted, all via
+  variables and sets `NO_PROXY=*` for a direct remote), `http.sslCAInfo` (a bundle of the extra CA and the system's
+  roots, `write_git_ca_bundle`: the bundle file, the certificate store, and Mozilla's roots on Windows, whose store fetches
+  roots only on demand, or where nothing else is found; Windows also gets `http.sslBackend=openssl`, as Secure Channel
+  ignores the file; the phone's libgit2 adds the file's certificates to its own bundle, `gitlib::set_profile_certificates`)
+  and `http.sslVerify=false` when invalid certificates are accepted, all via
   `GIT_CONFIG_*`; the proxy password is redacted from git's output.
 - PAC: the UI evaluates the script (`ui/src/lib/pac.ts`, standard helpers without DNS) in an iframe served by the
   `arcalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without

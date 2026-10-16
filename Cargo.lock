@@ -266,6 +266,7 @@ dependencies = [
  "rrule",
  "rusqlite",
  "rustls",
+ "rustls-native-certs",
  "rustls-platform-verifier",
  "schemars 0.8.22",
  "semver",

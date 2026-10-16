@@ -97,10 +97,11 @@ fn git_with(
     let service = Service::GitSync;
     let profile = net.profile_for(&service);
     let system = if profile.mode == core::ProxyMode::System { core::system_proxy() } else { SystemProxy::default() };
-    // Windows' Git verifies with the Windows certificate store (schannel); `http.sslCAInfo`
-    // would replace it, so the bundle is only used on other systems.
-    let bundle = match (&profile.extra_ca_path, cfg!(windows)) {
-        (Some(ca), false) => {
+    // The profile's extra CA reaches git on every system: a bundle with the system's roots for
+    // `http.sslCAInfo` (Windows: read with OpenSSL, as Secure Channel ignores it; the phone's
+    // built-in git adds its certificates to its own bundle).
+    let bundle = match &profile.extra_ca_path {
+        Some(ca) => {
             let out = state.data_dir.join(GIT_CA_BUNDLE);
             match core::write_git_ca_bundle(ca, &out) {
                 Ok(()) => Some(out.display().to_string()),

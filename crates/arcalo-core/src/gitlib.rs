@@ -34,10 +34,17 @@ pub(super) fn default_on() -> bool {
 
 /// The CA bundle libgit2's OpenSSL checks servers against (Android: written by [`init_tls`]).
 static CA_FILE: OnceLock<PathBuf> = OnceLock::new();
-/// The system's certificates of that bundle, and the user-installed ones last added to it
-/// ([`set_user_certificates`]).
+/// The system's certificates of that bundle, and the ones last added to it.
 static SYSTEM_PEM: OnceLock<String> = OnceLock::new();
-static USER_PEM: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+static ADDED: std::sync::Mutex<Added> = std::sync::Mutex::new(Added { user: String::new(), profile: String::new() });
+
+/// Certificates in the bundle besides the system's.
+struct Added {
+    /// Installed by the user on the phone ([`set_user_certificates`]).
+    user: String,
+    /// The extra CA of the Git sync's network profile (`http.sslCAInfo`, [`set_profile_certificates`]).
+    profile: String,
+}
 
 /// Writes the CA bundle for HTTPS into `dir` and points libgit2 at it: the system's
 /// certificates (Android: `/system/etc/security/cacerts`, the updatable store of Android 14 and
@@ -93,17 +100,37 @@ pub fn init_tls(dir: &Path) -> crate::Result<PathBuf> {
 /// app trust them when its network security config says so (`src-tauri/gen/android`, for a
 /// company's proxy that inspects HTTPS). Rewrites the bundle only when they changed; `true` then.
 pub fn set_user_certificates(pem: &str) -> crate::Result<bool> {
+    add_certificates(|a| &mut a.user, certificates_only(pem))
+}
+
+/// The extra CA of the network profile (the file `git` names in `http.sslCAInfo`: the shell's
+/// bundle of that CA and the system's roots), added to the bundle of [`init_tls`], as `http.sslCAInfo`
+/// adds it for the program; a `Git` without one takes it out again. `true` when the bundle was
+/// rewritten.
+fn set_profile_certificates(git: &Git) -> crate::Result<bool> {
+    add_certificates(|a| &mut a.profile, profile_certificates(git))
+}
+
+/// The certificates of the file in `http.sslCAInfo` (empty without one).
+fn profile_certificates(git: &Git) -> String {
+    config(git, "http.sslCAInfo")
+        .and_then(|p| fs::read_to_string(p).ok())
+        .map(|t| certificates_only(&t))
+        .unwrap_or_default()
+}
+
+/// Sets one part of [`Added`] and rewrites the bundle when it changed.
+fn add_certificates(part: impl Fn(&mut Added) -> &mut String, pem: String) -> crate::Result<bool> {
     let (Some(file), Some(system)) = (CA_FILE.get(), SYSTEM_PEM.get()) else { return Ok(false) };
-    let user = certificates_only(pem);
-    let mut last = USER_PEM.lock().unwrap_or_else(|e| e.into_inner());
-    if *last == user {
+    let mut added = ADDED.lock().unwrap_or_else(|e| e.into_inner());
+    if *part(&mut added) == pem {
         return Ok(false);
     }
+    *part(&mut added) = pem;
     // A connection that starts meanwhile reads the old bundle or the new one, never half of it.
-    replace_file(file, &format!("{system}{user}"))?;
+    replace_file(file, &format!("{system}{}{}", added.user, added.profile))?;
     // SAFETY: libgit2 reads the file when a TLS connection starts; the path stays the same.
     unsafe { git2::opts::set_ssl_cert_file(file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
-    *last = user;
     Ok(true)
 }
 
@@ -145,6 +172,11 @@ pub(super) fn run(git: &Git, cwd: Option<&Path>, args: &[&str]) -> GitOutput {
                 let _ = git2::opts::set_search_path(git2::ConfigLevel::System, dir.as_os_str());
             }
         });
+    }
+    if super::is_network(args)
+        && let Err(e) = set_profile_certificates(git)
+    {
+        return GitOutput { ok: false, stdout: String::new(), stderr: format!("error: CA bundle: {e}") };
     }
     let (config, rest) = split_config(args);
     let mut out = String::new();
@@ -1226,6 +1258,22 @@ mod tests {
         assert_eq!(certificates_only("-----BEGIN CERTIFICATE-----\nCCCC"), "", "an unfinished block is dropped");
         // Without the bundle of `init_tls` (not on Android): nothing to add to.
         assert!(!set_user_certificates(pem).unwrap());
+    }
+
+    /// The extra CA of the network profile reaches the built-in git like the program: the
+    /// certificates of the file `http.sslCAInfo` names.
+    #[test]
+    fn the_profiles_ca_reaches_the_built_in_git() {
+        let dir = tmp("profile-ca");
+        let file = dir.join("network-ca-bundle.pem");
+        fs::write(&file, "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n").unwrap();
+        let mut g = git();
+        assert_eq!(profile_certificates(&g), "");
+        g.network.config.push(("http.sslCAInfo".into(), file.display().to_string()));
+        assert_eq!(profile_certificates(&g), "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+        // Without the bundle of `init_tls` (not on Android): nothing to add to.
+        assert!(!set_profile_certificates(&g).unwrap());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// The bundle is replaced as a whole (a temporary file renamed over it), never written in

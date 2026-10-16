@@ -38,6 +38,12 @@ serde_json = "1.0.151"
 sha2 = "0.10.9"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
 rustls-platform-verifier = "0.7"
+# The CA bundle for git with a network profile's extra CA (`network::write_git_ca_bundle`): the
+# system's root store, and Mozilla's roots where the system's are incomplete or missing. Mozilla's
+# roots also serve rustls on Android (the platform verifier needs the app's JVM context there) and
+# the embedded Git of the sync there (libgit2 with OpenSSL).
+rustls-native-certs = "0.8"
+webpki-root-certs = "1"
 thiserror = "2.0.20"
 # Spans with timings (migrations, AI requests); the desktop shell writes them to its log.
 tracing = "0.1.44"
@@ -50,11 +56,6 @@ claxon = "0.4"
 # Building it needs Perl and make (preinstalled on the CI runners).
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
-
-# Android (the companion app): Mozilla's root certificates, for rustls (the platform verifier needs
-# the app's JVM context there) and for the embedded Git of the sync (libgit2 with OpenSSL).
-[target.'cfg(target_os = "android")'.dependencies]
-webpki-root-certs = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

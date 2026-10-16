@@ -512,8 +512,11 @@ PAC files are JavaScript. The core does not embed a JS engine: the UI evaluates 
 remote when the settings are saved or tested and at every start, and stores the answers. Limitations: no DNS
 (`isInNet` only matches IP addresses, `dnsResolve` only returns IP literals, `myIpAddress()` is `127.0.0.1`), and
 other hosts (the assistant's HTTP tool) use the answer for the AI server. Git receives the proxy through
-`http_proxy`/`https_proxy`/`no_proxy` and the CA through `http.sslCAInfo` (extra CA plus the system bundle); Git for
-Windows verifies with the Windows certificate store (schannel), so install the root CA there.
+`http_proxy`/`https_proxy`/`no_proxy` and the extra CA through `http.sslCAInfo`: a bundle of the extra CA and the
+system's root certificates, on every system (Git for Windows reads it with OpenSSL, as its Secure Channel backend
+ignores the file; the Android app adds it to its built-in Git). Without an extra CA, Git for Windows checks with its own
+bundle unless it was set up for the Windows certificate store (`git config --global http.sslBackend schannel`), so for a
+proxy that inspects HTTPS, choose its root CA as the extra CA of the profile.
 
 ## Customizing
 
