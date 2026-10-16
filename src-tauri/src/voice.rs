@@ -29,7 +29,7 @@ use arcalo_core::error::{Error, Result};
 use arcalo_core::voice::{audio, download, models, transcript};
 use arcalo_core::{tr, trf};
 use chrono::Local;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, lock};
@@ -715,7 +715,114 @@ fn store_recording(
     Ok(Stopped { page_id: page.id, title: page.title, job_id: id.to_owned() })
 }
 
+/// A transcription job on disk (`<data>/voice/jobs/<id>.json`) while it runs: a crash or a forced
+/// quit leaves it behind, and [`recover_interrupted`] puts the page right at the next start.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JobMark {
+    token: String,
+    page_id: i64,
+    /// The FLAC attachment of the voice note.
+    audio: String,
+    /// The recording's WAV in the voice folder (a new recording; empty when transcribing again).
+    #[serde(default)]
+    wav: String,
+    /// „Neu transkribieren“: the transcript to put back.
+    #[serde(default)]
+    previous: String,
+}
+
+fn jobs_dir(state: &AppState) -> PathBuf {
+    voice_dir(state).join("jobs")
+}
+
+fn mark_path(state: &AppState, token: &str) -> PathBuf {
+    jobs_dir(state).join(format!("{token}.json"))
+}
+
+fn write_mark(state: &AppState, spec: &JobSpec) {
+    let wav = if spec.encode { spec.wav.file_name().map(|n| n.to_string_lossy().into_owned()) } else { None };
+    let mark = JobMark {
+        token: spec.id.clone(),
+        page_id: spec.page_id,
+        audio: spec.audio.clone(),
+        wav: wav.unwrap_or_default(),
+        previous: spec.previous.clone(),
+    };
+    let written = std::fs::create_dir_all(jobs_dir(state))
+        .map_err(Error::Io)
+        .and_then(|()| Ok(serde_json::to_vec(&mark)?))
+        .and_then(|bytes| arcalo_core::drawings::write_atomic(&mark_path(state, &spec.id), &bytes));
+    if let Err(e) = written {
+        crate::devlog::warn("voice", format!("job not noted on disk: {e}"));
+    }
+}
+
+/// Transcriptions a crash or a forced quit cut off (their [`JobMark`]s; from before 1.22 the
+/// status lines whose recording's WAV is still in the voice folder): the status line gives way
+/// to „Transkription unterbrochen …“ (or the transcript it replaced), and a WAV whose audio is
+/// stored as FLAC goes (it is no unfinished recording; saving it would make a second note).
+fn recover_interrupted(app: &AppHandle, state: &AppState) {
+    let running: Vec<String> = lock(&voice(app).jobs).iter().map(|j| j.id.clone()).collect();
+    let mut marks: Vec<JobMark> = std::fs::read_dir(jobs_dir(state))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+                .filter_map(|e| {
+                    let mark = std::fs::read(e.path()).ok().and_then(|b| serde_json::from_slice::<JobMark>(&b).ok());
+                    if mark.is_none() {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                    mark
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let pending = state.db().voice_pending().unwrap_or_default();
+    for (page_id, token) in pending {
+        let wav = format!("rec-{token}.wav");
+        if marks.iter().any(|m| m.token == token) || !voice_dir(state).join(&wav).is_file() {
+            continue;
+        }
+        let content = state.db().page_doc(page_id).map(|d| d.content).unwrap_or_default();
+        let audio = arcalo_core::voice::pending_audio(&content, &token).unwrap_or_default();
+        marks.push(JobMark { token, page_id, audio, wav, previous: String::new() });
+    }
+    for mark in marks.into_iter().filter(|m| !running.contains(&m.token)) {
+        let flac = state.attachments_dir().join(&mark.audio);
+        let wav = (!mark.wav.is_empty()).then(|| voice_dir(state).join(&mark.wav)).filter(|w| w.is_file());
+        if let Some(wav) = &wav
+            && !mark.audio.is_empty()
+            && !mark.audio.contains(['/', '\\', ':'])
+        {
+            if !flac.is_file()
+                && let Err(e) = audio::repair_wav(wav).and_then(|_| audio::encode_flac(wav, &flac))
+            {
+                crate::devlog::warn("voice", format!("audio of an interrupted transcription not stored: {e}"));
+            }
+            if flac.is_file() {
+                let _ = std::fs::remove_file(wav);
+            }
+        }
+        let line = if mark.previous.trim().is_empty() {
+            arcalo_core::voice::interrupted_line()
+        } else {
+            mark.previous.trim_end().to_owned()
+        };
+        match state.db().voice_interrupted(mark.page_id, &mark.token, &line) {
+            Ok(true) => {
+                crate::devlog::info("voice", format!("interrupted transcription marked on page {}", mark.page_id));
+                let _ = app.emit("data://pages", [mark.page_id]);
+            }
+            Ok(false) => {}
+            Err(e) => crate::devlog::warn("voice", format!("interrupted transcription not marked: {e}")),
+        }
+        let _ = std::fs::remove_file(mark_path(state, &mark.token));
+    }
+}
+
 fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
+    write_mark(&app.state::<AppState>(), &spec);
     let job = JobInfo {
         id: spec.id.clone(),
         page_id: spec.page_id,
@@ -727,10 +834,13 @@ fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
     lock(&voice(app).jobs).push(job);
     lock(&voice(app).job_cancels).insert(spec.id.clone(), spec.cancel.clone());
     let handle = app.clone();
-    std::thread::Builder::new()
-        .name("arcalo-voice-job".into())
-        .spawn(move || run_job(&handle, spec))
-        .map_err(Error::Io)?;
+    let id = spec.id.clone();
+    if let Err(e) = std::thread::Builder::new().name("arcalo-voice-job".into()).spawn(move || run_job(&handle, spec)) {
+        lock(&voice(app).jobs).retain(|j| j.id != id);
+        lock(&voice(app).job_cancels).remove(&id);
+        let _ = std::fs::remove_file(mark_path(&app.state::<AppState>(), &id));
+        return Err(Error::Io(e));
+    }
     emit_status(app);
     Ok(())
 }
@@ -750,7 +860,8 @@ pub fn voice_transcribe_again(
 ) -> Result<String> {
     let info = self::model(&model)?;
     let path = state.attachments_dir().join(&audio);
-    if audio.contains(['/', '\\']) || !path.is_file() {
+    // A plain file name of the attachments folder (Windows: „C:x.flac“ would leave it).
+    if audio.contains(['/', '\\', ':']) || !path.is_file() {
         return Err(Error::State(
             tr!("Die Aufnahme ist nicht mehr gespeichert", "The recording is no longer stored").into(),
         ));
@@ -812,6 +923,8 @@ fn busy_files(app: &AppHandle) -> Vec<String> {
 /// Recordings a crash or a forced quit left in `<data>/voice/` (offered after the start).
 #[tauri::command(async)]
 pub fn voice_unfinished(app: AppHandle, state: State<'_, AppState>) -> Vec<arcalo_core::voice::Unfinished> {
+    // Asked once after the start: transcriptions cut off last time are put right first.
+    recover_interrupted(&app, &state);
     arcalo_core::voice::unfinished(&voice_dir(&state), &busy_files(&app))
 }
 
@@ -832,7 +945,12 @@ pub fn voice_unfinished_save(app: AppHandle, state: State<'_, AppState>, name: S
     let modified = std::fs::metadata(&path).and_then(|m| m.modified()).map(chrono::DateTime::<Local>::from);
     let ended = modified.unwrap_or_else(|_| Local::now());
     let started = ended - chrono::Duration::milliseconds(i64::from(samples) * 1000 / i64::from(audio::RATE));
-    let id = format!("{:x}", Local::now().timestamp_millis());
+    // The recording's own id: its WAV stays tied to the note if this job is cut off too.
+    let own = name
+        .strip_prefix("rec-")
+        .and_then(|n| n.strip_suffix(".wav"))
+        .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    let id = own.map_or_else(|| format!("{:x}", Local::now().timestamp_millis()), str::to_owned);
     let stopped = store_recording(&app, &id, None, started, &path, samples)?;
     let _ = app.emit("voice://stopped", &stopped);
     Ok(stopped)
@@ -966,6 +1084,7 @@ fn run_job(app: &AppHandle, job: JobSpec) {
     let _ = app.emit("data://pages", [job.page_id]);
     lock(&voice(app).jobs).retain(|j| j.id != job.id);
     lock(&voice(app).job_cancels).remove(&job.id);
+    let _ = std::fs::remove_file(mark_path(&state, &job.id));
     emit_status(app);
     let _ = app.emit(
         "voice://done",

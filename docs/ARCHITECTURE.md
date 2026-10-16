@@ -1292,7 +1292,14 @@ quelle: "[[Konzept]]"
   of one piece is the context of the next) and replaces the status line with the transcript callout
   (`voice_finish`). The abort and progress callbacks are set up in `voice.rs` with the raw API: whisper-rs 0.16's
   `set_abort_callback_safe` reads past its flag (random „Error code: -6“, no cancel). whisper.cpp's log goes
-  to the dev log (source `whisper`), a failed transcription is logged by `voice` (never its text). The UI summarizes through `ai_transform` with the meeting-summary
+  to the dev log (source `whisper`), a failed transcription is logged by `voice` (never its text).
+- **Interrupted jobs**: a job notes itself in `<data>/voice/jobs/<id>.json` while it runs. After a crash or a
+  forced quit, `voice_unfinished` (asked once after the start) replaces the leftover status line with
+  „Transkription unterbrochen …“ (or puts back the transcript a „Neu transkribieren“ replaced), stores the
+  recording's WAV as the FLAC of the block when that is missing, and removes the WAV, so it is not offered as an
+  unfinished recording (that would make a second note). Status lines from older versions are handled the same
+  when `voice/rec-<token>.wav` is still there. A normal quit (`RunEvent::Exit`) calls `voice::shutdown` like a
+  restart: the WAV is closed and kept, running jobs are cancelled and write „unterbrochen“ (up to 5 s). The UI summarizes through `ai_transform` with the meeting-summary
   prompt (privacy routing as for every page) and `voice_summary_apply` appends it, every action item a task line.
 - **Models** (`voice::models`): base, small, large-v3-turbo q5 with fixed size and SHA-256, in
   `<data>/models/whisper/` (not in backups, the Markdown mirror or Git sync). `download::fetch` tries the admin
