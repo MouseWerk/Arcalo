@@ -1284,8 +1284,7 @@ pub fn missing_cpu_features() -> Vec<&'static str> {
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     {
-        let _ = lacking;
-        Vec::new()
+        lacking(&[], |_| true)
     }
 }
 
