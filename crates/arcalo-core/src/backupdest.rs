@@ -1605,44 +1605,60 @@ mod tests {
         let b = backup_in(&root.join("backups"), "20260925-120000", &vec![1u8; 2 * CHUNK]);
         let slow = root.join("langsam");
         let fast = root.join("schnell");
-        // Every step to the slow destination hangs for 2 s (a share that stopped answering).
-        let hook: Hook = Arc::new(|p: &Path| {
+        // Every step to the slow destination hangs until the test lets it go (a share that stopped
+        // answering); the fast one only does its real writes and syncs. Both get the limit of the
+        // steady copy below, which leaves room for a slow sync of a busy machine.
+        let limit = Duration::from_secs(3);
+        let released = Arc::new(AtomicBool::new(false));
+        let gate = released.clone();
+        let hook: Hook = Arc::new(move |p: &Path| {
             if p.to_string_lossy().contains("langsam") {
-                std::thread::sleep(Duration::from_secs(2));
+                while !gate.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
         });
-        let started = Instant::now();
+        let (ended_tx, ended) = std::sync::mpsc::channel::<PathBuf>();
         let run = |dest: PathBuf| {
             let b = b.clone();
             let hook = hook.clone();
+            let ended_tx = ended_tx.clone();
             std::thread::spawn(move || {
                 let job = job(&b, &dest, "pc", 3);
-                run_watched(&dest.clone(), Duration::from_millis(300), Activity::new(Some(hook)), move |a| {
-                    deliver(&job, a)
-                })
+                let started = Instant::now();
+                let res = run_watched(&dest.clone(), limit, Activity::new(Some(hook)), move |a| {
+                    let res = deliver(&job, a);
+                    let _ = ended_tx.send(dest);
+                    res
+                });
+                (res, started.elapsed())
             })
         };
         let (s, f) = (run(slow.clone()), run(fast.clone()));
-        let fast_res = f.join().unwrap();
-        assert!(fast_res.is_ok(), "{fast_res:?}");
-        let slow_res = s.join().unwrap().unwrap_err();
+        let (fast_res, _) = f.join().unwrap();
+        assert!(fast_res.is_ok(), "the fast destination is not held up by the hanging one: {fast_res:?}");
+        // The slow copy is given up while it still hangs, after the limit and not before.
+        let (slow_res, waited) = s.join().unwrap();
+        let slow_res = slow_res.unwrap_err();
         assert_eq!(slow_res.problem, Problem::Timeout);
         assert!(slow_res.message.contains("Zeitüberschreitung"), "{}", slow_res.message);
-        assert!(
-            started.elapsed() < Duration::from_millis(1800),
-            "gave up long before the hang ended: {:?}",
-            started.elapsed()
-        );
+        assert!(waited >= limit, "gave up before the limit: {waited:?}");
+        assert!(!released.load(Ordering::Relaxed));
         // The abandoned copy stops at its next step and never renames a partial file into place.
-        std::thread::sleep(Duration::from_millis(2500));
+        released.store(true, Ordering::Relaxed);
+        let mut left = vec![slow.clone(), fast.clone()];
+        while !left.is_empty() {
+            let dest = ended.recv_timeout(Duration::from_secs(60)).expect("the abandoned copy ends");
+            left.retain(|d| *d != dest);
+        }
         assert!(list_own(&slow.join("pc")).is_empty());
+        assert_eq!(list_own(&fast.join("pc")).len(), 1);
         // A slow but steady copy is not given up: progress keeps it alive, also when the whole copy
         // takes longer than the limit (11 steps of 0.4 s against 3 s). The limit leaves room for the
         // real writes and syncs of a busy machine next to each slow step: on a Windows runner one
         // sync took longer than the 0.85 s an earlier 1 s limit left.
         let steady: Hook = Arc::new(|_: &Path| std::thread::sleep(Duration::from_millis(400)));
         let job2 = job(&b, &root.join("stetig"), "pc", 3);
-        let limit = Duration::from_secs(3);
         let begun = Instant::now();
         let ok = run_watched(&root.join("stetig"), limit, Activity::new(Some(steady)), move |a| deliver(&job2, a));
         assert!(ok.is_ok(), "{ok:?}");
