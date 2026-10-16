@@ -979,6 +979,14 @@ pub fn on_shortcut(app: &AppHandle) {
     let _ = app.emit("voice://start", ());
 }
 
+/// The app did not end after all (a restart or an update could not start): a cancel is a
+/// cancel again.
+pub fn resume(app: &AppHandle) {
+    if let Some(v) = app.try_state::<Voice>() {
+        v.closing.store(false, Ordering::SeqCst);
+    }
+}
+
 /// The app quits while recording: the WAV file is closed properly (kept under `voice/`).
 pub fn shutdown(app: &AppHandle) {
     if app.try_state::<Voice>().is_none() {

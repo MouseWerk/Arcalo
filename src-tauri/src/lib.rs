@@ -4495,6 +4495,7 @@ pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
     if !EXIT_PREPARED.swap(false, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
+    voice::resume(app);
     if let Some(state) = app.try_state::<AppState>() {
         let file = state.data_dir.join(datadir::DB_FILE);
         match Database::open(&file) {
