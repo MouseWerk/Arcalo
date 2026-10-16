@@ -45,6 +45,9 @@ fn test_var(name: &str) -> Option<String> {
 #[derive(Default)]
 pub struct Voice {
     rec: Mutex<Option<Recording>>,
+    /// A recording is being started (the device may take a while): a second start is refused,
+    /// so no recording runs on unseen.
+    starting: AtomicBool,
     jobs: Mutex<Vec<JobInfo>>,
     job_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     download: Mutex<Option<(DownloadStatus, Arc<AtomicBool>)>>,
@@ -77,7 +80,16 @@ struct Ctl {
     samples: AtomicU64,
     /// Level 0..1 as f32 bits.
     level: AtomicU32,
+    /// Anything but digital silence arrived (a microphone without permission delivers zeros).
+    heard: AtomicBool,
     error: Mutex<Option<String>>,
+}
+
+impl Ctl {
+    /// Recorded for a few seconds and nothing but zeros: the microphone is most likely blocked.
+    fn silent(&self) -> bool {
+        !self.heard.load(Ordering::Relaxed) && self.samples.load(Ordering::Relaxed) >= u64::from(audio::RATE) * 3
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +102,8 @@ pub struct RecStatus {
     title: Option<String>,
     device: String,
     system_audio: bool,
+    /// Only silence so far (see [`Ctl::silent`]).
+    silent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +141,7 @@ struct Level {
     level: f32,
     elapsed_ms: u64,
     paused: bool,
+    silent: bool,
 }
 
 /// A finished (or failed) transcription.
@@ -161,6 +176,7 @@ fn rec_status(r: &Recording) -> RecStatus {
         title: r.title.clone(),
         device: r.device.clone(),
         system_audio: r.system_audio,
+        silent: r.ctl.silent(),
     }
 }
 
@@ -222,6 +238,63 @@ fn no_microphone() -> Error {
         tr!(
             "Kein Mikrofon gefunden. Schließe ein Mikrofon an oder wähle in Einstellungen → Sprachnotizen ein anderes Eingabegerät.",
             "No microphone found. Connect a microphone or choose another input device in Settings → Voice notes."
+        )
+        .into(),
+    )
+}
+
+/// Where the microphone permission is switched on, on this system.
+fn permission_hint() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!(
+            "Erlaube es in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon für Arcalo (nach einem Update eventuell aus- und wieder einschalten).",
+            "Allow it in System Settings → Privacy & Security → Microphone for Arcalo (after an update, switch it off and on again if needed)."
+        )
+    } else if cfg!(windows) {
+        tr!(
+            "Erlaube es in den Windows-Einstellungen → Datenschutz und Sicherheit → Mikrofon („Mikrofonzugriff“ und „Desktop-Apps Zugriff auf das Mikrofon erlauben“) und prüfe, ob das Mikrofon stummgeschaltet ist.",
+            "Allow it in Windows Settings → Privacy & security → Microphone (“Microphone access” and “Let desktop apps access your microphone”) and check that the microphone is not muted."
+        )
+    } else {
+        tr!(
+            "Prüfe in den Toneinstellungen des Systems, ob das richtige Eingabegerät gewählt und nicht stummgeschaltet ist.",
+            "Check in the system's sound settings that the right input device is chosen and not muted."
+        )
+    }
+}
+
+/// The system refused the microphone (Windows: `E_ACCESSDENIED`, 0x80070005).
+fn is_access_denied(error: &str) -> bool {
+    let e = error.to_ascii_lowercase();
+    ["0x80070005", "-2147024891", "access is denied", "access denied", "permission denied", "not permitted"]
+        .iter()
+        .any(|m| e.contains(m))
+}
+
+fn microphone_denied() -> Error {
+    Error::State(trf!(
+        "Arcalo darf das Mikrofon nicht verwenden. {}",
+        "Arcalo may not use the microphone. {}",
+        permission_hint()
+    ))
+}
+
+/// The recording holds nothing but digital silence: the system gave the app zeros instead of
+/// the microphone (no permission, or muted).
+fn only_silence() -> Error {
+    Error::State(trf!(
+        "Die Aufnahme ist völlig still: Das Mikrofon hat nichts geliefert, meist weil der Zugriff fehlt. {}",
+        "The recording is completely silent: the microphone delivered nothing, usually because access is missing. {}",
+        permission_hint()
+    ))
+}
+
+/// The device did not open in time (macOS: the question for microphone access may be waiting).
+fn microphone_timeout() -> Error {
+    Error::State(
+        tr!(
+            "Das Mikrofon antwortet nicht. Wartet eine Frage zum Mikrofonzugriff auf dich? Beantworte sie und starte die Aufnahme noch einmal.",
+            "The microphone does not respond. Is a question about microphone access waiting for you? Answer it and start the recording again."
         )
         .into(),
     )
@@ -304,7 +377,12 @@ fn open_stream(device: &cpal::Device, mic: bool, tx: mpsc::Sender<Chunk>, ctl: A
             )));
         }
     }
-    .map_err(|e| Error::State(trf!("Mikrofon lässt sich nicht öffnen: {e}", "Cannot open the microphone: {e}")))?;
+    .map_err(|e| {
+        if is_access_denied(&e.to_string()) {
+            return microphone_denied();
+        }
+        Error::State(trf!("Mikrofon lässt sich nicht öffnen: {e}", "Cannot open the microphone: {e}"))
+    })?;
     Ok(stream)
 }
 
@@ -339,7 +417,12 @@ fn record(
         .ok_or_else(no_microphone)?;
         let name = device.name().unwrap_or_default();
         let mic = open_stream(&device, true, tx.clone(), ctl.clone())?;
-        mic.play().map_err(|e| Error::State(trf!("Aufnahme startet nicht: {e}", "Recording does not start: {e}")))?;
+        mic.play().map_err(|e| {
+            if is_access_denied(&e.to_string()) {
+                return microphone_denied();
+            }
+            Error::State(trf!("Aufnahme startet nicht: {e}", "Recording does not start: {e}"))
+        })?;
         streams.push(mic);
         // Windows: an input stream on the output device records what plays (WASAPI loopback).
         if system_audio && cfg!(windows) {
@@ -357,7 +440,8 @@ fn record(
     drop(tx);
     let failed = opened.is_err();
     let _ = ready.send(opened);
-    if failed {
+    // Not opened, or opened too late (`voice_start` gave up): the streams close right here.
+    if failed || ctl.stop.load(Ordering::SeqCst) {
         return Ok(0);
     }
     let mut writer = audio::WavWriter::create(&wav)?;
@@ -377,6 +461,10 @@ fn record(
                 let take = chunk.len().min(system.len());
                 let other: Vec<f32> = system.drain(..take).collect();
                 audio::mix_into(&mut chunk, &other);
+                // Below half a step of 16 bits it is stored as 0.
+                if !ctl.heard.load(Ordering::Relaxed) && chunk.iter().any(|s| s.abs() * 32_767.0 >= 0.5) {
+                    ctl.heard.store(true, Ordering::Relaxed);
+                }
                 writer.write(&chunk)?;
                 ctl.samples.store(u64::from(writer.samples()), Ordering::Relaxed);
                 window.extend_from_slice(&chunk);
@@ -407,6 +495,7 @@ fn record(
                     level,
                     elapsed_ms: ctl.samples.load(Ordering::Relaxed) * 1000 / u64::from(audio::RATE),
                     paused: ctl.paused.load(Ordering::Relaxed),
+                    silent: ctl.silent(),
                 },
             );
         }
@@ -429,9 +518,21 @@ pub fn voice_start(
     meeting_key: Option<String>,
 ) -> Result<VoiceStatus> {
     let v = voice(&app);
-    if lock(&v.rec).is_some() {
-        return Err(Error::State(tr!("Es läuft bereits eine Aufnahme", "A recording is already running").into()));
+    // Checked and reserved under the lock: two starts at once (a double click, the shortcut
+    // and the ribbon) never open two recordings.
+    {
+        let rec = lock(&v.rec);
+        if rec.is_some() || v.starting.swap(true, Ordering::SeqCst) {
+            return Err(Error::State(tr!("Es läuft bereits eine Aufnahme", "A recording is already running").into()));
+        }
     }
+    struct Starting<'a>(&'a AtomicBool);
+    impl Drop for Starting<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    let _starting = Starting(&v.starting);
     let (page_id, title) = match (page_id, meeting_key) {
         (_, Some(key)) => {
             let (page, _) = state.db().calendar_meeting_note(&key, &Zone::Local)?;
@@ -460,11 +561,18 @@ pub fn voice_start(
         Ok(Ok(name)) => name,
         Ok(Err(e)) => {
             let _ = thread.join();
+            crate::devlog::warn("voice", format!("recording not started: {e}"));
             return Err(e);
         }
         Err(_) => {
-            ctl.stop.store(true, Ordering::Relaxed);
-            return Err(no_microphone());
+            // The thread lets go of the device as soon as it opens; a file it began goes.
+            ctl.stop.store(true, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                let _ = thread.join();
+                let _ = std::fs::remove_file(&wav);
+            });
+            crate::devlog::warn("voice", "recording not started: the input device did not open within 10 s");
+            return Err(microphone_timeout());
         }
     };
     *lock(&v.rec) = Some(Recording {
@@ -553,6 +661,14 @@ pub fn stop(app: &AppHandle) -> Result<Stopped> {
             Some(e) => trf!("Die Aufnahme ist abgebrochen: {e}", "The recording stopped: {e}"),
             None => tr!("Die Aufnahme ist leer", "The recording is empty").into(),
         }));
+    }
+    // Nothing but zeros: no voice note (Whisper would only say „Keine Sprache erkannt“), but why.
+    if !rec.ctl.heard.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(&rec.wav);
+        emit_status(app);
+        let secs = samples / audio::RATE;
+        crate::devlog::warn("voice", format!("recording of {secs} s held only silence (device {})", rec.device));
+        return Err(only_silence());
     }
     let stopped = store_recording(app, &rec.id, rec.page_id, rec.started, &rec.wav, samples)?;
     let _ = app.emit("voice://stopped", &stopped);
@@ -1339,6 +1455,27 @@ mod tests {
             progress_made(std::ptr::null_mut(), std::ptr::null_mut(), 7, std::ptr::null_mut());
         }
         assert_eq!(seen, [40, 100]);
+    }
+
+    #[test]
+    fn a_blocked_or_silent_microphone_is_told_apart() {
+        assert!(is_access_denied("A backend-specific error has occurred: 0x80070005"));
+        assert!(is_access_denied("The requested device is not available (os error -2147024891)"));
+        assert!(is_access_denied("ALSA function 'snd_pcm_open' failed with error 'Permission denied (13)'"));
+        assert!(!is_access_denied("ALSA function 'snd_pcm_open' failed with error 'Device or resource busy'"));
+        // Three distinct messages: denied, no answer in time, nothing connected.
+        let texts = [microphone_denied(), microphone_timeout(), no_microphone(), only_silence()].map(|e| e.to_string());
+        for (i, a) in texts.iter().enumerate() {
+            assert!(texts[i + 1..].iter().all(|b| b != a), "{a}");
+        }
+        assert!(only_silence().to_string().contains(permission_hint()));
+        let ctl = Ctl::default();
+        ctl.samples.store(u64::from(audio::RATE) * 2, Ordering::Relaxed);
+        assert!(!ctl.silent(), "too short to tell");
+        ctl.samples.store(u64::from(audio::RATE) * 3, Ordering::Relaxed);
+        assert!(ctl.silent());
+        ctl.heard.store(true, Ordering::Relaxed);
+        assert!(!ctl.silent());
     }
 
     #[test]
