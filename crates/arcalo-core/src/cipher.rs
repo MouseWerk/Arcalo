@@ -383,7 +383,7 @@ fn fsync(path: &Path) {
     }
 }
 
-fn fsync_dir(dir: &Path) {
+pub(crate) fn fsync_dir(dir: &Path) {
     #[cfg(unix)]
     if let Ok(f) = fs::File::open(dir) {
         let _ = f.sync_all();
