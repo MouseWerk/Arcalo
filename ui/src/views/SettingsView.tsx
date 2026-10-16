@@ -18,7 +18,8 @@ import { AndroidUpdatesGroup } from "./settings/AndroidUpdatesGroup";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
-import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, revertPaths, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
+import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, leafDiff, loadCollapsed, pick, revertPaths, saveCollapsed, toggled, undoTimeout, withPaths, type Burst } from "../lib/settingsApply";
+import { writeSettings } from "../lib/settingsWrite";
 import { formatShortcut, keyChips, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
@@ -214,6 +215,10 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   // The latest settings (ahead of the store while saves are pending), the change being typed,
   // and the save waiting for the typing to pause.
   const latest = useRef<Settings | null>(null);
+  // The values this view changed since it last followed the stored settings ("editor.smart_quotes"):
+  // a save writes only these, on the settings as stored then, so a change made elsewhere meanwhile
+  // (the theme switch, the language) stays.
+  const touched = useRef(new Set<string>());
   const burst = useRef<Burst | null>(null);
   const burstSeq = useRef(0);
   const timer = useRef<number | null>(null);
@@ -245,15 +250,18 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     return () => watch.disconnect();
   }, [searching, !!draft]);
 
+  /** The form follows what is stored; a part that waits for a field keeps what was typed. */
+  const follow = (stored: Settings) => {
+    const held = latest.current && waitsForField(latest.current);
+    const waiting = held && latest.current ? { [held]: latest.current[held] } : null;
+    latest.current = { ...structuredClone(stored), ...waiting };
+    touched.current = new Set([...touched.current].filter((p) => held && p.split(".")[0] === held));
+    setDraft(latest.current);
+  };
   useEffect(() => {
     if (!view) s().refreshSettings();
     // While saves are still pending the draft is ahead of the stored settings: keep it.
-    else if (!pending.current) {
-      const held = latest.current && waitsForField(latest.current);
-      const waiting = held && latest.current ? { [held]: latest.current[held] } : null;
-      latest.current = { ...structuredClone(view.settings), ...waiting };
-      setDraft(latest.current);
-    }
+    else if (!pending.current) follow(view.settings);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
   // Leaving the settings saves what is still being typed.
@@ -262,22 +270,24 @@ export function SettingsView({ tab }: { tab?: Tab }) {
 
   if (!view || !draft) return null;
 
-  /** Saves `next`; on a failure the form goes back to what is stored. */
-  const save = async (next: Settings): Promise<boolean> => {
-    if (next.thresholds.warning >= next.thresholds.critical) {
-      s().toast({ tone: "warning", title: t("settings.notSaved"), detail: t("settings.thresholdOrder") });
-      return false;
-    }
+  /** Saves the values of `paths` in `from` on the settings as stored now; on a failure the form goes back to what is stored. */
+  const save = async (from: Settings, paths: string[]): Promise<boolean> => {
+    let order = false;
     try {
-      let toSave = next;
-      // PAC: the answers for the app's hosts are computed here (the core has no JS engine).
-      if (usesPac(toSave)) toSave = await withPacResults(toSave);
-      const saved = await api.saveSettings(toSave);
-      s().set({ settings: saved });
+      const saved = await writeSettings(async (stored) => {
+        const next = withPaths(stored, from, paths);
+        if (next.thresholds.warning >= next.thresholds.critical) {
+          order = true;
+          throw new Error(t("settings.thresholdOrder"));
+        }
+        // PAC: the answers for the app's hosts are computed here (the core has no JS engine).
+        return usesPac(next) ? await withPacResults(next) : next;
+      });
       applyTheme(saved.settings.theme);
       return true;
     } catch (e) {
-      s().error(t("settings.saveFailed"), e);
+      if (order) s().toast({ tone: "warning", title: t("settings.notSaved"), detail: t("settings.thresholdOrder") });
+      else s().error(t("settings.saveFailed"), e);
       return false;
     }
   };
@@ -285,13 +295,14 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   const persist = (b: Burst | null, opts: { silent?: boolean; destructive?: boolean; title?: string; undo?: boolean } = {}) => {
     const draftNow = latest.current;
     if (!draftNow) return;
-    const stored = useApp.getState().settings?.settings;
+    // A part that waits for a field keeps its stored value meanwhile.
     const held = waitsForField(draftNow);
-    const next = held && stored ? { ...draftNow, [held]: stored[held] } : draftNow;
+    const paths = [...touched.current].filter((p) => !held || p.split(".")[0] !== held);
+    const from = structuredClone(draftNow);
     pending.current++;
     setBusy(true);
     queue.current = queue.current
-      .then(() => save(next))
+      .then(() => save(from, paths))
       .then((ok) => {
         if (ok && opts.undo) s().toast({ tone: "success", title: t("settings.undone") });
         else if (ok && b && !opts.silent) offerUndo(b, opts);
@@ -301,12 +312,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         if (--pending.current === 0) {
           setBusy(false);
           const stored = useApp.getState().settings;
-          if (stored) {
-            const held = latest.current && waitsForField(latest.current);
-            const waiting = held && latest.current ? { [held]: latest.current[held] } : null;
-            latest.current = { ...structuredClone(stored.settings), ...waiting };
-            setDraft(latest.current);
-          }
+          if (stored) follow(stored.settings);
         }
       });
   };
@@ -348,6 +354,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   const apply = (patch: Partial<Settings>, opts: { undo?: boolean; destructive?: boolean; title?: string; now?: boolean } = {}) => {
     const base = latest.current ?? draft;
     const next = { ...base, ...patch };
+    for (const p of leafDiff(base, next)) touched.current.add(p);
     latest.current = next;
     setDraft(next);
     if (opts.undo || opts.destructive || opts.title) {

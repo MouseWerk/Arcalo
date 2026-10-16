@@ -71,6 +71,13 @@ export function revertPaths(current: Settings, before: Settings, after: Settings
   return out as Partial<Settings>;
 }
 
+/** `stored` with the values of `paths` taken from `from` (a view's own changes on the settings as stored now). */
+export function withPaths(stored: Settings, from: Settings, paths: Iterable<string>): Settings {
+  const out = structuredClone(stored) as unknown as Record<string, unknown>;
+  for (const p of paths) setPath(out, p, getPath(from, p));
+  return out as unknown as Settings;
+}
+
 /** The burst `patch` belongs to: `prev` when it continues it, else a new one from `before`. */
 export function continueBurst(prev: Burst | null, patch: Partial<Settings>, before: Settings, now: number, nextId: number): Burst {
   // The same value typed on (or switched again): one change. Another switch of the same

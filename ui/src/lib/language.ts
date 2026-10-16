@@ -5,6 +5,7 @@
 import { api } from "./api";
 import { langFromLocale, langOf, setLang, type Lang, type LanguageChoice } from "./i18n";
 import { useApp } from "../store/app";
+import { writeSettings } from "./settingsWrite";
 
 /** German when the first (preferred) of these locale tags is German, else English. */
 export function langFromLocales(tags: readonly (string | null | undefined)[] | undefined): Lang {
@@ -34,11 +35,10 @@ export const detectedLanguage = (): Lang => detected ?? webviewLanguage();
 
 /** Stores the language in the settings (the other windows and the shell follow). */
 async function saveLanguage(lang: LanguageChoice): Promise<void> {
-  const s = useApp.getState();
-  const view = s.settings ?? (await api.settings());
+  const view = useApp.getState().settings ?? (await api.settings());
   if (view.settings.locale.language === lang) return;
-  const saved = await api.saveSettings({ ...view.settings, locale: { ...view.settings.locale, language: lang } });
-  s.set({ settings: saved });
+  // Only the language changes: a settings change saved meanwhile stays.
+  await writeSettings((cur) => ({ ...cur, locale: { ...cur.locale, language: lang } }));
 }
 
 /**

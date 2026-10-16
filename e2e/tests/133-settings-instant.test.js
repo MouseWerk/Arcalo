@@ -180,3 +180,30 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
   await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
   assert.equal(await hidden(), false);
 });
+
+test("„Rückgängig“ after leaving the settings keeps the theme switched meanwhile", async () => {
+  await openSection("editor");
+  const sw = '.pane.active > .pane-content:not([hidden]) button[role="switch"][aria-label="Typografische Anführungszeichen"]';
+  const before = await storedSettings(app);
+  await app.click(sw);
+  await settingsSettled(app);
+  assert.equal((await storedSettings(app)).editor.smart_quotes, !before.editor.smart_quotes);
+  await app.waitText(".toast-title", /Einstellung geändert/);
+  // Another page in the same tab: the settings view is gone, its undo toast stays.
+  const page = await app.invoke("page_create", { title: "Nach den Einstellungen", parentId: null, content: "Text" });
+  await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
+  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".settings")), { timeoutMsg: "the settings view is still mounted" });
+  // „Hell / Dunkel wechseln“ from the palette.
+  await app.keys(["Control", "k"]);
+  await app.waitFor(".palette input");
+  await app.type("Hell / Dunkel");
+  await app.waitText(".palette [aria-selected='true']", /Hell \/ Dunkel/);
+  await app.keys(["Enter"]);
+  await app.browser.waitUntil(async () => (await storedSettings(app)).theme !== before.theme, { timeoutMsg: "theme not switched" });
+  const switched = (await storedSettings(app)).theme;
+  await clickUndo(app);
+  await app.browser.waitUntil(async () => (await storedSettings(app)).editor.smart_quotes === before.editor.smart_quotes, { timeoutMsg: "not undone" });
+  await sleep(300);
+  assert.equal((await storedSettings(app)).theme, switched, "the theme switched meanwhile stays");
+  await app.dismissToasts();
+});
