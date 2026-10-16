@@ -42,7 +42,7 @@ import { withSaved } from "../lib/pagesave";
 import { openDayReview } from "../lib/reviewnav";
 import { t as tr, useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
-import { SHOWN_PLACE } from "../lib/keepalive";
+import { SHOWN_PLACE, selectShownTitle } from "../lib/keepalive";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   useT();
@@ -737,13 +737,14 @@ async function newPageParent(): Promise<number | null> {
 /** A new page below `parentId`; `null`: where Settings → Editor puts new pages, or the top level with `top`. */
 export async function createSubpage(parentId: number | null, title = tr("page.untitled"), opts: { top?: boolean } = {}) {
   const s = useApp.getState();
+  const focus = document.activeElement;
   try {
     const parent = parentId ?? (opts.top ? null : await newPageParent());
     const icon = s.settings?.settings.editor?.default_icon ?? "file-text";
     const p = await api.createPage(title, parent, icon);
     await s.refreshTree();
     s.openPage(p.id);
-    setTimeout(() => document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select(), 120);
+    selectShownTitle(focus);
   } catch (e) {
     s.error(tr("page.createFailed"), e);
   }

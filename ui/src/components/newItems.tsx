@@ -7,7 +7,7 @@ import { FilePlus2, FolderPlus, LayoutDashboard, LayoutTemplate, PenTool, Table2
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
-import { SHOWN_PLACE } from "../lib/keepalive";
+import { selectShownTitle } from "../lib/keepalive";
 import { defaultView, setView } from "../lib/collection";
 import { drawingLabel, drawingTitle } from "../editor/drawing";
 import { createSubpage } from "../views/PageView";
@@ -36,10 +36,11 @@ const s = useApp.getState;
 
 /** A page with `content` in `parent`, opened with its title selected. */
 async function createAt(parent: NewTarget, title: string, icon: string, content?: string) {
+  const focus = document.activeElement;
   const p = await api.createPage(title, parent ?? null, icon, content);
   await s().refreshTree();
   s().openPage(p.id);
-  setTimeout(() => document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select(), 120);
+  selectShownTitle(focus);
   return p;
 }
 

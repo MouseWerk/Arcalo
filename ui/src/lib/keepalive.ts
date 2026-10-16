@@ -9,6 +9,21 @@ import type { Tab } from "../store/app";
  */
 export const SHOWN_PLACE = ".pane.active > .pane-content:not([hidden])";
 
+/**
+ * Selects the title of the page just opened (the user names it next) a moment later, once it
+ * shows. `before` had the focus when the page was asked for: when the user went on to type in a
+ * field elsewhere meanwhile (a folder named in the tree, a dialog), the focus stays there; taking
+ * it would end that rename or swallow what is typed.
+ */
+export function selectShownTitle(before: Element | null, delay = 120) {
+  setTimeout(() => {
+    const now = document.activeElement;
+    const typing = now instanceof HTMLInputElement || now instanceof HTMLTextAreaElement || (now instanceof HTMLElement && now.isContentEditable);
+    if (typing && now !== before && !now.closest(SHOWN_PLACE)) return;
+    document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select();
+  }, delay);
+}
+
 /** How many places a pane keeps alive (the shown one and the most recently left ones). */
 export const KEEP_ALIVE = 5;
 

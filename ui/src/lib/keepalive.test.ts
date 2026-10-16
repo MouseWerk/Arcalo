@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import fs from "node:fs";
 import path from "node:path";
-import { SHOWN_PLACE, keepAlive, onHidden, slotKey, type Kept } from "./keepalive";
+import { SHOWN_PLACE, keepAlive, onHidden, selectShownTitle, slotKey, type Kept } from "./keepalive";
 import type { Tab } from "../store/app";
 
 const tab = (id: string, pageId?: number, kind: Tab["kind"] = "page"): Tab => ({ id, kind, pageId, back: [], forward: [] });
@@ -170,5 +170,35 @@ describe("onHidden", () => {
     expect(observers).toEqual([]);
     el.remove();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("selectShownTitle", () => {
+  it("selects the new page's title, but not over a field the user went on to type in", () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `
+      <div class="pane active"><div class="pane-content"><textarea class="page-title">Unbenannt</textarea></div></div>
+      <div class="sidebar"><button class="tree-row">Ordner</button><input class="tree-rename" value="Neuer Ordner" /></div>`;
+    const row = document.querySelector<HTMLElement>(".tree-row")!;
+    const title = document.querySelector<HTMLTextAreaElement>(".page-title")!;
+    const rename = document.querySelector<HTMLInputElement>(".tree-rename")!;
+    const select = vi.spyOn(title, "select");
+    // „Neu“ → „Seite“ from a row: the title is selected for typing.
+    row.focus();
+    selectShownTitle(row);
+    vi.advanceTimersByTime(120);
+    expect(select).toHaveBeenCalledTimes(1);
+    // Meanwhile a folder is named in the tree: its field keeps the focus.
+    selectShownTitle(row);
+    rename.focus();
+    vi.advanceTimersByTime(120);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(rename);
+    // The field that had the focus when the page was asked for does not keep it.
+    selectShownTitle(rename);
+    vi.advanceTimersByTime(120);
+    expect(select).toHaveBeenCalledTimes(2);
+    document.body.innerHTML = "";
+    vi.useRealTimers();
   });
 });
