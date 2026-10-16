@@ -320,7 +320,7 @@ function createSession(id: SessionId): ChatSession {
             card = { status: "rejected", summary: plan.summary };
           } else {
             updateTurn(tid, { status: "running", decide: undefined });
-            out = await api.runSystemTool(plan.call);
+            out = await api.runSystemTool(plan.token, plan.call);
             card = { status: "done", summary: plan.summary, output: out };
           }
         }

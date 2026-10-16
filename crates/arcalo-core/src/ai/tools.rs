@@ -3,7 +3,8 @@
 //! Workspace tools (logging time, searching, budget lookups, time summaries) run directly.
 //! System tools (PowerShell, Git, REST) never run on the model's say-so alone:
 //! [`classify`] marks them [`Risk::RequiresApproval`] and the shell must show
-//! the exact command to the user before calling [`execute_system_tool`].
+//! the exact command to the user before calling [`execute_system_tool`], with a one-time token
+//! of [`Approvals`] issued for exactly that call.
 
 use crate::{tr, trf};
 use std::process::Command;
@@ -410,6 +411,57 @@ impl SystemCall {
     }
 }
 
+/// Approvals the shell holds for system tool calls it showed the user: a one-time token per
+/// call. Running a system tool takes a token issued for exactly that call, so a script in a
+/// webview cannot run a call of its own, nor one the user approved a second time.
+pub struct Approvals {
+    pending: std::sync::Mutex<Vec<(String, SystemCall)>>,
+}
+
+/// Approvals kept at most (the oldest go): enough for every card a chat can show at once.
+const MAX_APPROVALS: usize = 32;
+
+impl Default for Approvals {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Approvals {
+    pub const fn new() -> Self {
+        Self { pending: std::sync::Mutex::new(Vec::new()) }
+    }
+
+    /// A new token for `call` (128 random bits, hex).
+    pub fn issue(&self, call: &SystemCall) -> Result<String> {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).map_err(|e| Error::State(format!("random: {e}")))?;
+        let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if pending.len() >= MAX_APPROVALS {
+            pending.remove(0);
+        }
+        pending.push((token.clone(), call.clone()));
+        Ok(token)
+    }
+
+    /// Uses up `token`: fine only when it was issued for exactly `call` and not used before.
+    pub fn take(&self, token: &str, call: &SystemCall) -> Result<()> {
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let found = pending.iter().position(|(t, _)| !token.is_empty() && t == token).map(|i| pending.remove(i));
+        match found {
+            Some((_, approved)) if approved == *call => Ok(()),
+            _ => Err(Error::State(
+                tr!(
+                    "Dieser Werkzeugaufruf ist nicht freigegeben (oder lief schon). Er wird nicht ausgeführt.",
+                    "This tool call is not approved (or has run already). It is not run."
+                )
+                .into(),
+            )),
+        }
+    }
+}
+
 fn truncate(mut s: String) -> String {
     if s.len() > MAX_OUTPUT {
         let mut cut = MAX_OUTPUT;
@@ -713,6 +765,33 @@ mod tests {
         ] {
             assert!(branch(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_system_call_runs_once_with_the_token_issued_for_it() {
+        let approvals = Approvals::new();
+        let call =
+            SystemCall::from_tool_call("http_request", r#"{"method":"GET","url":"https://api.example.com"}"#).unwrap();
+        let other =
+            SystemCall::from_tool_call("http_request", r#"{"method":"DELETE","url":"https://api.example.com"}"#)
+                .unwrap();
+        let token = approvals.issue(&call).unwrap();
+        assert_eq!(token.len(), 32);
+        assert_ne!(approvals.issue(&call).unwrap(), token);
+        // Another call with this token: refused, and the token is used up.
+        assert!(approvals.take(&token, &other).is_err());
+        assert!(approvals.take(&token, &call).is_err());
+        let token = approvals.issue(&call).unwrap();
+        assert!(approvals.take("", &call).is_err());
+        assert!(approvals.take("0123456789abcdef0123456789abcdef", &call).is_err());
+        assert!(approvals.take(&token, &call).is_ok());
+        assert!(approvals.take(&token, &call).is_err(), "a second run of an approved call");
+        // Only the newest are kept.
+        let first = approvals.issue(&call).unwrap();
+        for _ in 0..MAX_APPROVALS {
+            approvals.issue(&other).unwrap();
+        }
+        assert!(approvals.take(&first, &call).is_err());
     }
 
     #[test]

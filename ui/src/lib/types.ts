@@ -1030,7 +1030,8 @@ export type StreamEvent =
   | { type: "waiting"; seconds: number; model: string };
 export type ToolPlan =
   | { risk: "workspace" }
-  | { risk: "requires_approval"; call: unknown; summary: string };
+  /** `token`: the one-time approval the shell needs to run exactly this call. */
+  | { risk: "requires_approval"; call: unknown; summary: string; token: string };
 export interface ImportReport {
   pages: number;
   folders: number;

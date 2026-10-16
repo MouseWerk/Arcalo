@@ -486,7 +486,7 @@ export const api = {
   cancelChat: (requestId: string) => call<void>("ai_cancel", { requestId }),
   planTool: (name: string, args: string) => call<T.ToolPlan>("ai_plan_tool", { name, arguments: args }),
   runWorkspaceTool: (name: string, args: string) => call<string>("ai_run_workspace_tool", { name, arguments: args }),
-  runSystemTool: (callSpec: unknown) => call<string>("ai_run_system_tool", { call: callSpec }),
+  runSystemTool: (token: string, callSpec: unknown) => call<string>("ai_run_system_tool", { token, call: callSpec }),
   indexPending: () => call<number>("ai_index_pending"),
   embeddingStatus: () => call<T.EmbeddingStatus>("ai_embedding_status"),
 
