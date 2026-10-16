@@ -232,6 +232,9 @@ function createSession(id: SessionId): ChatSession {
   const approvals = new Set<(ok: boolean) => void>();
   // The send that owns `busy` (a send of an abandoned chat no longer clears it).
   let activeSend: object | null = null;
+  // Counts chat changes: a chat still being read when another one was opened (or a new one
+  // started) is not shown.
+  let shown = 0;
 
   const updateTurn = (tid: string, patch: Partial<Turn>) => set((st) => ({ turns: st.turns.map((x) => (x.id === tid ? ({ ...x, ...patch } as Turn) : x)) }));
 
@@ -490,6 +493,7 @@ function createSession(id: SessionId): ChatSession {
 
   /** Leaves the current chat (a reply on its way is saved to it, not shown). */
   function leave() {
+    shown++;
     if (get().busy || approvals.size) stop();
     requestId = null;
     endStream();
@@ -503,7 +507,9 @@ function createSession(id: SessionId): ChatSession {
   }
 
   async function open(cid: number) {
+    const seq = ++shown;
     const doc = await api.chatGet(cid);
+    if (seq !== shown) return;
     leave();
     const { turns, history: h } = restoreChat(doc.messages);
     history = h;

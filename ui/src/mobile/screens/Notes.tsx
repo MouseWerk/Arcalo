@@ -35,10 +35,18 @@ export function NotesScreen() {
       setHits(null);
       return;
     }
+    // A reply after the query changed (or was cleared) is dropped.
+    let alive = true;
     const id = window.setTimeout(() => {
-      api.search(q, 30).then(setHits).catch(() => setHits([]));
+      api.search(q, 30).then(
+        (h) => alive && setHits(h),
+        () => alive && setHits([]),
+      );
     }, 180);
-    return () => window.clearTimeout(id);
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
   }, [query]);
 
   const rows = useMemo(() => (tree ? treeRows(tree, open) : []), [tree, open]);

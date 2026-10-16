@@ -16,6 +16,8 @@ const fake = {
   seqs: new Map<number, number>(),
   /** Holds the next answer until `release()`. */
   hold: null as null | { release: () => void },
+  /** Chats whose reading waits until their promise resolves. */
+  slowGets: new Map<number, Promise<void>>(),
 };
 const conv = (id: number, title: string): ChatConversation => ({
   id,
@@ -33,6 +35,13 @@ const conv = (id: number, title: string): ChatConversation => ({
   messages: 0,
   snippet: null,
 });
+const chatDoc = (id: number) => ({
+  conversation: { ...conv(id, "Alt"), model: "altes-modell" },
+  messages: [
+    { id: 1, seq: 0, created_at: "", role: "user", content: "Alte Frage" },
+    { id: 2, seq: 1, created_at: "", role: "assistant", content: "Alte Antwort", model: "altes-modell", tier: "standard" },
+  ],
+});
 vi.mock("../lib/api", () => ({
   api: {
     chatCreate: async (title: string) => (fake.saving ? conv(fake.nextId++, title) : null),
@@ -48,13 +57,10 @@ vi.mock("../lib/api", () => ({
       fake.seqs.set(id, seq);
       return 1;
     },
-    chatGet: async (id: number) => ({
-      conversation: { ...conv(id, "Alt"), model: "altes-modell" },
-      messages: [
-        { id: 1, seq: 0, created_at: "", role: "user", content: "Alte Frage" },
-        { id: 2, seq: 1, created_at: "", role: "assistant", content: "Alte Antwort", model: "altes-modell", tier: "standard" },
-      ],
-    }),
+    chatGet: async (id: number) => {
+      await fake.slowGets.get(id);
+      return chatDoc(id);
+    },
     chat: async (a: { messages: ChatMessage[]; conversationId: number | null; notes?: boolean; useTools?: boolean; pageId?: number | null }) => {
       fake.requests.push({ messages: structuredClone(a.messages), conversationId: a.conversationId, notes: a.notes, useTools: a.useTools, pageId: a.pageId });
       if (fake.hold) await new Promise<void>((r) => (fake.hold!.release = r));
@@ -86,6 +92,7 @@ beforeEach(() => {
   fake.truncates = [];
   fake.requests = [];
   fake.hold = null;
+  fake.slowGets.clear();
   useApp.setState({ settings: { settings: { providers: [{ id: "litellm", name: "LiteLLM" }], router: { standard_provider: "litellm", standard_model: "firma-standard" }, ai: { chat_history: "all" } } } as never });
 });
 
@@ -230,6 +237,27 @@ describe("chat view session", () => {
     expect(fake.requests.at(-1)!.conversationId).toBe(7);
     expect(fake.requests.at(-1)!.messages.map((m) => m.content)).toEqual(["Alte Frage", "Alte Antwort", "Frage im Panel", "Antwort auf Frage im Panel", "Weiter in der Ansicht"]);
     expect(chat.useChat.getState().turns.length).toBe(6);
+  });
+
+  it("two chats opened quickly from the history: the one clicked last stays", async () => {
+    let release = () => {};
+    fake.slowGets.set(5, new Promise<void>((ok) => (release = ok)));
+    const first = chat.openChat(5);
+    await chat.openChat(6);
+    release();
+    await first;
+    expect(chat.useChat.getState().conversation?.id).toBe(6);
+  });
+
+  it("„Neuer Chat“ while a chat is still being read stays a new chat", async () => {
+    let release = () => {};
+    fake.slowGets.set(5, new Promise<void>((ok) => (release = ok)));
+    const opening = chat.openChat(5);
+    chat.newChat();
+    release();
+    await opening;
+    expect(chat.useChat.getState().conversation).toBeNull();
+    expect(chat.useChat.getState().turns).toEqual([]);
   });
 
   it("mirrors only the same saved chat, not while answering itself", () => {
