@@ -11,6 +11,7 @@ import {
 import { api, errorParts } from "../lib/api";
 import { cleanTitleChars } from "../lib/links";
 import { renamePageWithUndo } from "../editor/rename";
+import { flushAllEditors } from "../editor/saves";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, Dialog, IconButton, Input, anchorMenu, useMenu, type MenuEntry, type MenuItem } from "./ui";
@@ -152,6 +153,17 @@ const copyText = (text: string, what: string) =>
     (e) => s().error(tStatic("sb.copyFailed"), e),
   );
 
+/** „Markdown kopieren“: the page's text, with the edits typed a moment ago. */
+export async function copyMarkdown(n: PageNode) {
+  try {
+    await flushAllEditors().catch(() => {});
+    const doc = await api.page(n.id);
+    await copyText(doc.content, tStatic("sb.what.content"));
+  } catch (e) {
+    s().error(tStatic("sb.copyFailed"), e);
+  }
+}
+
 /** Moves through „Verschieben“: one path for every move, each with its „Rückgängig“. */
 const moveTo = (ids: number[], parent: number | null, position: number | null) => movePages(ids, parent, position);
 
@@ -174,8 +186,10 @@ async function setIcon(id: number, icon: string) {
 }
 
 /** A copy of the page right after it (a canvas stays a canvas); returns it. */
-async function duplicate(n: PageNode): Promise<number | null> {
+export async function duplicate(n: PageNode): Promise<number | null> {
   try {
+    // Edits typed a moment ago are part of the copy (as in the HTML export).
+    await flushAllEditors().catch(() => {});
     const doc = await api.page(n.id);
     const title = tStatic("sb.copyTitle", { title: n.title });
     const p = isCanvas(n) ? await api.createCanvas(title, n.parent_id) : await api.createPage(title, n.parent_id, n.icon, doc.content);
@@ -663,7 +677,7 @@ export function PageTree({
         submenu: [
           { label: tStatic("sb.copyLink"), icon: Link2, onSelect: () => copyText(`[[${n.title}]]`, tStatic("sb.what.link")) },
           { label: tStatic("sb.what.title"), icon: Type, onSelect: () => copyText(n.title, tStatic("sb.what.title")) },
-          { label: tStatic("sb.copyMarkdown"), icon: FileText, onSelect: () => api.page(n.id).then((d) => copyText(d.content, tStatic("sb.what.content")), (e) => s().error(tStatic("sb.copyFailed"), e)) },
+          { label: tStatic("sb.copyMarkdown"), icon: FileText, onSelect: () => void copyMarkdown(n) },
         ],
       },
       ...(n.children.length
