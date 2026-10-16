@@ -16,7 +16,7 @@ import { startVoice, useVoice } from "../lib/voice";
 import { caps } from "../lib/capabilities";
 import { Badge, Button, EmptyState, IconButton, Segmented, Select } from "../components/ui";
 import { openDailyNote, pickDate } from "../components/CalendarPopover";
-import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative } from "../lib/format";
+import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative, shownWeek } from "../lib/format";
 import {
   attendeeName, bookedEntry, bookingPrefill, dayItems, durationMinutes, hasSources, isAllDayLike, keyAction, layoutDay, minutesOfDay, monthCells, onDay as coversDay, rangeTitle, sourceColor, sourceName, step, timeRange, viewRange, weekLabel,
   type BookingPrefill, type CalView, type Range,
@@ -402,7 +402,7 @@ export function CalendarView() {
               <span className="calv-week-review-label">{t("week.title")}</span>
             </button>
           )}
-          {view === "month" && <span className="calv-kw">{t("time.weekNo", { n: `${isoWeek(range.days[0])}–${isoWeek(range.days[range.days.length - 1])}` })}</span>}
+          {view === "month" && <span className="calv-kw">{t("time.weekNo", { n: `${shownWeek(range.days[0])}–${isoWeek(range.days[range.days.length - 1])}` })}</span>}
         </div>
         <div className="calv-tools">
           <div className="calv-nav" role="group" aria-label={t("feed.range.custom")}>
@@ -664,6 +664,7 @@ function EventMarks({ e, booked }: { e: CalendarEvent; booked: Booked }) {
       {e.recurring && <Repeat className="calv-mark faint-mark" size={10} aria-label={t("calv.series")} />}
       {e.write?.state === "pending" && <CalendarClock className="calv-mark" size={11} aria-label={t("entries.pendingShort")} />}
       {e.write?.state === "conflict" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.conflict")} />}
+      {e.write?.state === "refused" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.refused")} />}
     </>
   );
 }
@@ -1057,7 +1058,7 @@ function MonthGrid(props: {
       </div>
       {weeks.map((week) => (
         <div key={isoDay(week[0])} className="calv-month-row" role="row">
-          <div className="calv-month-kw">{isoWeek(week[0])}</div>
+          <div className="calv-month-kw">{shownWeek(week[0])}</div>
           {week.map((d) => {
             const iso = isoDay(d);
             const cell = cells.get(iso);

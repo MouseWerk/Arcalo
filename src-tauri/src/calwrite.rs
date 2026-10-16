@@ -5,7 +5,8 @@
 //! Like the focus blocks' writes, a run reads the due writes, runs the script in
 //! `spawn_blocking` without the database lock and then stores its answer; Outlook is never
 //! started for it, writes that found it closed are retried about every minute and before each
-//! Outlook sync. One lock covers every Outlook write of the app (blocks and appointments).
+//! Outlook sync. One lock covers every Outlook write of the app (blocks and appointments); an
+//! Outlook read waits for it and keeps writes out until it has stored what it read.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -26,6 +27,15 @@ static FLUSHING: AtomicBool = AtomicBool::new(false);
 /// Every Outlook write of the app (focus blocks and appointments) runs under this lock: one
 /// script at a time, each with its own list of writes.
 pub static OUTLOOK_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Runs `read` (an Outlook read and storing what it saw) after the Outlook write under way and
+/// keeps new writes out until it is done: a read that overtook a write would store what Outlook
+/// had before it (a new appointment gone again, an old title that later looks like a conflict).
+/// Called after the flushes, never inside one (the lock is not reentrant).
+pub async fn after_writes<T>(read: impl std::future::Future<Output = T>) -> T {
+    let _outlook = OUTLOOK_WRITES.lock().await;
+    read.await
+}
 
 /// What decides whether an appointment can be changed here.
 pub fn context(cal: &CalendarSettings) -> WriteContext<'_> {
@@ -179,6 +189,15 @@ pub fn calendar_entry_resolve(app: AppHandle, state: State<AppState>, key: Strin
     Ok(())
 }
 
+/// „Änderung verwerfen“: drops a change Outlook refused or that still waits; the appointment
+/// shows as Outlook has it.
+#[tauri::command(async)]
+pub fn calendar_entry_discard(app: AppHandle, state: State<AppState>, key: String) -> Result<()> {
+    state.db().entry_discard(&key)?;
+    changed(&app);
+    Ok(())
+}
+
 /// „In Outlook öffnen“: the appointment in an Outlook window (attendees, Teams link, series).
 #[tauri::command]
 pub async fn calendar_entry_show(app: AppHandle, key: String) -> Result<()> {
@@ -193,8 +212,10 @@ pub async fn calendar_entry_show(app: AppHandle, key: String) -> Result<()> {
             .into(),
         )
     })?;
+    // An appointment in a PST file or a second mailbox is opened in its own store.
+    let store = state.settings().calendar.outlook_calendar(&e.source).map(|c| c.store_id.clone()).unwrap_or_default();
     let dir = state.data_dir.join("scripts");
-    tauri::async_runtime::spawn_blocking(move || outlookwrite::show(&dir, &entry))
+    tauri::async_runtime::spawn_blocking(move || outlookwrite::show(&dir, &entry, &store))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }
@@ -269,4 +290,50 @@ pub fn spawn_scheduler(app: AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn an_outlook_read_waits_for_a_write_under_way_and_keeps_new_ones_out() {
+        tauri::async_runtime::block_on(async {
+            let log = Arc::new(Mutex::new(Vec::<&str>::new()));
+            let push = |l: &Arc<Mutex<Vec<&'static str>>>, s| l.lock().unwrap().push(s);
+            // A write under way (another flush holds the lock while its script runs).
+            let write = OUTLOOK_WRITES.lock().await;
+            let l = log.clone();
+            let read = tauri::async_runtime::spawn(async move {
+                after_writes(async {
+                    push(&l, "read");
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    push(&l, "read stored");
+                })
+                .await
+            });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            push(&log, "write done");
+            drop(write);
+            // A write that starts while the read runs waits for it.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let next = OUTLOOK_WRITES.lock().await;
+            push(&log, "next write");
+            drop(next);
+            read.await.unwrap();
+            assert_eq!(*log.lock().unwrap(), ["write done", "read", "read stored", "next write"]);
+        });
+    }
+
+    #[test]
+    fn the_outlook_sync_reads_after_the_writes() {
+        let src = include_str!("calsync.rs");
+        let body = &src[src.find("async fn sync_outlook").unwrap()..];
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let wait = body.find("crate::calwrite::after_writes(").expect("the read waits for the writes");
+        assert!(body.find("crate::calwrite::flush(").unwrap() < wait, "flushed before, not inside (no deadlock)");
+        assert!(wait < body.find("read_calendars").unwrap());
+        assert!(wait < body.find("finish(").unwrap(), "what it read is stored before a write runs again");
+    }
 }

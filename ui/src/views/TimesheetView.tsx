@@ -10,7 +10,7 @@ import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRa
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, dateLocale, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, dateLocale, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, shownWeek, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { TimerClock, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
@@ -133,7 +133,7 @@ export function TimesheetView() {
           <div>
             <h1>{t("ribbon.timesheet")}</h1>
             <div className="view-sub">
-              {t("time.weekNo", { n: isoWeek(week) })} · {range}
+              {t("time.weekNo", { n: shownWeek(week) })} · {range}
             </div>
           </div>
           <div className="view-actions ts-actions">
@@ -1024,7 +1024,7 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
       if (target === "file") {
         const f = FORMATS.find((x) => x.value === format)!;
         const st = useApp.getState().settings?.settings;
-        const name = exportFileName(st?.time?.export_file_pattern ?? "", { from, to, format, week: isoWeek(new Date(`${from}T00:00:00`)), pernr: st?.pernr });
+        const name = exportFileName(st?.time?.export_file_pattern ?? "", { from, to, format, week: from < to ? shownWeek(new Date(`${from}T00:00:00`)) : isoWeek(new Date(`${from}T00:00:00`)), pernr: st?.pernr });
         path = await saveDialog({ defaultPath: `${name}.${f.ext}`, filters: [{ name: f.label, extensions: [f.ext] }] });
         if (!path) return;
       }

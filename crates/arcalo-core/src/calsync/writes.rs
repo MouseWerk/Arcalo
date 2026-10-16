@@ -22,7 +22,9 @@
 //! without attendees, and meetings the user organizes; a change of an organized meeting with
 //! attendees is only saved once the user confirmed that Outlook sends the update to them.
 //! Meetings received from others, series and free/busy calendars stay read-only („In Outlook
-//! öffnen“), and so does everything of ICS sources.
+//! öffnen“), and so does everything of ICS sources. A write Outlook refuses (the appointment
+//! became part of a series, is gone, or could not be saved) is not retried: it waits with its
+//! message until the user drops it („Änderung verwerfen“) or changes the appointment again.
 
 use std::collections::HashMap;
 
@@ -215,7 +217,8 @@ impl Fields {
         self
     }
 
-    /// Trims the texts and checks the times (start before end, at most [`MAX_DAYS`]).
+    /// Trims the texts and checks the times (start before end, at most [`MAX_DAYS`] when they
+    /// change: a longer appointment made in Outlook keeps its length with a new title or place).
     fn cleaned(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Fields> {
         if let Some(t) = &self.title {
             let t = t.trim();
@@ -229,7 +232,7 @@ impl Fields {
         if e <= s {
             return Err(Error::State(tr!("Das Ende liegt vor dem Beginn", "The end is before the start").into()));
         }
-        if e - s > Duration::days(MAX_DAYS) {
+        if (self.start.is_some() || self.end.is_some()) && e - s > Duration::days(MAX_DAYS) {
             return Err(Error::State(trf!(
                 "Ein Termin dauert höchstens {} Tage",
                 "An appointment lasts at most {} days",
@@ -258,9 +261,10 @@ pub struct EntryDraft {
 pub struct WriteState {
     /// `create`, `update`, `delete` or `restore`.
     pub op: String,
-    /// `pending` or `conflict`.
+    /// `pending`, `conflict` or `refused` (Outlook refused it: it waits for the user, never
+    /// retried by itself).
     pub state: String,
-    /// Why the last write failed (it is retried).
+    /// Why the last write failed (retried while `pending`).
     pub error: Option<String>,
     /// A conflict: Outlook's values of the fields changed on both sides.
     pub outlook: Option<Fields>,
@@ -564,6 +568,15 @@ impl Database {
             .optional()?)
     }
 
+    /// What Arcalo knows of an appointment Outlook has: the stored event, else the one its
+    /// waiting row keeps (brought back from Deleted Items, or refused and gone since).
+    fn known_event(&self, key: &str, row: Option<&Row>) -> Result<NewEvent> {
+        match self.stored_event(key)? {
+            Some(e) => Ok(e.event),
+            None => row.and_then(|r| r.snapshot.clone()).ok_or_else(gone),
+        }
+    }
+
     /// Booked entry, meeting note and „nicht buchen“ of a key (events shown from the queue).
     fn marks_of(&self, key: &str) -> Result<(bool, Option<i64>, Option<i64>)> {
         Ok(self
@@ -624,12 +637,20 @@ impl Database {
                         events.push(self.shown(&row.source, ev, &row)?);
                     }
                 }
-                "delete" => {
-                    events.retain(|e| !(e.source == row.source && Some(&e.event.uid) == row.uid.as_ref()));
+                // Only the appointment itself: occurrences of a series share its uid.
+                "delete" if row.state != "refused" => {
+                    events.retain(|e| {
+                        !(e.source == row.source
+                            && Some(&e.event.uid) == row.uid.as_ref()
+                            && e.event.instance.is_empty())
+                    });
                 }
-                "update" | "restore" => {
+                // A refused delete stays visible with its message, like a refused change.
+                "update" | "restore" | "delete" => {
                     let uid = row.uid.clone().unwrap_or_default();
-                    let at = events.iter().position(|e| e.source == row.source && e.event.uid == uid);
+                    let at = events
+                        .iter()
+                        .position(|e| e.source == row.source && e.event.uid == uid && e.event.instance.is_empty());
                     let mut shown = match at {
                         Some(i) => events.remove(i),
                         None => match self.stored_event(&event_key(&row.source, &uid, ""))? {
@@ -661,19 +682,31 @@ impl Database {
 
     /// One event by its key, with a change waiting for Outlook (also a new appointment).
     pub(crate) fn calendar_event_shown(&self, key: &str) -> Result<Option<CalendarEvent>> {
-        let Some((source, uid, _)) = split_key(key) else { return Ok(None) };
-        let row = self.outbox_row_for(source, uid)?.filter(|r| r.state != "done");
+        let Some((source, uid, instance)) = split_key(key) else { return Ok(None) };
         let stored = self.stored_event(key)?;
+        if !instance.is_empty() {
+            // An occurrence of a series is never written; a change of the appointment it once
+            // was is not its own.
+            return Ok(stored);
+        }
+        let row = self.outbox_row_for(source, uid)?.filter(|r| r.state != "done");
         let Some(row) = row else { return Ok(stored) };
         match (row.op.as_str(), stored) {
             ("create", _) => draft_event(&row.marker, &row.fields).map(|ev| self.shown(source, ev, &row)).transpose(),
-            ("delete", _) => Ok(None),
+            ("delete", _) if row.state != "refused" => Ok(None),
             (_, Some(mut e)) => {
                 row.fields.apply(&mut e.event);
                 e.write = Some(row.write_state());
                 Ok(Some(e))
             }
-            (_, None) => row.snapshot.clone().map(|ev| self.shown(source, ev, &row)).transpose(),
+            (_, None) => row
+                .snapshot
+                .clone()
+                .map(|mut ev| {
+                    row.fields.apply(&mut ev);
+                    self.shown(source, ev, &row)
+                })
+                .transpose(),
         }
     }
 
@@ -720,8 +753,7 @@ impl Database {
                 )?;
                 return Ok(());
             }
-            let stored = self.stored_event(key)?.ok_or_else(gone)?;
-            let e = &stored.event;
+            let e = &self.known_event(key, row.as_ref())?;
             if e.recurring {
                 return Err(Error::State(error_text("series", "")));
             }
@@ -748,10 +780,12 @@ impl Database {
                 Some(r) if fields.is_empty() && r.op == "update" => {
                     self.conn().execute("DELETE FROM calendar_outbox WHERE id = ?1", [r.id])?;
                 }
+                // A refused change is tried again with the user's new one.
                 Some(r) => {
                     self.conn().execute(
                         "UPDATE calendar_outbox SET fields = ?2, seen = ?3, send = ?4, seq = seq + 1, attempts = 0,
-                           next_try = NULL, error = NULL WHERE id = ?1",
+                           next_try = NULL, error = NULL, state = CASE state WHEN 'refused' THEN 'pending' ELSE state END
+                         WHERE id = ?1",
                         params![r.id, json(&fields)?, json(&seen)?, (send || keep_send) && confirm],
                     )?;
                 }
@@ -798,8 +832,17 @@ impl Database {
                 )?;
                 return Ok(());
             }
-            let stored = self.stored_event(key)?.ok_or_else(gone)?;
-            let e = &stored.event;
+            if let Some(r) = row.as_ref().filter(|r| r.op == "restore" && r.deleted_id.is_some()) {
+                // Brought back from Deleted Items, but not there yet: it stays in Deleted Items
+                // and its undo is offered again. A restore under way is deleted again by its answer.
+                self.conn().execute(
+                    "UPDATE calendar_outbox SET op = 'delete', state = 'done', snapshot = ?2, seq = seq + 1, attempts = 0,
+                       next_try = NULL, error = NULL, conflict = NULL, created_at = ?3 WHERE id = ?1",
+                    params![r.id, snapshot, ts(now)],
+                )?;
+                return Ok(());
+            }
+            let e = &self.known_event(key, row.as_ref())?;
             if e.recurring {
                 return Err(Error::State(error_text("series", "")));
             }
@@ -908,6 +951,28 @@ impl Database {
             }
             Ok(())
         })
+    }
+
+    /// „Änderung verwerfen“: drops a change that Outlook refused or that still waits (a
+    /// conflict has its own choice). A new appointment is gone (one whose write may have reached
+    /// Outlook comes back with the next sync), a changed or deleted one shows as Outlook has it,
+    /// one brought back from Deleted Items stays there (its undo is offered again).
+    pub fn entry_discard(&self, key: &str) -> Result<()> {
+        let (source, uid, _) = split_key(key).ok_or_else(gone)?;
+        let row = self
+            .outbox_row_for(source, uid)?
+            .filter(|r| matches!(r.state.as_str(), "pending" | "refused"))
+            .ok_or_else(gone)?;
+        if row.op == "restore" && row.deleted_id.is_some() {
+            self.conn().execute(
+                "UPDATE calendar_outbox SET op = 'delete', state = 'done', seq = seq + 1, attempts = 0, next_try = NULL,
+                   error = NULL WHERE id = ?1",
+                [row.id],
+            )?;
+        } else {
+            self.conn().execute("DELETE FROM calendar_outbox WHERE id = ?1", [row.id])?;
+        }
+        Ok(())
     }
 
     /// Writes title, times and place of a stored event (after a write, or Outlook's version taken).
@@ -1021,6 +1086,21 @@ impl Database {
                 )?;
                 Ok(())
             };
+            // Outlook refused it (a series now, received, saving failed, gone): it waits with its
+            // message until the user drops it („Änderung verwerfen“) or changes it again, and
+            // stays visible even when the appointment is gone from Outlook.
+            let refuse = |op: &EntryOp, msg: &str| -> Result<()> {
+                let kept = match &op.uid {
+                    Some(u) => self.stored_event(&event_key(&op.source, u, ""))?.map(|e| json(&e.event)).transpose()?,
+                    None => None,
+                };
+                self.conn().execute(
+                    "UPDATE calendar_outbox SET state = 'refused', error = ?3, next_try = NULL, snapshot = COALESCE(snapshot, ?4)
+                     WHERE id = ?1 AND seq = ?2",
+                    params![op.key, op.seq, msg, kept],
+                )?;
+                Ok(())
+            };
             let results = match results {
                 Err(e) => {
                     for op in ops {
@@ -1046,14 +1126,13 @@ impl Database {
                                 params![op.key, op.seq, json(&current)?],
                             )?;
                         }
-                        // Gone in Outlook: the change has nothing to go to (the next sync shows it).
                         // A restore whose item is not in Deleted Items anymore was moved back by a
                         // try whose answer got lost, or Deleted Items was emptied: the next sync
                         // shows which.
-                        Some("not_found") => {
+                        Some("not_found") if op.op == "restore" => {
                             self.conn().execute("DELETE FROM calendar_outbox WHERE id = ?1 AND seq = ?2", params![op.key, op.seq])?;
                         }
-                        _ => fail(op, res.error.as_deref().unwrap_or(""))?,
+                        _ => refuse(op, res.error.as_deref().unwrap_or(""))?,
                     }
                     continue;
                 }

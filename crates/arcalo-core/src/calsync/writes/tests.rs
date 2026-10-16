@@ -71,7 +71,13 @@ impl Fake {
         let folder = if o.calendar.default { String::new() } else { o.calendar.entry_id.clone() };
         let mut res =
             EntryResult { key: o.key, ok: true, modified: Some("2026-10-01T00:00:00Z".into()), ..Default::default() };
-        let fail = |code: &str| EntryResult { key: o.key, ok: false, code: Some(code.into()), ..Default::default() };
+        let fail = |code: &str| EntryResult {
+            key: o.key,
+            ok: false,
+            code: Some(code.into()),
+            error: Some(error_text(code, "")),
+            ..Default::default()
+        };
         let found = {
             let items = self.items.borrow();
             o.entry_id.clone().filter(|e| items.get(e).is_some_and(|i| i.folder == folder)).or_else(|| {
@@ -859,4 +865,225 @@ fn the_read_keeps_what_a_write_needs() {
     );
     assert_eq!(evs[0].meta.modified.as_deref(), Some("2026-10-20T07:00:00Z"));
     assert!(evs[2].attendees.is_empty(), "the names of a private one are dropped, the count stays");
+}
+
+#[test]
+fn an_appointment_brought_back_while_outlook_is_closed_can_be_changed_and_deleted() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Zahnarzt", t(7, 15, 0), 60, Item::default());
+    db.entry_delete(&key, now).unwrap();
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    sync(&db, &fake);
+    // „Rückgängig“ while Outlook is closed: shown from what Arcalo kept of it.
+    fake.closed.set(true);
+    db.entry_undo(&key).unwrap();
+    let later = Fields { start: Some(t(7, 16, 0)), end: Some(t(7, 17, 0)), ..Default::default() };
+    let moved = db.entry_update(&key, &later, false, now).unwrap();
+    assert_eq!((moved.event.start, moved.write.as_ref().map(|w| w.op.as_str())), (t(7, 16, 0), Some("restore")));
+    db.entry_update(&key, &patch_title("Zahnarzt Dr. Weiß"), false, now).unwrap();
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    fake.closed.set(false);
+    flush(&db, &fake, now + Duration::minutes(5), &Z, false, &cals()).unwrap();
+    let it = fake.get("R1");
+    assert_eq!((it.subject.as_str(), it.start.as_str()), ("Zahnarzt Dr. Weiß", "2026-10-07T16:00:00"));
+    sync(&db, &fake);
+    let all = shown(&db);
+    assert_eq!(all.len(), 1);
+    assert!(all[0].write.is_none(), "{:?}", all[0].write);
+
+    // Deleted again while its restore waits: it stays in Deleted Items, and its undo still works.
+    let key = all[0].key.clone();
+    db.entry_delete(&key, now).unwrap();
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    sync(&db, &fake);
+    fake.closed.set(true);
+    db.entry_undo(&key).unwrap();
+    db.entry_delete(&key, now).unwrap();
+    assert!(shown(&db).is_empty());
+    fake.closed.set(false);
+    assert_eq!(flush(&db, &fake, now + Duration::minutes(10), &Z, true, &cals()).unwrap(), 0, "nothing to write");
+    assert!(fake.items.borrow().is_empty() && fake.trash.borrow().len() == 1);
+    db.entry_undo(&key).unwrap();
+    flush(&db, &fake, now + Duration::minutes(11), &Z, false, &cals()).unwrap();
+    assert_eq!(fake.items.borrow().len(), 1);
+}
+
+#[test]
+fn a_long_appointment_from_outlook_can_be_renamed() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Elternzeit", t(2, 0, 0), 21 * 24 * 60, Item::default());
+    let ev = db.entry_update(&key, &patch_title("Elternzeit Anna"), false, now).unwrap();
+    assert_eq!(ev.event.title, "Elternzeit Anna");
+    db.entry_update(&key, &Fields { location: Some("Zuhause".into()), ..Default::default() }, false, now).unwrap();
+    // Moving or stretching keeps the limit.
+    let e = db
+        .entry_update(
+            &key,
+            &Fields { start: Some(t(3, 0, 0)), end: Some(t(24, 0, 0)), ..Default::default() },
+            false,
+            now,
+        )
+        .unwrap_err();
+    assert!(e.to_string().contains("14 Tage"), "{e}");
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    assert_eq!((fake.get("A").subject.as_str(), fake.get("A").location.as_str()), ("Elternzeit Anna", "Zuhause"));
+}
+
+#[test]
+fn a_change_outlook_refuses_waits_for_the_user_and_can_be_discarded() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Planung", t(6, 9, 0), 60, Item::default());
+    fake.closed.set(true);
+    let later = Fields { start: Some(t(6, 11, 0)), end: Some(t(6, 12, 0)), ..Default::default() };
+    db.entry_update(&key, &later, false, now).unwrap();
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    // Meanwhile it became a series in Outlook.
+    fake.items.borrow_mut().get_mut("A").unwrap().recurring = true;
+    fake.closed.set(false);
+    flush(&db, &fake, now + Duration::minutes(1), &Z, false, &cals()).unwrap();
+    let w = db.calendar_event(&key).unwrap().write.unwrap();
+    assert_eq!(w.state, "refused");
+    assert!(w.error.unwrap().contains("Serie"));
+    assert_eq!(db.entry_outbox_len().unwrap(), 0, "not retried");
+    let runs = fake.runs.get();
+    flush(&db, &fake, now + Duration::hours(2), &Z, false, &cals()).unwrap();
+    flush(&db, &fake, now + Duration::hours(3), &Z, true, &cals()).unwrap();
+    assert_eq!(fake.runs.get(), runs, "never written again");
+    assert_eq!(fake.get("A").start, "2026-10-06T09:00:00");
+    assert_eq!(db.entry_outbox_counts().unwrap().get("refused"), Some(&1));
+
+    // The next sync reads its occurrences: none of them is moved on screen, the refused change
+    // stays visible with its message.
+    let occurrence = |instance: &str, day: u32| NewEvent {
+        uid: "G-A".into(),
+        instance: instance.into(),
+        recurring: true,
+        start: t(day, 9, 0),
+        end: t(day, 10, 0),
+        all_day: false,
+        title: "Planung".into(),
+        location: String::new(),
+        organizer: String::new(),
+        attendees: vec![],
+        body: None,
+        link: None,
+        busy: Busy::Busy,
+        private: false,
+        categories: vec![],
+        meta: EventMeta { outlook_id: Some("A".into()), modified: None, meeting: 0, has_attendees: false },
+    };
+    db.calendar_replace(OUTLOOK, t(1, 0, 0), t(31, 0, 0), &[occurrence("20261006", 6), occurrence("20261013", 13)])
+        .unwrap();
+    let all = shown(&db);
+    let series: Vec<_> = all.iter().filter(|e| !e.event.instance.is_empty()).collect();
+    assert_eq!(series.len(), 2);
+    assert!(series.iter().all(|e| e.write.is_none() && e.event.start.time() == t(1, 9, 0).time()), "{series:?}");
+    let refused: Vec<_> = all.iter().filter(|e| e.write.as_ref().is_some_and(|w| w.state == "refused")).collect();
+    assert_eq!(refused.len(), 1, "{all:?}");
+    assert_eq!(refused[0].key, key);
+
+    // „Änderung verwerfen“.
+    db.entry_discard(&key).unwrap();
+    assert!(shown(&db).iter().all(|e| e.write.is_none()));
+    assert_eq!(shown(&db).len(), 2);
+    assert!(db.entry_outbox_counts().unwrap().is_empty());
+
+    // A received meeting and a save error are refused the same way; a delete is shown again.
+    let b = synced(&db, &fake, "B", "Abstimmung", t(8, 9, 0), 30, Item::default());
+    db.entry_delete(&b, now).unwrap();
+    fake.items.borrow_mut().get_mut("B").unwrap().status = 3;
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    let e = db.calendar_event(&b).unwrap();
+    assert_eq!(e.write.as_ref().map(|w| (w.op.as_str(), w.state.as_str())), Some(("delete", "refused")));
+    db.entry_discard(&b).unwrap();
+    assert!(db.calendar_event(&b).unwrap().write.is_none());
+
+    let c = synced(&db, &fake, "C", "Review", t(9, 9, 0), 30, Item::default());
+    db.entry_update(&c, &patch_title("Review 2"), false, now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    let res = vec![EntryResult {
+        key: ops[0].key,
+        ok: false,
+        code: Some("save".into()),
+        error: Some(error_text("save", "Der Kalender ist schreibgeschützt")),
+        ..Default::default()
+    }];
+    db.entry_outbox_apply(&ops, &Ok(res), now, &Z).unwrap();
+    let w = db.calendar_event(&c).unwrap().write.unwrap();
+    assert_eq!(w.state, "refused");
+    assert!(w.error.unwrap().contains("schreibgeschützt"));
+    // A new change of the user is tried again.
+    db.entry_update(&c, &patch_title("Review 3"), false, now).unwrap();
+    assert_eq!(db.calendar_event(&c).unwrap().write.unwrap().state, "pending");
+    assert_eq!(flush(&db, &fake, now, &Z, false, &cals()).unwrap(), 1);
+    assert_eq!(fake.get("C").subject, "Review 3");
+}
+
+#[test]
+fn a_change_whose_appointment_is_gone_from_outlook_is_not_dropped_silently() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Kundentermin", t(6, 9, 0), 60, Item::default());
+    fake.closed.set(true);
+    db.entry_update(&key, &patch_title("Kundentermin Müller"), false, now).unwrap();
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    fake.items.borrow_mut().clear();
+    fake.closed.set(false);
+    flush(&db, &fake, now + Duration::minutes(1), &Z, false, &cals()).unwrap();
+    sync(&db, &fake);
+    // Still shown, with the message, until the user drops the change.
+    let all = shown(&db);
+    assert_eq!(all.len(), 1);
+    let w = all[0].write.clone().unwrap();
+    assert_eq!(w.state, "refused");
+    assert_eq!(w.error.as_deref(), Some(error_text("not_found", "").as_str()));
+    assert_eq!(all[0].event.title, "Kundentermin Müller");
+    db.entry_discard(&key).unwrap();
+    assert!(shown(&db).is_empty());
+    assert!(db.entry_discard(&key).is_err(), "nothing left to drop");
+}
+
+#[test]
+fn a_waiting_change_can_be_discarded() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Telefonat", t(6, 9, 0), 30, Item::default());
+    fake.closed.set(true);
+    db.entry_update(&key, &patch_title("Telefonat Kunde"), false, now).unwrap();
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    db.entry_discard(&key).unwrap();
+    let e = db.calendar_event(&key).unwrap();
+    assert_eq!((e.event.title.as_str(), e.write.is_none()), ("Telefonat", true));
+    // A new one that never reached Outlook is gone.
+    let ev = db.entry_create(&draft("Neu", t(6, 11, 0), 30), now).unwrap();
+    db.entry_discard(&ev.key).unwrap();
+    assert_eq!(shown(&db).len(), 1);
+    fake.closed.set(false);
+    assert_eq!(flush(&db, &fake, now + Duration::minutes(5), &Z, true, &cals()).unwrap(), 0);
+    assert_eq!(fake.get("A").subject, "Telefonat");
+}
+
+#[test]
+fn appointments_of_other_stores_are_found_and_deleted_in_their_own_store() {
+    let script = crate::calsync::outlook::SCRIPT;
+    // By EntryID in the store of the calendar (a PST or a second mailbox), then anywhere.
+    assert!(script.contains("function Get-ItemById($id, $folder)"));
+    assert!(script.contains("$ns.GetItemFromID([string]$id, [string]$folder.StoreID)"));
+    let write = &script[script.find("if ($Mode -eq 'write')").unwrap()..script.find("if ($Mode -eq 'show')").unwrap()];
+    assert!(write.contains("$item = Get-ItemById $o.entryId $folder"));
+    assert!(write.contains("$item = Get-ItemById $o.deletedId $folder"));
+    // A delete goes to Deleted Items of the calendar's own store.
+    assert!(write.contains("$folder.Store.GetDefaultFolder(3)"));
+    // „In Outlook öffnen“ passes the store as well.
+    let show = &script[script.find("if ($Mode -eq 'show')").unwrap()..];
+    assert!(show.contains("$ns.GetItemFromID($EntryId, $StoreId)"));
+    assert!(script.contains("[string]$StoreId"));
 }

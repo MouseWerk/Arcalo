@@ -438,7 +438,7 @@ pub(crate) fn review_day<Tz: TimeZone>(
         for (id, np, vorgang, start, minutes, description, status, nr, project, title) in rows {
             let start = parse_ts(&start)?;
             if status == "running" {
-                time.running_minutes += (opts.now - start).num_minutes().max(0);
+                time.running_minutes += db.timer_worked_since(id, start, opts.now)?;
                 continue;
             }
             let minutes = minutes.unwrap_or(0);

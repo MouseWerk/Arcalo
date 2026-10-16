@@ -4,7 +4,7 @@
 // appointment, and the part of an appointment's panel that changes it or says why it cannot.
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { AlertTriangle, CalendarClock, ExternalLink, Lock, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, ExternalLink, Lock, Plus, RefreshCw, Trash2, Undo2, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Button, IconButton, Input, Select } from "../components/ui";
@@ -263,7 +263,8 @@ const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.get
 
 /**
  * Date, start and end of an appointment in the app's formats; `onCommit` gets the new times when
- * the focus leaves them (a new start keeps the length, a day picked in the calendar applies at once).
+ * the focus leaves them or Enter is pressed in them (before the panel acts on Enter), once per
+ * change (a new start keeps the length, a day picked in the calendar applies at once).
  */
 function WhenInputs({ start, end, onCommit }: { start: Date; end: Date; onCommit: (s: Date, e: Date) => void }) {
   const t = useT();
@@ -271,19 +272,29 @@ function WhenInputs({ start, end, onCommit }: { start: Date; end: Date; onCommit
   const [from, setFrom] = useState(hm(start));
   const [to, setTo] = useState(hm(end));
   const box = useRef<HTMLDivElement>(null);
+  // The times last handed on: Enter and the blur after it save them once.
+  const sent = useRef("");
   useEffect(() => {
     setDate(isoDay(start));
     setFrom(hm(start));
     setTo(hm(end));
+    sent.current = "";
   }, [start.getTime(), end.getTime()]);
   const commit = (next: { date?: string } = {}) => {
     const r = editedTimes(start, end, { date: next.date ?? date, from, to });
-    if (r) onCommit(r.start, r.end);
+    if (!r) return;
+    const k = `${r.start.getTime()}-${r.end.getTime()}`;
+    if (k === sent.current) return;
+    sent.current = k;
+    onCommit(r.start, r.end);
   };
   return (
     <div
       ref={box}
       className="calv-entry-when"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !isComposing(e)) commit();
+      }}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit();
       }}
@@ -318,11 +329,17 @@ export function EntryEditor({ draft, cal, onChange, onClose, onCreated }: { draf
   const targets = targetCalendars(cal);
   const [source, setSource] = useState(() => (targets.some((c) => c.id === cal?.entry_target) ? cal!.entry_target! : "outlook"));
   const [busy, setBusy] = useState(false);
+  // The times as last committed: Enter in a time field commits them just before it creates.
+  const when = useRef(draft);
+  useEffect(() => {
+    when.current = draft;
+  }, [draft.start.getTime(), draft.end.getTime()]);
   const create = async () => {
     if (busy) return;
     setBusy(true);
+    const { start, end } = when.current;
     try {
-      const e = await api.calendarEntryCreate({ source, title: title.trim() || tr("entries.new"), start: draft.start.toISOString(), end: draft.end.toISOString(), location: location.trim() });
+      const e = await api.calendarEntryCreate({ source, title: title.trim() || tr("entries.new"), start: start.toISOString(), end: end.toISOString(), location: location.trim() });
       onCreated(e);
     } catch (err) {
       useApp.getState().error(t("entries.createFailed"), err);
@@ -346,7 +363,14 @@ export function EntryEditor({ draft, cal, onChange, onClose, onCreated }: { draf
       </div>
       <div className="calv-detail-top">
         <Input autoFocus className="calv-entry-name" value={title} placeholder={t("entries.titlePlaceholder")} aria-label={t("entries.title")} onChange={(e) => setTitle(e.target.value)} />
-        <WhenInputs start={draft.start} end={draft.end} onCommit={(start, end) => onChange({ start, end })} />
+        <WhenInputs
+          start={draft.start}
+          end={draft.end}
+          onCommit={(start, end) => {
+            when.current = { start, end };
+            onChange({ start, end });
+          }}
+        />
       </div>
       <section className="calv-detail-sec calv-entry-fields">
         <Input value={location} placeholder={t("entries.locationPlaceholder")} aria-label={t("entries.location")} onChange={(e) => setLocation(e.target.value)} />
@@ -429,7 +453,7 @@ function fieldText(k: keyof EntryFields, v: string | undefined) {
 export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local }) {
   const t = useT();
   const s = useApp.getState;
-  const [busy, setBusy] = useState<"" | "retry" | "outlook" | "mine" | "show">("");
+  const [busy, setBusy] = useState<"" | "retry" | "outlook" | "mine" | "show" | "discard">("");
   const run = async (what: typeof busy, fn: () => Promise<unknown>, failed: TKey) => {
     setBusy(what);
     try {
@@ -444,6 +468,12 @@ export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local })
   const ro = e.editable ? READ_ONLY[e.editable] : undefined;
   const outlook = e.source === "outlook" || e.source.startsWith("outlook:");
   const conflictFields = w?.state === "conflict" ? (Object.keys(FIELD_LABELS) as (keyof EntryFields)[]).filter((k) => w.outlook?.[k] != null) : [];
+  // A change that failed or that Outlook refused can be dropped: the appointment shows as Outlook has it.
+  const discard = (
+    <Button size="sm" variant="ghost" icon={Undo2} loading={busy === "discard"} onClick={() => void run("discard", () => api.calendarEntryDiscard(e.key), "entries.discardFailed")}>
+      {t("entries.discard")}
+    </Button>
+  );
   return (
     <section className="calv-detail-sec calv-entry-state">
       {w?.state === "pending" && (
@@ -456,6 +486,17 @@ export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local })
           <Button size="sm" variant="ghost" icon={RefreshCw} loading={busy === "retry"} onClick={() => void run("retry", () => api.calendarEntriesRetry(), "entries.saveFailed")}>
             {t("blocks.retry")}
           </Button>
+          {w.error && discard}
+        </div>
+      )}
+      {w?.state === "refused" && (
+        <div className="calv-entry-note conflict" role="status" data-write="refused">
+          <AlertTriangle size={14} aria-hidden />
+          <span>
+            <b>{t("entries.refused")}</b>
+            {w.error && <span className="faint small calv-block-error">{w.error}</span>}
+          </span>
+          {discard}
         </div>
       )}
       {w?.state === "conflict" && (

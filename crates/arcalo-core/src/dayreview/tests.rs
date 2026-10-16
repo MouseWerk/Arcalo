@@ -185,6 +185,9 @@ fn a_full_day_on_the_long_dst_day() {
     // Time: per WBS, the repeated hour counts, the next day does not.
     assert_eq!(r.time.booked_minutes, 60 + 90 + 30 + 15);
     assert_eq!(r.time.running_minutes, 25);
+    // Its pauses are not worked time.
+    db.pause_timer(now - Duration::minutes(10)).unwrap();
+    assert_eq!(day_review(&db, date, &Berlin, &opts(now)).unwrap().time.running_minutes, 15);
     assert_eq!(r.time.items.len(), 2);
     assert_eq!((r.time.items[0].label.as_str(), r.time.items[0].minutes), ("NP-8801/1020", 165));
     assert_eq!(r.time.items[0].descriptions, ["Nachtarbeit", "Jour fixe", "Konzept"]);

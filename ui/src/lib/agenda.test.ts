@@ -83,6 +83,10 @@ describe("visible ranges", () => {
     expect(rangeTitle("workweek", viewRange("workweek", fri, 1), fri)).toBe("21.–25. September 2026");
     expect(rangeTitle("week", viewRange("week", new Date(2026, 8, 30), 1), new Date(2026, 8, 30))).toBe("28. September – 4. Oktober 2026");
     expect(weekLabel(viewRange("week", fri, 1))).toBe("KW 39");
+    // A week from Sunday: six of its days are in the week of its Monday.
+    expect(weekLabel(viewRange("week", new Date(2026, 9, 14), 0))).toBe("KW 42");
+    expect(weekLabel(viewRange("workweek", new Date(2026, 9, 14), 0))).toBe("KW 42");
+    expect(weekLabel(viewRange("day", new Date(2026, 9, 11), 0))).toBe("KW 41");
   });
   it("keys", () => {
     expect(keyAction("t")).toEqual({ today: true });

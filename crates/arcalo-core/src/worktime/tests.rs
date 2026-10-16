@@ -336,3 +336,21 @@ fn the_balance_of_a_new_workspace_starts_on_the_day_of_its_setup() {
     // Wednesday and Thursday without bookings; Friday (today) is still running.
     assert_eq!(b.minutes, -960);
 }
+
+#[test]
+fn a_running_timer_counts_its_worked_minutes_without_its_pauses() {
+    let (db, np, s) = world();
+    let today = d(2026, 10, 16);
+    let at = |h: u32| Utc.with_ymd_and_hms(2026, 10, 16, h, 0, 0).unwrap();
+    db.start_timer(np, None, None, "", at(8)).unwrap();
+    db.pause_timer(at(12)).unwrap();
+    // Paused since 12:00: the total stands still.
+    assert_eq!(booked_by_day(&db, &Utc, today, today, at(13)).unwrap()[&today], 240);
+    assert_eq!(booked_by_day(&db, &Utc, today, today, at(20)).unwrap()[&today], 240);
+    db.resume_timer(at(14)).unwrap();
+    // 08:00-17:00 with two hours of pause: 7 h, as the timer shows.
+    let entry = db.running_timer().unwrap().unwrap();
+    assert_eq!(db.timer_worked_minutes(&entry, at(17)).unwrap(), 420);
+    assert_eq!(booked_by_day(&db, &Utc, today, today, at(17)).unwrap()[&today], 420);
+    assert_eq!(balance(&db, &s, &Utc, today, at(17), 1).unwrap().today_booked, 420);
+}

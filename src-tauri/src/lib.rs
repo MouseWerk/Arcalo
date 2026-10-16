@@ -5414,6 +5414,7 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         calwrite::calendar_entry_delete,
         calwrite::calendar_entry_undo,
         calwrite::calendar_entry_resolve,
+        calwrite::calendar_entry_discard,
         calwrite::calendar_entry_show,
         calwrite::calendar_entries_retry,
         timeblocks::blocks_list,

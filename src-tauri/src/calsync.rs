@@ -593,43 +593,48 @@ async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<us
     if cals.is_empty() {
         return out;
     }
-    let window = window(app);
-    let zone = Zone::Local;
-    let privacy = Privacy::from(&settings);
-    let req = outlook::Request { from: zone.to_wall(window.0), to: zone.to_wall(window.1), privacy };
-    let dir = state.data_dir.join("scripts");
-    let list = cals.clone();
-    let reads = if outlook::available() {
-        tauri::async_runtime::spawn_blocking(move || outlook::read_calendars(&dir, req, &list, &Zone::Local))
-            .await
-            .map_err(|e| Error::State(e.to_string()))
-            .and_then(|r| r)
-    } else {
-        Err(Error::State(
-            tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
-                .into(),
-        ))
-    };
-    match reads {
-        Ok(reads) => {
-            for r in reads {
-                if r.free_busy {
-                    devlog::debug("calendar", format!("{}: free/busy only", r.id));
+    // A flush that another run started may still be writing: the read waits for it, and the
+    // writes of new changes wait until what it read is stored.
+    crate::calwrite::after_writes(async move {
+        let window = window(app);
+        let zone = Zone::Local;
+        let privacy = Privacy::from(&settings);
+        let req = outlook::Request { from: zone.to_wall(window.0), to: zone.to_wall(window.1), privacy };
+        let dir = state.data_dir.join("scripts");
+        let list = cals.clone();
+        let reads = if outlook::available() {
+            tauri::async_runtime::spawn_blocking(move || outlook::read_calendars(&dir, req, &list, &Zone::Local))
+                .await
+                .map_err(|e| Error::State(e.to_string()))
+                .and_then(|r| r)
+        } else {
+            Err(Error::State(
+                tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
+                    .into(),
+            ))
+        };
+        match reads {
+            Ok(reads) => {
+                for r in reads {
+                    if r.free_busy {
+                        devlog::debug("calendar", format!("{}: free/busy only", r.id));
+                    }
+                    let outcome = finish(app, &r.id, window, r.events);
+                    out.push((r.id, outcome));
                 }
-                let outcome = finish(app, &r.id, window, r.events);
-                out.push((r.id, outcome));
+            }
+            Err(e) => {
+                // Outlook itself failed: every calendar of the run reports it.
+                let msg = e.to_string();
+                for c in &cals {
+                    let outcome = finish(app, &c.id, window, Err(Error::State(msg.clone())));
+                    out.push((c.id.clone(), outcome));
+                }
             }
         }
-        Err(e) => {
-            // Outlook itself failed: every calendar of the run reports it.
-            let msg = e.to_string();
-            for c in &cals {
-                let outcome = finish(app, &c.id, window, Err(Error::State(msg.clone())));
-                out.push((c.id.clone(), outcome));
-            }
-        }
-    }
-    out
+        out
+    })
+    .await
 }
 
 type Window = (DateTime<Utc>, DateTime<Utc>);
