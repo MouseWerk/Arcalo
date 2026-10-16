@@ -66,6 +66,18 @@ jobs:
       - run: npm ci --prefix ui
       # File handling and line ends differ on Windows (sharing, flush rights, Git for Windows' autocrlf): the backup,
       # encryption and Git sync tests run here too.
+      # The Outlook and packaging scripts cannot run on Linux: Windows PowerShell 5.1 (what the app
+      # starts) parses every one of them, and a syntax error fails here instead of at a user.
+      - name: PowerShell scripts parse (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 -Path crates, packaging, scripts | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) { Write-Host "$($_.FullName):$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          if ($bad) { exit 1 }
       - name: Core tests on Windows (backups, encryption, Git sync)
         run: cargo test -p arcalo-core -- backup cipher gitsync
       - run: cargo install tauri-cli --version "^2" --locked
