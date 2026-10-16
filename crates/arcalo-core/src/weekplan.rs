@@ -1238,6 +1238,48 @@ pub struct Applied {
     pub alerts: Vec<BudgetStatus>,
 }
 
+/// Whether a source of `it` is booked already: an appointment or a focus session or block with
+/// an entry, or a page with an entry at the proposal's start (a proposal only has open sources).
+fn already_booked(db: &Database, it: &Accepted) -> Result<bool> {
+    for s in &it.sources {
+        let id = s.id.parse::<i64>().unwrap_or(-1);
+        let booked = match s.kind {
+            SourceKind::Calendar => db.calendar_event(&s.id).is_ok_and(|e| e.entry_id.is_some()),
+            SourceKind::Focus => db
+                .conn()
+                .query_row(
+                    "SELECT 1 FROM focus_sessions f JOIN time_entries t ON t.id = f.entry_id WHERE f.id = ?1",
+                    [id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some(),
+            SourceKind::Block => db
+                .conn()
+                .query_row(
+                    "SELECT 1 FROM focus_blocks b JOIN time_entries t ON t.id = b.entry_id WHERE b.id = ?1",
+                    [id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some(),
+            SourceKind::Page => db
+                .conn()
+                .query_row(
+                    "SELECT 1 FROM time_entries WHERE page_id = ?1 AND start_time = ?2 LIMIT 1",
+                    params![id, crate::db::ts(it.start)],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some(),
+        };
+        if booked {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Remembers the WBS chosen for a page or a text (see migration v10).
 #[allow(clippy::too_many_arguments)]
 pub fn remember(
@@ -1282,6 +1324,11 @@ pub fn apply(db: &Database, items: &[Accepted], now: DateTime<Utc>, thresholds: 
                     "{}: The duration must be between 1 minute and 24 hours",
                     what()
                 )));
+            }
+            // Booked meanwhile (the proposal applied in another window, or again after a
+            // timeout): never booked twice.
+            if already_booked(db, it)? {
+                continue;
             }
             let np = db.netzplan_by_id(it.netzplan_id)?;
             // The canonical spelling of the Vorgang (a Netzplan without Vorgänge takes any).
