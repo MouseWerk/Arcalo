@@ -31,10 +31,45 @@ pub const LOCATION_FILE: &str = "location.json";
 /// Staging folder inside the target while a move copies files.
 pub const STAGING_DIR: &str = ".arcalo-move-tmp";
 /// Folders and files next to the database that move with it (the database goes last): files,
-/// backups, the file trash, the logs and the Git sync's working tree (`git-sync-export` is
-/// written anew by every sync).
-const DATA_DIRS: [&str; 5] = ["attachments", "backups", "trash", "logs", "git-sync"];
-const DATA_FILES: [&str; 2] = ["secrets.json", CREDENTIALS_MOVED];
+/// backups, the file trash, the logs, the Git sync's working tree, unfinished recordings, the
+/// secrets file, the password-wrapped key and the state of an encryption switch, the capture
+/// queue, the marker of a restore the Git sync has to compare first, the backup destinations
+/// and a restore waiting for the next start. Everything else the app keeps there is in
+/// [`STAYS`]; a test makes sure every name the app writes is in one of the lists.
+const DATA_DIRS: [&str; 6] = ["attachments", "backups", "trash", "logs", "git-sync", "voice"];
+const DATA_FILES: [&str; 12] = [
+    "secrets.json",
+    CREDENTIALS_MOVED,
+    crate::cipher::MARKER,
+    crate::cipher::NEW_FILE,
+    crate::cipher::OLD_FILE,
+    crate::cipher::WRAPPED_FILE,
+    crate::cipher::WRAPPED_NEXT_FILE,
+    crate::capture::QUEUE_FILE,
+    crate::gitsync::RESTORED_FILE,
+    crate::backupdest::REGISTRY_FILE,
+    crate::backupdest::PENDING_RESTORE,
+    "restore-pending.db.from",
+];
+/// What stays in the old folder on a move: bound to this installation (updates, rollback,
+/// health, the instance and command locks, the portable copy's WebView profile, the Android
+/// update state), written anew when needed (scripts, mail temp files, the CA bundle for Git,
+/// the export of a sync without mirror, caches) or downloaded again (speech models).
+const STAYS: [&str; 13] = [
+    "models",
+    crate::update_state::UPDATES_DIR,
+    crate::update_state::ROLLBACK_DIR,
+    crate::update_state::HEALTH_FILE,
+    crate::cmdlock::DIR,
+    ".arcalo.lock",
+    "webview",
+    "cache",
+    "scripts",
+    crate::mail::TEMP_DIR,
+    "git-sync-export",
+    "network-ca-bundle.pem",
+    "android-update.json",
+];
 /// Credential store entries taken over from the service of 1.14 and earlier (the shell's
 /// `secrets.rs`); it moves with the data, so a moved workspace does not read old entries again.
 pub const CREDENTIALS_MOVED: &str = "credentials-moved.json";
@@ -635,5 +670,168 @@ mod tests {
         // The environment variable wins.
         assert_eq!(prepare(Some(base.join("env")), Some(&cfg), default).dir, base.join("env"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Every file and folder the app keeps in the data folder and that belongs to the workspace
+    /// moves with it; what is bound to this installation or rebuilt stays.
+    #[test]
+    fn a_move_takes_every_file_of_the_workspace() {
+        let base = temp("every");
+        let (from, to) = (base.join("alt"), base.join("neu"));
+        sample_workspace(&from);
+        let moved = [
+            crate::cipher::MARKER.to_owned(),
+            crate::cipher::NEW_FILE.to_owned(),
+            crate::cipher::OLD_FILE.to_owned(),
+            crate::cipher::WRAPPED_FILE.to_owned(),
+            crate::cipher::WRAPPED_NEXT_FILE.to_owned(),
+            crate::capture::QUEUE_FILE.to_owned(),
+            crate::gitsync::RESTORED_FILE.to_owned(),
+            crate::backupdest::REGISTRY_FILE.to_owned(),
+            crate::backupdest::PENDING_RESTORE.to_owned(),
+            format!("{}.from", crate::backupdest::PENDING_RESTORE),
+            CREDENTIALS_MOVED.to_owned(),
+            "secrets.json".to_owned(),
+            "voice/rec-18f.wav".to_owned(),
+            format!("{}/a.png", crate::attachments::DIR_NAME),
+            format!("{}/x/b.pdf", crate::attachment_manager::TRASH_DIR),
+            format!("{}/Notiz.md", crate::gitsync::REPO_DIR),
+        ];
+        let stays = [
+            format!("{}/whisper/base.bin", "models"),
+            format!("{}/state.json", crate::update_state::UPDATES_DIR),
+            format!("{}/1.20.0/x", crate::update_state::ROLLBACK_DIR),
+            format!("{}/1 time.lock", crate::cmdlock::DIR),
+            crate::update_state::HEALTH_FILE.to_owned(),
+            format!("{}/x.msg", crate::mail::TEMP_DIR),
+            "scripts/outlook.ps1".to_owned(),
+            "webview/x".to_owned(),
+        ];
+        for f in moved.iter().chain(&stays) {
+            std::fs::create_dir_all(from.join(f).parent().unwrap()).unwrap();
+            std::fs::write(from.join(f), f.as_bytes()).unwrap();
+        }
+        copy_workspace(&from, &to).unwrap();
+        let missing: Vec<&String> =
+            moved.iter().filter(|f| std::fs::read(to.join(f)).ok() != Some(f.as_bytes().to_vec())).collect();
+        assert!(missing.is_empty(), "left in the old folder: {missing:?}");
+        let taken: Vec<&String> = stays.iter().filter(|f| to.join(f).exists()).collect();
+        assert!(taken.is_empty(), "moved although bound to the installation: {taken:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    fn sources() -> Vec<PathBuf> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = vec![];
+        let mut stack = vec![root.join("src"), root.join("../../src-tauri/src"), root.join("../arcalo-cli/src")];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push(p);
+                }
+            }
+        }
+        files
+    }
+
+    /// `const NAME: &str = <value>;` of a source file (the value as written).
+    fn consts(code: &str) -> std::collections::HashMap<String, String> {
+        let mut out = std::collections::HashMap::new();
+        for line in code.lines() {
+            let line = line.trim_start().trim_start_matches("pub(crate) ").trim_start_matches("pub ");
+            let Some(rest) = line.strip_prefix("const ") else { continue };
+            let Some((name, value)) = rest.split_once(": &str = ") else { continue };
+            out.insert(name.trim().to_owned(), value.trim().trim_end_matches(';').to_owned());
+        }
+        out
+    }
+
+    type Consts = std::collections::HashMap<String, String>;
+
+    /// The name a `data_dir.join(<arg>)` refers to: a literal, a constant (of the same file
+    /// first) or a `format!` of constants; `None` for a legacy name of 1.14 and earlier.
+    fn resolve_name(arg: &str, own: &Consts, all: &[Consts]) -> Option<String> {
+        let arg = arg.trim().trim_start_matches('&');
+        if arg.contains("legacy(") {
+            return None;
+        }
+        if let Some(lit) = arg.strip_prefix('"') {
+            return Some(lit.split('"').next().unwrap_or_default().to_owned());
+        }
+        let lookup = |name: &str| {
+            own.get(name)
+                .or_else(|| all.iter().find_map(|m| m.get(name)))
+                .and_then(|v| resolve_name(v, own, all))
+                .unwrap_or_else(|| panic!("constant {name} not found"))
+        };
+        if let Some(f) = arg.strip_prefix("format!(\"") {
+            let mut text = f.split('"').next().unwrap_or_default().to_owned();
+            while let Some(start) = text.find('{') {
+                let end = text[start..].find('}').map_or(text.len() - 1, |e| start + e);
+                let value = lookup(&text[start + 1..end]);
+                text.replace_range(start..=end, &value);
+            }
+            return Some(text);
+        }
+        Some(lookup(arg.rsplit("::").next().unwrap_or(arg)))
+    }
+
+    /// Every name the app joins to the data folder moves with the workspace or is named in
+    /// [`STAYS`], so a file added later cannot be left behind by a move unnoticed.
+    #[test]
+    fn every_name_in_the_data_folder_is_moved_or_stays_on_purpose() {
+        let files = sources();
+        assert!(files.len() > 50, "sources not found: {}", files.len());
+        let texts: Vec<String> = files.iter().map(|f| std::fs::read_to_string(f).unwrap()).collect();
+        let all: Vec<Consts> = texts.iter().map(|t| consts(t)).collect();
+        let known: Vec<String> =
+            DATA_DIRS.iter().chain(&DATA_FILES).chain(&STAYS).map(|s| s.to_string()).chain(db_files()).collect();
+        let (mut seen, mut unknown) = (0, vec![]);
+        for ((file, text), own) in files.iter().zip(&texts).zip(&all) {
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            for pattern in ["data_dir.join(", "data_dir().join("] {
+                for (at, _) in code.match_indices(pattern) {
+                    let rest = &code[at + pattern.len()..];
+                    // The argument, up to its closing parenthesis.
+                    let mut depth = 0;
+                    let mut end = rest.len();
+                    for (i, c) in rest.char_indices() {
+                        match c {
+                            '(' => depth += 1,
+                            ')' if depth == 0 => {
+                                end = i;
+                                break;
+                            }
+                            ')' => depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    let arg = rest[..end].trim();
+                    // The two lock files of the instance check, joined in a loop.
+                    if file.ends_with("portable.rs") && arg == "name" {
+                        continue;
+                    }
+                    seen += 1;
+                    let Some(name) = resolve_name(arg, own, &all) else { continue };
+                    // Temporary files of an atomic write.
+                    if name.starts_with('.') && (name.ends_with(".part") || name.ends_with(".partial")) {
+                        continue;
+                    }
+                    let first = name.split('/').next().unwrap_or_default();
+                    if !known.iter().any(|k| k == first || *k == name) {
+                        unknown.push(format!("{}: {arg} = {name}", file.display()));
+                    }
+                }
+            }
+        }
+        assert!(seen > 30, "too few uses of the data folder found: {seen}");
+        assert!(
+            unknown.is_empty(),
+            "add to DATA_DIRS/DATA_FILES (moved) or STAYS in datadir.rs:\n{}",
+            unknown.join("\n")
+        );
     }
 }
