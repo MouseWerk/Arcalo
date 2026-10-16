@@ -62,7 +62,18 @@ const MARKER: &str = "# Arcalo Git-Synchronisierung";
 /// computers on different versions never rewrite the file back and forth (1.14 writes it back
 /// at every sync).
 const LEGACY_MARKER: &str = "# Annalo Git-Synchronisierung";
+/// How long a git command may run; for the commands that talk to the server ([`is_network`]) how
+/// long a transfer may stall instead (`http.lowSpeedTime`).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// The total time a command that talks to the server may run: a transfer that keeps moving is not
+/// stopped by [`DEFAULT_TIMEOUT`] (a first fetch of a long history or a push of a large database
+/// copy over a slow line), only one that hangs without the HTTP check (SSH) is, after this.
+pub const NETWORK_LIMIT: Duration = Duration::from_secs(60 * 60);
+
+/// Whether git command `args` talks to the server.
+fn is_network(args: &[&str]) -> bool {
+    matches!(subcommand(args), "fetch" | "push" | "clone" | "ls-remote")
+}
 pub const NOT_INSTALLED: &str = "Git ist nicht installiert (git-scm.com)";
 
 /// [`NOT_INSTALLED`] in the display language.
@@ -1284,6 +1295,12 @@ impl Git {
         for (k, v) in &self.network.config {
             config.push((k.as_str(), v.clone()));
         }
+        if is_network(args) {
+            // A transfer stops when it stalls (less than 1 KB/s for the timeout), not after a
+            // total time ([`NETWORK_LIMIT`]).
+            config.push(("http.lowSpeedLimit", "1000".into()));
+            config.push(("http.lowSpeedTime", self.timeout.as_secs().max(1).to_string()));
+        }
         for (k, v) in &self.network.env {
             match v {
                 Some(v) => cmd.env(k, v),
@@ -1345,19 +1362,30 @@ impl Git {
         let out_t = reader(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
         let err_t = reader(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
         let start = Instant::now();
+        let network = is_network(args);
+        let limit = if network { self.timeout.max(NETWORK_LIMIT) } else { self.timeout };
         let status = loop {
             if let Some(s) = child.try_wait()? {
                 break s;
             }
-            if start.elapsed() >= self.timeout {
+            if start.elapsed() >= limit {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(Error::State(trf!(
-                    "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
-                    "git {} did not answer within {} s and was stopped",
-                    subcommand(args),
-                    self.timeout.as_secs().max(1)
-                )));
+                return Err(Error::State(if network {
+                    trf!(
+                        "git {} lief länger als {} Minuten und wurde abgebrochen",
+                        "git {} ran longer than {} minutes and was stopped",
+                        subcommand(args),
+                        limit.as_secs() / 60
+                    )
+                } else {
+                    trf!(
+                        "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
+                        "git {} did not answer within {} s and was stopped",
+                        subcommand(args),
+                        self.timeout.as_secs().max(1)
+                    )
+                }));
             }
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -3448,7 +3476,8 @@ mod tests {
             .collect();
         let get = |k: &str| envs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
         assert_eq!(get("GIT_TERMINAL_PROMPT").as_deref(), Some("0"));
-        assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("2"));
+        // The two above and the stall limit of a network command.
+        assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("4"));
         assert_eq!(get("GIT_CONFIG_KEY_1").as_deref(), Some("http.extraHeader"));
         assert_eq!(get("GIT_CONFIG_VALUE_1"), Some(auth_header("tok123")));
         assert!(!format!("{git:?}").contains("tok123"));
@@ -3457,6 +3486,79 @@ mod tests {
         let ssh = Git::new(Some("tok123".into()), "git@github.com:me/notes.git");
         let cmd = ssh.command(None, &["push"]);
         assert!(cmd.get_envs().all(|(_, v)| !v.is_some_and(|v| v.to_string_lossy().contains("Authorization"))));
+    }
+
+    /// Commands that talk to the server stop when the transfer stalls (`http.lowSpeedLimit` for
+    /// `http.lowSpeedTime`, the timeout), not after a total time: a first fetch of a long history or
+    /// a push of a large database copy over a slow line takes as long as it takes.
+    #[test]
+    fn network_commands_stop_when_the_transfer_stalls() {
+        let git = Git::new(None, "https://example.com/notes.git").with_timeout(Duration::from_secs(90));
+        let config = |args: &[&str]| -> Vec<(String, String)> {
+            let cmd = git.command(None, args);
+            let envs: Vec<(String, String)> = cmd
+                .get_envs()
+                .filter_map(|(k, v)| Some((k.to_string_lossy().into_owned(), v?.to_string_lossy().into_owned())))
+                .collect();
+            let get = |k: &str| envs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            let n: usize = get("GIT_CONFIG_COUNT").unwrap().parse().unwrap();
+            (0..n)
+                .map(|i| (get(&format!("GIT_CONFIG_KEY_{i}")).unwrap(), get(&format!("GIT_CONFIG_VALUE_{i}")).unwrap()))
+                .collect()
+        };
+        for args in [
+            &["fetch", "-q", "origin"][..],
+            &["push", "-q", "origin", "HEAD:main"],
+            &["ls-remote", "x"],
+            &["clone", "x"],
+        ] {
+            let c = config(args);
+            assert!(c.contains(&("http.lowSpeedLimit".into(), "1000".into())), "{args:?}: {c:?}");
+            assert!(c.contains(&("http.lowSpeedTime".into(), "90".into())), "{args:?}: {c:?}");
+        }
+        let c = config(&["status"]);
+        assert!(c.iter().all(|(k, _)| !k.starts_with("http.lowSpeed")), "{c:?}");
+
+        #[cfg(unix)]
+        if git_available() && !git.is_embedded() {
+            use std::os::unix::fs::PermissionsExt;
+            // A transfer that runs longer than the timeout is not stopped by it.
+            let dir = tmp("slow-git");
+            let program = dir.join("git");
+            fs::write(&program, "#!/bin/sh\nsleep 2\necho fertig\n").unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+            let slow = Git::new(None, "").with_program(&program).with_timeout(Duration::from_secs(1));
+            let run = |args: &[&str]| loop {
+                match slow.run(None, args) {
+                    // Another test's child may still hold the new script open for a moment.
+                    Err(e) if e.to_string().contains("busy") => std::thread::sleep(Duration::from_millis(50)),
+                    other => break other,
+                }
+            };
+            let out = run(&["fetch", "-q", "origin"]).unwrap();
+            assert_eq!(out.stdout.trim(), "fertig");
+            let err = run(&["status"]).unwrap_err().to_string();
+            assert!(err.contains("abgebrochen") || err.contains("stopped"), "{err}");
+
+            // A server that stops sending: git gives up by itself after the timeout.
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://127.0.0.1:{}/notes.git", listener.local_addr().unwrap().port());
+            std::thread::spawn(move || {
+                let mut held = Vec::new();
+                for conn in listener.incoming().flatten() {
+                    held.push(conn);
+                }
+            });
+            let stalled = Git::new(None, &url).with_timeout(Duration::from_secs(2));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(stalled.ls_remote(&url).map_err(|e| e.to_string()));
+            });
+            let res = rx.recv_timeout(Duration::from_secs(30)).expect("git did not give up on a stalled server");
+            let err = res.unwrap_err();
+            assert!(!err.contains("abgebrochen") && !err.contains("stopped"), "git's own error: {err}");
+            let _ = fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]

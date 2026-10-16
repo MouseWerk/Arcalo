@@ -155,16 +155,22 @@ pub(super) fn run(git: &Git, cwd: Option<&Path>, args: &[&str]) -> GitOutput {
     }
 }
 
+/// libgit2's network timeouts: how long connecting may take and how long one read or write may
+/// wait (a stalled transfer, not the total time). Global options: set again when another `Git`
+/// (the setup's check with its shorter timeout) ran before.
 fn set_timeouts(timeout: Duration) {
-    static DONE: OnceLock<()> = OnceLock::new();
-    DONE.get_or_init(|| {
-        let ms = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
-        // SAFETY: global libgit2 options, set once before the first network operation.
-        unsafe {
-            let _ = git2::opts::set_server_connect_timeout_in_milliseconds(ms.min(30_000));
-            let _ = git2::opts::set_server_timeout_in_milliseconds(ms);
-        }
-    });
+    static LAST: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == Some(timeout) {
+        return;
+    }
+    let ms = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+    // SAFETY: global libgit2 options; a connection that started already keeps its values.
+    unsafe {
+        let _ = git2::opts::set_server_connect_timeout_in_milliseconds(ms.min(30_000));
+        let _ = git2::opts::set_server_timeout_in_milliseconds(ms);
+    }
+    *last = Some(timeout);
 }
 
 /// git's wording for a libgit2 error, so the sync classifies it like the program's
