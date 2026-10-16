@@ -194,6 +194,35 @@ test("dragging over a free stretch and N make new appointments", async () => {
   assert.equal(entryWrites().length, count);
 });
 
+test("Enter in a time field of a panel takes the time just typed", async () => {
+  await app.click(".calv-head h1");
+  await app.keys(["Escape"]);
+  await app.keys(["n"]);
+  await app.waitFor(".calv-entry-editor");
+  await app.type("Termin per Eingabe");
+  const typeInto = async (q, text) => {
+    await app.browser.execute((s) => {
+      const el = document.querySelector(s);
+      el.focus();
+      el.select();
+    }, q);
+    await app.type(text);
+  };
+  await typeInto(".calv-entry-editor input[aria-label='Beginn']", "19:00");
+  await app.keys(["Enter"]);
+  await waitWrite((w) => w.op === "create" && w.fields.subject === "Termin per Eingabe", "Enter: not written");
+  const w = entryWrites().find((x) => x.fields?.subject === "Termin per Eingabe");
+  assert.deepEqual([w.fields.start.slice(11), w.fields.end.slice(11)], ["19:00:00", "19:30:00"], "the typed start with the length kept, not the slot's");
+  // Its panel: Enter in the end field saves the typed end.
+  await app.waitFor(".calv-detail input[aria-label='Ende']");
+  await typeInto(".calv-detail input[aria-label='Ende']", "19:45");
+  await app.keys(["Enter"]);
+  await waitWrite((x) => x.op !== "create" && x.fields?.end?.endsWith("T19:45:00"), "Enter in the panel: end not written");
+  const all = entryWrites().filter((x) => x.fields?.end?.endsWith("T19:45:00"));
+  assert.equal(all.length, 1, "saved once");
+  assert.equal(all[0].fields.start, undefined, "only the end");
+});
+
 test("renamed, moved and resized: Outlook gets only what changed", async () => {
   const key = "outlook|G-O1|";
   await scrollTo(10);
