@@ -484,6 +484,54 @@ pub fn save_queue(path: &Path, queue: &[QueuedCapture]) -> Result<()> {
     std::fs::rename(&tmp, path).map_err(|e| Error::file(path, e))
 }
 
+/// Serializes every read-modify-write of the queue file in this process (the window queues
+/// captures while a retry runs).
+static QUEUE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn queue_lock() -> std::sync::MutexGuard<'static, ()> {
+    QUEUE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Adds a capture to the queue.
+pub fn enqueue(path: &Path, q: QueuedCapture) -> Result<()> {
+    let _guard = queue_lock();
+    let mut queue = load_queue(path);
+    queue.push(q);
+    save_queue(path, &queue)
+}
+
+/// Retries every queued capture with `store`: `Ok` drops it from the queue, `Err` keeps it
+/// with the error and one more attempt. The file is locked only to read and to write it, not
+/// while `store` waits for the database; captures queued meanwhile stay in the queue.
+pub fn retry_queued(
+    path: &Path,
+    mut store: impl FnMut(&QueuedCapture) -> std::result::Result<(), String>,
+) -> Result<()> {
+    let taken = {
+        let _guard = queue_lock();
+        load_queue(path)
+    };
+    let results: Vec<_> = taken.iter().map(|q| store(q).err()).collect();
+    let _guard = queue_lock();
+    let mut queue = load_queue(path);
+    for (q, result) in taken.into_iter().zip(results) {
+        // The same entry as read before (one of two equal entries is taken once).
+        let Some(i) = queue.iter().position(|e| e.at == q.at && e.text == q.text && e.target == q.target) else {
+            continue;
+        };
+        match result {
+            None => {
+                queue.remove(i);
+            }
+            Some(e) => {
+                queue[i].attempts = q.attempts + 1;
+                queue[i].error = e;
+            }
+        }
+    }
+    save_queue(path, &queue)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,5 +832,46 @@ mod tests {
             serde_json::to_string(&CaptureTarget::NewPage { title: "A".into() }).unwrap(),
             r#"{"kind":"new_page","title":"A"}"#
         );
+    }
+
+    #[test]
+    fn a_capture_queued_while_the_queue_is_retried_is_kept() {
+        let dir = std::env::temp_dir().join(format!("arcalo-capture-retry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(QUEUE_FILE);
+        let item = |text: &str| QueuedCapture {
+            text: text.into(),
+            target: CaptureTarget::Daily,
+            at: now(),
+            attempts: 1,
+            error: "busy".into(),
+        };
+        enqueue(&path, item("A")).unwrap();
+        enqueue(&path, item("C")).unwrap();
+        // While A is stored, a new capture B is queued by the window; C stays busy.
+        retry_queued(&path, |q| match q.text.as_str() {
+            "A" => {
+                enqueue(&path, item("B")).unwrap();
+                Ok(())
+            }
+            _ => Err("still busy".into()),
+        })
+        .unwrap();
+        let left = load_queue(&path);
+        let texts: Vec<&str> = left.iter().map(|q| q.text.as_str()).collect();
+        assert_eq!(texts, ["C", "B"]);
+        assert_eq!((left[0].attempts, left[0].error.as_str()), (2, "still busy"));
+        assert_eq!(left[1].attempts, 1);
+        // A retry that stores everything leaves the newer capture in place.
+        retry_queued(&path, |q| {
+            if q.text == "C" {
+                enqueue(&path, item("D")).unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+        let texts: Vec<String> = load_queue(&path).into_iter().map(|q| q.text).collect();
+        assert_eq!(texts, ["D"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
