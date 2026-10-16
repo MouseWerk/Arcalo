@@ -694,6 +694,7 @@ pub fn parse(
                     busy: d.busy,
                     private: d.private,
                     categories: d.categories,
+                    meta: Default::default(),
                 };
                 ev.redact(privacy);
                 out.push(ev);

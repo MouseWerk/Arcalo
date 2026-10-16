@@ -204,6 +204,19 @@ export const api = {
   calendarWbsHint: (key: string) => call<T.WbsHint | null>("calendar_wbs_hint", { key }),
   /** The meeting note of an appointment (created on first use). */
   calendarMeetingNote: (key: string) => call<{ page: T.Page; created: boolean }>("calendar_meeting_note", { key }),
+  /** „Termine in Outlook eintragen“ on or off. */
+  calendarEntriesEnable: (on: boolean) => call<void>("calendar_entries_enable", { on }),
+  /** A new appointment; `source` empty: the calendar chosen in the settings. */
+  calendarEntryCreate: (draft: { source?: string; title: string; start: string; end: string; location?: string }) =>
+    call<T.CalendarEvent>("calendar_entry_create", { draft: { source: "", location: "", ...draft } }),
+  /** Changes only the given fields; `send`: the user confirmed the update to the attendees. */
+  calendarEntryUpdate: (key: string, patch: T.EntryFields, send = false) => call<T.CalendarEvent>("calendar_entry_update", { key, patch, send }),
+  calendarEntryDelete: (key: string) => call<void>("calendar_entry_delete", { key }),
+  calendarEntryUndo: (key: string) => call<T.CalendarEvent>("calendar_entry_undo", { key }),
+  calendarEntryResolve: (key: string, keepMine: boolean) => call<void>("calendar_entry_resolve", { key, keepMine }),
+  /** „In Outlook öffnen“. */
+  calendarEntryShow: (key: string) => call<void>("calendar_entry_show", { key }),
+  calendarEntriesRetry: () => call<void>("calendar_entries_retry"),
 
   // Woche vorschlagen
   /** The timesheet draft for the week starting at `weekStart` (YYYY-MM-DD, local). */

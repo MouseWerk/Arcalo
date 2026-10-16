@@ -64,6 +64,32 @@ export function resized(b: Pick<FocusBlock, "start" | "end">, minutes: number): 
   return { start: b.start, end: new Date(end).toISOString() };
 }
 
+/**
+ * The times of an appointment after its panel's date and time fields (`YYYY-MM-DD`, `HH:MM`)
+ * were edited; `null` when they say nothing new or are no time. Another date moves the whole
+ * appointment, a new start keeps its length, a new end keeps the days it spans (the next day when
+ * the end is not after the start).
+ */
+export function editedTimes(start: Date, end: Date, f: { date: string; from: string; to: string }): { start: Date; end: Date } | null {
+  const [y, m, d] = f.date.split("-").map(Number);
+  const hm = (v: string) => (/^\d{1,2}:\d{2}$/.test(v.trim()) ? v.trim().split(":").map(Number) : [NaN, NaN]);
+  const [h1, m1] = hm(f.from);
+  const [h2, m2] = hm(f.to);
+  if (![y, m, d, h1, m1, h2, m2].every(Number.isFinite)) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const was = { from: `${pad(start.getHours())}:${pad(start.getMinutes())}`, to: `${pad(end.getHours())}:${pad(end.getMinutes())}` };
+  const length = end.getTime() - start.getTime();
+  const s = new Date(y, m - 1, d, h1, m1);
+  let e: Date;
+  if (`${pad(h2)}:${pad(m2)}` === was.to) e = new Date(s.getTime() + length);
+  else {
+    const days = Math.round((new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime() - new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()) / 86_400_000);
+    e = new Date(y, m - 1, d + days, h2, m2);
+    if (e <= s) e = new Date(y, m - 1, d + days + 1, h2, m2);
+  }
+  return s.getTime() === start.getTime() && e.getTime() === end.getTime() ? null : { start: s, end: e };
+}
+
 /** Planned minutes of `day` (local), blocks clipped to it. */
 export function plannedMinutes(blocks: Pick<FocusBlock, "start" | "end">[], day: Date): number {
   const from = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();

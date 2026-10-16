@@ -538,6 +538,7 @@ fn tags_search_calendar_and_attachments() {
             busy: Default::default(),
             private: false,
             categories: vec![],
+            meta: Default::default(),
         };
         db.calendar_replace("ics:team", start - chrono::Duration::days(1), start + chrono::Duration::days(1), &[ev])
             .unwrap();

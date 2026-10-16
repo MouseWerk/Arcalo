@@ -1529,6 +1529,12 @@ export interface CalendarSettings {
   blocks_outlook?: boolean;
   /** Length of a block dropped into the Kalender (minutes). */
   block_minutes?: number;
+  /** Create, change, move and delete appointments in the Kalender, written to Outlook (1.21). */
+  entries_outlook?: boolean;
+  /** The calendar new appointments go to (`outlook` or another own Outlook calendar). */
+  entry_target?: string;
+  /** Length of a new appointment made with a double click or N (minutes). */
+  entry_minutes?: number;
 }
 export type Busy = "free" | "tentative" | "busy" | "oof" | "elsewhere";
 export interface CalendarEvent {
@@ -1558,6 +1564,33 @@ export interface CalendarEvent {
   entry_id: number | null;
   /** Other selected calendars with the same meeting (shown once). */
   also_in?: string[];
+  /** Outlook's EntryID (Outlook appointments). */
+  outlook_id?: string | null;
+  /** Outlook's MeetingStatus: 0 appointment, 1 organized by the user, 3 received. */
+  meeting?: number;
+  /** Attendees besides the organizer. */
+  has_attendees?: boolean;
+  /** A change made here that Outlook does not have yet, or that conflicts with one made there. */
+  write?: EntryWrite;
+  /** Whether it can be changed here, or why not. */
+  editable?: Editability;
+}
+export type Editability = "yes" | "confirm" | "off" | "ics" | "unavailable" | "shared" | "free_busy" | "received" | "series" | "unknown";
+/** The fields written to Outlook (only those changed). */
+export interface EntryFields {
+  title?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+}
+export interface EntryWrite {
+  op: "create" | "update" | "delete" | "restore";
+  state: "pending" | "conflict";
+  error: string | null;
+  /** A conflict: Outlook's values and the user's of the fields changed on both sides. */
+  outlook: EntryFields | null;
+  mine: EntryFields | null;
+  send: boolean;
 }
 export interface CalendarSyncStatus {
   source: string;
@@ -1589,6 +1622,10 @@ export interface CalendarSourceInfo {
 }
 export interface CalendarStatus {
   outlook_available: boolean;
+  /** Appointments can be written to Outlook Classic here. */
+  entries_available?: boolean;
+  /** Changes of appointments waiting for Outlook (`pending`) or for the user (`conflict`). */
+  entries_waiting?: Record<string, number>;
   sources: CalendarSourceInfo[];
   secret_storage: string;
   /** „Kalender auswählen“. */

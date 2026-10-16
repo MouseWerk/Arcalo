@@ -86,6 +86,10 @@ pub struct OutlookRow {
 pub struct CalendarStatus {
     /// Outlook Classic can be read here (Windows, or the test fixture).
     outlook_available: bool,
+    /// Appointments can be written to Outlook Classic here (Windows, or the test fixture).
+    entries_available: bool,
+    /// Changes of appointments waiting for Outlook (`pending`) or for the user (`conflict`).
+    entries_waiting: std::collections::HashMap<String, i64>,
     sources: Vec<SourceInfo>,
     /// Where subscription addresses are stored.
     secret_storage: &'static str,
@@ -163,6 +167,8 @@ fn status_of(app: &AppHandle) -> Result<CalendarStatus> {
     }
     Ok(CalendarStatus {
         outlook_available: available,
+        entries_available: arcalo_core::calsync::outlookwrite::available(),
+        entries_waiting: state.reader().entry_outbox_counts()?,
         sources,
         secret_storage: state.secrets.backend(),
         outlook_calendars,
@@ -178,8 +184,12 @@ pub fn calendar_status(app: AppHandle) -> Result<CalendarStatus> {
 /// Events of the active sources overlapping `from..to`.
 #[tauri::command(async)]
 pub fn calendar_events(state: State<AppState>, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<CalendarEvent>> {
-    let active = state.settings().calendar.active_sources(outlook::available());
-    state.reader().calendar_events(from, to, &active)
+    let cal = state.settings().calendar;
+    let active = cal.active_sources(outlook::available());
+    let mut events = state.reader().calendar_events(from, to, &active)?;
+    // Whether each can be changed here, or why not.
+    crate::calwrite::annotate(&mut events, &cal);
+    Ok(events)
 }
 
 /// Saves only the calendar sources (the rest of the settings stays as it is).
@@ -188,7 +198,7 @@ fn save_sources(app: &AppHandle, f: impl FnOnce(&mut Vec<IcsSource>) -> Result<(
 }
 
 /// Saves only the calendar settings, changed by `f` (the rest stays as it is).
-fn save_calendar(app: &AppHandle, f: impl FnOnce(&mut core::CalendarSettings) -> Result<()>) -> Result<()> {
+pub(crate) fn save_calendar(app: &AppHandle, f: impl FnOnce(&mut core::CalendarSettings) -> Result<()>) -> Result<()> {
     let state = app.state::<AppState>();
     let mut settings = state.settings();
     f(&mut settings.calendar)?;
@@ -566,8 +576,9 @@ async fn sync_source(app: &AppHandle, id: &str) -> Result<usize> {
 /// calendar that cannot be read does not fail the others).
 #[tracing::instrument(name = "calendar_sync_outlook", skip_all, fields(source = "calendar", calendars = ids.len()))]
 async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<usize>)> {
-    // Focus blocks waiting for Outlook first: their appointments then come back as the blocks.
+    // Focus blocks and appointments waiting for Outlook first: they then come back as written.
     let _ = crate::timeblocks::flush(app, false).await;
+    let _ = crate::calwrite::flush(app, false).await;
     let state = app.state::<AppState>();
     let settings = state.settings().calendar;
     let mut out = vec![];

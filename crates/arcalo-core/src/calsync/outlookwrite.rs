@@ -20,6 +20,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::outlook::{SCRIPT, SCRIPT_FILE};
+use super::writes::{self, EntryOp, EntryResult, EntryWriter};
 use crate::error::{Error, Result};
 use crate::outlookcom::{self, Script};
 use crate::timeblocks::{Bridge, CATEGORY, WriteOp, WriteResult};
@@ -50,6 +51,28 @@ pub fn not_running() -> String {
         "Outlook is not open. The appointment is added once Outlook runs."
     )
     .into()
+}
+
+/// The message of a run of appointment writes that found Outlook closed.
+pub fn not_running_entries() -> String {
+    tr!(
+        "Outlook ist nicht geöffnet. Die Änderung wird eingetragen, sobald Outlook läuft.",
+        "Outlook is not open. The change is written once Outlook runs."
+    )
+    .into()
+}
+
+/// The message of a run of appointment writes that failed as a whole.
+fn entries_error_text(code: &str, detail: &str) -> String {
+    match code {
+        "not_running" => not_running_entries(),
+        "new_outlook" | "not_installed" => tr!(
+            "Outlook (klassisch) ist hier nicht verfügbar; Termine lassen sich nur dort ändern.",
+            "Outlook (classic) is not available here; appointments can only be changed there."
+        )
+        .into(),
+        _ => error_text(code, detail),
+    }
 }
 
 fn error_text(code: &str, detail: &str) -> String {
@@ -173,6 +196,78 @@ pub fn write(script_dir: &Path, ops: &[WriteOp]) -> Result<Vec<WriteResult>> {
     );
     let _ = std::fs::remove_file(&file);
     parse_output(&out?)
+}
+
+/// Runs the appointment writes of the Kalender (blocking: off the async runtime).
+pub fn write_entries(script_dir: &Path, ops: &[EntryOp]) -> Result<Vec<EntryResult>> {
+    if let Some(log) = fixture_log() {
+        return super::outlookfixture::write(&log, ops);
+    }
+    if !cfg!(windows) {
+        return Err(Error::State(entries_error_text("not_installed", "")));
+    }
+    std::fs::create_dir_all(script_dir)?;
+    let file = script_dir.join(OPS_FILE);
+    std::fs::write(&file, writes::ops_json(ops).to_string())?;
+    let args: Vec<OsString> = vec!["-Mode".into(), "write".into(), "-Ops".into(), file.clone().into_os_string()];
+    let out = outlookcom::run(
+        script_dir,
+        Script { file: SCRIPT_FILE, source: SCRIPT },
+        &args,
+        TIMEOUT,
+        tr!("Die Änderung wird später erneut eingetragen.", "The change is written again later."),
+    );
+    let _ = std::fs::remove_file(&file);
+    parse_entries_output(&out?)
+}
+
+/// The script's answer to appointment writes.
+pub fn parse_entries_output(text: &str) -> Result<Vec<EntryResult>> {
+    let v = outlookcom::json(text)?;
+    if let Some((code, message)) = outlookcom::failure(&v) {
+        return Err(Error::State(entries_error_text(&code, &message)));
+    }
+    Ok(writes::parse_results(&v))
+}
+
+/// „In Outlook öffnen“: shows the appointment `entry_id` in an Outlook window (blocking). Unlike
+/// a write, this starts Outlook when it is closed: the user asked for it.
+pub fn show(script_dir: &Path, entry_id: &str) -> Result<()> {
+    if let Some(log) = fixture_log() {
+        return super::outlookfixture::show(&log, entry_id);
+    }
+    if !cfg!(windows) {
+        return Err(Error::State(entries_error_text("not_installed", "")));
+    }
+    let args: Vec<OsString> = vec!["-Mode".into(), "show".into(), "-EntryId".into(), entry_id.into()];
+    let out = outlookcom::run(
+        script_dir,
+        Script { file: SCRIPT_FILE, source: SCRIPT },
+        &args,
+        TIMEOUT,
+        tr!("Später erneut versuchen.", "Try again later."),
+    )?;
+    let v = outlookcom::json(&out)?;
+    match outlookcom::failure(&v) {
+        Some((code, message)) => Err(Error::State(writes::error_text(&code, &message))),
+        None => Ok(()),
+    }
+}
+
+/// The writer of the app: the script (or the fixture) in `script_dir`.
+pub struct OutlookEntryWriter {
+    pub script_dir: PathBuf,
+}
+
+impl EntryWriter for OutlookEntryWriter {
+    fn write(&self, ops: &[EntryOp]) -> Result<Vec<EntryResult>> {
+        write_entries(&self.script_dir, ops)
+    }
+}
+
+/// Removes the list of writes a run left behind (the app was ended during a write).
+pub fn remove_leftover(script_dir: &Path) {
+    let _ = std::fs::remove_file(script_dir.join(OPS_FILE));
 }
 
 /// The bridge of the app: the script (or the fixture) in `script_dir`.

@@ -136,6 +136,7 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     crate::calsync::spawn_scheduler(app.clone());
     crate::jira::spawn_scheduler(app.clone());
     crate::timeblocks::spawn_scheduler(app.clone());
+    crate::calwrite::spawn_scheduler(app.clone());
     crate::semantic::spawn_indexer(app.clone());
     spawn_ai_keys(app.clone());
     Ok(())
