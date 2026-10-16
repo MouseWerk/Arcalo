@@ -11,7 +11,7 @@ import { Button, IconButton, Input, Select } from "../components/ui";
 import { t as tr, useT, type TKey } from "../lib/i18n";
 import { isoDay, time } from "../lib/format";
 import { attendeeName, sourceName } from "../lib/agenda";
-import { moved, resized, SNAP } from "../lib/blocks";
+import { editedTimes, moved, resized, SNAP } from "../lib/blocks";
 import { isComposing } from "../lib/ime";
 import { DateInput, TimeInput } from "../components/DateInput";
 import type { CalendarEvent, CalendarSettings, Editability, EntryFields } from "../lib/types";
@@ -261,18 +261,6 @@ export function EntryGhost({ start, end, hourPx }: { start: Date; end: Date; hou
 /** `HH:MM` of a local time. */
 const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
-/** Date and two times as start and end (the end on the next day when it is not after the start). */
-function fromInputs(date: string, from: string, to: string): { start: Date; end: Date } | null {
-  const [y, m, d] = date.split("-").map(Number);
-  const [h1, m1] = from.split(":").map(Number);
-  const [h2, m2] = to.split(":").map(Number);
-  if (![y, m, d, h1, m1, h2, m2].every(Number.isFinite)) return null;
-  const start = new Date(y, m - 1, d, h1, m1);
-  let end = new Date(y, m - 1, d, h2, m2);
-  if (end <= start) end = new Date(end.getTime() + 86_400_000);
-  return { start, end };
-}
-
 /**
  * Date, start and end of an appointment in the app's formats; `onCommit` gets the new times when
  * the focus leaves them (a new start keeps the length, a day picked in the calendar applies at once).
@@ -289,11 +277,8 @@ function WhenInputs({ start, end, onCommit }: { start: Date; end: Date; onCommit
     setTo(hm(end));
   }, [start.getTime(), end.getTime()]);
   const commit = (next: { date?: string } = {}) => {
-    let r = fromInputs(next.date ?? date, from, to);
-    if (!r) return;
-    // A new start keeps the length (unless the end was changed too).
-    if (from !== hm(start) && to === hm(end)) r = { start: r.start, end: new Date(r.start.getTime() + (end.getTime() - start.getTime())) };
-    if (r.start.getTime() !== start.getTime() || r.end.getTime() !== end.getTime()) onCommit(r.start, r.end);
+    const r = editedTimes(start, end, { date: next.date ?? date, from, to });
+    if (r) onCommit(r.start, r.end);
   };
   return (
     <div

@@ -266,8 +266,8 @@ test("a change made in Outlook too asks which one applies", async () => {
   await app.waitFor('.calv-detail [data-write="conflict"]');
   const text = await app.text('.calv-detail [data-write="conflict"]');
   assert.match(text, /Auch in Outlook geändert/);
-  assert.match(text, /In Outlook Rückruf Kunde \(verschoben\)/);
-  assert.match(text, /Deine Änderung Rückruf Kunde Müller/);
+  assert.match(text, /In Outlook\s+Rückruf Kunde \(verschoben\)/);
+  assert.match(text, /Deine Änderung\s+Rückruf Kunde Müller/);
   assert.ok(await app.browser.execute((s) => !!document.querySelector(`${s}.write-conflict`), sel(key)));
   const look = await app.browser.execute(() => {
     const cs = getComputedStyle(document.querySelector('.calv-detail [data-write="conflict"]'));
