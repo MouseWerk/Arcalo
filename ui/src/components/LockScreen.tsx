@@ -15,6 +15,8 @@ import { formatRecoveryInput, formatWait, recoveryComplete, security, type LockS
 import { applyPrefs } from "../lib/prefs";
 import { api } from "../lib/api";
 import { flushAllEditors } from "../editor/saves";
+import { closeDrawing } from "../editor/drawings";
+import { closePdfViewer } from "../editor/files";
 
 /** Removes the lock by hand where nothing else can (docs/security/encryption.md, „Forgotten PIN“). */
 const RESET_COMMAND = `sqlite3 workspace.db "DELETE FROM settings WHERE key LIKE 'meta.applock%'"`;
@@ -41,20 +43,37 @@ function useLocked(): [boolean | null, LockStatus | null, () => void] {
   return [locked, status, refresh];
 }
 
+/**
+ * The drawing editor and the PDF viewer have their own roots on <body>, outside what the lock
+ * screen replaces: they would stay over it, and their key traps would swallow the PIN.
+ */
+function closeOverlays() {
+  closeDrawing();
+  closePdfViewer();
+}
+
 /** The main window: the app, or the lock screen while locked. */
 export function LockGate({ children }: { children: ReactNode }) {
   const [locked, status, refresh] = useLocked();
   // Every lock (idle time, sleep, „Jetzt sperren“) waits for the open editors to save: the lock
-  // screen unmounts them, and once locked their saves would be refused.
+  // screen unmounts them, and once locked their saves would be refused. The overlays close once
+  // their content is saved.
   useEffect(() => {
     const off = listen("applock://locking", () => {
       void flushAllEditors()
         .catch(() => {})
-        .then(() => security.lockFlushed())
+        .then(() => {
+          closeOverlays();
+          return security.lockFlushed();
+        })
         .catch(() => {});
     });
     return () => void off.then((f) => f());
   }, []);
+  // Locked without that step (the flush took too long): the overlays still go.
+  useEffect(() => {
+    if (locked) closeOverlays();
+  }, [locked]);
   if (locked === null) return null;
   if (locked && status) return <LockScreen status={status} refresh={refresh} />;
   return <>{children}</>;

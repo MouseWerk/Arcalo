@@ -13,6 +13,7 @@ import { DRAWING_SAVED_EVENT, drawingLabel } from "./drawing";
 import { parseDrawing } from "./drawingFormat";
 import { FileWarning } from "lucide-react";
 import { isComposing } from "../lib/ime";
+import { registerFlusher, trackSave } from "./saves";
 
 const SAVE_DELAY = 800;
 /** Shapes the user added to Excalidraw's library, kept across drawings. */
@@ -76,6 +77,8 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
   const original = useRef<string | null>(null);
   const [theme, setTheme] = useState(appTheme);
   const [status, setStatus] = useState<Status>("saved");
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const savedKey = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -163,8 +166,21 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
         return false;
       }
     });
-    return queue.current;
+    // Quit, lock and update wait for it like for the notes' saves (the SVG export can take a while).
+    return trackSave(queue.current);
   }, [name]);
+
+  // Quit, lock and update first save the last strokes (the debounced save may still be pending).
+  useEffect(
+    () =>
+      registerFlusher(
+        async () => {
+          if (!(await save())) throw new Error(t("draw.notSaved"));
+        },
+        () => statusRef.current === "dirty" || statusRef.current === "error",
+      ),
+    [save, t],
+  );
 
   const onChange = useCallback(
     (elements: Elements, _appState: AppState, files: BinaryFiles) => {

@@ -38,6 +38,11 @@ export function openPdfViewer(name: string, page: number | null = null, highligh
   );
 }
 
+/** Closes the PDF viewer (on lock). */
+export function closePdfViewer() {
+  root?.render(null);
+}
+
 /** Opens a file in its default app (programs are only shown in the file manager, see the shell). */
 export function openFile(name: string) {
   api.openAttachment(baseName(name)).catch((e) => useApp.getState().error(t("file.openFailed"), e));

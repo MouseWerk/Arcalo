@@ -36,6 +36,11 @@ export function openDrawing(name: string) {
   );
 }
 
+/** Closes the drawing editor without saving (the lock saves it first through `flushAllEditors`). */
+export function closeDrawing() {
+  root?.render(null);
+}
+
 /** Creates an empty drawing, embeds it at the caret and opens the editor. */
 export async function insertDrawing(editor: Editor) {
   try {
