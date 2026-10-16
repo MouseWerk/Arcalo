@@ -377,9 +377,70 @@ where
     }
 }
 
+/// The name of this device in the sync (fallback branch, settings file): [`hostname`], and on
+/// Android, whose apps see no host name, [`phone_name`] with the model and an id kept in
+/// `data_dir`, so two phones never share a fallback branch.
+pub fn device_name(data_dir: &Path) -> String {
+    if cfg!(target_os = "android") {
+        return phone_name(data_dir, android_model().as_deref());
+    }
+    hostname()
+}
+
+/// File in the data folder with the id of [`phone_name`].
+const DEVICE_ID_FILE: &str = "device-id";
+
+/// `android-<model>-<id>`: the id (6 hex digits) is made once and kept in `data_dir`; a phone
+/// whose id cannot be kept gets a new one each time rather than the name of every other phone.
+fn phone_name(data_dir: &Path, model: Option<&str>) -> String {
+    let file = data_dir.join(DEVICE_ID_FILE);
+    let valid = |s: &str| s.len() == 6 && s.chars().all(|c| c.is_ascii_hexdigit());
+    let id = match fs::read_to_string(&file).map(|s| s.trim().to_ascii_lowercase()) {
+        Ok(s) if valid(&s) => s,
+        _ => {
+            let mut b = [0u8; 3];
+            let _ = getrandom::fill(&mut b);
+            let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
+            let _ = fs::create_dir_all(data_dir).and_then(|_| fs::write(&file, &id));
+            id
+        }
+    };
+    let model: String = sanitize_host(model.unwrap_or_default()).chars().take(24).collect();
+    let model = model.trim_matches('-');
+    sanitize_host(&if model.is_empty() || model == "rechner" {
+        format!("android-{id}")
+    } else {
+        format!("android-{model}-{id}")
+    })
+}
+
+/// The phone's model (`ro.product.model`, such as „Pixel 8“).
+#[cfg(target_os = "android")]
+fn android_model() -> Option<String> {
+    use std::ffi::{CStr, c_char, c_int};
+    unsafe extern "C" {
+        fn __system_property_get(name: *const c_char, value: *mut c_char) -> c_int;
+    }
+    // PROP_VALUE_MAX of bionic.
+    let mut buf = [0 as c_char; 92];
+    // SAFETY: the name is NUL-terminated and the buffer has the size bionic writes at most.
+    let n = unsafe { __system_property_get(c"ro.product.model".as_ptr(), buf.as_mut_ptr()) };
+    if n <= 0 {
+        return None;
+    }
+    // SAFETY: bionic writes a NUL-terminated value into `buf`.
+    let s = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().trim().to_owned();
+    (!s.is_empty()).then_some(s)
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_model() -> Option<String> {
+    None
+}
+
 /// Computer name for the fallback branch, reduced to characters valid in a branch name.
 pub fn hostname() -> String {
-    // Apps on Android see no host name: the companion app is „android“ (fallback branch, settings file).
+    // Apps on Android see no host name: [`device_name`] names the phone.
     if cfg!(target_os = "android") {
         return "android".to_owned();
     }
@@ -3731,6 +3792,32 @@ mod tests {
             assert!(!err.contains("abgebrochen") && !err.contains("stopped"), "git's own error: {err}");
             let _ = fs::remove_dir_all(&dir);
         }
+    }
+
+    /// Every phone has a name of its own (fallback branch, settings file): its model and an id
+    /// made once and kept in its data folder.
+    #[test]
+    fn each_phone_keeps_a_name_of_its_own() {
+        let base = tmp("phone-name");
+        let (one, two) = (base.join("eins"), base.join("zwei"));
+        let a = phone_name(&one, Some("Pixel 8 Pro"));
+        assert!(a.starts_with("android-pixel-8-pro-") && a.len() == "android-pixel-8-pro-".len() + 6, "{a}");
+        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), a, "kept");
+        let b = phone_name(&two, Some("Pixel 8 Pro"));
+        assert_ne!(a, b, "two phones of one model");
+        assert_ne!(fallback_branch(&a), fallback_branch(&b));
+        let id = &a[a.len() - 6..];
+        assert_eq!(phone_name(&one, None), format!("android-{id}"), "no model");
+        assert_eq!(check_branch(&fallback_branch(&phone_name(&one, Some("Galaxy S24 (Ü) / 5G")))).ok(), Some(()));
+        // A damaged id file: a new id, kept from then on.
+        fs::write(one.join(DEVICE_ID_FILE), "xyz").unwrap();
+        let c = phone_name(&one, Some("Pixel 8 Pro"));
+        assert_ne!(c, a);
+        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), c);
+        if !cfg!(target_os = "android") {
+            assert_eq!(device_name(&one), hostname());
+        }
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

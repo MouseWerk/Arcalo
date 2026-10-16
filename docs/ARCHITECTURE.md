@@ -202,7 +202,8 @@ page, on a blocking thread).
   stops the sync with the reason and the server's `remote:` lines (`refusal`; libgit2: the push status and the side-band
   messages), and so does a fetch that shows the server did not move on (merge base = the server's tip). A diverged push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
-  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
+  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>` (`gitsync::device_name`; a phone, which
+  sees no host name, is `android-<model>-<id>` with an id made once and kept in `<data dir>/device-id`). Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
   repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and a deletion there keep
   this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Two different files of one name

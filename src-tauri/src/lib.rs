@@ -1708,7 +1708,7 @@ pub(crate) fn run_git_sync_with(
     let hold = syncmerge::hold_paths(&state.db());
     // The settings file, when the settings are synced too.
     let settings_file = if settings.git_sync.sync_settings {
-        match state.db().settings_sync_file(&gitsync::hostname()) {
+        match state.db().settings_sync_file(&gitsync::device_name(&state.data_dir)) {
             Ok(f) => Some(f),
             Err(e) => {
                 devlog::warn("settings", format!("settings file for the sync not written: {e}"));
@@ -1741,7 +1741,7 @@ pub(crate) fn run_git_sync_with(
             devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
         }
         let repo = state.git_repo_dir();
-        let host = gitsync::hostname();
+        let host = gitsync::device_name(&state.data_dir);
         let req = SyncRequest {
             repo: &repo,
             source: &source,
