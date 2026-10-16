@@ -4,6 +4,8 @@ use tauri::AppHandle;
 
 pub fn shutdown(_app: &AppHandle) {}
 
+pub fn resume(_app: &AppHandle) {}
+
 pub fn model_source_url(_custom: &str) -> Option<String> {
     None
 }
