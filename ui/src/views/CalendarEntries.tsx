@@ -4,7 +4,7 @@
 // appointment, and the part of an appointment's panel that changes it or says why it cannot.
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { AlertTriangle, CalendarClock, ExternalLink, Lock, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, ExternalLink, Lock, Plus, RefreshCw, Trash2, Undo2, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Button, IconButton, Input, Select } from "../components/ui";
@@ -429,7 +429,7 @@ function fieldText(k: keyof EntryFields, v: string | undefined) {
 export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local }) {
   const t = useT();
   const s = useApp.getState;
-  const [busy, setBusy] = useState<"" | "retry" | "outlook" | "mine" | "show">("");
+  const [busy, setBusy] = useState<"" | "retry" | "outlook" | "mine" | "show" | "discard">("");
   const run = async (what: typeof busy, fn: () => Promise<unknown>, failed: TKey) => {
     setBusy(what);
     try {
@@ -444,6 +444,12 @@ export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local })
   const ro = e.editable ? READ_ONLY[e.editable] : undefined;
   const outlook = e.source === "outlook" || e.source.startsWith("outlook:");
   const conflictFields = w?.state === "conflict" ? (Object.keys(FIELD_LABELS) as (keyof EntryFields)[]).filter((k) => w.outlook?.[k] != null) : [];
+  // A change that failed or that Outlook refused can be dropped: the appointment shows as Outlook has it.
+  const discard = (
+    <Button size="sm" variant="ghost" icon={Undo2} loading={busy === "discard"} onClick={() => void run("discard", () => api.calendarEntryDiscard(e.key), "entries.discardFailed")}>
+      {t("entries.discard")}
+    </Button>
+  );
   return (
     <section className="calv-detail-sec calv-entry-state">
       {w?.state === "pending" && (
@@ -456,6 +462,17 @@ export function EntryState({ e, onLocal }: { e: CalendarEvent; onLocal: Local })
           <Button size="sm" variant="ghost" icon={RefreshCw} loading={busy === "retry"} onClick={() => void run("retry", () => api.calendarEntriesRetry(), "entries.saveFailed")}>
             {t("blocks.retry")}
           </Button>
+          {w.error && discard}
+        </div>
+      )}
+      {w?.state === "refused" && (
+        <div className="calv-entry-note conflict" role="status" data-write="refused">
+          <AlertTriangle size={14} aria-hidden />
+          <span>
+            <b>{t("entries.refused")}</b>
+            {w.error && <span className="faint small calv-block-error">{w.error}</span>}
+          </span>
+          {discard}
         </div>
       )}
       {w?.state === "conflict" && (

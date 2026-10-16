@@ -189,6 +189,15 @@ pub fn calendar_entry_resolve(app: AppHandle, state: State<AppState>, key: Strin
     Ok(())
 }
 
+/// „Änderung verwerfen“: drops a change Outlook refused or that still waits; the appointment
+/// shows as Outlook has it.
+#[tauri::command(async)]
+pub fn calendar_entry_discard(app: AppHandle, state: State<AppState>, key: String) -> Result<()> {
+    state.db().entry_discard(&key)?;
+    changed(&app);
+    Ok(())
+}
+
 /// „In Outlook öffnen“: the appointment in an Outlook window (attendees, Teams link, series).
 #[tauri::command]
 pub async fn calendar_entry_show(app: AppHandle, key: String) -> Result<()> {
@@ -203,8 +212,10 @@ pub async fn calendar_entry_show(app: AppHandle, key: String) -> Result<()> {
             .into(),
         )
     })?;
+    // An appointment in a PST file or a second mailbox is opened in its own store.
+    let store = state.settings().calendar.outlook_calendar(&e.source).map(|c| c.store_id.clone()).unwrap_or_default();
     let dir = state.data_dir.join("scripts");
-    tauri::async_runtime::spawn_blocking(move || outlookwrite::show(&dir, &entry))
+    tauri::async_runtime::spawn_blocking(move || outlookwrite::show(&dir, &entry, &store))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }

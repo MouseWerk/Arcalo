@@ -240,11 +240,12 @@ export function CalendarSection({ draft, update }: SectionProps) {
                 options={[15, 30, 45, 60, 90, 120].map((m) => ({ value: String(m), label: t("focus.minutes", { n: m }) }))}
               />
             </Row>
-            {(!!status.entries_waiting?.pending || !!status.entries_waiting?.conflict) && (
+            {(!!status.entries_waiting?.pending || !!status.entries_waiting?.conflict || !!status.entries_waiting?.refused) && (
               <Row label={t("entries.pending")}>
                 <span className="calset-waiting">
                   {!!status.entries_waiting?.pending && <StatusNote tone="info">{t("entries.waiting", { n: status.entries_waiting.pending })}</StatusNote>}
                   {!!status.entries_waiting?.conflict && <StatusNote tone="warning">{t("entries.conflicts", { n: status.entries_waiting.conflict })}</StatusNote>}
+                  {!!status.entries_waiting?.refused && <StatusNote tone="warning">{t("entries.refusedCount", { n: status.entries_waiting.refused })}</StatusNote>}
                 </span>
               </Row>
             )}

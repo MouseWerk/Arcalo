@@ -214,6 +214,7 @@ export const api = {
   calendarEntryDelete: (key: string) => call<void>("calendar_entry_delete", { key }),
   calendarEntryUndo: (key: string) => call<T.CalendarEvent>("calendar_entry_undo", { key }),
   calendarEntryResolve: (key: string, keepMine: boolean) => call<void>("calendar_entry_resolve", { key, keepMine }),
+  calendarEntryDiscard: (key: string) => call<void>("calendar_entry_discard", { key }),
   /** „In Outlook öffnen“. */
   calendarEntryShow: (key: string) => call<void>("calendar_entry_show", { key }),
   calendarEntriesRetry: () => call<void>("calendar_entries_retry"),

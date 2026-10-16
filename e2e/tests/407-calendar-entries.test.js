@@ -3,7 +3,8 @@
 // „Rückgängig“, written to Outlook (a fixture log stands in for the script and comes back with the
 // next sync, once). A closed Outlook makes a change wait, a change made in Outlook too asks which
 // one applies, a received meeting stays read-only with „In Outlook öffnen“, an organized meeting
-// asks before the update goes to its attendees. Switched off, nothing can be changed. The panels
+// asks before the update goes to its attendees, a change Outlook refuses waits until it is
+// discarded, Enter in a time field takes the typed time. Switched off, nothing can be changed. The panels
 // are checked in light, dark and high-contrast themes.
 import { test as nodeTest, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -290,6 +291,41 @@ test("a change made in Outlook too asks which one applies", async () => {
   await waitWrite((w) => w.entryId === "O2" && w.op === "update" && w.fields.subject === "Rückruf Kunde Müller", "mine not written");
   assert.equal(entryWrites().length, before + 1);
   await app.browser.waitUntil(async () => (await one("Rückruf Kunde Müller")).write == null, { timeoutMsg: "conflict stays" });
+});
+
+test("a change Outlook refuses waits with its reason until it is discarded", async () => {
+  const key = "outlook|G-O2|";
+  fs.writeFileSync(`${log}.offline`, "");
+  await scrollTo(15);
+  await app.click(sel(key));
+  await app.waitFor(".calv-detail .calv-entry-name");
+  await setInput(".calv-detail .calv-entry-name", "Rückruf Kunde Meier");
+  await app.waitFor('.calv-detail [data-write="pending"]');
+  // Meanwhile it became a meeting received from someone else in Outlook.
+  fs.appendFileSync(log, `${JSON.stringify({ kind: "entry", op: "outlook", entryId: "O2", fields: {}, meetingStatus: 3, modified: "2026-01-03T08:00:00Z" })}\n`);
+  fs.rmSync(`${log}.offline`);
+  await clickText('.calv-detail [data-write="pending"] .btn', /^Erneut versuchen$/);
+  await app.waitFor('.calv-detail [data-write="refused"]');
+  assert.match(await app.text('.calv-detail [data-write="refused"]'), /Outlook hat die Änderung abgelehnt\s*Besprechungen anderer lassen sich nur in Outlook ändern/);
+  assert.ok(await app.browser.execute((s) => !!document.querySelector(`${s}.write-refused .calv-mark`), sel(key)), "a mark on the appointment");
+  const look = await app.browser.execute(() => {
+    const cs = getComputedStyle(document.querySelector('.calv-detail [data-write="refused"]'));
+    return { left: cs.borderLeftWidth, outline: cs.outlineStyle };
+  });
+  assert.deepEqual(look, { left: "0px", outline: "none" }, "a tint, no bar or frame");
+  const problems = await app.browser.execute(auditLayout, ".calv-detail");
+  assert.deepEqual(problems, [], problems.join("\n"));
+  assert.deepEqual((await app.invoke("calendar_status")).entries_waiting, { refused: 1 });
+  // Not tried again by itself.
+  const count = entryWrites().length;
+  await app.invoke("calendar_entries_retry");
+  await sleep(400);
+  assert.equal(entryWrites().length, count);
+  await app.shot("407-refused");
+  await clickText('.calv-detail [data-write="refused"] .btn', /^Änderung verwerfen$/);
+  await app.browser.waitUntil(async () => (await byTitle("Rückruf Kunde Müller"))[0]?.write == null, { timeoutMsg: "still refused" });
+  assert.deepEqual((await app.invoke("calendar_status")).entries_waiting, {});
+  assert.equal((await byTitle("Rückruf Kunde Meier")).length, 0, "Outlook's version again");
 });
 
 test("a received meeting stays read-only and opens in Outlook", async () => {

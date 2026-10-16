@@ -664,6 +664,7 @@ function EventMarks({ e, booked }: { e: CalendarEvent; booked: Booked }) {
       {e.recurring && <Repeat className="calv-mark faint-mark" size={10} aria-label={t("calv.series")} />}
       {e.write?.state === "pending" && <CalendarClock className="calv-mark" size={11} aria-label={t("entries.pendingShort")} />}
       {e.write?.state === "conflict" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.conflict")} />}
+      {e.write?.state === "refused" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.refused")} />}
     </>
   );
 }

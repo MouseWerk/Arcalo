@@ -1585,7 +1585,8 @@ export interface EntryFields {
 }
 export interface EntryWrite {
   op: "create" | "update" | "delete" | "restore";
-  state: "pending" | "conflict";
+  /** `refused`: Outlook refused it (a series now, gone, not saved); it waits for the user. */
+  state: "pending" | "conflict" | "refused";
   error: string | null;
   /** A conflict: Outlook's values and the user's of the fields changed on both sides. */
   outlook: EntryFields | null;

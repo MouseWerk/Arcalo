@@ -23,7 +23,8 @@
 #   received meetings are refused; an organized meeting with attendees is changed only with send
 #   (the update then goes to them) and never deleted here; a delete moves the item to Deleted
 #   Items (deletedId), a restore moves it back. Results add {modified, deletedId}.
-# -Mode show: opens the appointment -EntryId in an Outlook window (In Outlook oeffnen).
+# -Mode show: opens the appointment -EntryId (of the store -StoreId, when given) in an Outlook
+#   window (In Outlook oeffnen).
 #
 # Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 # Private appointments keep only their time unless -Private is given; the text of an
@@ -41,7 +42,8 @@ param(
     [string]$Calendars = '',
     [string]$Recipients = '',
     [string]$Ops = '',
-    [string]$EntryId = ''
+    [string]$EntryId = '',
+    [string]$StoreId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,11 +107,19 @@ if ($Mode -eq 'write') {
         if (-not $c -or $c.default) { return $calendar }
         return $ns.GetFolderFromID([string]$c.entryId, [string]$c.storeId)
     }
+    # An item by its EntryID in the store of $folder (an own calendar in a PST file or a second
+    # mailbox is not always found without it), else in the default store.
+    function Get-ItemById($id, $folder) {
+        $item = $null
+        try { $item = $ns.GetItemFromID([string]$id, [string]$folder.StoreID) } catch { $item = $null }
+        if (-not $item) { try { $item = $ns.GetItemFromID([string]$id) } catch { $item = $null } }
+        return $item
+    }
     # The appointment by its EntryID (still in that calendar), else by its marker (ArcaloEntry).
     function Find-Entry($folder, $o) {
         $item = $null
         if ($o.entryId) {
-            try { $item = $ns.GetItemFromID([string]$o.entryId) } catch { $item = $null }
+            $item = Get-ItemById $o.entryId $folder
             try { if ($item -and $item.Parent.EntryID -ne $folder.EntryID) { $item = $null } } catch { $item = $null }
         }
         if (-not $item -and $o.marker) {
@@ -143,8 +153,7 @@ if ($Mode -eq 'write') {
         $folder = Get-EntryCalendar $o.calendar
         $f = $o.fields
         if ($o.op -eq 'restore') {
-            $item = $null
-            try { $item = $ns.GetItemFromID([string]$o.deletedId) } catch { $item = $null }
+            $item = Get-ItemById $o.deletedId $folder
             if (-not $item) { $res.ok = $false; $res.error = 'not_found'; return $res }
             # Moved back already by a try whose answer got lost (an EntryID that stays on a move).
             $back = $false
@@ -177,7 +186,11 @@ if ($Mode -eq 'write') {
                 if ($o.op -eq 'delete') {
                     # A meeting with attendees is cancelled in Outlook, never deleted here.
                     if ($invited -gt 0) { $res.ok = $false; $res.error = 'needs_send'; return $res }
-                    $moved = $item.Move($ns.GetDefaultFolder(3))
+                    # Deleted Items of the calendar's own store (a PST file has its own).
+                    $trash = $null
+                    try { $trash = $folder.Store.GetDefaultFolder(3) } catch { $trash = $null }
+                    if (-not $trash) { $trash = $ns.GetDefaultFolder(3) }
+                    $moved = $item.Move($trash)
                     $res.deletedId = [string]$moved.EntryID
                     return $res
                 }
@@ -280,7 +293,9 @@ if ($Mode -eq 'show') {
         if (Get-Process -Name 'olk' -ErrorAction SilentlyContinue) { Fail 'new_outlook' '' }
         Fail 'not_installed' $_.Exception.Message
     }
-    try { $item = $ns.GetItemFromID($EntryId) } catch { Fail 'not_found' $_.Exception.Message }
+    $item = $null
+    if ($StoreId) { try { $item = $ns.GetItemFromID($EntryId, $StoreId) } catch { $item = $null } }
+    if (-not $item) { try { $item = $ns.GetItemFromID($EntryId) } catch { Fail 'not_found' $_.Exception.Message } }
     $item.Display()
     Write-Json ([ordered]@{ ok = $true })
     exit 0

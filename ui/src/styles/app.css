@@ -3429,8 +3429,8 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .calv-ev.calv-appt:hover .calv-entry-handle::after, .calv-ev.calv-appt.selected .calv-entry-handle::after { opacity: 0.6; }
 .calv-ev.calv-appt.short .calv-entry-handle::after { display: none; }
 .calv-ev.write-pending { --ev-fill: color-mix(in srgb, var(--ev) calc(var(--ev-tint) / 2), var(--bg-canvas)); }
-.calv-ev.write-conflict { --ev-fill: color-mix(in srgb, var(--text) 7%, var(--bg-canvas)); --ev-bar: var(--border-strong); }
-.calv-ev.write-conflict.selected { --ev-fill: color-mix(in srgb, var(--text) 11%, var(--bg-canvas)); }
+.calv-ev.write-conflict, .calv-ev.write-refused { --ev-fill: color-mix(in srgb, var(--text) 7%, var(--bg-canvas)); --ev-bar: var(--border-strong); }
+.calv-ev.write-conflict.selected, .calv-ev.write-refused.selected { --ev-fill: color-mix(in srgb, var(--text) 11%, var(--bg-canvas)); }
 .calv-mark.conflict { color: var(--warning); }
 .calv-entry-ghost { position: absolute; left: 3px; right: 4px; z-index: 4; display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 3px 7px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-sm); background: color-mix(in srgb, var(--text) 6%, var(--bg-canvas)); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 14px; pointer-events: none; overflow: hidden; }
 .calv-entry-ghost .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }

@@ -230,16 +230,20 @@ pub fn parse_entries_output(text: &str) -> Result<Vec<EntryResult>> {
     Ok(writes::parse_results(&v))
 }
 
-/// „In Outlook öffnen“: shows the appointment `entry_id` in an Outlook window (blocking). Unlike
+/// „In Outlook öffnen“: shows the appointment `entry_id` (of the store `store_id`, empty for the
+/// default one) in an Outlook window (blocking). Unlike
 /// a write, this starts Outlook when it is closed: the user asked for it.
-pub fn show(script_dir: &Path, entry_id: &str) -> Result<()> {
+pub fn show(script_dir: &Path, entry_id: &str, store_id: &str) -> Result<()> {
     if let Some(log) = fixture_log() {
         return super::outlookfixture::show(&log, entry_id);
     }
     if !cfg!(windows) {
         return Err(Error::State(entries_error_text("not_installed", "")));
     }
-    let args: Vec<OsString> = vec!["-Mode".into(), "show".into(), "-EntryId".into(), entry_id.into()];
+    let mut args: Vec<OsString> = vec!["-Mode".into(), "show".into(), "-EntryId".into(), entry_id.into()];
+    if !store_id.is_empty() {
+        args.extend(["-StoreId".into(), store_id.into()]);
+    }
     let out = outlookcom::run(
         script_dir,
         Script { file: SCRIPT_FILE, source: SCRIPT },

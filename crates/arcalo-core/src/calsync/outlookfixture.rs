@@ -3,7 +3,8 @@
 //! appended to the log as JSON lines (`"kind":"entry"`), and every read of the Outlook fixture
 //! (`ARCALO_OUTLOOK_FIXTURE`) replays them over its items, so an appointment created in Arcalo
 //! comes back with the next sync like from Outlook, once. A test stands in for a change made in
-//! Outlook with a line `{"kind":"entry","op":"outlook","entryId":…,"fields":{…}}`. The writes
+//! Outlook with a line `{"kind":"entry","op":"outlook","entryId":…,"fields":{…}}` (also with
+//! `recurring` or `meetingStatus`: made a series or a received meeting there). The writes
 //! answer like the script: by marker for an appointment whose answer got lost, with conflicts,
 //! the guards for series, received meetings and attendees, and `sent` for an update the user
 //! confirmed. While a file `<log>.offline` exists, Outlook counts as closed.
@@ -143,6 +144,12 @@ impl State {
                 if let Some(i) = self.position(&entry) {
                     set_fields(&mut self.items[i].v, fields);
                     self.items[i].v["modified"] = modified;
+                    // Outlook made it a series or a received meeting meanwhile.
+                    for k in ["recurring", "meetingStatus"] {
+                        if let Some(x) = line.get(k) {
+                            self.items[i].v[k] = x.clone();
+                        }
+                    }
                 }
             }
             "delete" => {
