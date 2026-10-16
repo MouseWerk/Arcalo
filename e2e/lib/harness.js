@@ -365,6 +365,27 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         timeoutMsg: `${sel} does not show ${value}`,
       });
     },
+    /**
+     * Reloads the page and waits until the new document is ready. `location.reload()` returns
+     * before the old document goes: a check for `ready` right after it can still see the old one,
+     * and keys sent then are lost while the new one starts.
+     */
+    async reload() {
+      await browser.execute(() => {
+        window.__arcaloOldDocument = true;
+        location.reload();
+      });
+      await browser.waitUntil(
+        async () => {
+          try {
+            return await browser.execute(() => !window.__arcaloOldDocument && document.body.classList.contains("ready"));
+          } catch {
+            return false; // between the documents
+          }
+        },
+        { timeout: 20000, timeoutMsg: "not ready after reload" },
+      );
+    },
     async waitFor(sel, timeout = 8000) {
       // A view that re-renders can replace the element between the lookup and the check; look it up again then.
       await browser.waitUntil(

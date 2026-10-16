@@ -45,9 +45,7 @@ export function treeHelpers(getApp) {
   const expanded = () => app().browser.execute(() => JSON.parse(localStorage.getItem(`arcalo.expanded.${window.__ARCALO_WORKSPACE__}`) ?? "null"));
 
   async function reload() {
-    await app().browser.execute(() => location.reload());
-    await app().browser.pause(300);
-    await app().browser.waitUntil(() => app().browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
+    await app().reload();
     await app().waitFor(".sidebar .tree-row");
   }
 

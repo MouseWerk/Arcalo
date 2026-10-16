@@ -199,8 +199,8 @@ test("the next-meeting widget keeps its title at a small size", async () => {
   await app.invoke("dashboard_save", {
     dashboard: { version: 2, active: "b", notes: {}, boards: [{ id: "b", name: "Start", widgets: [W("small", 0, 3, 5), W("narrow", 3, 3, 7), W("wide", 6, 5, 7)] }] },
   });
-  await app.browser.execute(() => location.reload());
-  await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
+  // The new document, not the old one still shown: Ctrl+T sent while the new one starts is lost.
+  await app.reload();
   await app.keys(["Control", "t"]);
   const check = async () => {
     for (const id of ["small", "narrow", "wide"]) {
