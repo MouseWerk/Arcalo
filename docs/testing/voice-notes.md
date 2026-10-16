@@ -9,6 +9,9 @@ The e2e tests `e2e/tests/111-voice-notes.test.js` (German) and `112-voice-notes-
 | `ARCALO_TEST_TRANSCRIPT` | Whisper: lines `[00:12] Text` (inline or as a file path); the progress runs in five steps. |
 | `ARCALO_TEST_MODEL_BASES` | The GitHub and Hugging Face addresses, as `<github base>|<huggingface base>`, so a download never leaves the test machine. |
 
+`120-voice-microphone-recovery.test.js` feeds digital silence (a blocked microphone): the voice bar's hint,
+no voice note on stop, two starts at once, the question on quit, and a transcription a crash cut off.
+
 Release builds ignore them. The unit tests in `crates/arcalo-core/src/voice/` cover the model registry and
 its checksums, the source order with a local HTTP server, resuming (HTTP range and a file share), the
 transcript as Markdown, FLAC encoding and the parsing of action items.
