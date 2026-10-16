@@ -855,7 +855,7 @@ pub fn on_exit(app: &AppHandle) {
 
 /// The folder of the running terminal commands' lock files: the app's local data folder, where
 /// the command line puts them too (`arcalo_core::cmdlock`).
-fn commands_dir(app: &AppHandle) -> Option<PathBuf> {
+pub fn commands_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_local_data_dir().ok().map(|d| d.join(cmdlock::DIR))
 }
 

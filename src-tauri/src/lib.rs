@@ -124,7 +124,7 @@ use arcalo_core::tracking::{self, BudgetStatus, LogOutcome};
 use arcalo_core::trash::TrashEntry;
 use arcalo_core::vault::{self, ImportReport};
 use arcalo_core::versions::VersionInfo;
-use arcalo_core::{Database, Error, datadir, demo};
+use arcalo_core::{Database, Error, cmdlock, datadir, demo};
 use arcalo_core::{tr, trf};
 use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
@@ -4321,6 +4321,36 @@ fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     dir.map_err(|e| Error::State(e.to_string()))
 }
 
+/// A restore or an encryption switch waits for this start (both replace the database file).
+#[cfg(desktop)]
+fn swap_pending(dir: &std::path::Path) -> bool {
+    dir.join(arcalo_core::backupdest::PENDING_RESTORE).is_file()
+        || arcalo_core::cipher::read_marker(dir).is_some_and(|m| m.step != arcalo_core::cipher::Step::Swapped)
+}
+
+/// A restore or an encryption switch waits for the next start: `running` terminal commands (none
+/// named: a program without a mark) still work on the workspace.
+#[cfg(desktop)]
+fn swap_postponed_notice(running: &[cmdlock::Running]) -> datadir::Notice {
+    let names = running.iter().map(|r| format!("arcalo {}", r.command)).collect::<Vec<_>>().join(", ");
+    let message = if names.is_empty() {
+        tr!(
+            "Ein anderes Programm arbeitet gerade mit den Daten. Die Wiederherstellung oder Umstellung der \
+             Verschlüsselung folgt beim nächsten Start.",
+            "Another program is working with the data right now. The restore or the encryption switch follows at \
+             the next start."
+        )
+        .to_owned()
+    } else {
+        trf!(
+            "Im Terminal läuft noch {names}. Die Wiederherstellung oder Umstellung der Verschlüsselung folgt beim \
+             nächsten Start.",
+            "{names} is still running in a terminal. The restore or the encryption switch follows at the next start."
+        )
+    };
+    datadir::Notice::titled("warning", tr!("Auf den nächsten Start verschoben", "Postponed to the next start"), message)
+}
+
 /// The standard data folder (the one without `location.json`).
 fn default_data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
     #[cfg(desktop)]
@@ -4647,11 +4677,29 @@ pub fn run() {
             // `location.json` in the config folder may point to a chosen data folder.
             // A pending move is carried out here, before the database is opened. A portable
             // copy (marker next to the executable) keeps its data in `<exe dir>/data`.
+            let env_dir = arcalo_core::identity::env_os("ARCALO_DATA_DIR").map(PathBuf::from);
+            let config = config_dir(app.handle()).ok();
+            let default_dir = identity::data_dir(app.handle())?;
+            // The second line of defence against two processes on one workspace: the
+            // single-instance plugin needs a session bus on Linux, and an installed copy and the
+            // Store's may share a data folder. A lock on a file in the data folder, as a portable
+            // copy holds already, taken before a pending move copies the folder. Test runs
+            // (ARCALO_DATA_DIR) use folders of their own.
+            let instance_lock = portable::detect().is_none() && env_dir.is_none();
+            let locked = instance_lock.then(|| datadir::locate(None, None, config.as_deref(), default_dir.clone()));
+            if let Some(current) = &locked
+                && !portable::lock_instance(current)
+            {
+                portable::already_running(current);
+                std::process::exit(0);
+            }
+            let commands = updates::commands_dir(app.handle());
             let startup = datadir::prepare_portable(
-                arcalo_core::identity::env_os("ARCALO_DATA_DIR").map(PathBuf::from),
+                env_dir,
                 portable::detect(),
-                config_dir(app.handle()).ok().as_deref(),
-                identity::data_dir(app.handle())?,
+                config.as_deref(),
+                default_dir,
+                commands.as_deref(),
             );
             let dir = startup.dir.clone();
             // Until the settings are read (and on the recovery screens): the system's language.
@@ -4666,14 +4714,8 @@ pub fn run() {
                 recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
             }
-            // The second line of defence against two processes on one workspace: the
-            // single-instance plugin needs a session bus on Linux, and an installed copy and the
-            // Store's may share a data folder. A lock on a file in the data folder, as a portable
-            // copy holds already. Test runs (ARCALO_DATA_DIR) use folders of their own.
-            if portable::detect().is_none()
-                && arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none()
-                && !portable::lock_instance(&dir)
-            {
+            // The folder after a move (or the default one when the chosen folder is missing).
+            if locked.as_ref().is_some_and(|current| *current != dir) && !portable::lock_instance(&dir) {
                 devlog::warn("core", format!("another Arcalo process runs on {}: this one ends", dir.display()));
                 portable::already_running(&dir);
                 std::process::exit(0);
@@ -4717,11 +4759,23 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 arcalo_core::identity::env("ARCALO_STARTUP").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+            // A restore or an encryption switch replaces the database file: not while a terminal
+            // command works on it, and none starts until it is done.
+            let swap = swap_pending(&dir).then(|| cmdlock::exclusive(&dir, commands.as_deref(), cmdlock::START_WAIT));
+            let may_swap = !matches!(swap, Some(Err(_)));
+            let swap_notice = match &swap {
+                Some(Err(running)) => {
+                    devlog::warn("core", format!("restore or encryption switch postponed: {} commands running", running.len()));
+                    Some(swap_postponed_notice(running))
+                }
+                _ => None,
+            };
             // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
-            let restored = backupdest::apply_pending_restore(&dir);
+            let restored = if may_swap { backupdest::apply_pending_restore(&dir) } else { None };
             // Encrypted database: its key, a requested switch (Settings → Sicherheit), and the
             // recovery screen when the key is missing or wrong.
-            let prepared = security::prepare(&dir);
+            let prepared = security::prepare(&dir, may_swap);
+            drop(swap);
             if let Some(reason) = prepared.blocked {
                 security::show_keygate(app.handle(), &dir, reason);
                 return Ok(());
@@ -4772,6 +4826,7 @@ pub fn run() {
             let cipher_notice = prepared.notice.filter(|n| restored.is_none() || n.kind != "info");
             // Last: macOS started the app from the disk image or translocated from Downloads.
             let mut notice = cipher_notice
+                .or(swap_notice)
                 .or(restored)
                 .or(startup.notice.clone())
                 .or_else(identity::notice)

@@ -568,7 +568,9 @@ pub struct Ctx {
 fn run(cli: Cli, out: Out) -> Outcome<()> {
     // `demo` and `import` start a workspace where none is yet; the others need one.
     let create = matches!(cli.cmd, Cmd::Demo | Cmd::Import { .. });
-    let ws = Workspace::open(workspace::locate(cli.db, cli.data_dir), create)?;
+    // Held until the command ends (see `locate_shared`).
+    let (loc, _share) = workspace::locate_shared(cli.db, cli.data_dir)?;
+    let ws = Workspace::open(loc, create)?;
     let ctx = Ctx { ws, out };
     match cli.cmd {
         Cmd::Info => misc::info(&ctx),

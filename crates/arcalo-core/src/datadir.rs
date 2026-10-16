@@ -36,8 +36,8 @@ pub const STAGING_DIR: &str = ".arcalo-move-tmp";
 /// queue, the marker of a restore the Git sync has to compare first, the backup destinations
 /// and a restore waiting for the next start. Everything else the app keeps there is in
 /// [`STAYS`]; a test makes sure every name the app writes is in one of the lists.
-const DATA_DIRS: [&str; 6] = ["attachments", "backups", "trash", "logs", "git-sync", "voice"];
-const DATA_FILES: [&str; 12] = [
+pub const DATA_DIRS: [&str; 6] = ["attachments", "backups", "trash", "logs", "git-sync", "voice"];
+pub const DATA_FILES: [&str; 12] = [
     "secrets.json",
     CREDENTIALS_MOVED,
     crate::cipher::MARKER,
@@ -55,7 +55,7 @@ const DATA_FILES: [&str; 12] = [
 /// health, the instance and command locks, the portable copy's WebView profile, the Android
 /// update state), written anew when needed (scripts, mail temp files, the CA bundle for Git,
 /// the export of a sync without mirror, caches) or downloaded again (speech models).
-const STAYS: [&str; 13] = [
+pub const STAYS: [&str; 14] = [
     "models",
     crate::update_state::UPDATES_DIR,
     crate::update_state::ROLLBACK_DIR,
@@ -66,6 +66,7 @@ const STAYS: [&str; 13] = [
     "cache",
     "scripts",
     crate::mail::TEMP_DIR,
+    crate::cmdlock::WORKSPACE_LOCK,
     "git-sync-export",
     "network-ca-bundle.pem",
     "android-update.json",
@@ -149,17 +150,19 @@ pub fn portable_data_dir(exe_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Like [`prepare`], with a portable data folder first: `env` still wins (tests), then
-/// `portable` (`location.json` is ignored), then the usual order.
+/// `portable` (`location.json` is ignored), then the usual order. `commands`: the folder of the
+/// marks of running commands ([`crate::cmdlock`]), waited for before a move.
 pub fn prepare_portable(
     env: Option<PathBuf>,
     portable: Option<PathBuf>,
     config_dir: Option<&Path>,
     default: PathBuf,
+    commands: Option<&Path>,
 ) -> Startup {
     let env = env.filter(|p| !p.as_os_str().is_empty());
     match (env, portable) {
         (None, Some(dir)) => Startup { dir, notice: None },
-        (env, _) => prepare(env, config_dir, default),
+        (env, _) => prepare_with(env, config_dir, default, commands, crate::cmdlock::START_WAIT),
     }
 }
 
@@ -242,6 +245,19 @@ pub struct Startup {
 /// move (on failure the old folder stays in use) and falls back to `default` when the
 /// chosen folder is missing or holds no workspace (e.g. a disconnected drive).
 pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf) -> Startup {
+    prepare_with(env, config_dir, default, None, crate::cmdlock::START_WAIT)
+}
+
+/// [`prepare`] that waits up to `wait` for the commands marked in `commands` and for every
+/// command holding the workspace before a move; when they do not end, the move waits for the
+/// next start.
+pub fn prepare_with(
+    env: Option<PathBuf>,
+    config_dir: Option<&Path>,
+    default: PathBuf,
+    commands: Option<&Path>,
+    wait: std::time::Duration,
+) -> Startup {
     if let Some(dir) = env.filter(|p| !p.as_os_str().is_empty()) {
         return Startup { dir, notice: None };
     }
@@ -251,7 +267,35 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
     let mut notice = None;
     if let Some(to) = loc.pending_move.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(PathBuf::from) {
         let from = current.clone().unwrap_or_else(|| default.clone());
-        match move_workspace(&from, &to).and_then(|_| write_location(config_dir, &to)) {
+        // No command may write to the workspace while it is copied, and none may open the old
+        // folder once `location.json` points to the new one: both happen under the hold.
+        let moved = match crate::cmdlock::exclusive(&from, commands, wait) {
+            Ok(_hold) => match move_workspace(&from, &to).and_then(|_| write_location(config_dir, &to)) {
+                // A program that does not take part (an older one) holds the database.
+                Err(e) if e.is_busy() => Err(NotMoved::Busy(String::new())),
+                other => other.map_err(NotMoved::Failed),
+            },
+            Err(running) => Err(NotMoved::Busy(
+                running.iter().map(|r| format!("arcalo {}", r.command)).collect::<Vec<_>>().join(", "),
+            )),
+        };
+        match moved {
+            Err(NotMoved::Busy(running)) => {
+                let msg = if running.is_empty() {
+                    trf!(
+                        "Ein anderes Programm arbeitet gerade mit den Daten. Der Umzug nach {} folgt beim nächsten Start.",
+                        "Another program is working with the data right now. The move to {} follows at the next start.",
+                        to.display()
+                    )
+                } else {
+                    trf!(
+                        "Im Terminal läuft noch {running}. Der Umzug nach {} folgt beim nächsten Start.",
+                        "{running} is still running in a terminal. The move to {} follows at the next start.",
+                        to.display()
+                    )
+                };
+                notice = Some(Notice::new("warning", msg));
+            }
             Ok(()) => {
                 let msg = trf!(
                     "Die Daten wurden nach {} verschoben. Der bisherige Ordner {} bleibt unverändert erhalten.",
@@ -261,7 +305,7 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
                 );
                 return Startup { dir: to, notice: Some(Notice::new("info", msg)) };
             }
-            Err(e) => {
+            Err(NotMoved::Failed(e)) => {
                 let keep = Location { data_dir: loc.data_dir.clone(), pending_move: None };
                 let _ = write_location_file(config_dir, &keep);
                 let msg = trf!(
@@ -289,6 +333,15 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
         return Startup { dir: default, notice: notice.or(Some(Notice::new("warning", msg))) };
     }
     Startup { dir, notice }
+}
+
+/// Why a pending move did not happen at this start.
+enum NotMoved {
+    /// Commands (named, or a program that holds the database) still work on the workspace: the
+    /// move stays pending.
+    Busy(String),
+    /// The move failed: it is dropped.
+    Failed(Error),
 }
 
 /// What a folder chosen as the new data folder looks like.
@@ -374,7 +427,23 @@ fn db_files() -> [String; 3] {
     [format!("{DB_FILE}-wal"), format!("{DB_FILE}-shm"), DB_FILE.to_owned()]
 }
 
+/// Holds the plain database `db` against every other connection until the returned connection
+/// closes (`locking_mode=EXCLUSIVE`: the lock of a write transaction is kept). `None` for a file
+/// that is missing or encrypted (it cannot be read without its key; the workspace lock of
+/// [`crate::cmdlock`] alone keeps commands out then). A busy error when another program holds it.
+fn lock_database(db: &Path) -> Result<Option<rusqlite::Connection>> {
+    if crate::cipher::file_state(db) != crate::cipher::FileState::Plain {
+        return Ok(None);
+    }
+    let conn = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    conn.busy_timeout(std::time::Duration::from_secs(2))?;
+    conn.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT;")?;
+    Ok(Some(conn))
+}
+
 fn stage_and_commit(from: &Path, to: &Path, staging: &Path) -> Result<usize> {
+    // First, so nothing is copied while another program writes.
+    let held = lock_database(&from.join(DB_FILE))?;
     let mut n = 0;
     for dir in DATA_DIRS {
         let src = from.join(dir);
@@ -382,11 +451,28 @@ fn stage_and_commit(from: &Path, to: &Path, staging: &Path) -> Result<usize> {
             n += copy_dir(&src, &staging.join(dir))?;
         }
     }
-    for name in DATA_FILES.iter().map(|s| s.to_string()).chain(db_files()) {
-        let src = from.join(&name);
+    for name in DATA_FILES {
+        let src = from.join(name);
         if src.is_file() {
-            copy_file(&src, &staging.join(&name))?;
+            copy_file(&src, &staging.join(name))?;
             n += 1;
+        }
+    }
+    match &held {
+        // A consistent copy of the database with its WAL, through SQLite.
+        Some(conn) => {
+            conn.backup(rusqlite::MAIN_DB, staging.join(DB_FILE), None)?;
+            n += 1;
+        }
+        // Encrypted: the files as they are (no program writes, see above).
+        None => {
+            for name in db_files() {
+                let src = from.join(&name);
+                if src.is_file() {
+                    copy_file(&src, &staging.join(&name))?;
+                    n += 1;
+                }
+            }
         }
     }
     // Commit: rename into place; the database file last, so a workspace only appears
@@ -493,7 +579,7 @@ mod tests {
         std::fs::create_dir_all(&exe).unwrap();
         assert_eq!(portable_data_dir(&exe), None, "no marker: installed");
         write_location(&cfg, &base.join("anderswo")).unwrap();
-        let start = |portable| prepare_portable(None, portable, Some(&cfg), default.clone());
+        let start = |portable| prepare_portable(None, portable, Some(&cfg), default.clone(), None);
         assert_eq!(start(portable_data_dir(&exe)).dir, default, "location.json of a missing folder: default");
 
         std::fs::write(exe.join(PORTABLE_MARKER), b"").unwrap();
@@ -504,9 +590,9 @@ mod tests {
             "location.json ignored"
         );
         // The environment variable (tests) still wins; an empty one does not count.
-        let env = prepare_portable(Some(base.join("env")), portable_data_dir(&exe), Some(&cfg), default.clone());
+        let env = prepare_portable(Some(base.join("env")), portable_data_dir(&exe), Some(&cfg), default.clone(), None);
         assert_eq!(env.dir, base.join("env"));
-        let empty = prepare_portable(Some(PathBuf::new()), portable_data_dir(&exe), Some(&cfg), default.clone());
+        let empty = prepare_portable(Some(PathBuf::new()), portable_data_dir(&exe), Some(&cfg), default.clone(), None);
         assert_eq!(empty.dir, exe.join("data"));
 
         // A marker inside data/ alone also counts; a folder data/ without it does not.
@@ -648,6 +734,60 @@ mod tests {
         assert_eq!(s.dir, to);
         assert_eq!(s.notice.unwrap().kind, "error");
         assert_eq!(read_location_file(&cfg).unwrap().pending_move, None, "pending move cleared");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// While the move copies a plain database, no other connection reads or writes it.
+    #[test]
+    fn the_database_is_held_while_it_is_copied() {
+        let dir = temp("held");
+        sample_workspace(&dir);
+        let held = lock_database(&dir.join(DB_FILE)).unwrap().unwrap();
+        let other = rusqlite::Connection::open(dir.join(DB_FILE)).unwrap();
+        let err = other.execute("UPDATE pages SET title = 'x'", []).unwrap_err();
+        assert!(Error::from(err).is_busy());
+        drop(held);
+        other.execute("UPDATE pages SET title = 'x'", []).unwrap();
+        drop(other);
+        // An encrypted (here: unreadable) or missing file is not held.
+        std::fs::write(dir.join("other.db"), [7u8; 4096]).unwrap();
+        assert!(lock_database(&dir.join("other.db")).unwrap().is_none());
+        assert!(lock_database(&dir.join("missing.db")).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A command line program writing to the workspace while the app starts: the move waits
+    /// instead of copying a database that is being written.
+    #[test]
+    fn a_pending_move_waits_while_another_program_writes() {
+        let base = temp("busy-move");
+        let (cfg, default, to) = (base.join("cfg"), base.join("default"), base.join("neu"));
+        let id = sample_workspace(&default);
+        write_pending_move(&cfg, &default, &to).unwrap();
+        // A command holds the workspace (its share): the move waits for the next start.
+        let command = crate::cmdlock::share(&default).unwrap();
+        let s = prepare_with(None, Some(&cfg), default.clone(), None, std::time::Duration::from_millis(200));
+        assert_eq!((s.dir.clone(), s.notice.unwrap().kind), (default.clone(), "warning"));
+        assert!(!to.join(DB_FILE).exists());
+        drop(command);
+        // Another program writes without taking part.
+        let writer = Database::open(default.join(DB_FILE)).unwrap();
+        writer.conn().execute_batch("BEGIN IMMEDIATE").unwrap();
+        writer.conn().execute("UPDATE pages SET title = 'Während des Umzugs' WHERE id = ?1", [id]).unwrap();
+        let s = prepare(None, Some(&cfg), default.clone());
+        assert_eq!(s.dir, default, "the workspace stays where it is");
+        assert_eq!(s.notice.unwrap().kind, "warning");
+        assert!(!to.join(DB_FILE).exists());
+        assert_eq!(read_location_file(&cfg).unwrap().pending_move, Some(to.display().to_string()), "still pending");
+        writer.conn().execute_batch("COMMIT").unwrap();
+        drop(writer);
+        let s = prepare(None, Some(&cfg), default.clone());
+        assert_eq!(s.dir, to);
+        let copy = Database::open(to.join(DB_FILE)).unwrap();
+        let title: String = copy.conn().query_row("SELECT title FROM pages WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(title, "Während des Umzugs");
+        assert_eq!(copy.page_doc(id).unwrap().content, "Inhalt im WAL");
+        drop(copy);
         let _ = std::fs::remove_dir_all(&base);
     }
 

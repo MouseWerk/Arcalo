@@ -759,3 +759,43 @@ fn a_running_command_holds_its_mark_until_it_ends() {
     assert!(!mark.exists(), "the mark goes with the command");
     assert_eq!(arcalo_core::cmdlock::running(&dir), vec![]);
 }
+
+/// While the app swaps the database at its start (a data folder move, a restore, an encryption
+/// switch), a command does not write into the file being replaced: it is refused and can be
+/// repeated. While a command runs, the app does not get the workspace for a swap.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_command_is_refused_during_a_swap_and_holds_one_off() {
+    use arcalo_core::cmdlock;
+    use std::io::Write;
+    use std::time::Duration;
+    let ws = Ws::new("swap");
+    let swap = cmdlock::exclusive(&ws.dir, None, Duration::ZERO).unwrap();
+    assert_eq!(ws.fails(&["pages", "create", "Neu"], 3)["code"], json!("locked"));
+    drop(swap);
+    assert!(ws.db().page_by_title("Neu").unwrap().is_none(), "nothing written");
+    ws.json(&["pages", "create", "Neu"]);
+
+    let dir = ws.dir.join("xdg/de.mousewerk.arcalo/commands");
+    let mut child = ws
+        .cmd(&["--json", "pages", "create", "Lang", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mark = dir.join(format!("{} pages create.lock", child.id()));
+    for _ in 0..200 {
+        if mark.is_file() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    // The command takes its share right after its mark, before it reads its input.
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(cmdlock::exclusive(&ws.dir, None, Duration::from_millis(200)).is_err(), "the command holds the workspace");
+    child.stdin.take().unwrap().write_all(b"Text\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(cmdlock::exclusive(&ws.dir, None, Duration::ZERO).is_ok(), "free once it ended");
+}

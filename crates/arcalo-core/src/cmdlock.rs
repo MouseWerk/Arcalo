@@ -126,6 +126,74 @@ pub fn running(dir: &Path) -> Vec<Running> {
     found
 }
 
+/// Lock file in the data folder of a workspace: every command holds it shared while it runs
+/// ([`share`]), the app holds it exclusively while it copies or swaps the database at its start
+/// (a data folder move, a restore, an encryption switch; [`exclusive`]). So a command never writes
+/// into a file that is being replaced, and a swap never begins while a command runs.
+pub const WORKSPACE_LOCK: &str = ".arcalo-workspace.lock";
+
+/// How long the start waits for running commands before it postpones a swap.
+pub const START_WAIT: Duration = Duration::from_secs(30);
+
+/// A command's share of a workspace, held until it is dropped.
+#[derive(Debug)]
+pub struct Share {
+    _file: Option<File>,
+}
+
+/// The app is swapping the database of the workspace (see [`WORKSPACE_LOCK`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Swapping;
+
+/// Takes a share of the workspace in `data_dir` for a command. A folder without the file or
+/// without locks (a read-only stick) gives an empty share: the command runs as before.
+pub fn share(data_dir: &Path) -> std::result::Result<Share, Swapping> {
+    let Ok(file) =
+        OpenOptions::new().read(true).write(true).create(true).truncate(false).open(data_dir.join(WORKSPACE_LOCK))
+    else {
+        return Ok(Share { _file: None });
+    };
+    match file.try_lock_shared() {
+        Ok(()) => Ok(Share { _file: Some(file) }),
+        Err(TryLockError::WouldBlock) => Err(Swapping),
+        Err(TryLockError::Error(_)) => Ok(Share { _file: None }),
+    }
+}
+
+/// The app's exclusive hold of a workspace while it swaps the database, until it is dropped.
+#[derive(Debug)]
+pub struct Exclusive {
+    _file: Option<File>,
+}
+
+/// Takes the workspace in `data_dir` for a swap: waits until no command of `commands` (the folder
+/// of [`hold`]) runs and no command holds a [`share`], up to `limit`. `Err` with the commands
+/// still running (empty: a command without a mark, e.g. of a portable copy) when the limit passed.
+/// Without file locks the hold is empty and only the marks are waited for.
+pub fn exclusive(
+    data_dir: &Path,
+    commands: Option<&Path>,
+    limit: Duration,
+) -> std::result::Result<Exclusive, Vec<Running>> {
+    let deadline = std::time::Instant::now() + limit;
+    let file =
+        OpenOptions::new().read(true).write(true).create(true).truncate(false).open(data_dir.join(WORKSPACE_LOCK)).ok();
+    loop {
+        let running = commands.map(running).unwrap_or_default();
+        if running.is_empty() {
+            match file.as_ref().map(File::try_lock) {
+                None | Some(Err(TryLockError::Error(_))) => return Ok(Exclusive { _file: None }),
+                Some(Ok(())) => return Ok(Exclusive { _file: file }),
+                Some(Err(TryLockError::WouldBlock)) => {}
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(running);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// After the wait limit with commands still running: whether the update goes on. On Windows the
 /// setup would end every running `Arcalo.exe` of the user, so the update waits for the next quit
 /// instead; elsewhere the program files are replaced beside the running command, which goes on.
@@ -202,6 +270,38 @@ mod tests {
         age(&fresh, Duration::from_secs(30));
         assert_eq!(running(&dir), vec![]);
         assert_eq!(running(&dir.join("missing")), vec![]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A swap at the start waits for running commands and keeps new ones out while it runs.
+    #[test]
+    fn a_swap_waits_for_commands_and_keeps_new_ones_out() {
+        let dir = scratch("swap");
+        std::fs::create_dir_all(&dir).unwrap();
+        let commands = dir.join(DIR);
+        let short = Duration::from_millis(250);
+        // A command holds a share: the swap does not get the workspace.
+        let first = share(&dir).unwrap();
+        assert_eq!(exclusive(&dir, None, short).unwrap_err(), vec![]);
+        drop(first);
+        // A marked command of another process (its mark locked by it): waited for, then named.
+        std::fs::create_dir_all(&commands).unwrap();
+        let mark = commands.join("4000000003 time add.lock");
+        let other = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&mark).unwrap();
+        other.try_lock().unwrap();
+        age(&mark, Duration::from_secs(60));
+        assert_eq!(
+            exclusive(&dir, Some(&commands), short).unwrap_err(),
+            vec![Running { pid: 4_000_000_003, command: "time add".into() }]
+        );
+        drop(other);
+        // No command runs: the swap holds the workspace, and a new command is refused.
+        let swap = exclusive(&dir, Some(&commands), short).unwrap();
+        assert_eq!(share(&dir).unwrap_err(), Swapping);
+        drop(swap);
+        assert!(share(&dir).is_ok());
+        // A folder that cannot hold the lock file does not stop a command.
+        assert!(share(&dir.join("missing")).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
