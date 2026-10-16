@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, CalendarPlus, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply, CalendarCheck,
   Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
 } from "lucide-react";
@@ -16,6 +16,7 @@ import { AI_COMMANDS, useAi } from "../lib/aiswitch";
 import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
+import { entriesAvailable, newCalendarEntry } from "../lib/calentries";
 import { PageIcon } from "./icons";
 import { tabTitle } from "./Shell";
 import { createSubpage } from "../views/PageView";
@@ -84,6 +85,12 @@ export function CommandPalette() {
   const activeTabObj = useApp((s) => s.tabs.find((x) => x.id === s.activeTabId) ?? null);
   const timeOn = useTimeTracking();
   const ai = useAi();
+  // „Neuer Termin…“ only where appointments can be written (Outlook Classic, its calendar read).
+  const calOutlook = useApp((s) => !!s.settings?.settings.calendar.outlook);
+  const [entriesHere, setEntriesHere] = useState(false);
+  useEffect(() => {
+    if (open && calOutlook) void entriesAvailable().then(setEntriesHere);
+  }, [open, calOutlook]);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -203,6 +210,9 @@ export function CommandPalette() {
       { id: "calendar", title: t("cmd.calendar"), subtitle: t("cmd.calendarSub"), icon: ic(CalendarDays), hint: hint("calendar"), run: () => setTimeout(() => openCalendar(), 0) },
       { id: "calendar-view", title: t("cmd.calendarView"), subtitle: t("cmd.calendarViewSub"), icon: ic(CalendarRange), hint: hint("calendar_view"), run: () => s().openTab({ kind: "calendar" }) },
       { id: "calendar-sync", title: t("cmd.calendarSync"), icon: ic(RefreshCw), run: () => void syncCalendarsNow() },
+      ...(entriesHere && calOutlook
+        ? [{ id: "calendar-entry-new", title: t("entries.newMenu"), icon: ic(CalendarPlus), run: () => newCalendarEntry() }]
+        : []),
       { id: "mail-capture", title: t("cmd.mailCapture"), subtitle: t("cmd.mailCaptureSub"), icon: ic(Mail), run: () => setTimeout(() => void captureFromOutlook(), 0) },
       { id: "mail-dialog", title: t("cmd.mailDialog"), subtitle: t("cmd.mailDialogSub"), icon: ic(MailPlus), run: () => setTimeout(() => openMailDialog(), 0) },
       { id: "tidy-up", title: t("fl.tidy"), subtitle: t("fl.tidySub"), icon: ic(Wand2), run: () => setTimeout(() => openTidyUp(null), 0) },
@@ -389,7 +399,7 @@ export function CommandPalette() {
     if (tagHits) out.unshift({ id: "tag", section: t("palette.tags"), title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj]);
+  }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj, entriesHere, calOutlook]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {

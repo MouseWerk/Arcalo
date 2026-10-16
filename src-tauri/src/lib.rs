@@ -17,6 +17,7 @@ mod backupdest;
 mod bookmarks;
 mod briefing;
 mod calsync;
+mod calwrite;
 mod canvas;
 mod chats;
 #[cfg(desktop)]
@@ -4993,6 +4994,7 @@ pub fn run() {
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
             timeblocks::spawn_scheduler(app.handle().clone());
+            calwrite::spawn_scheduler(app.handle().clone());
             jira::spawn_scheduler(app.handle().clone());
             semantic::spawn_indexer(app.handle().clone());
             mail::clean_temp(app.handle());
@@ -5406,6 +5408,14 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         calsync::calendar_link_entry,
         calsync::calendar_wbs_hint,
         calsync::calendar_meeting_note,
+        calwrite::calendar_entries_enable,
+        calwrite::calendar_entry_create,
+        calwrite::calendar_entry_update,
+        calwrite::calendar_entry_delete,
+        calwrite::calendar_entry_undo,
+        calwrite::calendar_entry_resolve,
+        calwrite::calendar_entry_show,
+        calwrite::calendar_entries_retry,
         timeblocks::blocks_list,
         timeblocks::block_create,
         timeblocks::block_update,

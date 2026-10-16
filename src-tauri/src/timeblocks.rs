@@ -102,6 +102,8 @@ pub async fn flush(app: &AppHandle, force: bool) -> Result<()> {
     if !outlookwrite::available() || FLUSHING.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
+    // One Outlook write at a time across the app (appointments of the Kalender too).
+    let _outlook = crate::calwrite::OUTLOOK_WRITES.lock().await;
     // Writes queued while a run was under way (a delete of a block just written) go in the
     // next round; failed ones wait for their next try, so this ends.
     let mut out = flush_inner(app, force).await;
