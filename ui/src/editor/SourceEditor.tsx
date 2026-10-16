@@ -337,9 +337,11 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   return (
     <div className="source-editor" data-save-status={status}>
       {status === "failed" && <SaveFailed />}
+      {/* data-flush: `flushAllEditors` stores this text, so the Android interface switch need not wait for it. */}
       <textarea
         ref={ref}
         className="source-text"
+        data-flush
         value={value}
         spellCheck={false}
         aria-label={t("editor.source")}
