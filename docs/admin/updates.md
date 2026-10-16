@@ -84,6 +84,11 @@ Settings → About → Update source (or the policy `UpdateUrl`) takes:
 - a network folder with `latest.json` and the files: `\\server\share\arcalo`
   (also mapped drives, `/Volumes/arcalo`, `file:///srv/arcalo`).
 
+The file addresses in a `latest.json` on a web server are web addresses: relative to
+`latest.json`, HTTPS on any server, or HTTP on the server of `latest.json` itself. Arcalo refuses
+a share, a local path or a `file://` address there before it opens anything. Only a
+`latest.json` in a network folder may name files by path.
+
 Arcalo asks your source first. GitHub is the fallback when your source cannot be reached,
 unless the policy `AllowGitHubFallback` is `0`/`false`. Proxy and extra root CA from Settings →
 Network apply to all update requests.
