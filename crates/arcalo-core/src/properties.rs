@@ -140,7 +140,7 @@ fn parse_block(lines: &[&str]) -> Option<Yaml> {
         return Some(Yaml::Str(String::new()));
     }
     let mut i = 0;
-    let v = block_at(&lines, &mut i, lines[0].indent)?;
+    let v = block_at(&lines, &mut i, lines[0].indent, 0)?;
     (i == lines.len()).then_some(v)
 }
 
@@ -148,14 +148,21 @@ fn is_item(text: &str) -> bool {
     text == "-" || text.starts_with("- ")
 }
 
-fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
+/// How deep lists and maps may nest (block or flow). Deeper front matter is no property: the
+/// readers recurse once per level, and a line of thousands of `[` must not overflow the stack.
+const MAX_DEPTH: usize = 64;
+
+fn block_at(lines: &[Line], i: &mut usize, indent: usize, depth: usize) -> Option<Yaml> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     if is_item(lines[*i].text) {
         let mut items = vec![];
         while *i < lines.len() && lines[*i].indent == indent && is_item(lines[*i].text) {
             let rest = lines[*i].text[1..].trim();
             *i += 1;
             let item = if rest.is_empty() {
-                nested(lines, i, indent)?
+                nested(lines, i, indent, depth)?
             } else if split_key(rest).is_some() && !rest.starts_with(['"', '\'']) {
                 return None; // maps inside block lists are not part of the subset
             } else {
@@ -172,9 +179,9 @@ fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
         let value = if rest.is_empty() || rest.starts_with('#') {
             // `key:` followed by a deeper block, or by `- items` on the same level.
             if *i < lines.len() && lines[*i].indent == indent && is_item(lines[*i].text) {
-                block_at(lines, i, indent)?
+                block_at(lines, i, indent, depth + 1)?
             } else {
-                nested(lines, i, indent)?
+                nested(lines, i, indent, depth)?
             }
         } else {
             parse_inline(rest)?
@@ -188,10 +195,10 @@ fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
 }
 
 /// The block below a line of `indent`, or an empty value when the next line is not deeper.
-fn nested(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
+fn nested(lines: &[Line], i: &mut usize, indent: usize, depth: usize) -> Option<Yaml> {
     if *i < lines.len() && lines[*i].indent > indent {
         let deeper = lines[*i].indent;
-        block_at(lines, i, deeper)
+        block_at(lines, i, deeper, depth + 1)
     } else {
         Some(Yaml::Str(String::new()))
     }
@@ -202,7 +209,7 @@ pub fn parse_inline(text: &str) -> Option<Yaml> {
     let text = text.trim();
     if text.starts_with(['[', '{']) {
         let chars: Vec<char> = text.chars().collect();
-        let mut p = Flow { s: &chars, i: 0 };
+        let mut p = Flow { s: &chars, i: 0, depth: 0 };
         let v = p.value()?;
         p.ws();
         let rest: String = chars[p.i..].iter().collect();
@@ -217,7 +224,7 @@ fn scalar(v: &str) -> Option<String> {
     let v = v.trim();
     if v.starts_with(['"', '\'']) {
         let chars: Vec<char> = v.chars().collect();
-        let mut p = Flow { s: &chars, i: 0 };
+        let mut p = Flow { s: &chars, i: 0, depth: 0 };
         let s = p.quoted()?;
         let rest: String = chars[p.i..].iter().collect();
         let trimmed = rest.trim_start();
@@ -238,6 +245,8 @@ fn scalar(v: &str) -> Option<String> {
 struct Flow<'a> {
     s: &'a [char],
     i: usize,
+    /// Collections open around the current position (at most [`MAX_DEPTH`]).
+    depth: usize,
 }
 
 impl Flow<'_> {
@@ -252,6 +261,16 @@ impl Flow<'_> {
     }
 
     fn value(&mut self) -> Option<Yaml> {
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let v = self.value_here();
+        self.depth -= 1;
+        v
+    }
+
+    fn value_here(&mut self) -> Option<Yaml> {
         self.ws();
         match self.peek()? {
             '[' => {
@@ -1061,6 +1080,30 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Front matter nested deeper than anyone writes (a long line of `[`, from a sync or an
+    /// import) is no property, and saving the page does not overflow the stack.
+    #[test]
+    fn deep_nesting_is_refused_without_a_crash() {
+        let open = "[".repeat(200_000);
+        assert_eq!(parse_inline(&open), None);
+        let balanced = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+        assert_eq!(parse_inline(&balanced), None);
+        let maps = format!("{}{}", "{a: ".repeat(100_000), "}".repeat(100_000));
+        assert_eq!(parse_inline(&maps), None);
+        let fine = format!("{}x{}", "[".repeat(10), "]".repeat(10));
+        assert!(parse_inline(&fine).is_some());
+        // Block nesting: each line one space deeper.
+        let block: String = (0..2_000).map(|d| format!("{}k{d}:\n", " ".repeat(d))).collect();
+        let entries = page_entries(&format!("---\n{block}---\n"));
+        assert_eq!((entries.len(), entries[0].value.clone()), (1, None), "a key without a value");
+        let shallow: String = (0..20).map(|d| format!("{}k{d}:\n", " ".repeat(d))).collect();
+        assert!(page_entries(&format!("---\n{shallow}  x: 1\n---\n"))[0].value.is_some());
+        let db = crate::db::Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Tief", None).unwrap();
+        db.save_page_content(p.id, &format!("---\naliases: {open}\n---\nText\n")).unwrap();
+        db.save_page_content(p.id, &format!("---\naliases: {balanced}\n---\nText\n")).unwrap();
+    }
 
     #[test]
     fn setting_a_property_keeps_everything_else() {
