@@ -53,6 +53,8 @@ pub struct Voice {
     download: Mutex<Option<(DownloadStatus, Arc<AtomicBool>)>>,
     /// One Whisper run at a time (they would only slow each other down).
     whisper: Mutex<()>,
+    /// The app quits: cancelled jobs say „unterbrochen“, not „abgebrochen“.
+    closing: AtomicBool,
 }
 
 fn voice(app: &AppHandle) -> &Voice {
@@ -979,11 +981,20 @@ pub fn on_shortcut(app: &AppHandle) {
 
 /// The app quits while recording: the WAV file is closed properly (kept under `voice/`).
 pub fn shutdown(app: &AppHandle) {
-    if app.try_state::<Voice>().is_some() {
-        let _ = end_recording(app);
-        for c in lock(&voice(app).job_cancels).values() {
-            c.store(true, Ordering::Relaxed);
-        }
+    if app.try_state::<Voice>().is_none() {
+        return;
+    }
+    let _ = end_recording(app);
+    let v = voice(app);
+    v.closing.store(true, Ordering::SeqCst);
+    for c in lock(&v.job_cancels).values() {
+        c.store(true, Ordering::Relaxed);
+    }
+    // Whisper stops within a pass: the jobs write „unterbrochen“ to their pages. One still
+    // storing its FLAC is left to the next start (`recover_interrupted`).
+    let until = Instant::now() + Duration::from_secs(5);
+    while !lock(&v.jobs).is_empty() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -1061,7 +1072,9 @@ fn run_job(app: &AppHandle, job: JobSpec) {
             (job.previous.trim_end().to_owned(), String::new(), Some(e.to_string()))
         }
         Err(e) => {
-            let line = if cancelled {
+            let line = if cancelled && voice(app).closing.load(Ordering::SeqCst) {
+                arcalo_core::voice::interrupted_line()
+            } else if cancelled {
                 format!("*{}*", tr!("Transkription abgebrochen.", "Transcription cancelled."))
             } else {
                 format!("*{}: {e}*", tr!("Kein Transkript", "No transcript"))

@@ -1976,6 +1976,10 @@ export const de: Catalog = {
   "exit.closeAnyway": "Trotzdem schließen",
   "exit.unsaved": "Nicht gespeicherte Änderungen",
   "exit.unsavedText": "Einige Änderungen konnten nicht gespeichert werden. {action}? Sie gehen dann verloren.",
+  "exit.recording": "Aufnahme läuft",
+  "exit.recordingText": "Eine Sprachnotiz wird gerade aufgenommen. {action}? Die Aufnahme wird gesichert, nach dem nächsten Start kannst du sie als Sprachnotiz speichern.",
+  "exit.transcribing": "Transkription läuft",
+  "exit.transcribingText": "Eine Sprachnotiz wird gerade transkribiert. {action}? Die Transkription wird unterbrochen, „Neu transkribieren“ am Audio startet sie später noch einmal.",
   // ---- focus
   "focus.breakTitle": "Pause – {n} Min.",
   "focus.doneTitle": "Fokussitzung geschafft",

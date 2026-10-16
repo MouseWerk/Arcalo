@@ -1979,6 +1979,10 @@ export const en = {
   "exit.closeAnyway": "Close anyway",
   "exit.unsaved": "Unsaved changes",
   "exit.unsavedText": "Some changes could not be saved. {action}? They will be lost.",
+  "exit.recording": "Recording in progress",
+  "exit.recordingText": "A voice note is being recorded. {action}? The recording is kept; after the next start you can save it as a voice note.",
+  "exit.transcribing": "Transcription in progress",
+  "exit.transcribingText": "A voice note is being transcribed. {action}? The transcription is interrupted; “Transcribe again” on the audio starts it later.",
   // ---- focus
   "focus.breakTitle": "Break – {n} min",
   "focus.doneTitle": "Focus session complete",

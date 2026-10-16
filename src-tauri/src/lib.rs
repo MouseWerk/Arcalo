@@ -5546,6 +5546,9 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
         // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI
         // never hears of (macOS: Dock menu „Beenden“, logging out).
         tauri::RunEvent::Exit => {
+            // A running recording is closed properly (offered at the next start), a transcription
+            // marked as interrupted, as for a restart or an update.
+            voice::shutdown(app);
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);
