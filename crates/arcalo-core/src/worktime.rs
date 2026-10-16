@@ -334,7 +334,8 @@ pub fn day_is_over<Tz: TimeZone>(d: NaiveDate, now: DateTime<Utc>, tz: &Tz) -> b
     d < today || (d == today && local.hour() >= DAY_OVER_HOUR)
 }
 
-/// Booked minutes per local day of `from..=to`; a running timer counts until `now`.
+/// Booked minutes per local day of `from..=to`; a running timer counts its worked minutes until
+/// `now` (its pauses left out, as the timer shows them).
 pub fn booked_by_day<Tz: TimeZone>(
     db: &Database,
     tz: &Tz,
@@ -345,16 +346,17 @@ pub fn booked_by_day<Tz: TimeZone>(
     let start = crate::feed::day_start(from, tz);
     let end = crate::feed::day_start(to + Duration::days(1), tz);
     let mut st = db.conn().prepare_cached(
-        "SELECT start_time, duration_minutes, status_flag FROM time_entries WHERE start_time >= ?1 AND start_time < ?2",
+        "SELECT id, start_time, duration_minutes, status_flag FROM time_entries WHERE start_time >= ?1 AND start_time < ?2",
     )?;
-    let rows = st.query_map(params![crate::db::ts(start), crate::db::ts(end)], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, String>(2)?))
-    })?;
+    let rows = st
+        .query_map(params![crate::db::ts(start), crate::db::ts(end)], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, String>(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out = BTreeMap::new();
-    for row in rows {
-        let (at, minutes, flag) = row?;
+    for (id, at, minutes, flag) in rows {
         let Ok(at) = crate::db::parse_ts(&at) else { continue };
-        let minutes = if flag == "running" { (now - at).num_minutes().max(0) } else { minutes.unwrap_or(0) };
+        let minutes = if flag == "running" { db.timer_worked_since(id, at, now)? } else { minutes.unwrap_or(0) };
         *out.entry(at.with_timezone(tz).date_naive()).or_default() += minutes;
     }
     Ok(out)
