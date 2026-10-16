@@ -461,8 +461,12 @@ fn dispatch(
             let work = repo.workdir().ok_or_else(|| err("bare repository"))?.to_path_buf();
             for path in &p.paths {
                 let _ = index.remove_path(Path::new(path));
+                if p.has("-r") {
+                    let _ = index.remove_dir(Path::new(path), 0);
+                }
+                // `--cached`: the index only, the working tree keeps the files.
                 let full = work.join(path);
-                if full.is_file() {
+                if !p.has("--cached") && full.is_file() {
                     fs::remove_file(&full).map_err(|e| err(e.to_string()))?;
                 }
             }

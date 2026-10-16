@@ -187,8 +187,20 @@ page, on a blocking thread).
   every command runs with `core.autocrlf=false` and `core.eol=lf`, the working tree's own configuration has both (for
   libgit2), and a working tree checked out with CRLF before 1.18.1 gets the stored text back where only the line ends
   differ (`restore_line_ends`). The core's tests run git under a system configuration with `autocrlf=true` and
-  `eol=crlf` (`test_system_config`), so this shows on every system. A companion's first sync fetches the newest commit only
-  (`--depth 1`; the history holds every database copy). A rejected push
+  `eol=crlf` (`test_system_config`), so this shows on every system. The attachments are the user's files and are stored
+  byte for byte (`attachments/** -text`; `* text=auto` stored a CSV or text file with CRLF as LF before 1.22): in the
+  `.gitattributes` of a new repository, and in every working tree's `.git/info/attributes` (`raw_attachments`), because a
+  repository with the file of 1.21 and earlier keeps it (`OLD_ATTRIBUTES`; computers on different versions would otherwise
+  rewrite it back and forth). When the rule is added there, the attachments leave the index once, so the next `add -A`
+  stores a file normalized before with its own bytes again; notes are not touched. Adopting treats an attachment that
+  differs from the server's only because its CRLF was stored as LF as the same file (`same_but_line_ends`, no second
+  copy). On a case-sensitive file system adopting compares paths exactly: a note whose name differs from the server's only
+  by case is one note under this computer's name with the server's text (a conflict when the texts differ), never dropped.
+  A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). Only a push
+  refused because the branch moved on (`! [rejected] … (fetch first)` or `(non-fast-forward)`, `diverged`) is merged; a
+  refusal by the server itself (`! [remote rejected]`: a hook, push protection, a protected branch, a file too large)
+  stops the sync with the reason and the server's `remote:` lines (`refusal`; libgit2: the push status and the side-band
+  messages), and so does a fetch that shows the server did not move on (merge base = the server's tip). A diverged push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
@@ -239,7 +251,12 @@ page, on a blocking thread).
   „Übernehmen“ (`git_conflict_resolve`) snapshots, saves, closes the conflict and syncs; `gitsync://pulled` tells the UI
   which editors to reload.
   The system `git` runs without a shell (`CREATE_NO_WINDOW` on Windows), with `GIT_TERMINAL_PROMPT=0` and a 120 s
-  timeout. The HTTPS token comes from the credential store (account `git-token`) and is passed as
+  timeout. The commands that talk to the server (fetch, push, clone, ls-remote) stop when the transfer stalls instead
+  (`http.lowSpeedLimit=1000` for `http.lowSpeedTime` = the timeout; libgit2: its per-read server timeout), with a total
+  limit of one hour (`NETWORK_LIMIT`): a first fetch of a long history or a push of a large database copy over a slow line
+  finishes. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other variables that point git at another repository
+  (`REPOSITORY_VARS`) are removed, and `core.hooksPath` is the program's own file (no folder, so no hook runs: neither the
+  user's global hooks nor any in the working tree). The HTTPS token comes from the credential store (account `git-token`) and is passed as
   `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`; `x-token-auth` for
   bitbucket.org, whose access tokens want that name, `gitsync::token_user`), only to HTTP(S) remotes;
   git's stderr and every recorded error are redacted.

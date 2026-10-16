@@ -111,8 +111,25 @@ pub fn not_installed() -> &'static str {
 /// Prefix of the branch used when the configured branch has diverged.
 pub const FALLBACK_PREFIX: &str = "arcalo-sync-";
 
-/// [`ATTRIBUTES_FILE`] after its first line ([`MARKER`]).
+/// [`ATTRIBUTES_FILE`] after its first line ([`MARKER`]). The files of the attachments folder are
+/// the user's own: stored byte for byte, never with other line ends ([`RAW_RULE`]).
 const ATTRIBUTES: &str = "\n\
+* text=auto\n\
+attachments/** -text\n\
+*.db binary\n\
+*.png binary\n\
+*.jpg binary\n\
+*.jpeg binary\n\
+*.gif binary\n\
+*.webp binary\n\
+*.pdf binary\n\
+*.zip binary\n";
+
+/// [`ATTRIBUTES`] of 1.21 and earlier (`* text=auto` stored a CSV or text file with CRLF in the
+/// attachments folder with LF). A repository that has it keeps it, so computers on different
+/// versions never write the file back and forth; [`RAW_RULE`] in each working tree's own
+/// `.git/info/attributes` keeps the attachments as they are there.
+const OLD_ATTRIBUTES: &str = "\n\
 * text=auto\n\
 *.db binary\n\
 *.png binary\n\
@@ -120,6 +137,10 @@ const ATTRIBUTES: &str = "\n\
 *.jpeg binary\n\
 *.gif binary\n\
 *.webp binary\n";
+
+/// The attachments are stored as they are (no line-end conversion), whatever `.gitattributes` the
+/// repository has; in `.git/info/attributes` of every working tree ([`raw_attachments`]).
+const RAW_RULE: &str = "attachments/** -text";
 
 /// First line of the sync's README (it marks the file as the sync's own, in every language).
 const README_TITLE: &str = "# Arcalo – Git-Sicherung";
@@ -899,7 +920,11 @@ fn adopt_tree(
                 });
                 continue;
             }
-            if to.is_file() && attachment_name(&path).is_some() && !same_file(&from, &to)? {
+            if to.is_file()
+                && attachment_name(&path).is_some()
+                && !same_file(&from, &to)?
+                && !same_but_line_ends(&from, &to)?
+            {
                 // Never over the server's file of that name (see `adopt_clashes`).
                 clashes.push(path);
                 continue;
@@ -1076,11 +1101,58 @@ fn write_settings_file(repo: &Path, ours: &str) -> Result<()> {
     Ok(())
 }
 
+/// Puts [`RAW_RULE`] into the working tree's `.git/info/attributes` (before the next `add -A`).
+/// When it was missing (a working tree of 1.21 or earlier), the attachments leave the index first:
+/// `add -A` hashes them again as they are, so a file stored with other line ends goes back to the
+/// server byte for byte. Notes are not touched.
+fn raw_attachments(git: &Git, repo: &Path) -> Result<()> {
+    let info = repo.join(".git").join("info");
+    let file = info.join("attributes");
+    let text = fs::read_to_string(&file).unwrap_or_default();
+    if text.lines().any(|l| l.trim() == RAW_RULE) {
+        return Ok(());
+    }
+    let dir = crate::attachments::DIR_NAME;
+    git.check(Some(repo), &["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", dir])?;
+    fs::create_dir_all(&info)?;
+    let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
+    fs::write(&file, format!("{text}{sep}{RAW_RULE}\n"))?;
+    Ok(())
+}
+
+/// Whether `mine` and `theirs` hold the same text and differ only because `* text=auto` stored
+/// this computer's CRLF line ends as LF (a repository of 1.21 and earlier).
+fn same_but_line_ends(mine: &Path, theirs: &Path) -> Result<bool> {
+    let (a, b) = (fs::read(mine)?, fs::read(theirs)?);
+    if !a.windows(2).any(|w| w == b"\r\n") || b.windows(2).any(|w| w == b"\r\n") || a.contains(&0) {
+        return Ok(false);
+    }
+    let mut lf = Vec::with_capacity(a.len());
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] == b'\r' && a.get(i + 1) == Some(&b'\n') {
+            i += 1;
+            continue;
+        }
+        lf.push(a[i]);
+        i += 1;
+    }
+    Ok(lf == b)
+}
+
 /// A companion device leaves the database copy as the server has it.
 fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<()> {
     let attributes = repo.join(ATTRIBUTES_FILE);
-    let legacy = fs::read_to_string(&attributes).is_ok_and(|t| t.starts_with(LEGACY_MARKER));
-    fs::write(&attributes, format!("{}{ATTRIBUTES}", if legacy { LEGACY_MARKER } else { MARKER }))?;
+    if is_link(&attributes) {
+        remove_path(&attributes)?;
+    }
+    let there = fs::read_to_string(&attributes).ok();
+    let marker = if there.as_deref().is_some_and(|t| t.starts_with(LEGACY_MARKER)) { LEGACY_MARKER } else { MARKER };
+    // The file of an earlier version stays as it is (see [`OLD_ATTRIBUTES`]).
+    let known = [ATTRIBUTES, OLD_ATTRIBUTES].map(|a| format!("{marker}{a}"));
+    if !there.as_ref().is_some_and(|t| known.contains(t)) {
+        fs::write(&attributes, &known[0])?;
+    }
     if !source.join(README_FILE).exists() {
         fs::write(repo.join(README_FILE), tr!(README, README_EN))?;
     }
@@ -2322,6 +2394,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if let Some(ours) = &req.settings_file {
         write_settings_file(repo, ours)?;
     }
+    raw_attachments(git, repo)?;
     git.check(Some(repo), &["add", "-A"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
@@ -3230,6 +3303,7 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
         prepare_tree_as(req.source, repo, None, req.companion)?;
     }
     let res = (|| {
+        raw_attachments(git, repo)?;
         git.check(Some(repo), &["add", "-A"])?;
         let diff = git.check(Some(repo), &["diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"])?;
         let mut parts = diff.split('\0').filter(|p| !p.is_empty());
@@ -5535,6 +5609,92 @@ mod safety_tests {
         let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
         assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// A text file the user attached (a CSV exported by Excel, with CRLF line ends) is stored byte
+    /// for byte: every other computer gets the same bytes, a new computer that has it already
+    /// keeps no second copy, and the sync shows nothing pending for it.
+    #[test]
+    fn attachments_keep_their_line_ends() {
+        if !git_available() {
+            return;
+        }
+        let csv = "a;b\r\n1;2\r\n";
+        let r = Remote::new("crlf");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "![[export.csv]]\n");
+        put(&a.join("attachments/export.csv"), csv);
+        r.sync("a").unwrap();
+        let bare = r.base.join("remote.git");
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv);
+        assert_eq!(pending_changes(&a, &r.base.join("a").join(REPO_DIR)), 0);
+
+        // A new computer with the same file: the same bytes, no copy under another name.
+        let b = r.mirror("b");
+        mark(&b);
+        put(&b.join("Notiz.md"), "![[export.csv]]\n");
+        put(&b.join("attachments/export.csv"), csv);
+        let out = r.sync("b").unwrap();
+        assert!(out.renamed_files.is_empty(), "{out:?}");
+        let files: Vec<String> = r.tree().into_iter().filter(|p| p.starts_with("attachments/")).collect();
+        assert_eq!(files, ["attachments/export.csv"]);
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        assert_eq!(fs::read(repo_b.join("attachments/export.csv")).unwrap(), csv.as_bytes());
+        assert_eq!(pending_changes(&b, &repo_b), 0);
+    }
+
+    /// A repository written before (`* text=auto` stored the CSV with LF): a computer that
+    /// attached it stores its bytes again with its next sync, without touching any note, and a
+    /// new computer keeps no second copy.
+    #[test]
+    fn attachments_stored_with_changed_line_ends_get_their_bytes_back() {
+        if !git_available() {
+            return;
+        }
+        let csv = "a;b\r\n1;2\r\n";
+        let note = "Text\r\n![[export.csv]]\r\n";
+        let r = Remote::new("crlf-old");
+        let bare = r.base.join("remote.git");
+        // Computer a's working tree as an earlier version left it: the CSV with CRLF in the working
+        // tree and LF in the repository, a note with CRLF that was stored with LF.
+        let repo_a = r.base.join("a").join(REPO_DIR);
+        fs::create_dir_all(&repo_a).unwrap();
+        sh(&repo_a, &["init", "-q", "-b", "main"]);
+        sh(&repo_a, &["config", "core.autocrlf", "false"]);
+        sh(&repo_a, &["config", "core.eol", "lf"]);
+        put(&repo_a.join(ATTRIBUTES_FILE), &format!("{MARKER}{OLD_ATTRIBUTES}"));
+        put(&repo_a.join(README_FILE), tr!(README, README_EN));
+        put(&repo_a.join("Notiz.md"), note);
+        put(&repo_a.join("attachments/export.csv"), csv);
+        sh(&repo_a, &["add", "-A"]);
+        sh(&repo_a, &["commit", "-q", "-m", "alt"]);
+        sh(&repo_a, &["remote", "add", "origin", bare.to_str().unwrap()]);
+        sh(&repo_a, &["push", "-q", "origin", "main"]);
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), "a;b\n1;2\n", "stored with LF before");
+        let note_blob = sh(&bare, &["rev-parse", "main:Notiz.md"]);
+
+        // A new computer before computer a synced again: no second copy.
+        let c = r.mirror("c");
+        mark(&c);
+        put(&c.join("Notiz.md"), "Text\n![[export.csv]]\n");
+        put(&c.join("attachments/export.csv"), csv);
+        let out = r.sync("c").unwrap();
+        assert!(out.renamed_files.is_empty(), "{out:?}");
+        let files: Vec<String> = r.tree().into_iter().filter(|p| p.starts_with("attachments/")).collect();
+        assert_eq!(files, ["attachments/export.csv"]);
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv, "the original bytes");
+        assert_eq!(pending_changes(&c, &r.base.join("c").join(REPO_DIR)), 0);
+
+        // Computer a: its working tree is migrated, the notes stay as stored.
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), note);
+        put(&a.join("attachments/export.csv"), csv);
+        r.sync("a").unwrap();
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv);
+        assert_eq!(sh(&bare, &["rev-parse", "main:Notiz.md"]), note_blob, "the note is not rewritten");
+        assert_eq!(pending_changes(&a, &repo_a), 0);
     }
 
     /// A new computer whose note differs from the server's only by the case of its name, on a
