@@ -39,6 +39,7 @@ fn event(uid: &str, instance: &str, start: DateTime<Utc>, title: &str, attendees
         busy: Busy::Busy,
         private: false,
         categories: vec![],
+        meta: Default::default(),
     }
 }
 
@@ -448,6 +449,8 @@ fn which_meetings_get_prepared_by_themselves() {
             note_page_id: None,
             entry_id: None,
             also_in: vec![],
+            write: None,
+            editable: None,
         }
     };
     assert!(prep::auto_candidate(&mk(&|_| {}), now, 30));

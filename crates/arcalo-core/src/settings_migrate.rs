@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{AndroidInterface, StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 18;
+pub const SETTINGS_VERSION: u32 = 19;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -53,6 +53,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 15, name: "theme-ids", run: theme_ids },
     Step { from: 16, name: "daily-folder", run: daily_folder },
     Step { from: 17, name: "android-interface", run: android_interface },
+    Step { from: 18, name: "calendar-entries", run: calendar_entries },
 ];
 
 /// What [`migrate`] did.
@@ -159,7 +160,13 @@ fn window_effect(s: &mut Map<String, Value>) -> Option<String> {
 fn calendar_list(s: &mut Map<String, Value>) -> Option<String> {
     let cal = s.get_mut("calendar")?;
     let parsed: crate::calsync::CalendarSettings = serde_json::from_value(cal.clone()).ok()?;
-    let fresh = serde_json::to_value(parsed.normalized()).ok()?;
+    let mut fresh = serde_json::to_value(parsed.normalized()).ok()?;
+    // Keys of later releases are added by their own steps.
+    if let Some(m) = fresh.as_object_mut() {
+        for k in ["entries_outlook", "entry_target", "entry_minutes"] {
+            m.remove(k);
+        }
+    }
     let before = cal.clone();
     overlay(cal, fresh);
     (*cal != before).then(|| "calendar list normalized".into())
@@ -445,6 +452,30 @@ fn android_interface(s: &mut Map<String, Value>) -> Option<String> {
     Some(format!("appearance.android_interface = {}", AndroidInterface::Auto.as_str()))
 }
 
+/// 18 → 19: appointments are created and changed in the Kalender and written to Outlook (1.21).
+/// Stored settings get the switch off (nothing is written to Outlook until the user turns it on),
+/// the default calendar as the target and 30 minutes for a new appointment; values already
+/// stored stay.
+fn calendar_entries(s: &mut Map<String, Value>) -> Option<String> {
+    let c = s.entry("calendar").or_insert_with(|| Value::Object(Map::new()));
+    if !c.is_object() {
+        *c = Value::Object(Map::new());
+    }
+    let c = c.as_object_mut()?;
+    let mut added = vec![];
+    for (k, v) in [
+        ("entries_outlook", Value::Bool(false)),
+        ("entry_target", Value::String(crate::calsync::OUTLOOK.into())),
+        ("entry_minutes", Value::from(crate::calsync::writes::DEFAULT_MINUTES)),
+    ] {
+        if !c.contains_key(k) {
+            added.push(format!("calendar.{k} = {}", v.as_str().map_or_else(|| v.to_string(), str::to_owned)));
+            c.insert(k.into(), v);
+        }
+    }
+    (!added.is_empty()).then(|| added.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,6 +492,39 @@ mod tests {
         ("1.14", include_str!("../tests/fixtures/settings/1.14.json")),
         ("1.18", include_str!("../tests/fixtures/settings/1.18.json")),
     ];
+
+    /// What the step of 1.21 adds to settings without it.
+    fn add_calendar_entries(v: &mut Value) {
+        v["calendar"]["entries_outlook"] = Value::Bool(false);
+        v["calendar"]["entry_target"] = Value::from("outlook");
+        v["calendar"]["entry_minutes"] = Value::from(30);
+    }
+
+    #[test]
+    fn calendar_entries_start_off_for_stored_settings_and_a_choice_stays() {
+        let mut v = serde_json::json!({"version": 18, "calendar": {"outlook": true, "blocks_outlook": true}});
+        let m = migrate(&mut v);
+        assert_eq!((m.from, m.to), (18, SETTINGS_VERSION));
+        assert_eq!(
+            m.notes,
+            [
+                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30"
+            ]
+        );
+        let s = Database::parse_settings(&v.to_string()).unwrap();
+        assert!(!s.calendar.entries_outlook && s.calendar.outlook && s.calendar.blocks_outlook);
+        assert_eq!((s.calendar.entry_target.as_str(), s.calendar.entry_minutes), ("outlook", 30));
+        // A choice stays; the chain again changes nothing.
+        let mut mine = serde_json::json!({"version": 18, "calendar": {"entries_outlook": true, "entry_target": "outlook:abc", "entry_minutes": 45}});
+        let m = migrate(&mut mine);
+        assert!(m.notes.is_empty(), "{m:?}");
+        assert_eq!(mine["calendar"]["entries_outlook"], true);
+        let mut again = v.clone();
+        again.as_object_mut().unwrap().remove("version");
+        assert!(migrate(&mut again).notes.iter().all(|n| !n.starts_with("calendar-entries")));
+        // New installs start with it off as well (the Kalender offers it on first use).
+        assert!(!Settings::default().calendar.entries_outlook);
+    }
 
     #[test]
     fn steps_are_ordered_and_complete() {
@@ -508,6 +572,7 @@ mod tests {
                 "ai-switch: ai.enabled = true (as before)",
                 "theme-ids: appearance.theme_light = arcalo-light, appearance.theme_dark = arcalo-dark",
                 "android-interface: appearance.android_interface = auto",
+                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30",
             ]
         );
         let s = Database::parse_settings(&v.to_string()).unwrap();
@@ -527,9 +592,16 @@ mod tests {
         let mut before = v.clone();
         let m = migrate(&mut v);
         assert_eq!((m.from, m.to), (17, SETTINGS_VERSION));
-        assert_eq!(m.notes, ["android-interface: appearance.android_interface = auto"]);
+        assert_eq!(
+            m.notes,
+            [
+                "android-interface: appearance.android_interface = auto",
+                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30"
+            ]
+        );
         before["version"] = Value::from(SETTINGS_VERSION);
         before["appearance"]["android_interface"] = Value::from("auto");
+        add_calendar_entries(&mut before);
         assert_eq!(v, before);
     }
 
@@ -562,6 +634,7 @@ mod tests {
                 "ai-switch: ai.enabled = true (as before)",
                 "theme-ids: appearance.theme_light = arcalo-light, appearance.theme_dark = arcalo-dark",
                 "android-interface: appearance.android_interface = auto",
+                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30",
             ]
         );
         v.as_object_mut().unwrap().remove("version");
@@ -580,6 +653,7 @@ mod tests {
         before["appearance"]["theme_light"] = Value::from("arcalo-light");
         before["appearance"]["theme_dark"] = Value::from("arcalo-dark");
         before["appearance"]["android_interface"] = Value::from("auto");
+        add_calendar_entries(&mut before);
         assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
         v.as_object_mut().unwrap().remove("network");
         before.as_object_mut().unwrap().remove("network");
@@ -613,7 +687,8 @@ mod tests {
                 "language-choice",
                 "ai-switch",
                 "daily-folder",
-                "android-interface"
+                "android-interface",
+                "calendar-entries"
             ]
         );
         let s = Database::parse_settings(old).unwrap();
@@ -868,11 +943,11 @@ mod tests {
 
     #[test]
     fn work_hours_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "time": {"enabled": true}, "locale": {"language": "de"}, "ai": {"enabled": true}});
+        let mut v = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "time": {"enabled": true}, "locale": {"language": "de"}, "ai": {"enabled": true}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["work-hours: time: work_start, work_end added".to_owned()]);
         assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
-        let mut mine = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "time": {"work_start": "07:00"}});
+        let mut mine = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "time": {"work_start": "07:00"}});
         migrate(&mut mine);
         assert_eq!(
             (mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()),
@@ -882,7 +957,7 @@ mod tests {
 
     #[test]
     fn the_git_author_of_annalo_becomes_arcalo() {
-        let mut v = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "en"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
+        let mut v = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "en"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["git-author: git_sync: author_name, author_email of Arcalo".to_owned()]);
         assert_eq!(
@@ -890,13 +965,13 @@ mod tests {
             (Some("Arcalo"), Some("arcalo@localhost"))
         );
         // An author of one's own stays, also when only one part is the old default.
-        let mut mine = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "git_sync": {"author_name": "Mia Meyer", "author_email": "annalo@localhost"}});
+        let mut mine = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "git_sync": {"author_name": "Mia Meyer", "author_email": "annalo@localhost"}});
         migrate(&mut mine);
         assert_eq!(
             (mine["git_sync"]["author_name"].as_str(), mine["git_sync"]["author_email"].as_str()),
             (Some("Mia Meyer"), Some("arcalo@localhost"))
         );
-        let mut own = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
+        let mut own = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert_eq!(crate::gitsync::GitSyncSettings::default().author_email, "arcalo@localhost");
     }
@@ -904,14 +979,14 @@ mod tests {
     #[test]
     fn existing_settings_keep_the_journal_folder() {
         // Stored settings without the folder: their daily notes are under „Journal“.
-        let mut v = serde_json::json!({"version": 16, "locale": {"language": "de"}, "appearance": {"android_interface": "auto"}});
+        let mut v = serde_json::json!({"version": 16, "locale": {"language": "de"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["daily-folder: notes.daily_folder = Journal (as before)"]);
         assert_eq!(v["notes"]["daily_folder"], "Journal");
         let s = Database::parse_settings(&v.to_string()).unwrap();
         assert_eq!(s.notes.daily_folder, "Journal");
         // A folder of one's own (or „Journal“ written before) stays.
-        let mut own = serde_json::json!({"version": 16, "notes": {"daily_folder": "Tagebuch"}, "appearance": {"android_interface": "auto"}});
+        let mut own = serde_json::json!({"version": 16, "notes": {"daily_folder": "Tagebuch"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert_eq!(own["notes"]["daily_folder"], "Tagebuch");
         // A new German workspace (no stored settings) files under „Tagesnotizen“, an English one
@@ -924,7 +999,7 @@ mod tests {
 
     #[test]
     fn the_android_interface_is_written_once_and_a_choice_stays() {
-        let mut v = serde_json::json!({"version": 17, "appearance": {"theme_light": "nord-light"}});
+        let mut v = serde_json::json!({"version": 17, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"theme_light": "nord-light"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["android-interface: appearance.android_interface = auto"]);
         assert_eq!(v["appearance"]["android_interface"], "auto");
@@ -933,9 +1008,9 @@ mod tests {
         assert_eq!(s.appearance.android_interface, AndroidInterface::Auto);
         // Settings without appearance get it, a stored choice stays, an unknown one reads as auto.
         let mut bare = serde_json::json!({"version": 17});
-        assert_eq!(migrate(&mut bare).notes.len(), 1);
+        assert_eq!(migrate(&mut bare).notes.len(), 2, "with the step of 1.21");
         assert_eq!(bare["appearance"]["android_interface"], "auto");
-        let mut full = serde_json::json!({"version": 17, "appearance": {"android_interface": "full"}});
+        let mut full = serde_json::json!({"version": 17, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "full"}});
         assert!(migrate(&mut full).notes.is_empty());
         assert_eq!(
             Database::parse_settings(&full.to_string()).unwrap().appearance.android_interface,
@@ -951,7 +1026,7 @@ mod tests {
 
     #[test]
     fn theme_ids_of_annalo_become_arcalo() {
-        let mut v = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto", "theme_light": "annalo-light", "theme_dark": "nord-dark"}});
+        let mut v = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto", "theme_light": "annalo-light", "theme_dark": "nord-dark"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["theme-ids: appearance.theme_light = arcalo-light"]);
         assert_eq!(
@@ -960,10 +1035,10 @@ mod tests {
         );
         assert_eq!(v["version"], SETTINGS_VERSION);
         // A chosen theme of another name and settings without appearance stay as they are.
-        let mut own = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto", "theme_light": "custom-3"}});
+        let mut own = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto", "theme_light": "custom-3"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert!(
-            migrate(&mut serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}})).notes.is_empty()
+            migrate(&mut serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}})).notes.is_empty()
         );
     }
 
@@ -973,14 +1048,14 @@ mod tests {
             {"id": "litellm", "kind": "litellm", "base_url": "https://llm.firma.de"},
             {"id": "ollama", "kind": "ollama", "base_url": "http://localhost:11434", "local": true}
         ]);
-        let mut local = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
+        let mut local = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
             "embedding_model": "nomic-embed-text", "embedding_provider": "ollama"});
         let m = migrate(&mut local);
         assert_eq!(m.notes, ["search-by-meaning: search.semantic = automatic (on, local embedding model)"]);
         assert_eq!(local["search"], serde_json::json!({"semantic": null}));
         let s: Settings = serde_json::from_value(local.clone()).unwrap();
         assert!(crate::semantic::plan(&s).active());
-        let mut cloud = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
+        let mut cloud = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
             "embedding_model": "firma-embed", "embedding_provider": "litellm"});
         assert_eq!(
             migrate(&mut cloud).notes,
@@ -989,18 +1064,18 @@ mod tests {
         let s: Settings = serde_json::from_value(cloud).unwrap();
         assert_eq!(crate::semantic::plan(&s).inactive, Some(crate::semantic::Inactive::SwitchedOff));
         // A stored choice stays; without an embedding model there is nothing to do.
-        let mut chosen = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": "x",
+        let mut chosen = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": "x",
             "search": {"semantic": true}});
         assert!(migrate(&mut chosen).notes.is_empty());
         assert_eq!(chosen["search"]["semantic"], true);
-        let mut none = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": null});
+        let mut none = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": null});
         assert!(migrate(&mut none).notes.is_empty());
         assert!(none.get("search").is_none());
     }
 
     #[test]
     fn the_ai_stays_on_for_existing_settings() {
-        let mut v = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"temperature": 0.5}});
+        let mut v = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"temperature": 0.5}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["ai-switch: ai.enabled = true (as before)"]);
         assert_eq!(v["ai"], serde_json::json!({"temperature": 0.5, "enabled": true}));
@@ -1008,10 +1083,10 @@ mod tests {
         assert!(s.ai.enabled && s.ai_on_with(false));
         assert!(!s.ai_on_with(true), "a policy switches it off whatever is stored");
         // Without an `ai` section (1.6) it is added; a stored choice stays.
-        let mut old = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}});
+        let mut old = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}});
         migrate(&mut old);
         assert_eq!(old["ai"]["enabled"], true);
-        let mut off = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": false}});
+        let mut off = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "de"}, "ai": {"enabled": false}});
         assert!(migrate(&mut off).notes.is_empty());
         assert_eq!(off["ai"]["enabled"], false);
         // New installs start with it on and decide in the setup.
@@ -1023,15 +1098,15 @@ mod tests {
         use crate::prefs::LanguageChoice;
         // A language picked at the first start (or later) is never switched to the system's.
         for lang in ["de", "en"] {
-            let mut v = serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": lang, "date_format": "iso"}, "ai": {"enabled": true}});
+            let mut v = serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": lang, "date_format": "iso"}, "ai": {"enabled": true}});
             assert!(migrate(&mut v).notes.is_empty(), "{lang}");
             assert_eq!(v["locale"]["language"], lang);
         }
         // Missing or unknown read as German before 1.13 and stay German.
         for mut v in [
-            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "ai": {"enabled": true}}),
-            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"date_format": "iso"}, "ai": {"enabled": true}}),
-            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "locale": {"language": "fr"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"date_format": "iso"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "locale": {"language": "fr"}, "ai": {"enabled": true}}),
         ] {
             let m = migrate(&mut v);
             assert_eq!(m.notes, vec!["language-choice: locale.language: de (as before)".to_owned()], "{v}");
@@ -1053,11 +1128,11 @@ mod tests {
 
     #[test]
     fn own_addresses_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "mail": {"default_action": "note"}, "locale": {"language": "de"}, "ai": {"enabled": true}});
+        let mut v = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "mail": {"default_action": "note"}, "locale": {"language": "de"}, "ai": {"enabled": true}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["own-addresses: mail.own_addresses added".to_owned()]);
         assert_eq!(v["mail"]["own_addresses"], serde_json::json!([]));
-        let mut mine = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "appearance": {"android_interface": "auto"}, "mail": {"own_addresses": ["ich@firma.de"]}, "locale": {"language": "en"}, "ai": {"enabled": true}});
+        let mut mine = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "calendar": {"entries_outlook": false, "entry_target": "outlook", "entry_minutes": 30}, "appearance": {"android_interface": "auto"}, "mail": {"own_addresses": ["ich@firma.de"]}, "locale": {"language": "en"}, "ai": {"enabled": true}});
         assert!(migrate(&mut mine).notes.is_empty());
         assert_eq!(mine["mail"]["own_addresses"], serde_json::json!(["ich@firma.de"]));
     }

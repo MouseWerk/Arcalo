@@ -14,8 +14,10 @@
 pub mod calendars;
 pub mod ics;
 pub mod outlook;
+pub mod outlookfixture;
 pub mod outlookwrite;
 pub mod tz;
+pub mod writes;
 
 use crate::{tr, trf};
 use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
@@ -122,6 +124,14 @@ pub struct CalendarSettings {
     pub blocks_outlook: bool,
     /// Length of a block dropped into the Kalender (minutes, 15–240 on the 15-minute grid).
     pub block_minutes: u32,
+    /// Create, change, move and delete appointments in the Kalender and write them to Outlook
+    /// („Termine in Outlook eintragen“, 1.21; off until the user switches it on).
+    pub entries_outlook: bool,
+    /// The calendar new appointments go to: `outlook` (the default calendar) or another own
+    /// Outlook calendar (`outlook:<hash>`).
+    pub entry_target: String,
+    /// Length of a new appointment made with a double click or `N` (minutes, 15–240).
+    pub entry_minutes: u32,
 }
 
 impl Default for CalendarSettings {
@@ -140,6 +150,9 @@ impl Default for CalendarSettings {
             meeting_links: true,
             blocks_outlook: false,
             block_minutes: crate::timeblocks::DEFAULT_MINUTES,
+            entries_outlook: false,
+            entry_target: OUTLOOK.into(),
+            entry_minutes: writes::DEFAULT_MINUTES,
         }
     }
 }
@@ -158,11 +171,16 @@ impl CalendarSettings {
         self.past_days = self.past_days.clamp(1, 365);
         self.future_days = self.future_days.clamp(1, 365);
         self.block_minutes = (self.block_minutes.clamp(15, 240) + 7) / 15 * 15;
+        self.entry_minutes = (self.entry_minutes.clamp(15, 240) + 7) / 15 * 15;
         if !valid_color(&self.outlook_color) {
             self.outlook_color = PALETTE[0].into();
         }
         self.outlook_color = self.outlook_color.to_ascii_lowercase();
         self.normalize_outlook();
+        // New appointments go to an own calendar that is still selected, else the default one.
+        if !self.outlook_calendars.iter().any(|c| c.id == self.entry_target && writes::writable_calendar(c)) {
+            self.entry_target = OUTLOOK.into();
+        }
         let mut seen = std::collections::HashSet::new();
         let mut out = vec![];
         for (i, mut s) in std::mem::take(&mut self.sources).into_iter().enumerate() {
@@ -328,6 +346,23 @@ pub struct NewEvent {
     pub busy: Busy,
     pub private: bool,
     pub categories: Vec<String>,
+    /// What Outlook says about the appointment (empty for ICS sources).
+    #[serde(flatten, default)]
+    pub meta: EventMeta,
+}
+
+/// What Arcalo needs to write an Outlook appointment back ([`writes`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct EventMeta {
+    /// Outlook's EntryID.
+    pub outlook_id: Option<String>,
+    /// Outlook's `LastModificationTime` (RFC 3339 UTC).
+    pub modified: Option<String>,
+    /// Outlook's MeetingStatus: 0 an appointment, 1 a meeting the user organizes, 3 one received.
+    pub meeting: i64,
+    /// Attendees besides the organizer (read before the privacy settings drop names).
+    pub has_attendees: bool,
 }
 
 /// Title shown instead of a private appointment's subject.
@@ -526,6 +561,14 @@ pub struct CalendarEvent {
     /// [`Database::calendar_events`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also_in: Vec<String>,
+    /// A change made in Arcalo that Outlook does not have yet, or that conflicts with one made
+    /// there ([`writes`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write: Option<writes::WriteState>,
+    /// Whether the appointment can be changed in Arcalo, or why not (set by the shell, which
+    /// knows the settings and whether Outlook Classic is there: [`writes::editability`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editable: Option<writes::Editability>,
 }
 
 /// Result of the last sync of a source.
@@ -583,7 +626,7 @@ pub fn sync_window(today: NaiveDate, s: &CalendarSettings, zone: &tz::Zone) -> (
 
 const EVENT_COLS: &str = "e.source, e.uid, e.instance, e.recurring, e.start_at, e.end_at, e.all_day, e.title, e.location, \
      e.organizer, e.attendees, e.body, e.link, e.busy, e.private, e.categories, \
-     COALESCE(m.skip, 0), p.id, t.id";
+     COALESCE(m.skip, 0), p.id, t.id, e.entry_id, e.modified, e.meeting, e.has_attendees";
 
 fn busy_str(b: Busy) -> &'static str {
     match b {
@@ -628,12 +671,20 @@ fn map_event(r: &rusqlite::Row) -> rusqlite::Result<CalendarEvent> {
             busy: busy_of(&r.get::<_, String>(13)?),
             private: r.get(14)?,
             categories: list(r.get(15)?),
+            meta: EventMeta {
+                outlook_id: r.get(19)?,
+                modified: r.get(20)?,
+                meeting: r.get(21)?,
+                has_attendees: r.get(22)?,
+            },
         },
         source,
         skip: r.get(16)?,
         note_page_id: r.get(17)?,
         entry_id: r.get(18)?,
         also_in: vec![],
+        write: None,
+        editable: None,
     })
 }
 
@@ -656,8 +707,8 @@ impl Database {
             let mut st = c.prepare_cached(
                 "INSERT OR REPLACE INTO calendar_events
                    (source, uid, instance, recurring, start_at, end_at, all_day, title, location, organizer,
-                    attendees, body, link, busy, private, categories)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                    attendees, body, link, busy, private, categories, entry_id, modified, meeting, has_attendees)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             )?;
             let mut n = 0;
             for e in events {
@@ -678,6 +729,10 @@ impl Database {
                     busy_str(e.busy),
                     e.private,
                     serde_json::to_string(&e.categories)?,
+                    e.meta.outlook_id,
+                    e.meta.modified,
+                    e.meta.meeting,
+                    e.meta.has_attendees,
                 ])?;
                 n += 1;
             }
@@ -711,33 +766,22 @@ impl Database {
                 out.push(e);
             }
         }
+        // Changes made in Arcalo that Outlook does not have yet.
+        self.calendar_overlay(&mut out, from, to, sources)?;
         Ok(dedupe(out, sources))
     }
 
-    /// One event by its key.
+    /// One event by its key (also one made or changed in Arcalo that Outlook does not have yet).
     pub fn calendar_event(&self, key: &str) -> Result<CalendarEvent> {
-        self.conn()
-            .query_row(
-                &format!(
-                    "SELECT {EVENT_COLS} FROM calendar_events e
-                     LEFT JOIN calendar_marks m ON m.key = e.source || '|' || e.uid || '|' || e.instance
-                     LEFT JOIN pages p ON p.id = m.note_page_id AND p.deleted_at IS NULL
-                     LEFT JOIN time_entries t ON t.id = m.entry_id
-                     WHERE e.source || '|' || e.uid || '|' || e.instance = ?1"
-                ),
-                [key],
-                map_event,
-            )
-            .optional()?
-            .ok_or_else(|| {
-                Error::State(
-                    tr!(
-                        "Der Termin ist nicht mehr im Kalender (inzwischen geändert oder gelöscht)",
-                        "The appointment is no longer in the calendar (changed or deleted meanwhile)"
-                    )
-                    .into(),
+        self.calendar_event_shown(key)?.ok_or_else(|| {
+            Error::State(
+                tr!(
+                    "Der Termin ist nicht mehr im Kalender (inzwischen geändert oder gelöscht)",
+                    "The appointment is no longer in the calendar (changed or deleted meanwhile)"
                 )
-            })
+                .into(),
+            )
+        })
     }
 
     /// Removes the events and the status of a source (the source was removed).
@@ -1077,6 +1121,7 @@ mod tests {
             busy: Busy::Busy,
             private: false,
             categories: vec![],
+            meta: Default::default(),
         }
     }
 

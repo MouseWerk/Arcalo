@@ -352,6 +352,7 @@ fn generate(dir: &std::path::Path) {
                         busy: Busy::Busy,
                         private: false,
                         categories: vec![],
+                        meta: Default::default(),
                     });
                 }
             }

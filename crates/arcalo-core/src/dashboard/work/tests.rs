@@ -77,6 +77,7 @@ fn event(uid: &str, a: DateTime<Utc>, b: DateTime<Utc>, busy: Busy) -> NewEvent 
         busy,
         private: false,
         categories: vec![],
+        meta: Default::default(),
     }
 }
 

@@ -268,6 +268,7 @@ fn event(uid: &str, instance: &str, start: DateTime<Utc>, minutes: i64, title: &
         busy: Busy::Busy,
         private: false,
         categories: vec![],
+        meta: Default::default(),
     }
 }
 

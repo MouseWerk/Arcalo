@@ -712,6 +712,7 @@ mod tests {
             busy: Busy::Busy,
             private: false,
             categories: vec![],
+            meta: Default::default(),
         }
     }
 

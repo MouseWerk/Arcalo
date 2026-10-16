@@ -81,6 +81,7 @@ fn event(uid: &str, start: DateTime<Utc>, minutes: i64, title: &str) -> NewEvent
         busy: Busy::Busy,
         private: false,
         categories: vec![],
+        meta: Default::default(),
     }
 }
 

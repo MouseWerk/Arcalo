@@ -208,7 +208,12 @@ pub fn read_calendars(
 ) -> Result<Vec<CalendarRead>> {
     let ids: Vec<String> = cals.iter().map(|c| c.id.clone()).collect();
     if let Some(fixture) = fixture_path() {
-        let text = fixture_read(&std::fs::read_to_string(&fixture)?, cals)?;
+        let mut text = std::fs::read_to_string(&fixture)?;
+        // Appointments written from the Kalender come back like from Outlook.
+        if let Some(log) = super::outlookwrite::fixture_log() {
+            text = super::outlookfixture::with_log(&text, &log)?;
+        }
+        let text = fixture_read(&text, cals)?;
         return parse_calendars(&text, local, req.privacy, &ids);
     }
     if !cfg!(windows) {
@@ -460,6 +465,32 @@ fn busy_title(b: Busy) -> &'static str {
     }
 }
 
+/// What a write needs to know about an appointment (before the privacy settings drop names):
+/// its EntryID, Outlook's last change, its MeetingStatus and whether anyone but the organizer
+/// is invited (the script counts the recipients that are not the organizer; output without that
+/// count is judged by the names).
+fn meta(it: &Value, ev: &NewEvent, free_busy: bool) -> super::EventMeta {
+    if free_busy || b(it, "freeBusy") {
+        return super::EventMeta::default();
+    }
+    let meeting = n(it, "meetingStatus");
+    let has_attendees = if it.get("recipients").is_some() {
+        meeting != 0 && n(it, "recipients") > 0
+    } else {
+        let organizer = ev.organizer.trim().to_lowercase();
+        ev.attendees.iter().any(|a| {
+            let a = a.trim().to_lowercase();
+            !a.is_empty() && a != organizer && super::attendee_name(&a) != organizer
+        })
+    };
+    super::EventMeta {
+        outlook_id: Some(s(it, "entryId")).filter(|x| !x.is_empty()),
+        modified: instant(&s(it, "modified"), &Zone::Utc).map(instant_id),
+        meeting,
+        has_attendees,
+    }
+}
+
 /// The `items` of one calendar's result as events; `free_busy`: blocks without subjects.
 fn parse_items(v: &Value, local: &Zone, privacy: Privacy, free_busy: bool) -> Result<Vec<NewEvent>> {
     let items = outlookcom::items(v, "items");
@@ -528,7 +559,9 @@ fn parse_items(v: &Value, local: &Zone, privacy: Privacy, free_busy: bool) -> Re
             },
             private: sensitivity == 2 || sensitivity == 3,
             categories: list(it, "categories", &[',', ';']),
+            meta: Default::default(),
         };
+        ev.meta = meta(it, &ev, free_busy);
         if (free_busy || b(it, "freeBusy")) && ev.title.trim().is_empty() {
             ev.title = busy_title(ev.busy).into();
         }
