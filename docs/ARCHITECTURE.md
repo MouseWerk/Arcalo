@@ -709,6 +709,34 @@ defineWidget({
   (priority between meetings and page edits; WBS from the block, the issue mapping or the task's page, high when linked).
   Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
   describe the default calendar alone.
+- Appointments written from the Kalender (`calsync/writes.rs`, shell `calwrite.rs`, `views/CalendarEntries.tsx`, 1.21):
+  migration 39 gives `calendar_events` the EntryID, Outlook's `LastModificationTime`, the MeetingStatus and
+  `has_attendees` (the read counts the recipients that are not the organizer, before privacy drops names) and adds
+  `calendar_outbox`, one waiting row per appointment: `create` (a random marker, stamped on the item as the user
+  property `ArcaloEntry`, so a write whose answer got lost is found again instead of added twice), `update` (a patch of
+  the changed fields title/start/end/location with the values Arcalo last saw of them), `delete` (moved to Deleted
+  Items; the row stays a day as `done` with the item's id there, so „Rückgängig“ queues a `restore`). A change merges
+  into the waiting row (the first seen value stays, a field changed back drops out, an update without fields is
+  removed), `seq` keeps a change made during a write. `calendar_events` and `calendar_event` show the queue on top of
+  the stored rows (`calendar_overlay`): new appointments under `<source>|<marker>|` until written (marks then move to
+  the real key), changed ones as changed, deleted ones hidden. `editability` (set by the shell on every event) allows
+  own appointments without attendees and meetings the user organizes (`confirm`: saved only with `send`, which makes
+  the script call `.Send()`; never deleted here) in own Outlook calendars (`writable_calendar`: own or file, not
+  free/busy); received meetings, series, ICS, others' calendars, events read before 1.21 (`unknown`) and everything
+  without Outlook Classic are read-only, `off` while „Termine in Outlook eintragen“ (`calendar.entries_outlook`,
+  settings step 19, off) is off. `outlook.ps1 -Mode write` handles ops with `kind: entry` in the default or a chosen
+  own calendar (`entry_target`): it attaches to a running Outlook only, finds the item by EntryID (still in that
+  folder) or marker, refuses series (`series`), received meetings (`received`) and organized meetings with attendees
+  without `send` (`needs_send`), compares the seen values with Outlook's (`conflict` with `current`, only the fields
+  changed on both sides) and returns EntryID, global id and `modified`; `-Mode show` opens an item („In Outlook
+  öffnen“, the one mode besides read that may start Outlook). The shell runs the writes like the focus blocks' (due
+  rows, the script in `spawn_blocking` without the database lock, back-off 1–30 minutes, a scheduler every minute,
+  before each Outlook sync) under one lock for every Outlook write (`calwrite::OUTLOOK_WRITES`), removes a leftover
+  ops file at start and emits `calendar://entries`. A conflict waits for the user: „Outlook-Version übernehmen“ drops
+  the conflicting fields and shows Outlook's values, „Meine Änderung behalten“ takes them as seen and writes again.
+  With `ARCALO_OUTLOOK_WRITE_LOG` the stateful fixture (`calsync/outlookfixture.rs`) appends the writes as
+  `"kind":"entry"` lines and replays them over every read of `ARCALO_OUTLOOK_FIXTURE`, so a new appointment comes back
+  with the next sync once; a test line `"op":"outlook"` stands for a change made in Outlook.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
   TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
   Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed

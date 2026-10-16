@@ -276,6 +276,13 @@ meeting link. The join button finds Teams, Zoom, Webex, Google Meet and other li
 description, behind company link protection such as Microsoft Safe Links or Proofpoint. Meetings you do not book can
 be marked “Don't book”, and the timesheet lists the week's meetings that are not booked yet.
 
+With Outlook Classic you also plan in the Calendar itself: drag over a free stretch of a day, double-click or press
+N for a new appointment, and move, resize, rename or delete your own appointments. Every change goes back to your
+Outlook calendar (the default one or another of yours), only with the fields you changed; a closed Outlook is never
+started, the change waits until it runs. If the same field changed in Outlook meanwhile, you choose which version
+applies. Meetings you organize ask before Outlook sends the update to the attendees; meetings from others and series
+stay read-only and open in Outlook. Writing is off until you switch it on (the Calendar offers it on first use).
+
 <p align="center">
   <img src="docs/screenshots/calendar-meeting.png" width="49%" alt="A meeting with its Teams join button, Book time and Meeting note">
   <img src="docs/screenshots/outlook-calendars.png" width="49%" alt="Choose calendars: the default calendar, a sub-calendar, a colleague's shared calendar, a free/busy calendar and a room">
@@ -394,6 +401,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 - Day, work week, week, month and list with week numbers; meetings as calm tinted blocks in their calendar's color, overlapping meetings side by side, past, running, booked, tentative and free/busy states at a glance; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
 - Join links: Teams (also `teams.cloud.microsoft`), Zoom, Webex, Google Meet, Jitsi, Whereby, Chime, BlueJeans, RingCentral and others, found in the location, the link fields and the description, also behind Microsoft Safe Links, Proofpoint or Google redirects
 - “Book time” from a meeting (prefilled, WBS remembered per series or subject), “Meeting note”, “Don't book”; booked meetings get a check mark
+- Appointments created and changed in the Calendar (Outlook Classic, Settings → Calendar → “Write appointments to Outlook”): drag over a free stretch, double-click, N or “New appointment…” in the palette; own appointments move, resize, get renamed and deleted (to Outlook's Deleted Items, with Undo). Only the changed fields are written, a lost answer never creates a second appointment, a change made in Outlook too asks “Use Outlook's version” or “Keep my change”, an organized meeting asks before the update goes to its attendees; received meetings, series and free/busy calendars stay read-only with “Open in Outlook”. Without Outlook Classic (macOS, Linux, the new Outlook) the Calendar only shows appointments
 - Background sync every 15 minutes (Settings → Calendar); private appointments keep only their time unless you allow more; the assistant does not see your appointments
 - Start page widgets “Today” and “Meetings”, and “Book meetings” in the timesheet
 
