@@ -14,7 +14,9 @@
 -- `seq` is bumped by every change (a write answered late is not lost), `send` says the user
 -- confirmed sending the update of an organized meeting to its attendees. `state` is `pending`,
 -- `conflict` (`conflict` holds Outlook's values) or `done` (a delete kept a day for its undo;
--- `snapshot` is the appointment as it was shown). Outlook is never started for a write.
+-- `snapshot` is the appointment as it was shown). `sent` says the row was handed to Outlook at
+-- least once (a create deleted before that never reaches Outlook; after it, even without an
+-- answer, it is deleted there by its marker). Outlook is never started for a write.
 
 ALTER TABLE calendar_events ADD COLUMN entry_id TEXT;
 ALTER TABLE calendar_events ADD COLUMN modified TEXT;
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS calendar_outbox (
     conflict    TEXT,
     deleted_id  TEXT,
     snapshot    TEXT,
+    sent        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_outbox_uid ON calendar_outbox(source, uid);

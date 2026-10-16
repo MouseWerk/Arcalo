@@ -126,12 +126,16 @@ if ($Mode -eq 'write') {
     function Get-Values($item) {
         return @{ subject = [string]$item.Subject; start = $item.Start.ToString($fmt, $inv); end = $item.End.ToString($fmt, $inv); location = [string]$item.Location }
     }
-    # Only the fields given (a title Arcalo never had, a text it never read stay as they are).
+    # Only the fields given (a title Arcalo never had, a text it never read stay as they are). A
+    # new Start alone keeps the End (Outlook would move it along to keep the length).
     function Set-Fields($item, $f) {
         if ($null -eq $f) { return }
         if ($null -ne $f.subject) { $item.Subject = [string]$f.subject }
+        $end = $null
+        if ($null -ne $f.end) { $end = [datetime]::ParseExact([string]$f.end, $fmt, $inv) }
+        elseif ($null -ne $f.start) { $end = $item.End }
         if ($null -ne $f.start) { $item.Start = [datetime]::ParseExact([string]$f.start, $fmt, $inv) }
-        if ($null -ne $f.end) { $item.End = [datetime]::ParseExact([string]$f.end, $fmt, $inv) }
+        if ($null -ne $end) { $item.End = $end }
         if ($null -ne $f.location) { $item.Location = [string]$f.location }
     }
     function Write-Entry($o) {
@@ -142,7 +146,10 @@ if ($Mode -eq 'write') {
             $item = $null
             try { $item = $ns.GetItemFromID([string]$o.deletedId) } catch { $item = $null }
             if (-not $item) { $res.ok = $false; $res.error = 'not_found'; return $res }
-            $item = $item.Move($folder)
+            # Moved back already by a try whose answer got lost (an EntryID that stays on a move).
+            $back = $false
+            try { $back = $item.Parent.EntryID -eq $folder.EntryID } catch { }
+            if (-not $back) { $item = $item.Move($folder) }
             Set-Fields $item $f
             $item.Save()
         } else {
@@ -164,7 +171,9 @@ if ($Mode -eq 'write') {
                 if ($item.IsRecurring) { $res.ok = $false; $res.error = 'series'; return $res }
                 $status = [int]$item.MeetingStatus
                 if ($status -ne 0 -and $status -ne 1) { $res.ok = $false; $res.error = 'received'; return $res }
-                $invited = Count-Invited $item
+                # Recipients of an appointment that is no meeting (MeetingStatus 0) were never invited.
+                $invited = 0
+                if ($status -ne 0) { $invited = Count-Invited $item }
                 if ($o.op -eq 'delete') {
                     # A meeting with attendees is cancelled in Outlook, never deleted here.
                     if ($invited -gt 0) { $res.ok = $false; $res.error = 'needs_send'; return $res }
@@ -173,7 +182,8 @@ if ($Mode -eq 'write') {
                     return $res
                 }
                 if ($invited -gt 0 -and -not $o.send) { $res.ok = $false; $res.error = 'needs_send'; return $res }
-                # A field changed in Outlook since Arcalo saw it (to another value than Arcalo's) is a conflict.
+                # A field changed in Outlook since Arcalo saw it (to another value than Arcalo's) is a
+                # conflict. Arcalo reads texts trimmed, so spaces around them are no change.
                 $now = Get-Values $item
                 $current = [ordered]@{}
                 foreach ($k in @('subject', 'start', 'end', 'location')) {
@@ -181,7 +191,8 @@ if ($Mode -eq 'write') {
                     $mine = $null
                     if ($o.seen) { $seen = $o.seen.$k }
                     if ($f) { $mine = $f.$k }
-                    if ($null -ne $seen -and $now[$k] -ne [string]$seen -and $now[$k] -ne [string]$mine) { $current[$k] = $now[$k] }
+                    $is = ([string]$now[$k]).Trim()
+                    if ($null -ne $seen -and $is -cne ([string]$seen).Trim() -and $is -cne ([string]$mine).Trim()) { $current[$k] = $now[$k] }
                 }
                 if ($current.Count -gt 0) { $res.ok = $false; $res.error = 'conflict'; $res.current = $current; return $res }
                 Set-Fields $item $f

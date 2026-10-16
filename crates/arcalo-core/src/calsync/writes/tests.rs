@@ -505,6 +505,133 @@ fn deletes_go_to_deleted_items_and_come_back_with_undo() {
 }
 
 #[test]
+fn a_new_appointment_deleted_while_its_write_is_under_way_leaves_nothing_in_outlook() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    // Outlook saves it, the answer gets lost, and the user deletes it while the write runs.
+    let ev = db.entry_create(&draft("Kurz", t(5, 9, 0), 30), now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    fake.lose_answer.set(true);
+    let results = fake.write(&ops);
+    db.entry_delete(&ev.key, now).unwrap();
+    db.entry_outbox_apply(&ops, &results, now, &Z).unwrap();
+    assert!(shown(&db).is_empty());
+    flush(&db, &fake, now + Duration::minutes(5), &Z, false, &cals()).unwrap();
+    assert!(fake.items.borrow().is_empty(), "deleted in Outlook by its marker: {:?}", fake.items.borrow());
+
+    // The same with a rename while the write ran.
+    let ev = db.entry_create(&draft("Entwurf", t(5, 11, 0), 30), now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    fake.lose_answer.set(true);
+    let results = fake.write(&ops);
+    db.entry_update(&ev.key, &patch_title("Endfassung"), false, now).unwrap();
+    db.entry_outbox_apply(&ops, &results, now, &Z).unwrap();
+    db.entry_delete(&ev.key, now).unwrap();
+    flush(&db, &fake, now + Duration::minutes(5), &Z, false, &cals()).unwrap();
+    assert!(fake.items.borrow().is_empty(), "{:?}", fake.items.borrow());
+    assert!(shown(&db).is_empty());
+    // Its undo still writes it.
+    db.entry_undo(&ev.key).unwrap();
+    flush(&db, &fake, now + Duration::minutes(6), &Z, false, &cals()).unwrap();
+    assert_eq!(fake.items.borrow().len(), 1);
+    assert_eq!(fake.items.borrow().values().next().unwrap().subject, "Endfassung");
+}
+
+#[test]
+fn a_delete_undone_and_deleted_again_while_it_is_written_stays_deleted() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Zahnarzt", t(7, 15, 0), 60, Item::default());
+    db.entry_delete(&key, now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    let results = fake.write(&ops);
+    db.entry_undo(&key).unwrap();
+    db.entry_delete(&key, now).unwrap();
+    db.entry_outbox_apply(&ops, &results, now, &Z).unwrap();
+    assert!(shown(&db).is_empty(), "the last thing the user did was the delete");
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    assert!(fake.items.borrow().is_empty() && fake.trash.borrow().contains_key("DEL-A"));
+    sync(&db, &fake);
+    assert!(shown(&db).is_empty());
+    // Its undo brings it back.
+    db.entry_undo(&key).unwrap();
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    assert_eq!(fake.items.borrow().len(), 1);
+}
+
+#[test]
+fn a_restore_whose_answer_got_lost_does_not_wait_forever() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    let key = synced(&db, &fake, "A", "Zahnarzt", t(7, 15, 0), 60, Item::default());
+    db.entry_delete(&key, now).unwrap();
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    db.entry_undo(&key).unwrap();
+    fake.lose_answer.set(true);
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    assert_eq!(fake.items.borrow().len(), 1, "moved back, the answer got lost");
+    flush(&db, &fake, now + Duration::minutes(5), &Z, false, &cals()).unwrap();
+    assert_eq!(db.entry_outbox_len().unwrap(), 0, "nothing left to retry");
+    sync(&db, &fake);
+    let all = shown(&db);
+    assert_eq!(all.len(), 1);
+    assert!(all[0].write.is_none(), "{:?}", all[0].write);
+
+    // A delete whose answer got lost has no item in Deleted Items to move back: the undo says so.
+    db.entry_delete(&all[0].key, now).unwrap();
+    fake.lose_answer.set(true);
+    assert!(flush(&db, &fake, now, &Z, false, &cals()).is_err());
+    flush(&db, &fake, now + Duration::minutes(5), &Z, false, &cals()).unwrap();
+    let e = db.entry_undo(&all[0].key).unwrap_err();
+    assert!(e.to_string().contains("Gelöschte Elemente"), "{e}");
+    assert_eq!(db.entry_outbox_len().unwrap(), 0);
+}
+
+#[test]
+fn titles_and_places_arcalo_shows_instead_of_outlooks_never_conflict() {
+    let db = Database::open_in_memory().unwrap();
+    let fake = Fake::default();
+    let now = t(1, 8, 0);
+    // An appointment without a subject is shown as „(Ohne Betreff)“; naming it is no conflict.
+    let key = synced(&db, &fake, "A", "(Ohne Betreff)", t(6, 9, 0), 30, Item::default());
+    fake.items.borrow_mut().get_mut("A").unwrap().subject = String::new();
+    db.entry_update(&key, &patch_title("Benannt"), false, now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    assert_eq!(ops[0].seen.subject, None);
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    assert_eq!(fake.get("A").subject, "Benannt");
+
+    // A private one keeps its subject and place in Outlook; a new place is no conflict and
+    // Outlook's place never comes into Arcalo.
+    let key = synced(
+        &db,
+        &fake,
+        "P",
+        crate::calsync::PRIVATE_TITLE,
+        t(6, 11, 0),
+        30,
+        Item { location: String::new(), ..Default::default() },
+    );
+    db.conn().execute("UPDATE calendar_events SET private = 1 WHERE uid = 'G-P'", []).unwrap();
+    {
+        let mut items = fake.items.borrow_mut();
+        let p = items.get_mut("P").unwrap();
+        p.subject = "Arzt".into();
+        p.location = "Praxis".into();
+    }
+    db.entry_update(&key, &Fields { location: Some("Praxis Nord".into()), ..Default::default() }, false, now).unwrap();
+    let ops = db.entry_outbox_due(now, &Z, false, &cals()).unwrap();
+    assert_eq!((ops[0].seen.subject.as_deref(), ops[0].seen.location.as_deref()), (None, None));
+    flush(&db, &fake, now, &Z, false, &cals()).unwrap();
+    let p = fake.get("P");
+    assert_eq!((p.subject.as_str(), p.location.as_str()), ("Arzt", "Praxis Nord"));
+    assert_eq!(db.entry_outbox_len().unwrap(), 0);
+}
+
+#[test]
 fn read_only_kinds_and_the_reason_for_each() {
     let db = Database::open_in_memory().unwrap();
     let fake = Fake::default();
@@ -703,6 +830,13 @@ fn the_script_writes_appointments_without_starting_outlook_and_sends_only_when_c
     // Writes only attach to a running Outlook.
     let write = &script[script.find("if ($Mode -eq 'write')").unwrap()..script.find("if ($Mode -eq 'show')").unwrap()];
     assert!(write.contains("GetActiveObject('Outlook.Application')") && !write.contains("New-Object -ComObject"));
+    // Recipients of an appointment that is no meeting were never invited: no refusal for them.
+    assert!(script.contains("if ($status -ne 0) { $invited = Count-Invited $item }"));
+    // A new start alone keeps the end; spaces around a text are no conflict.
+    assert!(script.contains("elseif ($null -ne $f.start) { $end = $item.End }"));
+    assert!(script.contains("$is = ([string]$now[$k]).Trim()") && script.contains("-cne ([string]$seen).Trim()"));
+    // A restore moved back by a try whose answer got lost is not moved again.
+    assert!(script.contains("if (-not $back) { $item = $item.Move($folder) }"));
     // The read gives what a write needs.
     assert!(script.contains("modified       = ''") && script.contains("recipients     = 0"));
 }

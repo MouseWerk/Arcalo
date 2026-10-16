@@ -286,10 +286,12 @@ pub fn write(log: &Path, ops: &[EntryOp]) -> Result<Vec<EntryResult>> {
                         out.push(failed(o.key, "needs_send"));
                         continue;
                     }
-                    // A field changed in Outlook since Arcalo saw it, to another value than Arcalo's.
+                    // A field changed in Outlook since Arcalo saw it, to another value than Arcalo's
+                    // (spaces around a text are no change).
                     let now = current(v);
+                    let trim = |x: &Option<String>| x.as_deref().map(str::trim).unwrap_or_default().to_owned();
                     let differs = |seen: &Option<String>, mine: &Option<String>, now: &Option<String>| {
-                        seen.is_some() && now != seen && now != mine
+                        seen.is_some() && trim(now) != trim(seen) && trim(now) != trim(mine)
                     };
                     let conflict = LocalFields {
                         subject: now

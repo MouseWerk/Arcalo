@@ -375,6 +375,16 @@ pub fn is_private_title(title: &str) -> bool {
     title == PRIVATE_TITLE || title == PRIVATE_TITLE_EN
 }
 
+/// Title shown for an appointment without a subject.
+pub const NO_SUBJECT: &str = "(Ohne Betreff)";
+/// The same in English.
+pub const NO_SUBJECT_EN: &str = "(No subject)";
+
+/// Whether `title` is the stand-in title of an appointment without a subject (either language).
+pub fn is_no_subject_title(title: &str) -> bool {
+    title == NO_SUBJECT || title == NO_SUBJECT_EN
+}
+
 /// What of an appointment is kept (Settings → Kalender).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Privacy {
@@ -410,7 +420,7 @@ impl NewEvent {
         }
         self.title = self.title.trim().to_owned();
         if self.title.is_empty() {
-            self.title = tr!("(Ohne Betreff)", "(No subject)").into();
+            self.title = tr!(NO_SUBJECT, NO_SUBJECT_EN).into();
         }
     }
 }

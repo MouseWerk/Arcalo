@@ -33,7 +33,7 @@ use serde_json::Value;
 
 use super::calendars::{OutlookCalendar, OutlookKind};
 use super::tz::Zone;
-use super::{Busy, CalendarEvent, EventMeta, NewEvent, event_key, is_private_title};
+use super::{Busy, CalendarEvent, EventMeta, NewEvent, event_key, is_no_subject_title, is_private_title};
 use crate::db::{Database, ts};
 use crate::error::{Error, Result};
 use crate::{tr, trf};
@@ -183,14 +183,18 @@ impl Fields {
         }
     }
 
-    /// The values of `e` for the fields set in `like`; a title Arcalo shows instead of a private
-    /// one is left out (it is not Outlook's, and Outlook's must not come back in a conflict).
+    /// The values of `e` for the fields set in `like`. What Arcalo shows instead of Outlook's
+    /// value is left out: the title of a private appointment and its dropped place, and the
+    /// title of one without a subject (they are not Outlook's, would conflict with it, and
+    /// Outlook's private values must not come back in a conflict).
     fn of(e: &NewEvent, like: &Fields) -> Fields {
+        let veiled = e.private && is_private_title(&e.title);
+        let stand_in = veiled || is_no_subject_title(&e.title);
         Fields {
-            title: like.title.as_ref().filter(|_| !(e.private && is_private_title(&e.title))).map(|_| e.title.clone()),
+            title: like.title.as_ref().filter(|_| !stand_in).map(|_| e.title.clone()),
             start: like.start.map(|_| e.start),
             end: like.end.map(|_| e.end),
-            location: like.location.as_ref().map(|_| e.location.clone()),
+            location: like.location.as_ref().filter(|_| !veiled).map(|_| e.location.clone()),
         }
     }
 
@@ -375,17 +379,17 @@ struct Row {
     seen: Fields,
     send: bool,
     seq: i64,
-    attempts: i64,
     state: String,
     error: Option<String>,
     conflict: Option<Fields>,
     deleted_id: Option<String>,
     snapshot: Option<NewEvent>,
+    /// Handed to Outlook at least once (a create may be there even without an answer).
+    sent: bool,
 }
 
-const ROW_COLS: &str =
-    "id, marker, source, op, uid, entry_id, fields, seen, send, seq, attempts, state, error, conflict,
-     deleted_id, snapshot";
+const ROW_COLS: &str = "id, marker, source, op, uid, entry_id, fields, seen, send, seq, state, error, conflict,
+     deleted_id, snapshot, sent";
 
 fn parsed<T: serde::de::DeserializeOwned>(s: Option<String>) -> Option<T> {
     s.and_then(|s| serde_json::from_str(&s).ok())
@@ -404,12 +408,12 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<Row> {
         seen: json(r.get(7)?).unwrap_or_default(),
         send: r.get(8)?,
         seq: r.get(9)?,
-        attempts: r.get(10)?,
-        state: r.get(11)?,
-        error: r.get(12)?,
-        conflict: parsed(r.get(13)?),
-        deleted_id: r.get(14)?,
-        snapshot: parsed(r.get(15)?),
+        state: r.get(10)?,
+        error: r.get(11)?,
+        conflict: parsed(r.get(12)?),
+        deleted_id: r.get(13)?,
+        snapshot: parsed(r.get(14)?),
+        sent: r.get(15)?,
     })
 }
 
@@ -783,9 +787,10 @@ impl Database {
             let row = self.outbox_row_for(source, uid)?.filter(|r| r.state != "done");
             let snapshot = json(&shown.event)?;
             if let Some(r) = row.as_ref().filter(|r| r.op == "create") {
-                // Never tried: kept aside for the undo. Tried before (its answer may have got
-                // lost): deleted in Outlook by its marker.
-                let state = if r.attempts == 0 && r.entry_id.is_none() { "done" } else { "pending" };
+                // Never handed to Outlook: kept aside for the undo. Handed to it before (also a
+                // write still under way, or one whose answer got lost): deleted in Outlook by its
+                // marker.
+                let state = if !r.sent && r.entry_id.is_none() { "done" } else { "pending" };
                 self.conn().execute(
                     "UPDATE calendar_outbox SET op = 'delete', state = ?2, snapshot = ?3, seq = seq + 1, attempts = 0,
                        next_try = NULL, error = NULL, conflict = NULL, created_at = ?4 WHERE id = ?1",
@@ -829,8 +834,18 @@ impl Database {
     pub fn entry_undo(&self, key: &str) -> Result<CalendarEvent> {
         let (source, uid, _) = split_key(key).ok_or_else(gone)?;
         let row = self.outbox_row_for(source, uid)?.filter(|r| r.op == "delete").ok_or_else(gone)?;
+        if row.state == "done" && row.deleted_id.is_none() && row.uid.is_some() {
+            // Deleted, but Outlook's answer with the item in Deleted Items got lost.
+            return Err(Error::State(
+                tr!(
+                    "Der Termin lässt sich hier nicht zurückholen; er liegt in Outlook unter „Gelöschte Elemente“",
+                    "The appointment cannot be brought back here; it is in Outlook's Deleted Items"
+                )
+                .into(),
+            ));
+        }
         self.atomic(|| {
-            let back = if row.deleted_id.is_some() || (row.state == "done" && row.uid.is_some()) {
+            let back = if row.deleted_id.is_some() {
                 // In Deleted Items: moved back.
                 "restore"
             } else if row.uid.is_none() {
@@ -957,6 +972,9 @@ impl Database {
         let mut out = vec![];
         for r in rows {
             let Some(cal) = calendars.iter().find(|c| c.id == r.source) else { continue };
+            if !r.sent {
+                self.conn().execute("UPDATE calendar_outbox SET sent = 1 WHERE id = ?1", [r.id])?;
+            }
             out.push(EntryOp {
                 key: r.id,
                 marker: r.marker.clone(),
@@ -1029,7 +1047,10 @@ impl Database {
                             )?;
                         }
                         // Gone in Outlook: the change has nothing to go to (the next sync shows it).
-                        Some("not_found") if op.op != "restore" => {
+                        // A restore whose item is not in Deleted Items anymore was moved back by a
+                        // try whose answer got lost, or Deleted Items was emptied: the next sync
+                        // shows which.
+                        Some("not_found") => {
                             self.conn().execute("DELETE FROM calendar_outbox WHERE id = ?1 AND seq = ?2", params![op.key, op.seq])?;
                         }
                         _ => fail(op, res.error.as_deref().unwrap_or(""))?,
@@ -1114,13 +1135,32 @@ impl Database {
                         if row.is_none()
                             && let (Some(d), Some(u)) = (&res.deleted_id, &op.uid)
                         {
-                            // Undone while it was deleted: moved back from Deleted Items.
-                            let snapshot = self.stored_event(&event_key(&op.source, u, ""))?.map(|e| e.event);
-                            self.conn().execute(
-                                "INSERT INTO calendar_outbox (marker, source, op, uid, deleted_id, snapshot, created_at)
-                                 VALUES (?1, ?2, 'restore', ?3, ?4, ?5, ?6)",
-                                params![new_marker(), op.source, u, d, snapshot.map(|e| json(&e)).transpose()?, ts(now)],
-                            )?;
+                            let again = self
+                                .outbox_rows("source = ?1 AND uid = ?2 AND op = 'delete' AND state = 'pending'", [
+                                    &op.source, u,
+                                ])?
+                                .pop();
+                            if let Some(again) = again {
+                                // Undone and deleted again while it was deleted: it stays in
+                                // Deleted Items, and that delete is done with it.
+                                self.conn().execute(
+                                    "UPDATE calendar_outbox SET state = 'done', deleted_id = ?2, entry_id = NULL, created_at = ?3
+                                     WHERE id = ?1",
+                                    params![again.id, d, ts(now)],
+                                )?;
+                                self.conn().execute(
+                                    "DELETE FROM calendar_events WHERE source = ?1 AND uid = ?2",
+                                    params![op.source, u],
+                                )?;
+                            } else {
+                                // Undone while it was deleted: moved back from Deleted Items.
+                                let snapshot = self.stored_event(&event_key(&op.source, u, ""))?.map(|e| e.event);
+                                self.conn().execute(
+                                    "INSERT INTO calendar_outbox (marker, source, op, uid, deleted_id, snapshot, created_at)
+                                     VALUES (?1, ?2, 'restore', ?3, ?4, ?5, ?6)",
+                                    params![new_marker(), op.source, u, d, snapshot.map(|e| json(&e)).transpose()?, ts(now)],
+                                )?;
+                            }
                         }
                         if let Some(r) = &row {
                             if r.op == "delete" {

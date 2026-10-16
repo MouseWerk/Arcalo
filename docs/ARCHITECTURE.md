@@ -717,7 +717,9 @@ defineWidget({
   the changed fields title/start/end/location with the values Arcalo last saw of them), `delete` (moved to Deleted
   Items; the row stays a day as `done` with the item's id there, so „Rückgängig“ queues a `restore`). A change merges
   into the waiting row (the first seen value stays, a field changed back drops out, an update without fields is
-  removed), `seq` keeps a change made during a write. `calendar_events` and `calendar_event` show the queue on top of
+  removed), `seq` keeps a change made during a write, `sent` marks a row handed to Outlook (a new appointment deleted
+  before that never reaches Outlook; after it, also without an answer, it is deleted there by its marker; a restore
+  whose item is no longer in Deleted Items is dropped and the next sync shows the result). `calendar_events` and `calendar_event` show the queue on top of
   the stored rows (`calendar_overlay`): new appointments under `<source>|<marker>|` until written (marks then move to
   the real key), changed ones as changed, deleted ones hidden. `editability` (set by the shell on every event) allows
   own appointments without attendees and meetings the user organizes (`confirm`: saved only with `send`, which makes
@@ -727,8 +729,9 @@ defineWidget({
   settings step 19, off) is off. `outlook.ps1 -Mode write` handles ops with `kind: entry` in the default or a chosen
   own calendar (`entry_target`): it attaches to a running Outlook only, finds the item by EntryID (still in that
   folder) or marker, refuses series (`series`), received meetings (`received`) and organized meetings with attendees
-  without `send` (`needs_send`), compares the seen values with Outlook's (`conflict` with `current`, only the fields
-  changed on both sides) and returns EntryID, global id and `modified`; `-Mode show` opens an item („In Outlook
+  without `send` (`needs_send`; recipients of a MeetingStatus 0 item count as none), compares the seen values with
+  Outlook's (`conflict` with `current`, only the fields changed on both sides, texts trimmed; stand-in titles and the
+  dropped place of a private appointment are never sent as seen values), keeps the End when only the Start is given and returns EntryID, global id and `modified`; `-Mode show` opens an item („In Outlook
   öffnen“, the one mode besides read that may start Outlook). The shell runs the writes like the focus blocks' (due
   rows, the script in `spawn_blocking` without the database lock, back-off 1–30 minutes, a scheduler every minute,
   before each Outlook sync) under one lock for every Outlook write (`calwrite::OUTLOOK_WRITES`), removes a leftover
