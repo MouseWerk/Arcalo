@@ -324,12 +324,12 @@ mod tests {
     fn jira_maps_vorgang_before_netzplan_and_skips_unmapped() {
         let rows =
             [row(1, Some("1020"), Some(90), "a"), row(2, Some("1030"), Some(30), "b"), row(3, None, Some(15), "c")];
-        let mut opts = ExportOptions::default();
+        let mut opts = ExportOptions { utc_offset_minutes: Some(120), ..Default::default() };
         opts.jira_issue_map.insert("NP-8801/1020".into(), "AET-12".into());
         let r = export(&rows, ExportFormat::JiraWorklog, &opts).unwrap();
         let logs: Vec<JiraWorklog> = serde_json::from_str(&r.content).unwrap();
         assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].started, "2026-09-22T23:30:00.000+0000");
+        assert_eq!(logs[0].started, "2026-09-23T01:30:00.000+0200");
         assert_eq!(logs[0].time_spent_seconds, 5400);
         assert_eq!(r.skipped.len(), 2);
 

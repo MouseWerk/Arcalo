@@ -97,6 +97,20 @@ impl Drop for Ws {
     }
 }
 
+/// Now in the zone the commands run in (`TZ` in `Ws::cmd`). The test process keeps its own zone
+/// (UTC on CI), whose day differs from Berlin's between 22:00 and 24:00 UTC. Shortly before
+/// Berlin's midnight it waits for the new day, so the commands that follow see the same day.
+fn cmd_now() -> chrono::DateTime<chrono_tz::Tz> {
+    let now = chrono::Utc::now().with_timezone(&chrono_tz::Europe::Berlin);
+    let midnight = now.date_naive().succ_opt().unwrap().and_time(chrono::NaiveTime::MIN);
+    let left = midnight - now.naive_local();
+    if left > chrono::Duration::seconds(30) {
+        return now;
+    }
+    std::thread::sleep((left + chrono::Duration::seconds(1)).to_std().unwrap_or_default());
+    chrono::Utc::now().with_timezone(&chrono_tz::Europe::Berlin)
+}
+
 fn id(v: &Value) -> i64 {
     v["id"].as_i64().unwrap()
 }
@@ -355,10 +369,10 @@ fn tasks_are_added_listed_and_changed_in_their_notes() {
         "# Projekt\n\n- [ ] Alt #kunde due:2020-01-01\n- [ ] Angebot schicken due:2030-05-01 !!\n"
     );
     // Into today's daily note, below its notes section, as quick capture does.
+    let today = cmd_now().format("%Y-%m-%d").to_string();
     let d = ws.json(&["tasks", "add", "Anrufen", "--due", "today"]);
     let daily = ws.db().page_doc(d["page_id"].as_i64().unwrap()).unwrap();
-    assert!(daily.page.daily_date.is_some());
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    assert_eq!(daily.page.daily_date.as_deref(), Some(today.as_str()));
     assert!(daily.content.trim_end().ends_with(&format!("- [ ] Anrufen due:{today}")), "{:?}", daily.content);
 
     let texts = |args: &[&str]| -> Vec<String> {
@@ -515,13 +529,8 @@ fn tags_search_calendar_and_attachments() {
             ..Default::default()
         });
         db.save_settings(&s).unwrap();
-        let start = chrono::Local::now()
-            .date_naive()
-            .and_hms_opt(10, 0, 0)
-            .unwrap()
-            .and_local_timezone(chrono::Local)
-            .unwrap()
-            .to_utc();
+        let start = cmd_now().date_naive().and_hms_opt(10, 0, 0).unwrap();
+        let start = start.and_local_timezone(chrono_tz::Europe::Berlin).unwrap().to_utc();
         let ev = arcalo_core::calsync::NewEvent {
             uid: "u1".into(),
             instance: String::new(),

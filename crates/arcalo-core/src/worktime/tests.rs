@@ -7,6 +7,12 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
+/// Noon of a day in the system's zone: the setup day is the local one, and 12:00 UTC is already
+/// the next day east of UTC+12.
+fn local_noon(y: i32, m: u32, day: u32) -> DateTime<Utc> {
+    chrono::Local.with_ymd_and_hms(y, m, day, 12, 0, 0).unwrap().to_utc()
+}
+
 fn names(year: i32, state: &str) -> Vec<(NaiveDate, String)> {
     holidays(year, state).into_iter().map(|h| (h.date, h.name)).collect()
 }
@@ -271,16 +277,16 @@ fn missing_time_counts_from_the_day_a_new_workspace_was_set_up() {
     assert_eq!(counts_from(&db).unwrap(), None);
     // An upgraded workspace: every day counts, also after its setup is completed.
     db.meta_set("onboarding.first_seen", "existing").unwrap();
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 7, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 10, 7)).unwrap();
     assert_eq!(counts_from(&db).unwrap(), None);
     assert_eq!(gap_target(&db, &s, d(2026, 10, 5)).unwrap(), 480);
     // A new one: from the day of its setup on (kept when the setup runs again later).
     let db = Database::open_in_memory().unwrap();
     db.onboarding_classify().unwrap();
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 7, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 10, 7)).unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
     db.onboarding_reset().unwrap();
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 11, 2, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 11, 2)).unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
     let t = DayTargets::load(&db, &s, d(2026, 10, 5), d(2026, 10, 11)).unwrap();
     assert_eq!(t.minutes(), [0, 0, 480, 480, 480, 0, 0]);
@@ -289,12 +295,12 @@ fn missing_time_counts_from_the_day_a_new_workspace_was_set_up() {
     let db = Database::open_in_memory().unwrap();
     db.meta_set("onboarding.first_seen", "fresh").unwrap();
     let mut st = db.load_settings().unwrap();
-    st.onboarding.completed_at = Some("2026-10-07T12:00:00Z".into());
+    st.onboarding.completed_at = Some(local_noon(2026, 10, 7).to_rfc3339());
     db.save_settings(&st).unwrap();
     db.onboarding_classify().unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
     // Running the intro again (palette or settings) keeps the first day.
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 12, 1, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 12, 1)).unwrap();
     db.onboarding_classify().unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
 }
@@ -303,9 +309,9 @@ fn missing_time_counts_from_the_day_a_new_workspace_was_set_up() {
 fn running_the_intro_again_keeps_the_first_counted_day() {
     let db = Database::open_in_memory().unwrap();
     db.onboarding_classify().unwrap();
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 3, 2, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 3, 2)).unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 3, 2)));
-    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 9, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_complete(local_noon(2026, 10, 9)).unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 3, 2)));
 }
 
