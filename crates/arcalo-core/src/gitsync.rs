@@ -1190,6 +1190,16 @@ impl Git {
         self
     }
 
+    /// Whether the commands run on libgit2 ([`gitlib`]).
+    #[cfg(test)]
+    pub(crate) fn is_embedded(&self) -> bool {
+        #[cfg(feature = "embedded-git")]
+        if self.embedded {
+            return true;
+        }
+        false
+    }
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -1670,9 +1680,53 @@ fn fetch_tip(git: &Git, repo: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
-fn rejected(out: &GitOutput) -> bool {
-    let l = out.stderr.to_ascii_lowercase();
-    l.contains("rejected") || l.contains("non-fast-forward") || l.contains("fetch first")
+/// The push was refused because the server's branch moved on (`! [rejected] … (fetch first)` or
+/// `(non-fast-forward)`): a merge with the server's state follows. A refusal by the server itself
+/// (`! [remote rejected]`: a hook, push protection, a protected branch, a file too large, a quota)
+/// is not that; see [`refusal`].
+fn diverged(out: &GitOutput) -> bool {
+    out.stderr.lines().any(|l| {
+        let l = l.to_ascii_lowercase();
+        l.contains("[rejected]") && (l.contains("non-fast-forward") || l.contains("fetch first"))
+    })
+}
+
+/// The message for a push the server refused (`! [remote rejected] … (<reason>)`): the reason and
+/// what the server said about it (its `remote:` lines, such as GitHub's „GH001: Large files
+/// detected“); `None` for any other failure.
+fn refusal(out: &GitOutput) -> Option<String> {
+    let reason = out.stderr.lines().find_map(|l| {
+        let rest = &l[l.find("[remote rejected]")? + "[remote rejected]".len()..];
+        let (a, b) = (rest.find('(')?, rest.rfind(')')?);
+        (a < b).then(|| rest[a + 1..b].trim().to_owned())
+    })?;
+    let said: Vec<&str> = out
+        .stderr
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("remote:"))
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && l.chars().any(char::is_alphanumeric))
+        .collect();
+    let mut said = said[said.len().saturating_sub(8)..].join(" · ");
+    if said.chars().count() > 600 {
+        said = said.chars().take(600).collect::<String>() + "…";
+    }
+    Some(if said.is_empty() {
+        trf!("Der Git-Server hat die Übertragung abgelehnt ({reason})", "The Git server refused the push ({reason})")
+    } else {
+        trf!(
+            "Der Git-Server hat die Übertragung abgelehnt ({reason}): {said}",
+            "The Git server refused the push ({reason}): {said}"
+        )
+    })
+}
+
+/// The error of a failed push: [`refusal`], else git's message.
+fn push_error(git: &Git, out: &GitOutput) -> Error {
+    match refusal(out) {
+        Some(m) => Error::State(m),
+        None => git.failure(&["push"], out),
+    }
 }
 
 /// In `.git`: what the sync pulled from the server and the pages here have not taken over yet.
@@ -2272,8 +2326,8 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if push.ok {
         return Ok(done(short(git)?, branch, false, pulled, renamed, files));
     }
-    if !rejected(&push) {
-        return Err(git.failure(&["push"], &push));
+    if !diverged(&push) {
+        return Err(push_error(git, &push));
     }
 
     // The remote moved on. Related histories are merged file by file: what only the server
@@ -2281,11 +2335,17 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     // repository and come back as conflicts for the user to merge (nothing is lost on
     // either side). Unrelated histories stay untouched: this computer pushes to a branch of
     // its own. A second rejection (someone pushed meanwhile) is merged once more.
+    let mut last = push;
     for _ in 0..2 {
         fetch(git, repo, branch)?;
         tip = rev(git, repo, &format!("refs/remotes/origin/{branch}"))?;
         let Some(theirs) = tip.clone() else { break };
         let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
+        if base == theirs {
+            // The server did not move on: there is nothing to merge, the push failed for another
+            // reason (a merge would only add an empty commit).
+            return Err(push_error(git, &last));
+        }
         let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
         let merged = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
         renamed.extend(merged.renamed);
@@ -2302,9 +2362,10 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         if again.ok {
             return Ok(done(short(git)?, branch, false, pulled, renamed, files));
         }
-        if !rejected(&again) {
-            return Err(git.failure(&["push"], &again));
+        if !diverged(&again) {
+            return Err(push_error(git, &again));
         }
+        last = again;
     }
     if !pulled.is_empty() || !renamed.is_empty() || !files.is_empty() {
         // Merged, but the server moved on again: taken over here, pushed with the next sync.
@@ -2316,7 +2377,10 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         return Ok(out);
     }
     let fb = fallback_branch(req.host);
-    git.check(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
+    let side = git.run(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
+    if !side.ok {
+        return Err(push_error(git, &side));
+    }
     Ok(done(short(git)?, &fb, true, vec![], vec![], vec![]))
 }
 
@@ -5227,6 +5291,77 @@ mod safety_tests {
         let merged =
             merge_kept(Some(&list(&[], &["x.png"])), Some(&list(&["x.png"], &[])), Some(&list(&[], &["x.png"])));
         assert!(merged.kept.contains("x.png"));
+    }
+
+    /// A bare remote whose pre-receive hook refuses every push, like GitHub's check for a file
+    /// over 100 MB (GH001).
+    #[cfg(unix)]
+    fn refuse_pushes(bare: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = bare.join("hooks").join("pre-receive");
+        put(
+            &hook,
+            "#!/bin/sh\necho 'error: GH001: Large files detected. You may want to try Git Large File Storage.' >&2\nexit 1\n",
+        );
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// A push the server refuses (a hook, push protection, a protected branch) is not a server
+    /// that moved on: the sync stops with the server's reason, merges nothing and pushes to no
+    /// branch of its own. (The system git; libgit2 runs no hooks on a local remote, its own test
+    /// goes over HTTP.)
+    #[cfg(unix)]
+    #[test]
+    fn a_push_the_server_refuses_shows_the_servers_reason() {
+        if !git_available() || Git::new(None, "").is_embedded() {
+            return;
+        }
+        let r = Remote::new("refused");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        refuse_pushes(&r.base.join("remote.git"));
+        put(&a.join("Notiz.md"), "zwei\n");
+        for _ in 0..2 {
+            let err = r.sync("a").unwrap_err().to_string();
+            assert!(err.contains("GH001"), "{err}");
+            assert!(err.contains("abgelehnt") || err.contains("refused"), "{err}");
+            assert!(err.contains("pre-receive hook declined"), "{err}");
+            assert!(!err.contains("nothing to commit"), "{err}");
+        }
+        let repo = r.base.join("a").join(REPO_DIR);
+        assert_eq!(sh(&repo, &["rev-list", "--count", "--merges", "HEAD"]).trim(), "0", "no empty merge commits");
+        let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
+        assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// Only `! [rejected] … (non-fast-forward)` or `(fetch first)` is a server that moved on.
+    #[test]
+    fn only_a_non_fast_forward_counts_as_diverged() {
+        let out = |stderr: &str| GitOutput { ok: false, stdout: String::new(), stderr: stderr.into() };
+        assert!(diverged(&out(" ! [rejected]        HEAD -> main (fetch first)\nerror: failed to push some refs")));
+        assert!(diverged(&out(" ! [rejected]        HEAD -> main (non-fast-forward)")));
+        assert!(diverged(&out("! [rejected] (non-fast-forward) cannot push non-fastforwardable reference")));
+        for refused in [
+            "remote: error: GH013: Repository rule violations found for refs/heads/main.\n ! [remote rejected] HEAD -> main (push declined due to repository rule violations)",
+            " ! [remote rejected] HEAD -> main (pre-receive hook declined)",
+            "remote: error: GH006: Protected branch update failed for refs/heads/main.\n ! [remote rejected] HEAD -> main (protected branch hook declined)",
+            "fatal: unable to access 'https://x/': Could not resolve host: x",
+        ] {
+            assert!(!diverged(&out(refused)), "{refused}");
+        }
+        let msg = refusal(&out(
+            "remote: error: GH001: Large files detected.\nremote: error: File video.mp4 is 120.00 MB\nTo https://github.com/a/b.git\n ! [remote rejected] HEAD -> main (pre-receive hook declined)\nerror: failed to push some refs to 'https://github.com/a/b.git'",
+        ))
+        .unwrap();
+        assert!(
+            msg.contains("pre-receive hook declined") && msg.contains("GH001") && msg.contains("video.mp4"),
+            "{msg}"
+        );
+        assert!(!msg.contains("remote:"), "{msg}");
+        assert_eq!(refusal(&out(" ! [rejected]        HEAD -> main (fetch first)")), None);
     }
 
     /// Any file name is stored as it is (spaces around it, a line break), nothing that leaves the
