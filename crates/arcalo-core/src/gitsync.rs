@@ -884,7 +884,7 @@ fn adopt_tree(
                 walk(&from, &to, &path, seen, out, clashes)?;
                 continue;
             }
-            seen.insert(path.to_lowercase());
+            seen.insert(path.clone());
             if to.is_dir() {
                 continue;
             }
@@ -917,13 +917,47 @@ fn adopt_tree(
     let renamed = adopt_clashes(source, repo, &clashes, &mut changes)?;
     let mut theirs = Vec::new();
     note_paths(repo, "", &mut theirs)?;
-    for path in theirs.into_iter().filter(|p| !seen.contains(&p.to_lowercase())) {
+    let insensitive = !case_sensitive(repo);
+    let seen_lower: std::collections::BTreeMap<String, &String> = seen.iter().map(|p| (p.to_lowercase(), p)).collect();
+    for path in theirs.into_iter().filter(|p| !seen.contains(p)) {
+        match seen_lower.get(&path.to_lowercase()) {
+            // The same file there: the walk compared it already.
+            Some(_) if insensitive => continue,
+            // Names that differ only by case (`Meeting.md` there, `meeting.md` here) on a file
+            // system that keeps both: one note, never two, and never the server's dropped. It
+            // goes on under this computer's name with the server's text, a conflict when the
+            // texts differ (the other computers follow the rename).
+            Some(mine) if is_note(mine) => {
+                let theirs = fs::read(repo.join(&path))?;
+                let ours = fs::read(source.join(mine.as_str()))?;
+                remove_path(&repo.join(&path))?;
+                fs::write(repo.join(mine.as_str()), &theirs)?;
+                if theirs != ours {
+                    changes.push(RemoteChange {
+                        path: (*mine).clone(),
+                        from: None,
+                        base: None,
+                        mine: Some(String::from_utf8_lossy(&ours).into_owned()),
+                        theirs: Some(String::from_utf8_lossy(&theirs).into_owned()),
+                        conflict: true,
+                    });
+                }
+                continue;
+            }
+            _ => {}
+        }
         let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
         changes.push(RemoteChange { path, from: None, base: None, mine: None, theirs: Some(text), conflict: false });
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     write_own_files(source, repo, database, companion)?;
     Ok((changes, renamed))
+}
+
+/// Whether the file system of the working tree `repo` (which has its `.git`) keeps names apart
+/// that differ only by case (Linux, Android; not Windows and macOS by default).
+fn case_sensitive(repo: &Path) -> bool {
+    repo.join(".git").exists() && !repo.join(".GIT").exists()
 }
 
 /// The notes below `dir` (the sync's README left out), as repository paths.
@@ -5501,6 +5535,54 @@ mod safety_tests {
         let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
         assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// A new computer whose note differs from the server's only by the case of its name, on a
+    /// file system that keeps both names apart (Linux, Android): one note with a conflict, the
+    /// server's note is neither dropped nor deleted with the next sync.
+    #[test]
+    fn names_that_differ_only_by_case_are_one_note() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("case");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Meeting.md"), "von A\n");
+        r.sync("a").unwrap();
+        let b = r.mirror("b");
+        mark(&b);
+        put(&b.join("meeting.md"), "von B\n");
+        // Only where the file system tells the names apart.
+        if b.join("MEETING.md").exists() {
+            return;
+        }
+        let out = r.sync("b").unwrap();
+        assert_eq!(
+            out.remote_changes,
+            [RemoteChange {
+                path: "meeting.md".into(),
+                base: None,
+                mine: Some("von B\n".into()),
+                theirs: Some("von A\n".into()),
+                conflict: true,
+                from: None,
+            }]
+        );
+        let notes: Vec<String> = r.tree().into_iter().filter(|p| p.to_lowercase() == "meeting.md").collect();
+        assert_eq!(notes, ["meeting.md"]);
+        assert_eq!(
+            sh(&r.base.join("remote.git"), &["show", "main:meeting.md"]),
+            "von A\n",
+            "the server's text until merged"
+        );
+        // Merged here: the next sync pushes it, under one name.
+        taken_over(&r.base.join("b").join(REPO_DIR));
+        put(&b.join("meeting.md"), "von A und B\n");
+        r.sync("b").unwrap();
+        let notes: Vec<String> = r.tree().into_iter().filter(|p| p.to_lowercase() == "meeting.md").collect();
+        assert_eq!(notes, ["meeting.md"]);
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:meeting.md"]), "von A und B\n");
     }
 
     /// Hooks (here a pre-push hook that refuses everything, like a secret scanner set up for all
