@@ -13,6 +13,14 @@ Release builds ignore them. The unit tests in `crates/arcalo-core/src/voice/` co
 its checksums, the source order with a local HTTP server, resuming (HTTP range and a file share), the
 transcript as Markdown, FLAC encoding and the parsing of action items.
 
+Real whisper.cpp runs in the unit tests of `src-tauri/src/voice.rs` when `ARCALO_TEST_WHISPER_MODEL` names a
+model file (ggml-tiny.bin from whisper.cpp is enough): several transcriptions in a row complete, a cancel stops
+one within a pass. Without the variable that test is skipped:
+
+```
+ARCALO_TEST_WHISPER_MODEL=/path/to/ggml-tiny.bin cargo test -p arcalo --lib voice::
+```
+
 In the Linux test container the audio player shows „Das Audio lässt sich hier nicht abspielen“: WebKitGTK has
 no sound output there. Check playback on Windows and macOS.
 
