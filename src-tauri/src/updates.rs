@@ -483,7 +483,7 @@ pub async fn update_check(
         notes: m.notes.clone().filter(|n| !n.trim().is_empty()),
         date: m.pub_date.as_deref().and_then(|d| d.get(..10)).map(str::to_string),
         signature: entry.signature.clone(),
-        location: feed::locate(&found.source, &entry.url),
+        location: feed::locate(&found.source, &entry.url).map_err(|e| feed_failed(what, &e))?,
         source: if found.source.is_github() { "GitHub".into() } else { found.source.label() },
     };
     let info = UpdateInfo::of(&offer);

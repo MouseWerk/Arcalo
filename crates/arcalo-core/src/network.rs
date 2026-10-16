@@ -1654,6 +1654,11 @@ pub fn git_network(
     }
     if let Some(path) = ca_bundle {
         g.config.push(("http.sslCAInfo".into(), path.into()));
+        // Git for Windows with its Secure Channel backend ignores `http.sslCAInfo`; OpenSSL reads
+        // it (the bundle holds the Windows store's roots, [`write_git_ca_bundle`]).
+        if cfg!(windows) {
+            g.config.push(("http.sslBackend".into(), "openssl".into()));
+        }
     }
     let host = Url::parse(remote_url.trim())
         .ok()
@@ -1710,12 +1715,25 @@ const SYSTEM_BUNDLES: &[&str] = &[
     "/usr/local/etc/openssl/cert.pem",
 ];
 
-/// Writes the extra CA (as PEM) followed by the system bundle to `out` for
-/// `http.sslCAInfo`, which replaces git's default bundle. Windows' Git uses the Windows
-/// certificate store (schannel) instead, so the shell does not call this there.
+/// Writes the extra CA followed by the system's root certificates (PEM, each once) to `out` for
+/// `http.sslCAInfo`, which replaces git's own bundle on every system: the system bundle file
+/// (Linux, macOS), the certificate store (Windows' root store, the macOS keychain), and on Windows,
+/// whose store fetches roots only when it needs them, or where nothing else is found (Android),
+/// Mozilla's roots, which git's own bundle holds as well. Rewritten only when it changed, through a
+/// temporary file, so a git that reads it meanwhile never sees half of it.
 pub fn write_git_ca_bundle(extra_ca_path: &str, out: &std::path::Path) -> Result<()> {
+    let extra = read_ca(extra_ca_path)?;
+    let mut ders: Vec<Vec<u8>> = extra.clone();
+    if let Some(certs) = SYSTEM_BUNDLES.iter().find_map(|p| read_ca(p).ok()) {
+        ders.extend(certs);
+    }
+    ders.extend(rustls_native_certs::load_native_certs().certs.into_iter().map(|c| c.to_vec()));
+    if cfg!(windows) || ders.len() == extra.len() {
+        ders.extend(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().map(|c| c.to_vec()));
+    }
+    let mut seen = std::collections::HashSet::new();
     let mut pem = String::new();
-    for der in read_ca(extra_ca_path)? {
+    for der in ders.iter().filter(|d| seen.insert(d.as_slice())) {
         pem.push_str("-----BEGIN CERTIFICATE-----\n");
         let b64 = base64::engine::general_purpose::STANDARD.encode(der);
         for chunk in b64.as_bytes().chunks(64) {
@@ -1724,10 +1742,14 @@ pub fn write_git_ca_bundle(extra_ca_path: &str, out: &std::path::Path) -> Result
         }
         pem.push_str("-----END CERTIFICATE-----\n");
     }
-    if let Some(sys) = SYSTEM_BUNDLES.iter().find_map(|p| std::fs::read_to_string(p).ok()) {
-        pem.push_str(&sys);
+    if std::fs::read(out).ok().as_deref() == Some(pem.as_bytes()) {
+        return Ok(());
     }
-    std::fs::write(out, pem)?;
+    let tmp = out.with_extension("pem.tmp");
+    std::fs::write(&tmp, pem)?;
+    std::fs::rename(&tmp, out).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })?;
     Ok(())
 }
 
@@ -1737,6 +1759,38 @@ mod tests {
 
     const PEM: &str = include_str!("../testdata/test-ca.pem");
     const PEM2: &str = include_str!("../testdata/test-ca2.pem");
+
+    /// The bundle git gets for a profile's extra CA replaces git's own (`http.sslCAInfo`): the
+    /// extra CA, then the system's roots (also on Windows, whose Git reads it with OpenSSL, and on
+    /// a phone, whose system has no bundle file: Mozilla's roots then), each once.
+    #[test]
+    fn the_git_bundle_holds_the_extra_ca_and_the_roots() {
+        let dir = std::env::temp_dir().join(format!("arcalo-git-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ca = dir.join("firma.pem");
+        std::fs::write(&ca, format!("{PEM}{PEM}")).unwrap();
+        let out = dir.join("bundle.pem");
+        write_git_ca_bundle(ca.to_str().unwrap(), &out).unwrap();
+        let certs = parse_certificates(&std::fs::read(&out).unwrap()).unwrap();
+        let extra = parse_certificates(PEM.as_bytes()).unwrap();
+        assert_eq!(certs[0], extra[0], "the extra CA first");
+        assert!(certs.len() > 50, "and the roots: {}", certs.len());
+        let unique: std::collections::BTreeSet<&Vec<u8>> = certs.iter().collect();
+        assert_eq!(unique.len(), certs.len(), "each certificate once");
+        let mozilla = webpki_root_certs::TLS_SERVER_ROOT_CERTS[0].to_vec();
+        if cfg!(windows) {
+            assert!(certs.contains(&mozilla), "Mozilla's roots on Windows");
+        }
+
+        let profile = ProxyProfile::default();
+        let g = git_network(&profile, None, "https://git.firma.de/x.git", &SystemProxy::default(), out.to_str(), &[]);
+        let backend = g.config.iter().find(|(k, _)| k == "http.sslBackend").map(|(_, v)| v.as_str());
+        assert_eq!(backend, cfg!(windows).then_some("openssl"), "Secure Channel would ignore the bundle");
+        let g = git_network(&profile, None, "https://git.firma.de/x.git", &SystemProxy::default(), None, &[]);
+        assert!(g.config.iter().all(|(k, _)| k != "http.sslBackend"), "the user's backend without an extra CA");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn malformed_certificate_time_does_not_panic() {

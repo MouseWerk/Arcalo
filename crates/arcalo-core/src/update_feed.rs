@@ -169,27 +169,45 @@ pub enum Location {
     File(PathBuf),
 }
 
-/// Resolves the `url` of a platform entry against the source it came from: absolute URLs and
-/// paths stay, a bare file name (a mirrored folder) is next to `latest.json`.
-pub fn locate(base: &Source, url: &str) -> Location {
+/// Resolves the `url` of a platform entry against the source it came from. A folder (the
+/// administrator's share) may name web addresses, paths and `file://` addresses; a bare file name
+/// is next to `latest.json`. A feed on a web server names web addresses only, resolved against
+/// the feed: HTTPS anywhere, HTTP only on the feed's own server. A share, a local path or a
+/// `file://` address from there is refused before anything is opened (on Windows, opening
+/// `\\host\share` signs in there with the user's credentials, before the signature is checked).
+pub fn locate(base: &Source, url: &str) -> Result<Location, FeedError> {
     let url = url.trim();
     let lower = url.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") {
-        return Location::Http(url.to_string());
-    }
-    if lower.starts_with("file://")
-        && let Some(p) = file_url_path(url)
-    {
-        return Location::File(p);
-    }
-    let absolute = Path::new(url).is_absolute() || url.starts_with(r"\\") || url.as_bytes().get(1) == Some(&b':');
-    match base {
-        _ if absolute => Location::File(PathBuf::from(url)),
-        Source::Folder(dir) => Location::File(dir.join(url)),
-        Source::Url(feed) => {
-            let joined = reqwest::Url::parse(feed).and_then(|b| b.join(url)).map(|u| u.to_string());
-            Location::Http(joined.unwrap_or_else(|_| url.to_string()))
+    let feed = match base {
+        Source::Url(feed) => feed,
+        Source::Folder(dir) => {
+            if lower.starts_with("http://") || lower.starts_with("https://") {
+                return Ok(Location::Http(url.to_string()));
+            }
+            if lower.starts_with("file://")
+                && let Some(p) = file_url_path(url)
+            {
+                return Ok(Location::File(p));
+            }
+            let absolute =
+                Path::new(url).is_absolute() || url.starts_with(r"\\") || url.as_bytes().get(1) == Some(&b':');
+            return Ok(Location::File(if absolute { PathBuf::from(url) } else { dir.join(url) }));
         }
+    };
+    let refused = || FeedError::Invalid(format!("download location not allowed: {url}"));
+    // A share (`\\host\x`, `//host/x`) is never read as a web address on another server either.
+    if url.contains('\\') || url.starts_with("//") {
+        return Err(refused());
+    }
+    let base = reqwest::Url::parse(feed).map_err(|_| refused())?;
+    let to = base.join(url).map_err(|_| refused())?;
+    let same_server = to.scheme() == base.scheme()
+        && to.host_str() == base.host_str()
+        && to.port_or_known_default() == base.port_or_known_default();
+    match to.scheme() {
+        "https" => Ok(Location::Http(to.to_string())),
+        "http" if same_server => Ok(Location::Http(to.to_string())),
+        _ => Err(refused()),
     }
 }
 
@@ -577,11 +595,42 @@ mod tests {
         assert_eq!(platform(&m, &targets("linux-x86_64", Some("appimage"))).unwrap().signature, "t");
         assert!(platform(&m, &targets("darwin-aarch64", Some("app"))).is_none());
         let share = Source::Folder(PathBuf::from("/srv/arcalo"));
-        assert_eq!(locate(&share, "Arcalo.exe"), Location::File(PathBuf::from("/srv/arcalo/Arcalo.exe")));
-        assert_eq!(locate(&share, "https://h/a"), Location::Http("https://h/a".into()));
+        assert_eq!(locate(&share, "Arcalo.exe"), Ok(Location::File(PathBuf::from("/srv/arcalo/Arcalo.exe"))));
+        assert_eq!(locate(&share, "https://h/a"), Ok(Location::Http("https://h/a".into())));
         let web = Source::Url("https://corp/arcalo/latest.json".into());
-        assert_eq!(locate(&web, "Arcalo.exe"), Location::Http("https://corp/arcalo/Arcalo.exe".into()));
-        assert_eq!(locate(&web, r"\\srv\x\Arcalo.exe"), Location::File(PathBuf::from(r"\\srv\x\Arcalo.exe")));
+        assert_eq!(locate(&web, "Arcalo.exe"), Ok(Location::Http("https://corp/arcalo/Arcalo.exe".into())));
+        assert_eq!(
+            locate(&web, "https://cdn.example/Arcalo.exe"),
+            Ok(Location::Http("https://cdn.example/Arcalo.exe".into()))
+        );
+    }
+
+    /// A feed on a web server names web addresses only: HTTPS, or HTTP on the feed's own server.
+    /// A share, a local path or a `file://` address is refused before anything is opened (on
+    /// Windows, opening `\\host\share` signs in there with the user's credentials).
+    #[test]
+    fn a_web_feed_cannot_point_at_files() {
+        let web = Source::Url("http://updates.corp:8080/arcalo/latest.json".into());
+        assert_eq!(locate(&web, "Arcalo.exe"), Ok(Location::Http("http://updates.corp:8080/arcalo/Arcalo.exe".into())));
+        assert_eq!(locate(&web, "/x/Arcalo.exe"), Ok(Location::Http("http://updates.corp:8080/x/Arcalo.exe".into())));
+        for bad in [
+            r"\\attacker\share\Arcalo.exe",
+            "//attacker/share/Arcalo.exe",
+            r"C:\Temp\Arcalo.exe",
+            "c:/Temp/Arcalo.exe",
+            "file:///C:/Temp/Arcalo.exe",
+            "file://attacker/share/Arcalo.exe",
+            "http://attacker/Arcalo.exe",
+            "http://updates.corp:9090/Arcalo.exe",
+            "ftp://updates.corp/Arcalo.exe",
+            "smb://attacker/share/Arcalo.exe",
+        ] {
+            assert!(matches!(locate(&web, bad), Err(FeedError::Invalid(_))), "{bad}: {:?}", locate(&web, bad));
+        }
+        // An HTTPS feed: HTTPS only.
+        let https = Source::Url("https://updates.corp/latest.json".into());
+        assert!(locate(&https, "http://updates.corp/Arcalo.exe").is_err());
+        assert!(locate(&https, r"\\updates.corp\x\Arcalo.exe").is_err());
     }
 
     #[test]
@@ -713,7 +762,7 @@ mod tests {
 
         // The file, relative to the feed, resumed from a part, and checked against the key.
         let entry = platform(&found.manifest, &targets("linux-x86_64", None)).unwrap();
-        let at = locate(&found.source, &entry.url);
+        let at = locate(&found.source, &entry.url).unwrap();
         let dir = tmp("dl");
         let part = dir.join("update.part");
         std::fs::write(&part, &PAYLOAD[..5]).unwrap();
@@ -736,7 +785,7 @@ mod tests {
         std::fs::write(share.join(FEED_FILE), feed("2.0.0", "Arcalo.AppImage")).unwrap();
         let client = reqwest::Client::new();
         let found = fetch(&client, &[Source::Folder(share.clone())]).await.unwrap();
-        let at = locate(&found.source, &found.manifest.platforms["linux-x86_64"].url);
+        let at = locate(&found.source, &found.manifest.platforms["linux-x86_64"].url).unwrap();
         assert_eq!(at, Location::File(share.join("Arcalo.AppImage")));
         let part = share.join("dl").join("x.part");
         let pause = AtomicBool::new(true);

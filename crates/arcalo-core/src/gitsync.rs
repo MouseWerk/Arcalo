@@ -62,7 +62,46 @@ const MARKER: &str = "# Arcalo Git-Synchronisierung";
 /// computers on different versions never rewrite the file back and forth (1.14 writes it back
 /// at every sync).
 const LEGACY_MARKER: &str = "# Annalo Git-Synchronisierung";
+/// How long a git command may run; for the commands that talk to the server ([`is_network`]) how
+/// long a transfer may stall instead (`http.lowSpeedTime`).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// The total time a command that talks to the server may run: a transfer that keeps moving is not
+/// stopped by [`DEFAULT_TIMEOUT`] (a first fetch of a long history or a push of a large database
+/// copy over a slow line), only one that hangs without the HTTP check (SSH) is, after this.
+pub const NETWORK_LIMIT: Duration = Duration::from_secs(60 * 60);
+
+/// Environment variables that point git at another repository, index or object store, or change
+/// how it reads paths and configuration (git's `rev-parse --local-env-vars` and the pathspec
+/// switches); removed for every git of the sync.
+const REPOSITORY_VARS: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_GRAFT_FILE",
+    "GIT_SHALLOW_FILE",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_PREFIX",
+    "GIT_QUARANTINE_PATH",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_GLOB_PATHSPECS",
+    "GIT_NOGLOB_PATHSPECS",
+    "GIT_ICASE_PATHSPECS",
+];
+
+/// Whether git command `args` talks to the server.
+fn is_network(args: &[&str]) -> bool {
+    matches!(subcommand(args), "fetch" | "push" | "clone" | "ls-remote")
+}
 pub const NOT_INSTALLED: &str = "Git ist nicht installiert (git-scm.com)";
 
 /// [`NOT_INSTALLED`] in the display language.
@@ -72,8 +111,25 @@ pub fn not_installed() -> &'static str {
 /// Prefix of the branch used when the configured branch has diverged.
 pub const FALLBACK_PREFIX: &str = "arcalo-sync-";
 
-/// [`ATTRIBUTES_FILE`] after its first line ([`MARKER`]).
+/// [`ATTRIBUTES_FILE`] after its first line ([`MARKER`]). The files of the attachments folder are
+/// the user's own: stored byte for byte, never with other line ends ([`RAW_RULE`]).
 const ATTRIBUTES: &str = "\n\
+* text=auto\n\
+attachments/** -text\n\
+*.db binary\n\
+*.png binary\n\
+*.jpg binary\n\
+*.jpeg binary\n\
+*.gif binary\n\
+*.webp binary\n\
+*.pdf binary\n\
+*.zip binary\n";
+
+/// [`ATTRIBUTES`] of 1.21 and earlier (`* text=auto` stored a CSV or text file with CRLF in the
+/// attachments folder with LF). A repository that has it keeps it, so computers on different
+/// versions never write the file back and forth; [`RAW_RULE`] in each working tree's own
+/// `.git/info/attributes` keeps the attachments as they are there.
+const OLD_ATTRIBUTES: &str = "\n\
 * text=auto\n\
 *.db binary\n\
 *.png binary\n\
@@ -81,6 +137,10 @@ const ATTRIBUTES: &str = "\n\
 *.jpeg binary\n\
 *.gif binary\n\
 *.webp binary\n";
+
+/// The attachments are stored as they are (no line-end conversion), whatever `.gitattributes` the
+/// repository has; in `.git/info/attributes` of every working tree ([`raw_attachments`]).
+const RAW_RULE: &str = "attachments/** -text";
 
 /// First line of the sync's README (it marks the file as the sync's own, in every language).
 const README_TITLE: &str = "# Arcalo – Git-Sicherung";
@@ -317,9 +377,70 @@ where
     }
 }
 
+/// The name of this device in the sync (fallback branch, settings file): [`hostname`], and on
+/// Android, whose apps see no host name, [`phone_name`] with the model and an id kept in
+/// `data_dir`, so two phones never share a fallback branch.
+pub fn device_name(data_dir: &Path) -> String {
+    if cfg!(target_os = "android") {
+        return phone_name(data_dir, android_model().as_deref());
+    }
+    hostname()
+}
+
+/// File in the data folder with the id of [`phone_name`].
+const DEVICE_ID_FILE: &str = "device-id";
+
+/// `android-<model>-<id>`: the id (6 hex digits) is made once and kept in `data_dir`; a phone
+/// whose id cannot be kept gets a new one each time rather than the name of every other phone.
+fn phone_name(data_dir: &Path, model: Option<&str>) -> String {
+    let file = data_dir.join(DEVICE_ID_FILE);
+    let valid = |s: &str| s.len() == 6 && s.chars().all(|c| c.is_ascii_hexdigit());
+    let id = match fs::read_to_string(&file).map(|s| s.trim().to_ascii_lowercase()) {
+        Ok(s) if valid(&s) => s,
+        _ => {
+            let mut b = [0u8; 3];
+            let _ = getrandom::fill(&mut b);
+            let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
+            let _ = fs::create_dir_all(data_dir).and_then(|_| fs::write(&file, &id));
+            id
+        }
+    };
+    let model: String = sanitize_host(model.unwrap_or_default()).chars().take(24).collect();
+    let model = model.trim_matches('-');
+    sanitize_host(&if model.is_empty() || model == "rechner" {
+        format!("android-{id}")
+    } else {
+        format!("android-{model}-{id}")
+    })
+}
+
+/// The phone's model (`ro.product.model`, such as „Pixel 8“).
+#[cfg(target_os = "android")]
+fn android_model() -> Option<String> {
+    use std::ffi::{CStr, c_char, c_int};
+    unsafe extern "C" {
+        fn __system_property_get(name: *const c_char, value: *mut c_char) -> c_int;
+    }
+    // PROP_VALUE_MAX of bionic.
+    let mut buf = [0 as c_char; 92];
+    // SAFETY: the name is NUL-terminated and the buffer has the size bionic writes at most.
+    let n = unsafe { __system_property_get(c"ro.product.model".as_ptr(), buf.as_mut_ptr()) };
+    if n <= 0 {
+        return None;
+    }
+    // SAFETY: bionic writes a NUL-terminated value into `buf`.
+    let s = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().trim().to_owned();
+    (!s.is_empty()).then_some(s)
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_model() -> Option<String> {
+    None
+}
+
 /// Computer name for the fallback branch, reduced to characters valid in a branch name.
 pub fn hostname() -> String {
-    // Apps on Android see no host name: the companion app is „android“ (fallback branch, settings file).
+    // Apps on Android see no host name: [`device_name`] names the phone.
     if cfg!(target_os = "android") {
         return "android".to_owned();
     }
@@ -845,7 +966,7 @@ fn adopt_tree(
                 walk(&from, &to, &path, seen, out, clashes)?;
                 continue;
             }
-            seen.insert(path.to_lowercase());
+            seen.insert(path.clone());
             if to.is_dir() {
                 continue;
             }
@@ -860,7 +981,11 @@ fn adopt_tree(
                 });
                 continue;
             }
-            if to.is_file() && attachment_name(&path).is_some() && !same_file(&from, &to)? {
+            if to.is_file()
+                && attachment_name(&path).is_some()
+                && !same_file(&from, &to)?
+                && !same_but_line_ends(&from, &to)?
+            {
                 // Never over the server's file of that name (see `adopt_clashes`).
                 clashes.push(path);
                 continue;
@@ -878,13 +1003,47 @@ fn adopt_tree(
     let renamed = adopt_clashes(source, repo, &clashes, &mut changes)?;
     let mut theirs = Vec::new();
     note_paths(repo, "", &mut theirs)?;
-    for path in theirs.into_iter().filter(|p| !seen.contains(&p.to_lowercase())) {
+    let insensitive = !case_sensitive(repo);
+    let seen_lower: std::collections::BTreeMap<String, &String> = seen.iter().map(|p| (p.to_lowercase(), p)).collect();
+    for path in theirs.into_iter().filter(|p| !seen.contains(p)) {
+        match seen_lower.get(&path.to_lowercase()) {
+            // The same file there: the walk compared it already.
+            Some(_) if insensitive => continue,
+            // Names that differ only by case (`Meeting.md` there, `meeting.md` here) on a file
+            // system that keeps both: one note, never two, and never the server's dropped. It
+            // goes on under this computer's name with the server's text, a conflict when the
+            // texts differ (the other computers follow the rename).
+            Some(mine) if is_note(mine) => {
+                let theirs = fs::read(repo.join(&path))?;
+                let ours = fs::read(source.join(mine.as_str()))?;
+                remove_path(&repo.join(&path))?;
+                fs::write(repo.join(mine.as_str()), &theirs)?;
+                if theirs != ours {
+                    changes.push(RemoteChange {
+                        path: (*mine).clone(),
+                        from: None,
+                        base: None,
+                        mine: Some(String::from_utf8_lossy(&ours).into_owned()),
+                        theirs: Some(String::from_utf8_lossy(&theirs).into_owned()),
+                        conflict: true,
+                    });
+                }
+                continue;
+            }
+            _ => {}
+        }
         let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
         changes.push(RemoteChange { path, from: None, base: None, mine: None, theirs: Some(text), conflict: false });
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     write_own_files(source, repo, database, companion)?;
     Ok((changes, renamed))
+}
+
+/// Whether the file system of the working tree `repo` (which has its `.git`) keeps names apart
+/// that differ only by case (Linux, Android; not Windows and macOS by default).
+fn case_sensitive(repo: &Path) -> bool {
+    repo.join(".git").exists() && !repo.join(".GIT").exists()
 }
 
 /// The notes below `dir` (the sync's README left out), as repository paths.
@@ -1003,11 +1162,58 @@ fn write_settings_file(repo: &Path, ours: &str) -> Result<()> {
     Ok(())
 }
 
+/// Puts [`RAW_RULE`] into the working tree's `.git/info/attributes` (before the next `add -A`).
+/// When it was missing (a working tree of 1.21 or earlier), the attachments leave the index first:
+/// `add -A` hashes them again as they are, so a file stored with other line ends goes back to the
+/// server byte for byte. Notes are not touched.
+fn raw_attachments(git: &Git, repo: &Path) -> Result<()> {
+    let info = repo.join(".git").join("info");
+    let file = info.join("attributes");
+    let text = fs::read_to_string(&file).unwrap_or_default();
+    if text.lines().any(|l| l.trim() == RAW_RULE) {
+        return Ok(());
+    }
+    let dir = crate::attachments::DIR_NAME;
+    git.check(Some(repo), &["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", dir])?;
+    fs::create_dir_all(&info)?;
+    let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
+    fs::write(&file, format!("{text}{sep}{RAW_RULE}\n"))?;
+    Ok(())
+}
+
+/// Whether `mine` and `theirs` hold the same text and differ only because `* text=auto` stored
+/// this computer's CRLF line ends as LF (a repository of 1.21 and earlier).
+fn same_but_line_ends(mine: &Path, theirs: &Path) -> Result<bool> {
+    let (a, b) = (fs::read(mine)?, fs::read(theirs)?);
+    if !a.windows(2).any(|w| w == b"\r\n") || b.windows(2).any(|w| w == b"\r\n") || a.contains(&0) {
+        return Ok(false);
+    }
+    let mut lf = Vec::with_capacity(a.len());
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] == b'\r' && a.get(i + 1) == Some(&b'\n') {
+            i += 1;
+            continue;
+        }
+        lf.push(a[i]);
+        i += 1;
+    }
+    Ok(lf == b)
+}
+
 /// A companion device leaves the database copy as the server has it.
 fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<()> {
     let attributes = repo.join(ATTRIBUTES_FILE);
-    let legacy = fs::read_to_string(&attributes).is_ok_and(|t| t.starts_with(LEGACY_MARKER));
-    fs::write(&attributes, format!("{}{ATTRIBUTES}", if legacy { LEGACY_MARKER } else { MARKER }))?;
+    if is_link(&attributes) {
+        remove_path(&attributes)?;
+    }
+    let there = fs::read_to_string(&attributes).ok();
+    let marker = if there.as_deref().is_some_and(|t| t.starts_with(LEGACY_MARKER)) { LEGACY_MARKER } else { MARKER };
+    // The file of an earlier version stays as it is (see [`OLD_ATTRIBUTES`]).
+    let known = [ATTRIBUTES, OLD_ATTRIBUTES].map(|a| format!("{marker}{a}"));
+    if !there.as_ref().is_some_and(|t| known.contains(t)) {
+        fs::write(&attributes, &known[0])?;
+    }
     if !source.join(README_FILE).exists() {
         fs::write(repo.join(README_FILE), tr!(README, README_EN))?;
     }
@@ -1190,6 +1396,16 @@ impl Git {
         self
     }
 
+    /// Whether the commands run on libgit2 ([`gitlib`]).
+    #[cfg(test)]
+    pub(crate) fn is_embedded(&self) -> bool {
+        #[cfg(feature = "embedded-git")]
+        if self.embedded {
+            return true;
+        }
+        false
+    }
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -1263,7 +1479,18 @@ impl Git {
             "-c",
             "core.precomposeunicode=true",
         ]);
+        // No hooks: neither the user's global ones (`core.hooksPath`: a secret scanner that
+        // blocks or stalls the push) nor any in the working tree. The path is this program's
+        // own file, never a folder that could hold a hook.
+        if let Ok(exe) = std::env::current_exe() {
+            cmd.arg("-c").arg(format!("core.hooksPath={}", exe.display()));
+        }
         cmd.args(args);
+        // The app started from a git hook, `git rebase -x` or an IDE terminal: the repository
+        // those name is never the one the sync works on.
+        for var in REPOSITORY_VARS {
+            cmd.env_remove(var);
+        }
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
         }
@@ -1273,6 +1500,12 @@ impl Git {
         }
         for (k, v) in &self.network.config {
             config.push((k.as_str(), v.clone()));
+        }
+        if is_network(args) {
+            // A transfer stops when it stalls (less than 1 KB/s for the timeout), not after a
+            // total time ([`NETWORK_LIMIT`]).
+            config.push(("http.lowSpeedLimit", "1000".into()));
+            config.push(("http.lowSpeedTime", self.timeout.as_secs().max(1).to_string()));
         }
         for (k, v) in &self.network.env {
             match v {
@@ -1335,19 +1568,30 @@ impl Git {
         let out_t = reader(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
         let err_t = reader(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
         let start = Instant::now();
+        let network = is_network(args);
+        let limit = if network { self.timeout.max(NETWORK_LIMIT) } else { self.timeout };
         let status = loop {
             if let Some(s) = child.try_wait()? {
                 break s;
             }
-            if start.elapsed() >= self.timeout {
+            if start.elapsed() >= limit {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(Error::State(trf!(
-                    "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
-                    "git {} did not answer within {} s and was stopped",
-                    subcommand(args),
-                    self.timeout.as_secs().max(1)
-                )));
+                return Err(Error::State(if network {
+                    trf!(
+                        "git {} lief länger als {} Minuten und wurde abgebrochen",
+                        "git {} ran longer than {} minutes and was stopped",
+                        subcommand(args),
+                        limit.as_secs() / 60
+                    )
+                } else {
+                    trf!(
+                        "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
+                        "git {} did not answer within {} s and was stopped",
+                        subcommand(args),
+                        self.timeout.as_secs().max(1)
+                    )
+                }));
             }
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -1670,9 +1914,53 @@ fn fetch_tip(git: &Git, repo: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
-fn rejected(out: &GitOutput) -> bool {
-    let l = out.stderr.to_ascii_lowercase();
-    l.contains("rejected") || l.contains("non-fast-forward") || l.contains("fetch first")
+/// The push was refused because the server's branch moved on (`! [rejected] … (fetch first)` or
+/// `(non-fast-forward)`): a merge with the server's state follows. A refusal by the server itself
+/// (`! [remote rejected]`: a hook, push protection, a protected branch, a file too large, a quota)
+/// is not that; see [`refusal`].
+fn diverged(out: &GitOutput) -> bool {
+    out.stderr.lines().any(|l| {
+        let l = l.to_ascii_lowercase();
+        l.contains("[rejected]") && (l.contains("non-fast-forward") || l.contains("fetch first"))
+    })
+}
+
+/// The message for a push the server refused (`! [remote rejected] … (<reason>)`): the reason and
+/// what the server said about it (its `remote:` lines, such as GitHub's „GH001: Large files
+/// detected“); `None` for any other failure.
+fn refusal(out: &GitOutput) -> Option<String> {
+    let reason = out.stderr.lines().find_map(|l| {
+        let rest = &l[l.find("[remote rejected]")? + "[remote rejected]".len()..];
+        let (a, b) = (rest.find('(')?, rest.rfind(')')?);
+        (a < b).then(|| rest[a + 1..b].trim().to_owned())
+    })?;
+    let said: Vec<&str> = out
+        .stderr
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("remote:"))
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && l.chars().any(char::is_alphanumeric))
+        .collect();
+    let mut said = said[said.len().saturating_sub(8)..].join(" · ");
+    if said.chars().count() > 600 {
+        said = said.chars().take(600).collect::<String>() + "…";
+    }
+    Some(if said.is_empty() {
+        trf!("Der Git-Server hat die Übertragung abgelehnt ({reason})", "The Git server refused the push ({reason})")
+    } else {
+        trf!(
+            "Der Git-Server hat die Übertragung abgelehnt ({reason}): {said}",
+            "The Git server refused the push ({reason}): {said}"
+        )
+    })
+}
+
+/// The error of a failed push: [`refusal`], else git's message.
+fn push_error(git: &Git, out: &GitOutput) -> Error {
+    match refusal(out) {
+        Some(m) => Error::State(m),
+        None => git.failure(&["push"], out),
+    }
 }
 
 /// In `.git`: what the sync pulled from the server and the pages here have not taken over yet.
@@ -2167,6 +2455,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if let Some(ours) = &req.settings_file {
         write_settings_file(repo, ours)?;
     }
+    raw_attachments(git, repo)?;
     git.check(Some(repo), &["add", "-A"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
@@ -2272,8 +2561,8 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if push.ok {
         return Ok(done(short(git)?, branch, false, pulled, renamed, files));
     }
-    if !rejected(&push) {
-        return Err(git.failure(&["push"], &push));
+    if !diverged(&push) {
+        return Err(push_error(git, &push));
     }
 
     // The remote moved on. Related histories are merged file by file: what only the server
@@ -2281,11 +2570,17 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     // repository and come back as conflicts for the user to merge (nothing is lost on
     // either side). Unrelated histories stay untouched: this computer pushes to a branch of
     // its own. A second rejection (someone pushed meanwhile) is merged once more.
+    let mut last = push;
     for _ in 0..2 {
         fetch(git, repo, branch)?;
         tip = rev(git, repo, &format!("refs/remotes/origin/{branch}"))?;
         let Some(theirs) = tip.clone() else { break };
         let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
+        if base == theirs {
+            // The server did not move on: there is nothing to merge, the push failed for another
+            // reason (a merge would only add an empty commit).
+            return Err(push_error(git, &last));
+        }
         let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
         let merged = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
         renamed.extend(merged.renamed);
@@ -2302,9 +2597,10 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         if again.ok {
             return Ok(done(short(git)?, branch, false, pulled, renamed, files));
         }
-        if !rejected(&again) {
-            return Err(git.failure(&["push"], &again));
+        if !diverged(&again) {
+            return Err(push_error(git, &again));
         }
+        last = again;
     }
     if !pulled.is_empty() || !renamed.is_empty() || !files.is_empty() {
         // Merged, but the server moved on again: taken over here, pushed with the next sync.
@@ -2316,7 +2612,10 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         return Ok(out);
     }
     let fb = fallback_branch(req.host);
-    git.check(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
+    let side = git.run(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
+    if !side.ok {
+        return Err(push_error(git, &side));
+    }
     Ok(done(short(git)?, &fb, true, vec![], vec![], vec![]))
 }
 
@@ -3065,6 +3364,7 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
         prepare_tree_as(req.source, repo, None, req.companion)?;
     }
     let res = (|| {
+        raw_attachments(git, repo)?;
         git.check(Some(repo), &["add", "-A"])?;
         let diff = git.check(Some(repo), &["diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"])?;
         let mut parts = diff.split('\0').filter(|p| !p.is_empty());
@@ -3384,7 +3684,8 @@ mod tests {
             .collect();
         let get = |k: &str| envs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
         assert_eq!(get("GIT_TERMINAL_PROMPT").as_deref(), Some("0"));
-        assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("2"));
+        // The two above and the stall limit of a network command.
+        assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("4"));
         assert_eq!(get("GIT_CONFIG_KEY_1").as_deref(), Some("http.extraHeader"));
         assert_eq!(get("GIT_CONFIG_VALUE_1"), Some(auth_header("tok123")));
         assert!(!format!("{git:?}").contains("tok123"));
@@ -3393,6 +3694,130 @@ mod tests {
         let ssh = Git::new(Some("tok123".into()), "git@github.com:me/notes.git");
         let cmd = ssh.command(None, &["push"]);
         assert!(cmd.get_envs().all(|(_, v)| !v.is_some_and(|v| v.to_string_lossy().contains("Authorization"))));
+    }
+
+    /// A git of the sync never works on another repository named by the app's environment (the
+    /// app started from a git hook or an IDE terminal with `GIT_DIR`, `GIT_WORK_TREE`, …) and runs
+    /// no hooks (the user's global `core.hooksPath`: git-secrets, Talisman).
+    #[test]
+    fn the_environment_of_another_repository_and_hooks_do_not_reach_git() {
+        let cmd = Git::new(None, "").command(None, &["push"]);
+        let removed: Vec<String> =
+            cmd.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        for var in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_COMMON_DIR",
+            "GIT_NAMESPACE",
+            "GIT_CONFIG_PARAMETERS",
+        ] {
+            assert!(removed.iter().any(|r| r == var), "{var} is not removed: {removed:?}");
+        }
+        let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let hooks = args.iter().find_map(|a| a.strip_prefix("core.hooksPath=")).expect("core.hooksPath");
+        assert!(!Path::new(hooks).is_dir(), "no folder that could hold hooks: {hooks}");
+    }
+
+    /// Commands that talk to the server stop when the transfer stalls (`http.lowSpeedLimit` for
+    /// `http.lowSpeedTime`, the timeout), not after a total time: a first fetch of a long history or
+    /// a push of a large database copy over a slow line takes as long as it takes.
+    #[test]
+    fn network_commands_stop_when_the_transfer_stalls() {
+        let git = Git::new(None, "https://example.com/notes.git").with_timeout(Duration::from_secs(90));
+        let config = |args: &[&str]| -> Vec<(String, String)> {
+            let cmd = git.command(None, args);
+            let envs: Vec<(String, String)> = cmd
+                .get_envs()
+                .filter_map(|(k, v)| Some((k.to_string_lossy().into_owned(), v?.to_string_lossy().into_owned())))
+                .collect();
+            let get = |k: &str| envs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            let n: usize = get("GIT_CONFIG_COUNT").unwrap().parse().unwrap();
+            (0..n)
+                .map(|i| (get(&format!("GIT_CONFIG_KEY_{i}")).unwrap(), get(&format!("GIT_CONFIG_VALUE_{i}")).unwrap()))
+                .collect()
+        };
+        for args in [
+            &["fetch", "-q", "origin"][..],
+            &["push", "-q", "origin", "HEAD:main"],
+            &["ls-remote", "x"],
+            &["clone", "x"],
+        ] {
+            let c = config(args);
+            assert!(c.contains(&("http.lowSpeedLimit".into(), "1000".into())), "{args:?}: {c:?}");
+            assert!(c.contains(&("http.lowSpeedTime".into(), "90".into())), "{args:?}: {c:?}");
+        }
+        let c = config(&["status"]);
+        assert!(c.iter().all(|(k, _)| !k.starts_with("http.lowSpeed")), "{c:?}");
+
+        #[cfg(unix)]
+        if git_available() && !git.is_embedded() {
+            use std::os::unix::fs::PermissionsExt;
+            // A transfer that runs longer than the timeout is not stopped by it.
+            let dir = tmp("slow-git");
+            let program = dir.join("git");
+            fs::write(&program, "#!/bin/sh\nsleep 2\necho fertig\n").unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+            let slow = Git::new(None, "").with_program(&program).with_timeout(Duration::from_secs(1));
+            let run = |args: &[&str]| loop {
+                match slow.run(None, args) {
+                    // Another test's child may still hold the new script open for a moment.
+                    Err(e) if e.to_string().contains("busy") => std::thread::sleep(Duration::from_millis(50)),
+                    other => break other,
+                }
+            };
+            let out = run(&["fetch", "-q", "origin"]).unwrap();
+            assert_eq!(out.stdout.trim(), "fertig");
+            let err = run(&["status"]).unwrap_err().to_string();
+            assert!(err.contains("abgebrochen") || err.contains("stopped"), "{err}");
+
+            // A server that stops sending: git gives up by itself after the timeout.
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://127.0.0.1:{}/notes.git", listener.local_addr().unwrap().port());
+            std::thread::spawn(move || {
+                let mut held = Vec::new();
+                for conn in listener.incoming().flatten() {
+                    held.push(conn);
+                }
+            });
+            let stalled = Git::new(None, &url).with_timeout(Duration::from_secs(2));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(stalled.ls_remote(&url).map_err(|e| e.to_string()));
+            });
+            let res = rx.recv_timeout(Duration::from_secs(30)).expect("git did not give up on a stalled server");
+            let err = res.unwrap_err();
+            assert!(!err.contains("abgebrochen") && !err.contains("stopped"), "git's own error: {err}");
+            let _ = fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// Every phone has a name of its own (fallback branch, settings file): its model and an id
+    /// made once and kept in its data folder.
+    #[test]
+    fn each_phone_keeps_a_name_of_its_own() {
+        let base = tmp("phone-name");
+        let (one, two) = (base.join("eins"), base.join("zwei"));
+        let a = phone_name(&one, Some("Pixel 8 Pro"));
+        assert!(a.starts_with("android-pixel-8-pro-") && a.len() == "android-pixel-8-pro-".len() + 6, "{a}");
+        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), a, "kept");
+        let b = phone_name(&two, Some("Pixel 8 Pro"));
+        assert_ne!(a, b, "two phones of one model");
+        assert_ne!(fallback_branch(&a), fallback_branch(&b));
+        let id = &a[a.len() - 6..];
+        assert_eq!(phone_name(&one, None), format!("android-{id}"), "no model");
+        assert_eq!(check_branch(&fallback_branch(&phone_name(&one, Some("Galaxy S24 (Ü) / 5G")))).ok(), Some(()));
+        // A damaged id file: a new id, kept from then on.
+        fs::write(one.join(DEVICE_ID_FILE), "xyz").unwrap();
+        let c = phone_name(&one, Some("Pixel 8 Pro"));
+        assert_ne!(c, a);
+        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), c);
+        if !cfg!(target_os = "android") {
+            assert_eq!(device_name(&one), hostname());
+        }
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -5227,6 +5652,233 @@ mod safety_tests {
         let merged =
             merge_kept(Some(&list(&[], &["x.png"])), Some(&list(&["x.png"], &[])), Some(&list(&[], &["x.png"])));
         assert!(merged.kept.contains("x.png"));
+    }
+
+    /// A bare remote whose pre-receive hook refuses every push, like GitHub's check for a file
+    /// over 100 MB (GH001).
+    #[cfg(unix)]
+    fn refuse_pushes(bare: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = bare.join("hooks").join("pre-receive");
+        put(
+            &hook,
+            "#!/bin/sh\necho 'error: GH001: Large files detected. You may want to try Git Large File Storage.' >&2\nexit 1\n",
+        );
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// A push the server refuses (a hook, push protection, a protected branch) is not a server
+    /// that moved on: the sync stops with the server's reason, merges nothing and pushes to no
+    /// branch of its own. (The system git; libgit2 runs no hooks on a local remote, its own test
+    /// goes over HTTP.)
+    #[cfg(unix)]
+    #[test]
+    fn a_push_the_server_refuses_shows_the_servers_reason() {
+        if !git_available() || Git::new(None, "").is_embedded() {
+            return;
+        }
+        let r = Remote::new("refused");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        refuse_pushes(&r.base.join("remote.git"));
+        put(&a.join("Notiz.md"), "zwei\n");
+        for _ in 0..2 {
+            let err = r.sync("a").unwrap_err().to_string();
+            assert!(err.contains("GH001"), "{err}");
+            assert!(err.contains("abgelehnt") || err.contains("refused"), "{err}");
+            assert!(err.contains("pre-receive hook declined"), "{err}");
+            assert!(!err.contains("nothing to commit"), "{err}");
+        }
+        let repo = r.base.join("a").join(REPO_DIR);
+        assert_eq!(sh(&repo, &["rev-list", "--count", "--merges", "HEAD"]).trim(), "0", "no empty merge commits");
+        let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
+        assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// A text file the user attached (a CSV exported by Excel, with CRLF line ends) is stored byte
+    /// for byte: every other computer gets the same bytes, a new computer that has it already
+    /// keeps no second copy, and the sync shows nothing pending for it.
+    #[test]
+    fn attachments_keep_their_line_ends() {
+        if !git_available() {
+            return;
+        }
+        let csv = "a;b\r\n1;2\r\n";
+        let r = Remote::new("crlf");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "![[export.csv]]\n");
+        put(&a.join("attachments/export.csv"), csv);
+        r.sync("a").unwrap();
+        let bare = r.base.join("remote.git");
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv);
+        assert_eq!(pending_changes(&a, &r.base.join("a").join(REPO_DIR)), 0);
+
+        // A new computer with the same file: the same bytes, no copy under another name.
+        let b = r.mirror("b");
+        mark(&b);
+        put(&b.join("Notiz.md"), "![[export.csv]]\n");
+        put(&b.join("attachments/export.csv"), csv);
+        let out = r.sync("b").unwrap();
+        assert!(out.renamed_files.is_empty(), "{out:?}");
+        let files: Vec<String> = r.tree().into_iter().filter(|p| p.starts_with("attachments/")).collect();
+        assert_eq!(files, ["attachments/export.csv"]);
+        let repo_b = r.base.join("b").join(REPO_DIR);
+        assert_eq!(fs::read(repo_b.join("attachments/export.csv")).unwrap(), csv.as_bytes());
+        assert_eq!(pending_changes(&b, &repo_b), 0);
+    }
+
+    /// A repository written before (`* text=auto` stored the CSV with LF): a computer that
+    /// attached it stores its bytes again with its next sync, without touching any note, and a
+    /// new computer keeps no second copy.
+    #[test]
+    fn attachments_stored_with_changed_line_ends_get_their_bytes_back() {
+        if !git_available() {
+            return;
+        }
+        let csv = "a;b\r\n1;2\r\n";
+        let note = "Text\r\n![[export.csv]]\r\n";
+        let r = Remote::new("crlf-old");
+        let bare = r.base.join("remote.git");
+        // Computer a's working tree as an earlier version left it: the CSV with CRLF in the working
+        // tree and LF in the repository, a note with CRLF that was stored with LF.
+        let repo_a = r.base.join("a").join(REPO_DIR);
+        fs::create_dir_all(&repo_a).unwrap();
+        sh(&repo_a, &["init", "-q", "-b", "main"]);
+        sh(&repo_a, &["config", "core.autocrlf", "false"]);
+        sh(&repo_a, &["config", "core.eol", "lf"]);
+        put(&repo_a.join(ATTRIBUTES_FILE), &format!("{MARKER}{OLD_ATTRIBUTES}"));
+        put(&repo_a.join(README_FILE), tr!(README, README_EN));
+        put(&repo_a.join("Notiz.md"), note);
+        put(&repo_a.join("attachments/export.csv"), csv);
+        sh(&repo_a, &["add", "-A"]);
+        sh(&repo_a, &["commit", "-q", "-m", "alt"]);
+        sh(&repo_a, &["remote", "add", "origin", bare.to_str().unwrap()]);
+        sh(&repo_a, &["push", "-q", "origin", "main"]);
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), "a;b\n1;2\n", "stored with LF before");
+        let note_blob = sh(&bare, &["rev-parse", "main:Notiz.md"]);
+
+        // A new computer before computer a synced again: no second copy.
+        let c = r.mirror("c");
+        mark(&c);
+        put(&c.join("Notiz.md"), "Text\n![[export.csv]]\n");
+        put(&c.join("attachments/export.csv"), csv);
+        let out = r.sync("c").unwrap();
+        assert!(out.renamed_files.is_empty(), "{out:?}");
+        let files: Vec<String> = r.tree().into_iter().filter(|p| p.starts_with("attachments/")).collect();
+        assert_eq!(files, ["attachments/export.csv"]);
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv, "the original bytes");
+        assert_eq!(pending_changes(&c, &r.base.join("c").join(REPO_DIR)), 0);
+
+        // Computer a: its working tree is migrated, the notes stay as stored.
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), note);
+        put(&a.join("attachments/export.csv"), csv);
+        r.sync("a").unwrap();
+        assert_eq!(sh(&bare, &["show", "main:attachments/export.csv"]), csv);
+        assert_eq!(sh(&bare, &["rev-parse", "main:Notiz.md"]), note_blob, "the note is not rewritten");
+        assert_eq!(pending_changes(&a, &repo_a), 0);
+    }
+
+    /// A new computer whose note differs from the server's only by the case of its name, on a
+    /// file system that keeps both names apart (Linux, Android): one note with a conflict, the
+    /// server's note is neither dropped nor deleted with the next sync.
+    #[test]
+    fn names_that_differ_only_by_case_are_one_note() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("case");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Meeting.md"), "von A\n");
+        r.sync("a").unwrap();
+        let b = r.mirror("b");
+        mark(&b);
+        put(&b.join("meeting.md"), "von B\n");
+        // Only where the file system tells the names apart.
+        if b.join("MEETING.md").exists() {
+            return;
+        }
+        let out = r.sync("b").unwrap();
+        assert_eq!(
+            out.remote_changes,
+            [RemoteChange {
+                path: "meeting.md".into(),
+                base: None,
+                mine: Some("von B\n".into()),
+                theirs: Some("von A\n".into()),
+                conflict: true,
+                from: None,
+            }]
+        );
+        let notes: Vec<String> = r.tree().into_iter().filter(|p| p.to_lowercase() == "meeting.md").collect();
+        assert_eq!(notes, ["meeting.md"]);
+        assert_eq!(
+            sh(&r.base.join("remote.git"), &["show", "main:meeting.md"]),
+            "von A\n",
+            "the server's text until merged"
+        );
+        // Merged here: the next sync pushes it, under one name.
+        taken_over(&r.base.join("b").join(REPO_DIR));
+        put(&b.join("meeting.md"), "von A und B\n");
+        r.sync("b").unwrap();
+        let notes: Vec<String> = r.tree().into_iter().filter(|p| p.to_lowercase() == "meeting.md").collect();
+        assert_eq!(notes, ["meeting.md"]);
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:meeting.md"]), "von A und B\n");
+    }
+
+    /// Hooks (here a pre-push hook that refuses everything, like a secret scanner set up for all
+    /// repositories) do not run for the sync.
+    #[cfg(unix)]
+    #[test]
+    fn hooks_do_not_stop_the_sync() {
+        use std::os::unix::fs::PermissionsExt;
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("hooks");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        let hook = r.base.join("a").join(REPO_DIR).join(".git/hooks/pre-push");
+        put(&hook, "#!/bin/sh\necho 'blocked by hook' >&2\nexit 1\n");
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        put(&a.join("Notiz.md"), "zwei\n");
+        r.sync("a").unwrap();
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "zwei\n");
+    }
+
+    /// Only `! [rejected] … (non-fast-forward)` or `(fetch first)` is a server that moved on.
+    #[test]
+    fn only_a_non_fast_forward_counts_as_diverged() {
+        let out = |stderr: &str| GitOutput { ok: false, stdout: String::new(), stderr: stderr.into() };
+        assert!(diverged(&out(" ! [rejected]        HEAD -> main (fetch first)\nerror: failed to push some refs")));
+        assert!(diverged(&out(" ! [rejected]        HEAD -> main (non-fast-forward)")));
+        assert!(diverged(&out("! [rejected] (non-fast-forward) cannot push non-fastforwardable reference")));
+        for refused in [
+            "remote: error: GH013: Repository rule violations found for refs/heads/main.\n ! [remote rejected] HEAD -> main (push declined due to repository rule violations)",
+            " ! [remote rejected] HEAD -> main (pre-receive hook declined)",
+            "remote: error: GH006: Protected branch update failed for refs/heads/main.\n ! [remote rejected] HEAD -> main (protected branch hook declined)",
+            "fatal: unable to access 'https://x/': Could not resolve host: x",
+        ] {
+            assert!(!diverged(&out(refused)), "{refused}");
+        }
+        let msg = refusal(&out(
+            "remote: error: GH001: Large files detected.\nremote: error: File video.mp4 is 120.00 MB\nTo https://github.com/a/b.git\n ! [remote rejected] HEAD -> main (pre-receive hook declined)\nerror: failed to push some refs to 'https://github.com/a/b.git'",
+        ))
+        .unwrap();
+        assert!(
+            msg.contains("pre-receive hook declined") && msg.contains("GH001") && msg.contains("video.mp4"),
+            "{msg}"
+        );
+        assert!(!msg.contains("remote:"), "{msg}");
+        assert_eq!(refusal(&out(" ! [rejected]        HEAD -> main (fetch first)")), None);
     }
 
     /// Any file name is stored as it is (spaces around it, a line break), nothing that leaves the
