@@ -47,7 +47,7 @@ pub fn show(app: &AppHandle, note: Note) {
     #[cfg(target_os = "ios")]
     {
         let _ = app;
-        super::ios::notify(&note.title, &note.body, note.category);
+        crate::mobile::ios::notify(&note.title, &note.body, note.category);
     }
     #[cfg(not(target_os = "ios"))]
     crate::desktop::notify(app, &note.title, &note.body);

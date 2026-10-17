@@ -37,7 +37,7 @@ use dispatch2::DispatchQueue;
 use objc2::encode::{Encode, Encoding};
 use objc2::msg_send;
 use objc2::rc::{Retained, autoreleasepool};
-use objc2::runtime::{AnyClass, AnyObject, NSObject};
+use objc2::runtime::{AnyClass, AnyObject, Bool, NSObject};
 use objc2::{ClassType, define_class};
 use tauri::{AppHandle, Manager};
 
@@ -480,8 +480,8 @@ fn register_categories() {
 pub fn notify(title: &str, body: &str, category: Option<&'static str>) {
     let Some(center_class) = class(c"UNUserNotificationCenter") else { return };
     let (title, body) = (title.to_owned(), body.to_owned());
-    let asked = RcBlock::new(move |granted: bool, _error: *mut AnyObject| {
-        if granted {
+    let asked = RcBlock::new(move |granted: Bool, _error: *mut AnyObject| {
+        if granted.as_bool() {
             autoreleasepool(|_| post(&title, &body, category));
         } else {
             devlog::info("ios", "notification not shown: not allowed");
