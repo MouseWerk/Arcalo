@@ -119,6 +119,9 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     if let Err(e) = db.localize_default_leistungsarten() {
         devlog::warn("core", format!("activity types not localized: {e}"));
     }
+    // The simulator check of CI: the sample workspace (debug builds, `ARCALO_SMOKE_DEMO=1`).
+    #[cfg(target_os = "ios")]
+    ios::smoke::seed(&db);
     let _ = db.purge_expired_trash(Utc::now());
     let _ = db.prune_versions(Utc::now());
     let _ = db.prune_history(Utc::now());

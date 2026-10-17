@@ -787,10 +787,26 @@ pub fn system_proxy() -> arcalo_core::network::SystemProxy {
 /// The simulator check of CI (debug builds only, `ARCALO_SMOKE=1`): the page's geometry
 /// (`ios_smoke.js`) twice, 10 and 20 seconds after the start, as `smoke.json` in the data folder;
 /// with `ARCALO_SMOKE_ORIENTATION=landscape` the window turns to landscape first.
-mod smoke {
+pub mod smoke {
     use super::*;
 
     const SCRIPT: &str = include_str!("ios_smoke.js");
+
+    /// `ARCALO_SMOKE_DEMO=1`: the sample workspace in an empty database (the app itself instead of
+    /// the first start; the setup is skipped with `ARCALO_SKIP_ONBOARDING=1`).
+    pub fn seed(db: &arcalo_core::Database) {
+        if !cfg!(debug_assertions) || std::env::var("ARCALO_SMOKE_DEMO").ok().as_deref() != Some("1") {
+            return;
+        }
+        if db.page_tree().map(|t| t.is_empty()).unwrap_or(false) {
+            match arcalo_core::demo::seed_explicit(db, chrono::Local::now()) {
+                Ok(_) => {
+                    let _ = db.meta_set("onboarded", "1");
+                }
+                Err(e) => devlog::warn("ios", format!("sample workspace not created: {e}")),
+            }
+        }
+    }
 
     pub fn start(app: &AppHandle) {
         if !cfg!(debug_assertions) || std::env::var("ARCALO_SMOKE").ok().as_deref() != Some("1") {

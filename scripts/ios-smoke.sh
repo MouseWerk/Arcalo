@@ -74,7 +74,12 @@ run() {
       xcrun simctl terminate "$udid" "$BUNDLE" 2>/dev/null || true
       rotate_left || echo "::warning::$name: Simulator could not be rotated"
     fi
+    # Upright the first start as a user sees it (the iPad: the setup over the full app); sideways
+    # the app itself with the sample workspace.
+    local demo=0
+    [ "$orientation" = landscape ] && demo=1
     SIMCTL_CHILD_ARCALO_SMOKE=1 SIMCTL_CHILD_ARCALO_SMOKE_ORIENTATION="$orientation" \
+      SIMCTL_CHILD_ARCALO_SMOKE_DEMO="$demo" SIMCTL_CHILD_ARCALO_SKIP_ONBOARDING="$demo" \
       xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE" >/dev/null
     # The report's second round (20 s after the start), when the page settled.
     local waited=0
