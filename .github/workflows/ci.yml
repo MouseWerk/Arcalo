@@ -235,3 +235,10 @@ jobs:
         with:
           name: arcalo-macos
           path: Arcalo-macos.zip
+
+  # The iPhone and iPad app (docs/ios.md): the iOS code linted, a simulator build checked on an
+  # iPhone and two iPads; signed and exported for App Store Connect when the Apple secrets exist.
+  ios:
+    name: iOS
+    uses: ./.github/workflows/ios.yml
+    secrets: inherit

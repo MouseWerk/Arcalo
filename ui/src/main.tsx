@@ -30,10 +30,11 @@ import { installLongPress } from "./lib/longpress";
 import { collectErrors } from "./lib/errorLog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
-import { loadCapabilities, onAndroid } from "./lib/capabilities";
+import { loadCapabilities, onAndroid, onIos, onMobileDevice } from "./lib/capabilities";
 import { bootInterface, followInterface } from "./lib/uiswitch";
 import { flushAll, unsavedLeft } from "./lib/flush";
 import { installAndroidBack } from "./lib/androidBack";
+import { fitIosViewport } from "./lib/ios";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -43,14 +44,17 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 const presenterMode = location.hash === "#presenter";
 // The recovery screen of an encrypted database whose key is missing (instead of the app).
 const keygateMode = location.hash === "#keygate";
-// The Android app opens its phone entry (`mobile.html`, ui/src/mobile/main.tsx) and comes here on a
-// large screen (1.20, lib/uiswitch.ts); `?mobile` opens the phone app in a browser.
+// The Android and iOS apps open their phone entry (`mobile.html`, ui/src/mobile/main.tsx) and come
+// here on a large screen or an iPad (1.20, lib/uiswitch.ts); `?mobile` opens the phone app in a
+// browser.
 const forcedMobile = new URLSearchParams(location.search).has("mobile");
 if (forcedMobile) location.replace(`mobile.html${location.search}`);
-// What the app can do here (the desktop, or Android's full app), before the first frame.
+// What the app can do here (the desktop, or the full app on Android or the iPad), before the first frame.
 const capabilities = forcedMobile ? null : await loadCapabilities();
-// On Android: still the right interface for this window? Otherwise to the phone app at once.
-const mobileMode = forcedMobile || (!!capabilities && onAndroid() && (await bootInterface("full")) === null);
+// iOS: the page covers the whole window and keeps clear of the safe areas itself.
+if (capabilities && onIos()) fitIosViewport();
+// On Android and iOS: still the right interface for this window? Otherwise to the phone app at once.
+const mobileMode = forcedMobile || (!!capabilities && onMobileDevice() && (await bootInterface("full")) === null);
 
 // The language the shell resolved („Wie das System“ included) holds from the first frame on.
 const boot = bootLang();
@@ -83,7 +87,8 @@ if (!mobileMode && capabilities?.windowFrame) {
     .catch(() => {});
 }
 // macOS: the tab bar sits in the title bar (overlay); the chrome leaves room for the traffic lights.
-if (IS_MAC && !captureMode) document.documentElement.classList.add("os-macos");
+// (The iPad reports itself as a Mac too, for the Cmd shortcuts, but has no title bar.)
+if (IS_MAC && !captureMode && !capabilities?.mobile) document.documentElement.classList.add("os-macos");
 
 // The small windows follow the language and formats of the settings (the main window does so
 // through its store).
@@ -127,11 +132,13 @@ if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode
   } else {
     splashShown();
   }
-  // Android's full app follows the window: back to the phone app when it becomes phone-sized,
-  // with the editors' text stored first.
-  if (onAndroid()) {
+  // The full app on Android and the iPad follows the window: back to the phone app when it becomes
+  // phone-sized (iPad: Slide Over, a third of Split View), with the editors' text stored first.
+  if (onMobileDevice()) {
     // Android's back button closes what is open, else the app goes to the background.
-    installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
+    if (onAndroid()) installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
+    // iOS: text shared to the app („Teilen“ → Arcalo) goes into the inbox.
+    if (onIos()) void import("./lib/iosShare").then(({ followShared }) => followShared());
     // Right before it goes: nothing typed while the flush ran (the editors' module is loaded by then).
     let editorsDirty = () => false;
     followInterface(

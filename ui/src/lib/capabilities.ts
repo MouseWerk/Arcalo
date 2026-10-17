@@ -1,5 +1,5 @@
 // What the app can do where it runs (src-tauri/src/platform.rs, `app_capabilities`). The full
-// app also runs on Android's large screens (1.20); the desktop-only parts (tray, global
+// app also runs on Android's large screens (1.20) and on the iPad; the desktop-only parts (tray, global
 // shortcuts, autostart, the command line, the desktop updater, the small windows, voice notes,
 // local folders, the encryption and the app lock) are hidden after these flags instead of failing
 // there. Read once before the first frame (`loadCapabilities`), then synchronously (`caps()`).
@@ -7,9 +7,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface Capabilities {
-  /** `windows`, `macos`, `linux` or `android`. */
+  /** `windows`, `macos`, `linux`, `android` or `ios`. */
   platform: string;
-  /** The Android app (also when simulated). */
+  /** The Android or iOS app (also when simulated). */
   mobile: boolean;
   /** The Android capabilities on a desktop debug build (end-to-end tests). */
   simulated: boolean;
@@ -85,6 +85,9 @@ export const ANDROID: Capabilities = {
   pac: false,
 };
 
+/** The iOS app (iPhone and iPad): Android's, without the APK updates (the App Store updates it). */
+export const IOS: Capabilities = { ...ANDROID, platform: "ios", androidUpdater: false };
+
 let current: Capabilities = DESKTOP;
 
 /** The capabilities of this app (the desktop's until `loadCapabilities` answered). */
@@ -92,10 +95,14 @@ export function caps(): Capabilities {
   return current;
 }
 
-/** Sets them (the start, and tests). Marks the page for styles that differ on Android. */
+/** Sets them (the start, and tests). Marks the page for styles that differ on the mobile systems
+ *  (`platform-android` on both, as the touch styles are the same; `platform-ios` for the safe
+ *  areas of iOS). */
 export function setCapabilities(c: Capabilities): void {
   current = c;
-  if (typeof document !== "undefined") document.documentElement.classList.toggle("platform-android", c.mobile);
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("platform-android", c.mobile);
+  document.documentElement.classList.toggle("platform-ios", c.platform === "ios");
 }
 
 /** Asks the backend once; a backend without the command (older test doubles) is the desktop. */
@@ -110,5 +117,15 @@ export async function loadCapabilities(): Promise<Capabilities> {
 
 /** The Android app for real (not the simulation on a desktop): Android's own APIs answer. */
 export function onAndroid(): boolean {
+  return current.platform === "android" && current.mobile && !current.simulated;
+}
+
+/** The iOS app (iPhone or iPad). */
+export function onIos(): boolean {
+  return current.platform === "ios" && !current.simulated;
+}
+
+/** A phone or tablet for real (Android or iOS): the interface follows the window there. */
+export function onMobileDevice(): boolean {
   return current.mobile && !current.simulated;
 }

@@ -720,9 +720,9 @@ fn os_locale() -> Option<String> {
     if let Some(l) = arcalo_core::identity::env("ARCALO_LOCALE").filter(|l| !l.trim().is_empty()) {
         return Some(l);
     }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "android")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "android", target_os = "ios")))]
     let tags = arcalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
-    #[cfg(any(windows, target_os = "macos", target_os = "android"))]
+    #[cfg(any(windows, target_os = "macos", target_os = "android", target_os = "ios"))]
     let tags = sys_locale::get_locales();
     arcalo_core::i18n::preferred_locale(tags)
 }
@@ -917,11 +917,16 @@ fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
 fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     let path = attachments::existing(&state.attachments_dir(), &name)?;
-    // Android: a copy in the cache, handed to the app Android has for its type (1.20).
-    #[cfg(target_os = "android")]
+    // Android: a copy in the cache, handed to the app Android has for its type (1.20); iOS: the
+    // share sheet with the copy (another app, Files, AirDrop).
+    #[cfg(mobile)]
     if !reveal && !attachments::is_executable(&name) {
         let cache = app.path().app_cache_dir().map_err(|e| Error::State(e.to_string()))?;
-        return mobile::android::open_file(&cache, &path).map_err(|e| {
+        #[cfg(target_os = "android")]
+        let opened = mobile::android::open_file(&cache, &path);
+        #[cfg(target_os = "ios")]
+        let opened = mobile::ios::share_file(&cache, &path);
+        return opened.map_err(|e| {
             Error::State(trf!("„{name}“ ließ sich nicht öffnen: {e}", "“{name}” could not be opened: {e}"))
         });
     }
@@ -5591,19 +5596,19 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         mobile::mobile_to_background,
         #[cfg(mobile)]
         mobile::android_display,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_status,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_check,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_download,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_install,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_allow_install,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_update_set_mobile_data,
-        #[cfg(mobile)]
+        #[cfg(target_os = "android")]
         mobile::apkupdate::apk_whats_new_seen,
     ]))
 }
