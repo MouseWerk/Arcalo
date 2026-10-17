@@ -93,6 +93,8 @@ run() {
       waited=$((waited + 5))
     done
     xcrun simctl io "$udid" screenshot "$OUT/$name-$orientation.png" >/dev/null
+    # The simulator takes the picture in the device's upright orientation: turned to be read.
+    [ "$orientation" = landscape ] && sips -r 270 "$OUT/$name-$orientation.png" >/dev/null
     if [ -f "$report" ]; then
       cp "$report" "$OUT/$name-$orientation.json"
       python3 "$(dirname "$0")/ios-smoke-check.py" "$OUT/$name-$orientation.json" "$expect" "$orientation" "$name $orientation" || status=1

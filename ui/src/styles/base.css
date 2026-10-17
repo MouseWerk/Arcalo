@@ -9,6 +9,12 @@ body,
   height: 100%;
   margin: 0;
 }
+/* iOS's WebKit enlarges text in landscape on its own (the phone app sideways); the app's type
+   scale applies as written. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   font: 400 var(--fs-md) / 1.5 var(--font-ui);
   font-feature-settings: "cv11", "ss01", "ss03";

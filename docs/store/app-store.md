@@ -15,9 +15,11 @@ What the app does on iPhone and iPad: [../ios.md](../ios.md). German texts use �
 - **Marketing URL:** https://arcalo.mousewerk.de/
 - **Privacy policy URL:** https://arcalo.mousewerk.de/privacy (the text below, on the website)
 - **Copyright:** 2026 MouseWerk, Maurice Kleindienst
-- **Screenshots:** iPhone 6.9" (1320 × 2868): Heute, Erfassen, Aufgaben, Zeit, Notizen; iPad 13" (2064 × 2752):
-  the full app with a page and the sidebar, split panes, the calendar, the time sheet, the command palette. Taken
-  in the simulator with sample notes, light and dark; the same pictures serve both languages.
+- **Screenshots:** iPhone 6.9" (1320 × 2868): Heute, Erfassen, Aufgaben, Zeit, Notizen; iPad 13" (2752 × 2064 or
+  2064 × 2752): the full app with a page and the sidebar, split panes, the calendar, the time sheet, the command
+  palette. `screenshots/ipad-13/01-today-landscape.png` is the first, from the simulator check (artifact
+  `ios-simulator` of `.github/workflows/ios.yml`, sideways with the sample workspace, 13" iPad Pro); the others are
+  taken the same way, light and dark. The same pictures serve both languages.
 - **Review notes:** see below.
 
 ## App Privacy (the privacy label)
