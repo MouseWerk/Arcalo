@@ -16,6 +16,7 @@ live at https://arcalo.mousewerk.de.
 - Ctrl/Cmd+click in the tree selects; pages are filed in year/month folders, existing pages move only via
   "Aufräumen". Whisper models are downloaded from GitHub (release `whisper-models-v1`, keep it).
 - The Android companion APK is attached to each release but not advertised on the website or in the README.
+- iOS companion app via TestFlight/App Store (same Apple team as Arcalo Mail).
 - The setup does not offer Git sync, backups, encryption or desktop options; its last step links them
   („Später einrichten“). The old Annalo data folders and credential entries kept by the 1.15 migration are
   deleted in 1.17.

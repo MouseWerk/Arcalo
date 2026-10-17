@@ -33,7 +33,7 @@ describe("hover styles only where a pointer can hover", () => {
     expect(isAppStylesheet(undefined)).toBe(false);
   });
 
-  it("moves hover rules into (hover: hover) and shows revealed controls on touch", () => {
+  it("moves hover rules into (hover: hover), (any-hover: hover) and shows revealed controls on touch", () => {
     // A small stand-in for PostCSS's nodes: enough to run the plugin on three rules.
     type N = { type: string; selector?: string; selectors?: string[]; nodes: N[]; prop?: string; value?: string; parent?: N; name?: string; params?: string };
     const out: N[] = [];
@@ -76,9 +76,9 @@ describe("hover styles only where a pointer can hover", () => {
     (hoverOnly().Once as unknown as (r: typeof root, h: { AtRule: typeof AtRule }) => void)(root, { AtRule });
     const media = out as unknown as AtRule[];
     expect(media.map((m) => `${m.params} ${m.nodes.map((n) => n.selectors!.join(", ")).join(" | ")}`)).toEqual([
-      "(hover: hover) .a:hover",
+      "(hover: hover), (any-hover: hover) .a:hover",
       "(hover: none) .row .act",
-      "(hover: hover) .row:hover .act",
+      "(hover: hover), (any-hover: hover) .row:hover .act",
     ]);
     // What has no :hover stays where it was; a rule of hover selectors only goes.
     expect(rules.map((r) => r.selectors!.join(", "))).toEqual([".a:focus-visible", "", ".plain"]);

@@ -18,7 +18,7 @@ import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { ThemeEditor, ThemeMock, newThemeId } from "./ThemeEditor";
 import { isComposing, isKey } from "../../lib/ime";
-import { caps } from "../../lib/capabilities";
+import { caps, onIos } from "../../lib/capabilities";
 import { OpacitySlider } from "./OpacitySlider";
 
 export function AppearanceSection({ draft, update }: SectionProps) {
@@ -266,9 +266,9 @@ export function AppearanceSection({ draft, update }: SectionProps) {
           <Switch label={t("set.appearance.startup")} checked={a.startup_animation} onChange={(v) => set({ startup_animation: v })} />
         </Row>
         {caps().mobile && (
-          <Row label={t("set.appearance.ui")} description={t("set.appearance.uiDesc")}>
+          <Row label={t(onIos() ? "set.appearance.uiIos" : "set.appearance.ui")} description={t(onIos() ? "set.appearance.uiDescIos" : "set.appearance.uiDesc")}>
             <Segmented
-              label={t("set.appearance.ui")}
+              label={t(onIos() ? "set.appearance.uiIos" : "set.appearance.ui")}
               value={a.android_interface ?? "auto"}
               options={[
                 { value: "auto", label: t("set.appearance.uiAuto") },

@@ -25,6 +25,9 @@ name: Release
 # the Microsoft Store Developer CLI (a draft unless STORE_SUBMIT_COMMIT is "true"). Without the
 # variables the job does nothing.
 
+# iOS (docs/release/ios.md): with the Apple secrets the iPhone and iPad app of the tag is
+# uploaded to TestFlight (ios.yml); without them it is only built for the simulator and checked.
+
 # winget (docs/release/winget.md): with the secret WINGET_TOKEN every release opens a pull request
 # for MouseWerk.Arcalo in microsoft/winget-pkgs. Without it the job does nothing.
 
@@ -447,6 +450,16 @@ jobs:
     name: Android
     needs: tag
     uses: ./.github/workflows/android.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
+
+  # The iPhone and iPad app (docs/ios.md): to TestFlight when the Apple secrets exist
+  # (docs/release/ios.md); it is not attached to the release (the App Store distributes it).
+  ios:
+    name: iOS
+    needs: tag
+    uses: ./.github/workflows/ios.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
     secrets: inherit

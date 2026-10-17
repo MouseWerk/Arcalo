@@ -2,11 +2,11 @@
 //! password, the addresses of calendar subscriptions and the Jira tokens.
 //!
 //! Windows: Credential Manager, macOS: Keychain, Linux: the Secret Service (GNOME Keyring,
-//! KWallet, KeePassXC) over D-Bus, Android: the Android Keystore (`mobile/keystore.rs`). Only
-//! when no Secret Service answers (a headless machine, a desktop without a keyring,
-//! `ARCALO_SECRET_STORE=file`) and on other systems, the secrets are written to `secrets.json`
-//! in the app data directory with owner-only permissions, one JSON field per secret;
-//! Settings → Datenschutz says which store is used and why.
+//! KWallet, KeePassXC) over D-Bus, Android: the Android Keystore (`mobile/keystore.rs`), iOS: the
+//! Keychain (`mobile/keychain.rs`). Only when no Secret Service answers (a headless machine, a
+//! desktop without a keyring, `ARCALO_SECRET_STORE=file`) and on other systems, the secrets are
+//! written to `secrets.json` in the app data directory with owner-only permissions, one JSON
+//! field per secret; Settings → Datenschutz says which store is used and why.
 //!
 //! Linux before 1.10 always used the file: on the first start with a Secret Service its entries
 //! are moved over ([`migrate`]): each one is written, read back and compared, and only then
@@ -62,6 +62,9 @@ pub enum Kind {
     /// Android: encrypted with a key of the Android Keystore.
     #[cfg(target_os = "android")]
     Keystore,
+    /// iOS: the Keychain of the device.
+    #[cfg(target_os = "ios")]
+    Keychain,
 }
 
 static KIND: OnceLock<Kind> = OnceLock::new();
@@ -88,7 +91,11 @@ fn detect() -> Kind {
     {
         Kind::Keystore
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(target_os = "ios")]
+    {
+        Kind::Keychain
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "ios")))]
     Kind::File { reason: None }
 }
 
@@ -341,6 +348,11 @@ impl SecretStore {
                 crate::devlog::warn("secrets", format!("Android Keystore not read ({}): {e}", self.account));
                 None
             }),
+            #[cfg(target_os = "ios")]
+            Kind::Keychain => crate::mobile::keychain::get(&self.account).unwrap_or_else(|e| {
+                crate::devlog::warn("secrets", format!("iOS Keychain not read ({}): {e}", self.account));
+                None
+            }),
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
             _ => None,
         }
@@ -362,6 +374,11 @@ impl SecretStore {
             Kind::Keystore => match key {
                 Some(k) => crate::mobile::keystore::set(&self.account, k),
                 None => crate::mobile::keystore::delete(&self.account),
+            },
+            #[cfg(target_os = "ios")]
+            Kind::Keychain => match key {
+                Some(k) => crate::mobile::keychain::set(&self.account, k),
+                None => crate::mobile::keychain::delete(&self.account),
             },
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
             _ => Err("no credential store".into()),
@@ -418,6 +435,8 @@ fn label(kind: &Kind, portable: bool) -> &'static str {
         ),
         #[cfg(target_os = "android")]
         Kind::Keystore => arcalo_core::tr!("Android-Schlüsselspeicher (Keystore)", "Android Keystore"),
+        #[cfg(target_os = "ios")]
+        Kind::Keychain => arcalo_core::tr!("iOS-Schlüsselbund", "iOS Keychain"),
     }
 }
 

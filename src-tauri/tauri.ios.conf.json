@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "de.mousewerk.arcalo",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Arcalo",
+        "url": "mobile.html"
+      }
+    ]
+  },
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "frameworks": ["BackgroundTasks", "CFNetwork", "UserNotifications"]
+    }
+  }
+}

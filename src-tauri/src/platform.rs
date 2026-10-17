@@ -1,10 +1,11 @@
 //! What the app can do where it runs (1.20). The Android app shows the full desktop UI on large
-//! screens (docs/android.md); the parts of the desktop that do not exist there (tray, global
-//! shortcuts, autostart, the command line, the desktop updater, quick-capture and search windows,
-//! voice notes, local folders, the encryption and the app lock) are hidden by the UI after these
-//! capabilities instead of failing when used.
+//! screens (docs/android.md), the iOS app on the iPad and in wide windows (docs/ios.md); the
+//! parts of the desktop that do not exist there (tray, global shortcuts, autostart, the command
+//! line, the desktop updater, quick-capture and search windows, voice notes, local folders, the
+//! encryption and the app lock) are hidden by the UI after these capabilities instead of failing
+//! when used. iOS has Android's capabilities without the APK updates.
 //!
-//! The commands of those parts are not registered on Android (`#[cfg(desktop)]` in
+//! The commands of those parts are not registered on Android and iOS (`#[cfg(desktop)]` in
 //! [`crate::commands`]); [`DESKTOP_ONLY`] names them. A debug build started with
 //! `ARCALO_SIMULATE_ANDROID=1` reports the Android capabilities on the desktop and refuses those
 //! commands like Android does, so the end-to-end tests check the full app as Android runs it.
@@ -16,9 +17,9 @@ use tauri::Wry;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
-    /// `windows`, `macos`, `linux` or `android`.
+    /// `windows`, `macos`, `linux`, `android` or `ios`.
     pub platform: &'static str,
-    /// The Android app (also when simulated).
+    /// The Android or iOS app (also when simulated).
     pub mobile: bool,
     /// The Android capabilities on a desktop build (tests).
     pub simulated: bool,
@@ -42,7 +43,7 @@ pub struct Capabilities {
     /// export, a file's folder).
     pub folders: bool,
     /// Opening a file with the program the system has for it (on Android a copy, handed to the
-    /// app Android has for its type).
+    /// app Android has for its type; on iOS the share sheet with the copy).
     pub open_files: bool,
     /// Starting programs (quick links to a program or a local path).
     pub programs: bool,
@@ -109,9 +110,17 @@ impl Capabilities {
         }
     }
 
+    /// The iOS app (iPhone and iPad): Android's, without the APK updates (the App Store updates
+    /// the app; an app may not update itself there).
+    pub fn ios() -> Capabilities {
+        Capabilities { platform: "ios", android_updater: false, ..Capabilities::android() }
+    }
+
     /// The capabilities of this build, as the UI gets them.
     pub fn current() -> Capabilities {
-        if cfg!(mobile) {
+        if cfg!(target_os = "ios") {
+            Capabilities::ios()
+        } else if cfg!(mobile) {
             Capabilities::android()
         } else if simulated_android() {
             Capabilities { simulated: true, ..Capabilities::android() }
@@ -247,10 +256,20 @@ mod tests {
             list.iter().filter(|(c, _)| c.as_deref() == Some("desktop")).map(|(_, n)| n.as_str()).collect();
         let named: BTreeSet<&str> = DESKTOP_ONLY.iter().copied().collect();
         assert_eq!(desktop, named, "DESKTOP_ONLY and the #[cfg(desktop)] commands differ");
-        // Only `desktop` and `mobile` are used, and the Android app's own commands are its alone.
+        // Only `desktop`, `mobile` and the two mobile systems are used; the mobile apps' own
+        // commands are theirs alone, the APK updates Android's and the simulator check iOS's.
+        const ANDROID: &str = "target_os = \"android\"";
+        const IOS: &str = "target_os = \"ios\"";
         for (c, n) in &list {
-            assert!(matches!(c.as_deref(), None | Some("desktop") | Some("mobile")), "{n}: cfg({c:?})");
-            if n.starts_with("mobile_") || n.starts_with("apk_update_") || n.starts_with("android_") {
+            assert!(
+                matches!(c.as_deref(), None | Some("desktop") | Some("mobile") | Some(ANDROID) | Some(IOS)),
+                "{n}: cfg({c:?})"
+            );
+            if n.starts_with("apk_") {
+                assert_eq!(c.as_deref(), Some(ANDROID), "{n}");
+            } else if n.starts_with("ios_") {
+                assert_eq!(c.as_deref(), Some(IOS), "{n}");
+            } else if n.starts_with("mobile_") || n.starts_with("android_") {
                 assert_eq!(c.as_deref(), Some("mobile"), "{n}");
             }
         }
@@ -275,5 +294,16 @@ mod tests {
         let json = serde_json::to_value(a).unwrap();
         assert_eq!(json["platform"], "android");
         assert_eq!(json["globalShortcuts"], false);
+    }
+
+    #[test]
+    fn ios_is_android_without_the_apk_updates() {
+        let i = Capabilities::ios();
+        assert_eq!(i.platform, "ios");
+        assert!(i.mobile && !i.android_updater && !i.desktop_updater, "the App Store updates the app");
+        assert_eq!(Capabilities { platform: "android", android_updater: true, ..i }, Capabilities::android());
+        assert!(!(i.voice || i.command_line || i.folders || i.programs || i.security || i.backups));
+        assert!(i.open_files, "attachments go to the share sheet");
+        assert_eq!(serde_json::to_value(i).unwrap()["androidUpdater"], false);
     }
 }

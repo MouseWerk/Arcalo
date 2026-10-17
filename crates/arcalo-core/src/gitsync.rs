@@ -378,11 +378,14 @@ where
 }
 
 /// The name of this device in the sync (fallback branch, settings file): [`hostname`], and on
-/// Android, whose apps see no host name, [`phone_name`] with the model and an id kept in
+/// Android and iOS, whose apps see no host name, [`phone_name`] with the model and an id kept in
 /// `data_dir`, so two phones never share a fallback branch.
 pub fn device_name(data_dir: &Path) -> String {
     if cfg!(target_os = "android") {
-        return phone_name(data_dir, android_model().as_deref());
+        return phone_name(data_dir, "android", android_model().as_deref());
+    }
+    if cfg!(target_os = "ios") {
+        return phone_name(data_dir, "ios", apple_model().as_deref());
     }
     hostname()
 }
@@ -390,9 +393,10 @@ pub fn device_name(data_dir: &Path) -> String {
 /// File in the data folder with the id of [`phone_name`].
 const DEVICE_ID_FILE: &str = "device-id";
 
-/// `android-<model>-<id>`: the id (6 hex digits) is made once and kept in `data_dir`; a phone
-/// whose id cannot be kept gets a new one each time rather than the name of every other phone.
-fn phone_name(data_dir: &Path, model: Option<&str>) -> String {
+/// `<system>-<model>-<id>` (`android-pixel-8-…`, `ios-iphone16-2-…`): the id (6 hex digits) is
+/// made once and kept in `data_dir`; a phone whose id cannot be kept gets a new one each time
+/// rather than the name of every other phone.
+fn phone_name(data_dir: &Path, system: &str, model: Option<&str>) -> String {
     let file = data_dir.join(DEVICE_ID_FILE);
     let valid = |s: &str| s.len() == 6 && s.chars().all(|c| c.is_ascii_hexdigit());
     let id = match fs::read_to_string(&file).map(|s| s.trim().to_ascii_lowercase()) {
@@ -408,9 +412,9 @@ fn phone_name(data_dir: &Path, model: Option<&str>) -> String {
     let model: String = sanitize_host(model.unwrap_or_default()).chars().take(24).collect();
     let model = model.trim_matches('-');
     sanitize_host(&if model.is_empty() || model == "rechner" {
-        format!("android-{id}")
+        format!("{system}-{id}")
     } else {
-        format!("android-{model}-{id}")
+        format!("{system}-{model}-{id}")
     })
 }
 
@@ -438,11 +442,45 @@ fn android_model() -> Option<String> {
     None
 }
 
+/// The device's model identifier (`hw.machine`, such as „iPhone16,2“ or „iPad14,5“).
+#[cfg(target_os = "ios")]
+fn apple_model() -> Option<String> {
+    use std::ffi::{c_char, c_int, c_void};
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const c_char,
+            old: *mut c_void,
+            old_len: *mut usize,
+            new: *mut c_void,
+            new_len: usize,
+        ) -> c_int;
+    }
+    let mut buf = [0u8; 64];
+    let mut len = buf.len();
+    // SAFETY: the name is NUL-terminated, `len` is the buffer's size and the kernel writes at most
+    // that many bytes.
+    let rc =
+        unsafe { sysctlbyname(c"hw.machine".as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) };
+    if rc != 0 {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&buf[..len.min(buf.len())]).trim_end_matches('\0').trim().to_owned();
+    (!s.is_empty()).then_some(s)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn apple_model() -> Option<String> {
+    None
+}
+
 /// Computer name for the fallback branch, reduced to characters valid in a branch name.
 pub fn hostname() -> String {
-    // Apps on Android see no host name: [`device_name`] names the phone.
+    // Apps on Android and iOS see no host name: [`device_name`] names the phone.
     if cfg!(target_os = "android") {
         return "android".to_owned();
+    }
+    if cfg!(target_os = "ios") {
+        return "ios".to_owned();
     }
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
@@ -3800,21 +3838,28 @@ mod tests {
     fn each_phone_keeps_a_name_of_its_own() {
         let base = tmp("phone-name");
         let (one, two) = (base.join("eins"), base.join("zwei"));
-        let a = phone_name(&one, Some("Pixel 8 Pro"));
+        let a = phone_name(&one, "android", Some("Pixel 8 Pro"));
         assert!(a.starts_with("android-pixel-8-pro-") && a.len() == "android-pixel-8-pro-".len() + 6, "{a}");
-        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), a, "kept");
-        let b = phone_name(&two, Some("Pixel 8 Pro"));
+        assert_eq!(phone_name(&one, "android", Some("Pixel 8 Pro")), a, "kept");
+        let b = phone_name(&two, "android", Some("Pixel 8 Pro"));
         assert_ne!(a, b, "two phones of one model");
         assert_ne!(fallback_branch(&a), fallback_branch(&b));
         let id = &a[a.len() - 6..];
-        assert_eq!(phone_name(&one, None), format!("android-{id}"), "no model");
-        assert_eq!(check_branch(&fallback_branch(&phone_name(&one, Some("Galaxy S24 (Ü) / 5G")))).ok(), Some(()));
+        assert_eq!(phone_name(&one, "android", None), format!("android-{id}"), "no model");
+        assert_eq!(
+            check_branch(&fallback_branch(&phone_name(&one, "android", Some("Galaxy S24 (Ü) / 5G")))).ok(),
+            Some(())
+        );
         // A damaged id file: a new id, kept from then on.
         fs::write(one.join(DEVICE_ID_FILE), "xyz").unwrap();
-        let c = phone_name(&one, Some("Pixel 8 Pro"));
+        let c = phone_name(&one, "android", Some("Pixel 8 Pro"));
         assert_ne!(c, a);
-        assert_eq!(phone_name(&one, Some("Pixel 8 Pro")), c);
-        if !cfg!(target_os = "android") {
+        assert_eq!(phone_name(&one, "android", Some("Pixel 8 Pro")), c);
+        // An iPhone: the same id, its own system and the model identifier iOS reports.
+        let i = phone_name(&one, "ios", Some("iPhone16,2"));
+        assert_eq!(i, format!("ios-iphone16-2-{}", &c[c.len() - 6..]), "{i}");
+        assert_eq!(check_branch(&fallback_branch(&i)).ok(), Some(()));
+        if !cfg!(any(target_os = "android", target_os = "ios")) {
             assert_eq!(device_name(&one), hostname());
         }
         let _ = fs::remove_dir_all(&base);

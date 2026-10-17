@@ -1,10 +1,12 @@
 // Hover styles only where a pointer can hover (1.20, the full app on Android). On a touch screen
 // a tap leaves `:hover` on the element until the next tap elsewhere, so a row stays tinted and a
 // hover-only control stays shown. At build time (ui/vite.config.ts) every rule of the app's
-// stylesheets with `:hover` in a selector goes into `@media (hover: hover)`; where the rule only
-// reveals a control (opacity, visibility), `@media (hover: none)` shows the control without the
-// hover instead, so nothing becomes unreachable by touch. Desktops with a mouse or trackpad match
-// `(hover: hover)` and keep every rule as written.
+// stylesheets with `:hover` in a selector goes into `@media (hover: hover), (any-hover: hover)`;
+// where the rule only reveals a control (opacity, visibility), `@media (hover: none)` shows the
+// control without the hover instead, so nothing becomes unreachable by touch. Desktops with a mouse
+// or trackpad match `(hover: hover)` and keep every rule as written; a tablet with a trackpad or
+// mouse besides its touch screen (an iPad with a Magic Keyboard, Android with a mouse) matches
+// `(any-hover: hover)` and gets the hover styles for its pointer too.
 //
 // The selector logic is plain functions (tested in hoverMedia.test.ts); `hoverOnly` wires them
 // into PostCSS without importing it (Vite passes the node constructors).
@@ -29,6 +31,9 @@ export function withoutHover(selector: string): string | null {
   if (!out || /^[>+~]|[>+~]$/.test(out) || /\(\s*\)/.test(out)) return null;
   return out;
 }
+
+/** Where hover styles apply: a primary pointer that hovers, or any connected one. */
+export const HOVER_MEDIA = "(hover: hover), (any-hover: hover)";
 
 const REVEAL_PROPS = new Set(["opacity", "visibility", "pointer-events", "transition-delay"]);
 
@@ -104,7 +109,7 @@ export function hoverOnly() {
             rule.before(none);
           }
         }
-        const media = new AtRule({ name: "media", params: "(hover: hover)" });
+        const media = new AtRule({ name: "media", params: HOVER_MEDIA });
         media.append(rule.clone({ selectors: hover }));
         rule.before(media);
         if (rest.length) rule.selectors = rest;

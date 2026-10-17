@@ -103,6 +103,8 @@ pub struct DisplayFacts {
     pub external: bool,
     pub mouse: bool,
     pub keyboard: bool,
+    /// An iPad (iOS only, `ios.rs`): the full app goes by the window's width there.
+    pub ipad: bool,
 }
 
 /// The window's size, its mode and display, a mouse and a keyboard (`ShellPlugin.display`).

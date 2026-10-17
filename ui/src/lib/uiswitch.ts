@@ -1,5 +1,5 @@
-// The Android app's switch between the phone app (`mobile.html`) and the full app (`index.html`),
-// 1.20. At the start each page asks once which interface fits (`bootInterface`) and goes over to
+// The switch of the Android and iOS apps between the phone app (`mobile.html`) and the full app
+// (`index.html`), 1.20. At the start each page asks once which interface fits (`bootInterface`) and goes over to
 // the other page before it shows anything; while it runs it follows the window (`followInterface`):
 // resized, moved to another display, a mouse or keyboard plugged in (ShellPlugin.kt announces
 // those as the event `arcalo-display`), or the setting changed. Before it goes over, the unsaved
@@ -48,8 +48,15 @@ export async function decide(current: Interface): Promise<Interface> {
   } catch {
     display = null;
   }
-  const facts = display?.facts ?? factsFromViewport(window);
-  return chooseInterface(display?.choice ?? "auto", facts, current);
+  return chooseInterface(display?.choice ?? "auto", withViewport(display?.facts ?? null, factsFromViewport(window)), current);
+}
+
+/** The facts of the system, with the WebView's own size where the system names none (iOS reports
+ *  only the device; its window is the WebView's viewport). */
+export function withViewport(facts: DisplayFacts | null, viewport: DisplayFacts): DisplayFacts {
+  if (!facts) return viewport;
+  if (facts.width > 0 && facts.height > 0) return facts;
+  return { ...facts, width: viewport.width, height: viewport.height, smallestWidth: facts.smallestWidth || viewport.smallestWidth, mouse: facts.mouse || viewport.mouse };
 }
 
 /** Leaves for the other page (replacing this one, so Android's back button never returns to it). */

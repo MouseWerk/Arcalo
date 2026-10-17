@@ -1,4 +1,4 @@
-// The shell of the Android companion app: four tabs and a capture button at the bottom,
+// The shell of the phone app (Android and iPhone): four tabs and a capture button at the bottom,
 // screens opened above them, toasts, Android's back button, the app's own updates, text shared
 // from other apps, the colors behind the system bars, and the sync when the app comes back to
 // the front.
@@ -9,6 +9,7 @@ import { onBackButtonPress } from "@tauri-apps/api/app";
 import { CircleCheck, Clock, FileText, Info, ListChecks, Plus, Sun, TriangleAlert } from "lucide-react";
 import "../styles/mobile.css";
 import { applyPrefs } from "../lib/prefs";
+import { onIos } from "../lib/capabilities";
 import { applyThemeState } from "../lib/themes";
 import { t, useT, type TKey } from "../lib/i18n";
 import type { Settings, SettingsView } from "../lib/types";
@@ -80,10 +81,12 @@ export function MobileApp() {
       listen("settings://changed", () => void loadSettings()),
       listen<UpdateStatus>("apkupdate://status", (e) => setUpdate(e.payload)),
     ];
-    mobileApi.update
-      .status()
-      .then((s) => s && setUpdate(s))
-      .catch(() => {});
+    // Android's own updates; the App Store updates the iOS app.
+    if (!onIos())
+      mobileApi.update
+        .status()
+        .then((s) => s && setUpdate(s))
+        .catch(() => {});
     return () => offs.forEach((p) => void p.then((off) => off()).catch(() => {}));
   }, [refresh, loadSettings]);
 
@@ -105,6 +108,8 @@ export function MobileApp() {
   // Android's back button: an edit mode first, then the top screen, then „Heute“; on „Heute“
   // the app goes to the background (it never quits from here).
   useEffect(() => {
+    // iOS has no back button (and no listener for one).
+    if (onIos()) return;
     const listener = onBackButtonPress(() => {
       switch (backAction(routeRef.current, layers.current.length)) {
         case "layer":

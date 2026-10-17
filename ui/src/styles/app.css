@@ -8,6 +8,15 @@
   transition: opacity var(--dur) var(--ease-out);
 }
 body.ready .app { opacity: 1; }
+/* iOS (the iPad): the WebView covers the whole window (lib/ios.ts); the app keeps clear of the
+   status bar, the home indicator and the rounded corners. Fixed layers keep clear too. */
+:root.platform-ios .app {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+:root.platform-ios .toasts {
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(40px + env(safe-area-inset-bottom));
+}
 /* Windows 11 with a backdrop (Mica, Acrylic): see "window backdrop" at the end. */
 /* macOS: the window content reaches into the title bar (overlay); the traffic lights sit in the
    top-left corner, so the column below them and the row next to them make room. */

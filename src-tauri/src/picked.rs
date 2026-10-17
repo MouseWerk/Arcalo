@@ -2,15 +2,19 @@
 //! the dialog is Android's document picker, which answers with a `content://` address that only
 //! Android can read or write: a file to read is copied into the app's cache first (under its own
 //! name, so the checks of its extension work), a file to write is written there and then copied
-//! to the address (`ShellPlugin.kt`: `copyFromUri`, `copyToUri`).
+//! to the address (`ShellPlugin.kt`: `copyFromUri`, `copyToUri`). On iOS the picker answers with
+//! `file://` addresses, outside the app's sandbox when the file stays where it is (a save, a file
+//! in iCloud Drive): they are copied the same way, inside the address's security scope
+//! (`mobile/ios.rs`, `with_scope`).
 
 use std::path::{Path, PathBuf};
 
 use crate::Result;
 
-/// A content address of Android's document picker.
+/// A content address of Android's document picker (or, on iOS, a `file://` address of its).
 pub fn is_content(path: &str) -> bool {
-    path.trim_start().starts_with("content://")
+    let p = path.trim_start();
+    p.starts_with("content://") || (cfg!(target_os = "ios") && p.starts_with("file://"))
 }
 
 /// A file to read: the path itself, or a copy in the cache that is removed with this value.
@@ -50,7 +54,17 @@ pub fn input(path: &str) -> Result<Input> {
             .map_err(arcalo_core::Error::State)?;
         Ok(Input { path: local, temporary: true })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        let dir = scratch("in")?;
+        let copied = crate::mobile::ios::with_scope(path, |src| {
+            let local = dir.join(safe_name(&src.file_name().unwrap_or_default().to_string_lossy()));
+            std::fs::copy(src, &local).map(|_| local).map_err(|e| arcalo_core::Error::file(src, e))
+        })
+        .map_err(arcalo_core::Error::State)??;
+        Ok(Input { path: copied, temporary: true })
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Err(unsupported())
 }
 
@@ -74,14 +88,28 @@ pub fn output<T>(path: &str, write: impl FnOnce(&Path) -> Result<T>) -> Result<T
         let _ = std::fs::remove_dir(&dir);
         res
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        let dir = scratch("out")?;
+        let res = crate::mobile::ios::with_scope(path, |dest| {
+            let local = dir.join(safe_name(&dest.file_name().unwrap_or_default().to_string_lossy()));
+            let res = write(&local)
+                .and_then(|v| std::fs::copy(&local, dest).map(|_| v).map_err(|e| arcalo_core::Error::file(dest, e)));
+            let _ = std::fs::remove_file(&local);
+            res
+        })
+        .map_err(arcalo_core::Error::State)?;
+        let _ = std::fs::remove_dir(&dir);
+        res
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let _ = write;
         Err(unsupported())
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn unsupported() -> arcalo_core::Error {
     arcalo_core::Error::State(
         arcalo_core::tr!("Diese Datei kann hier nicht geöffnet werden", "This file cannot be opened here").into(),
@@ -89,7 +117,7 @@ fn unsupported() -> arcalo_core::Error {
 }
 
 /// A fresh folder in the app's cache for one file (two files of one name never meet).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn scratch(kind: &str) -> Result<PathBuf> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -100,24 +128,20 @@ fn scratch(kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 static CACHE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// The app's cache folder (Android clears it when space runs low); copies of picked files go there.
+/// The app's cache folder (the system clears it when space runs low); copies of picked files go
+/// there.
 #[cfg(mobile)]
 pub fn init(cache: PathBuf) {
-    #[cfg(target_os = "android")]
-    {
-        let _ = std::fs::remove_dir_all(cache.join("picked"));
-        let _ = CACHE.set(cache);
-    }
-    #[cfg(not(target_os = "android"))]
-    let _ = cache;
+    let _ = std::fs::remove_dir_all(cache.join("picked"));
+    let _ = CACHE.set(cache);
 }
 
-/// The name Android shows for a picked file, usable as a file name (no folders, no control
+/// The name the system shows for a picked file, usable as a file name (no folders, no control
 /// characters); `file` when nothing is left.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 pub fn safe_name(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or("");
     let clean: String =

@@ -1,0 +1,2 @@
+/* The permission texts of Info.ios.plist (English). */
+"NSLocalNetworkUsageDescription" = "Arcalo connects to a Git server in your local network when your sync uses one.";

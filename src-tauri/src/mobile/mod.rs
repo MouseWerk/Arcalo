@@ -1,17 +1,23 @@
-//! The Android app: the same state and commands as the desktop shell, without its windows, tray,
-//! shortcuts and voice notes (see docs/android.md). Its updates are its own (`apkupdate.rs`): an
-//! APK checked and handed to Android's installer.
+//! The Android and iOS apps: the same state and commands as the desktop shell, without its
+//! windows, tray, shortcuts and voice notes (see docs/android.md, docs/ios.md). The Android app's
+//! updates are its own (`apkupdate.rs`): an APK checked and handed to Android's installer; the
+//! iOS app is updated by the App Store and has no updater.
 //!
 //! Two interfaces share this shell: the phone app (`ui/src/mobile/`, `mobile.html`) and, on large
-//! screens (a tablet, desktop mode, an external display, Android on a PC), the full desktop app
-//! (`index.html`, 1.20; `ui/src/lib/uiswitch.ts` chooses with [`android_display`]). Both use every
+//! screens (a tablet, an iPad, desktop mode, an external display, Android on a PC), the full
+//! desktop app (`index.html`, 1.20; `ui/src/lib/uiswitch.ts` chooses with [`android_display`]). Both use every
 //! shared command but the desktop-only ones ([`crate::platform::DESKTOP_ONLY`]); the phone app
 //! also uses the few below for what a phone does differently: the start screen in one call,
 //! bookings that go into the daily note as chips, the sync followed by the reference data from
 //! the desktop's database copy, the window around the WebView and text shared to the app.
 
 pub mod android;
+#[cfg(target_os = "android")]
 pub mod apkupdate;
+#[cfg(target_os = "ios")]
+pub mod ios;
+#[cfg(target_os = "ios")]
+pub mod keychain;
 pub mod keystore;
 
 use std::collections::HashMap;
@@ -40,13 +46,27 @@ const SYNC_EVERY: Duration = Duration::from_secs(15 * 60);
 #[tauri::mobile_entry_point]
 pub fn run() {
     crate::PROCESS_START.get_or_init(std::time::Instant::now);
-    tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
+    // iOS: the background sync is registered before the launch ends.
+    #[cfg(target_os = "ios")]
+    ios::register_background();
+    let builder = tauri::Builder::default();
+    // iOS posts its notifications itself (`ios.rs`).
+    #[cfg(not(target_os = "ios"))]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
-        // The full app's questions and Android's document picker for files (1.20).
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(keystore::plugin())
-        .plugin(android::plugin())
+        // The full app's questions and the system's document picker for files (1.20).
+        .plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(keystore::plugin()).plugin(android::plugin());
+    // iOS ends the WebView's content process when memory runs low in the background; the page
+    // loads again instead of staying blank.
+    #[cfg(target_os = "ios")]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        devlog::warn("ios", "the WebView's content process ended, the page loads again");
+        let _ = webview.reload();
+    });
+    builder
         .register_uri_scheme_protocol("arcalo-asset", |ctx, request| {
             crate::serve_attachment(ctx.app_handle(), &request)
         })
@@ -57,11 +77,15 @@ pub fn run() {
         .invoke_handler(off_main_thread(crate::commands()))
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => {
                 crate::checkpoint_on_exit(app);
                 devlog::shutdown();
             }
+            // iOS: text or a file shared to the app, `arcalo://capture?text=…`.
+            #[cfg(target_os = "ios")]
+            tauri::RunEvent::Opened { urls } => ios::opened(&urls),
+            _ => {}
         });
 }
 
@@ -78,7 +102,12 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     }
     devlog::info(
         "core",
-        format!("Arcalo {} (Android) started, data folder {}", env!("CARGO_PKG_VERSION"), dir.display()),
+        format!(
+            "Arcalo {} ({}) started, data folder {}",
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(target_os = "ios") { "iOS" } else { "Android" },
+            dir.display()
+        ),
     );
     let db = Database::open(dir.join(datadir::DB_FILE))?;
     if let Err(e) = db.migrate_settings() {
@@ -90,6 +119,9 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     if let Err(e) = db.localize_default_leistungsarten() {
         devlog::warn("core", format!("activity types not localized: {e}"));
     }
+    // The simulator check of CI: the sample workspace (debug builds, `ARCALO_SMOKE_DEMO=1`).
+    #[cfg(target_os = "ios")]
+    ios::smoke::seed(&db);
     let _ = db.purge_expired_trash(Utc::now());
     let _ = db.prune_versions(Utc::now());
     let _ = db.prune_history(Utc::now());
@@ -127,9 +159,15 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     app.manage(crate::semantic::Semantic::default());
     // Saving the settings tells the backup destinations (none on the phone) about it.
     app.manage(crate::backupdest::Destinations::default());
-    app.manage(apkupdate::Updater::new(app, &app.state::<AppState>().data_dir));
+    #[cfg(target_os = "android")]
+    {
+        app.manage(apkupdate::Updater::new(app, &app.state::<AppState>().data_dir));
+        apkupdate::spawn_scheduler(app.clone());
+    }
+    // The device, the WebView, the background sync and the notification buttons.
+    #[cfg(target_os = "ios")]
+    ios::init(app);
     spawn_sync_scheduler(app.clone());
-    apkupdate::spawn_scheduler(app.clone());
     spawn_network_watch(app.clone());
     // What the full app does in the background as on the desktop (each only when set up):
     // calendar subscriptions, Jira, the calendar's focus blocks, the index for search by meaning.
@@ -143,7 +181,8 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
 }
 
 /// The assistant's keys are in the Android Keystore, which answers once the UI runs: read a few
-/// seconds after the start, on a worker thread, and the AI clients built with them.
+/// seconds after the start, on a worker thread, and the AI clients built with them (on iOS the
+/// Keychain answers at once; the same way keeps the start short).
 fn spawn_ai_keys(app: AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(3));
@@ -202,7 +241,11 @@ fn spawn_network_watch(app: AppHandle) {
 /// main thread: the Kotlin plugin answers on it.
 fn refresh_network(app: &AppHandle) {
     static LAST: Mutex<Option<String>> = Mutex::new(None);
-    match android::system_proxy() {
+    #[cfg(target_os = "ios")]
+    let proxy: std::result::Result<_, String> = Ok(ios::system_proxy());
+    #[cfg(not(target_os = "ios"))]
+    let proxy = android::system_proxy();
+    match proxy {
         Ok(p) => {
             let route = p.https.clone().unwrap_or_else(|| "direct".into());
             let seen = format!(
@@ -212,12 +255,12 @@ fn refresh_network(app: &AppHandle) {
             );
             let mut last = lock(&LAST);
             if last.as_deref() != Some(seen.as_str()) {
-                devlog::info("net", format!("Android proxy: {seen}"));
+                devlog::info("net", format!("system proxy: {seen}"));
                 *last = Some(seen);
             }
             arcalo_core::network::set_platform_proxy(Some(p));
         }
-        Err(e) => devlog::warn("net", format!("Android proxy not read: {e}")),
+        Err(e) => devlog::warn("net", format!("system proxy not read: {e}")),
     }
     #[cfg(target_os = "android")]
     add_user_certificates(app);
@@ -435,17 +478,27 @@ pub(crate) fn https_only(remote: &str) -> Result<()> {
 /// Text shared to the app from another one („Teilen“ → Arcalo), once; the UI opens a capture.
 #[tauri::command(async)]
 pub fn mobile_shared_text() -> Option<String> {
+    #[cfg(target_os = "ios")]
+    return ios::shared_text();
+    #[cfg(not(target_os = "ios"))]
     android::shared_text().unwrap_or_else(|e| {
         devlog::warn("mobile", format!("shared text not read: {e}"));
         None
     })
 }
 
-/// The colors behind the system bars follow the app's theme (`#rrggbb`).
+/// The colors behind the system bars follow the app's theme (`#rrggbb`; iOS: the margins around
+/// the WebView and the status bar's text).
 #[tauri::command(async)]
-pub fn mobile_bars(dark: bool, top: String, bottom: String) {
-    if let Err(e) = android::set_bars(dark, &top, &bottom) {
-        devlog::warn("mobile", format!("system bar colors not set: {e}"));
+pub fn mobile_bars(app: AppHandle, dark: bool, top: String, bottom: String) {
+    #[cfg(target_os = "ios")]
+    ios::set_bars(&app, dark, &top, &bottom);
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        if let Err(e) = android::set_bars(dark, &top, &bottom) {
+            devlog::warn("mobile", format!("system bar colors not set: {e}"));
+        }
     }
 }
 
@@ -460,14 +513,40 @@ pub struct AndroidDisplay {
 
 #[tauri::command(async)]
 pub fn android_display(state: State<AppState>) -> AndroidDisplay {
+    #[cfg(target_os = "ios")]
+    let facts = Some(ios::display());
+    #[cfg(not(target_os = "ios"))]
     let facts = android::display().map_err(|e| devlog::warn("mobile", format!("window and device not read: {e}"))).ok();
     AndroidDisplay { facts, choice: state.settings().appearance.android_interface.as_str() }
 }
 
-/// The back button on the start screen: the app goes to the background and keeps its state.
+/// The back button on the start screen: the app goes to the background and keeps its state
+/// (Android; iOS has no back button).
 #[tauri::command(async)]
 pub fn mobile_to_background() {
+    if cfg!(target_os = "ios") {
+        return;
+    }
     if let Err(e) = android::move_to_back() {
         devlog::warn("mobile", format!("not moved to the background: {e}"));
+    }
+}
+
+/// A button of a notification (iOS, `ios.rs`): „+5 Min.“ and „Pause“ at the end of a focus
+/// session act without opening the app, „Öffnen“ and a tap on the briefing open it.
+#[cfg(target_os = "ios")]
+pub fn notification_action(app: &AppHandle, action: &str) {
+    let done = match action {
+        crate::notifyact::ACTION_EXTEND => crate::focus::extend(app, 5.0),
+        crate::notifyact::ACTION_PAUSE => crate::focus::take_break(app),
+        crate::notifyact::ACTION_OPEN => {
+            crate::briefing::open(app, true);
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+    match done {
+        Ok(()) => devlog::info("notify", format!("notification action: {action}")),
+        Err(e) => devlog::warn("notify", format!("notification action {action} failed: {e}")),
     }
 }

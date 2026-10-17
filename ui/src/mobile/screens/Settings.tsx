@@ -13,6 +13,7 @@ import { syncState } from "../model";
 import { Field, Header, Notice, Section, Segmented, Spinner, Switch } from "../ui";
 import { UpdateSection } from "../update";
 import { interfaceSettingChanged } from "../../lib/uiswitch";
+import { onIos } from "../../lib/capabilities";
 import type { SaveGit } from "../../lib/useGitSetup";
 import { GitSetupScreen } from "./GitSetup";
 
@@ -165,7 +166,7 @@ export function SettingsScreen() {
               {status?.token_set && (
                 <div className="m-status-line">
                   <KeyRound size={16} />
-                  {t("mob.set.tokenStored")}
+                  {t(onIos() ? "mob.set.tokenStoredIos" : "mob.set.tokenStored")}
                 </div>
               )}
               <div className="m-divider" />
@@ -258,9 +259,9 @@ export function SettingsScreen() {
         </Section>
 
         {/* The phone app or the full app (lib/uiswitch.ts follows the change at once). */}
-        <Section title={t("set.appearance.ui")}>
+        <Section title={t(onIos() ? "set.appearance.uiIos" : "set.appearance.ui")}>
           <Segmented
-            label={t("set.appearance.ui")}
+            label={t(onIos() ? "set.appearance.uiIos" : "set.appearance.ui")}
             value={s.appearance?.android_interface ?? "auto"}
             onChange={(v) => void save({ ...s, appearance: { ...s.appearance, android_interface: v } }).then(interfaceSettingChanged)}
             options={[
@@ -269,7 +270,7 @@ export function SettingsScreen() {
               { value: "full", label: t("set.appearance.uiFull") },
             ]}
           />
-          <p className="m-desc">{t("set.appearance.uiDesc")}</p>
+          <p className="m-desc">{t(onIos() ? "set.appearance.uiDescIos" : "set.appearance.uiDesc")}</p>
         </Section>
 
         <Section title={t("mob.set.language")}>
@@ -285,9 +286,11 @@ export function SettingsScreen() {
           />
         </Section>
 
-        <Section title={t("mob.upd.title")}>
-          <UpdateSection />
-        </Section>
+        {!onIos() && (
+          <Section title={t("mob.upd.title")}>
+            <UpdateSection />
+          </Section>
+        )}
 
         <Section title={t("mob.set.about")}>
           <div className="m-about">
@@ -304,7 +307,7 @@ export function SettingsScreen() {
               <div className="m-row-sub">{t("mob.set.version", { version: m.view.version })}</div>
             </div>
           </div>
-          <p className="m-desc">{t("mob.set.aboutText")}</p>
+          <p className="m-desc">{t(onIos() ? "mob.set.aboutTextIos" : "mob.set.aboutText")}</p>
           <p className="m-desc m-faint">{t("mob.set.secrets", { store: m.view.api_key_storage })}</p>
         </Section>
       </div>

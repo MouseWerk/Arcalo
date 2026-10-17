@@ -1,4 +1,4 @@
-//! Android stand-in for `desktop.rs`: no tray, no global shortcuts, no quick-capture or search
+//! Mobile stand-in for `desktop.rs`: no tray, no global shortcuts, no quick-capture or search
 //! windows. The shared code calls these; they do what applies to a phone (a notification, the
 //! timer pause, a line captured from the full app's start page) and nothing else.
 
@@ -8,6 +8,7 @@ use arcalo_core::desktop::CaptureOutcome;
 use chrono::{Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+#[cfg(not(target_os = "ios"))]
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{AppState, Result, lock};
@@ -70,7 +71,15 @@ pub fn capture_submit(
     Ok(Submitted { outcome, id: None, queued: false })
 }
 
+/// A notification without buttons (iOS: `ios.rs`, the notification plugin of Tauri forgets the
+/// notifications of an earlier start and stops the app when one of them is tapped).
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    #[cfg(target_os = "ios")]
+    {
+        let _ = app;
+        crate::mobile::ios::notify(title, body, None);
+    }
+    #[cfg(not(target_os = "ios"))]
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         crate::devlog::warn("mobile", format!("notification failed: {e}"));
     }

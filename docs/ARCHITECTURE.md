@@ -36,6 +36,19 @@ parts after `app_capabilities` (`ui/src/lib/capabilities.ts`). On Android the co
 thread (Kotlin answers on the main thread); files of Android's document picker go through copies
 (`picked.rs`). `ARCALO_SIMULATE_ANDROID=1` (debug builds) gives the desktop Android's capabilities for tests.
 
+The same shell and the same mobile code build the **iOS app** for iPhone and iPad (docs/ios.md):
+`#[cfg(target_os = "ios")]` marks where iOS differs from Android. `mobile/ios.rs` calls UIKit, BackgroundTasks,
+UserNotifications and CFNetwork through the Objective-C runtime (`objc2`) where Android asks its Kotlin plugins:
+the device (`ipad` in `android_display`), the WebView in the window's safe area (its margins in the page's
+colors), security-scoped `file://` addresses of the document picker (`picked.rs`), the share sheet for „Öffnen“,
+text and Markdown files shared to the app (`RunEvent::Opened`), notifications with buttons, the background sync
+(`BGAppRefreshTask`) and the Wi-Fi's proxy. Secrets are in the iOS Keychain (`mobile/keychain.rs`), git uses
+libgit2 with the system's TLS, and there is no updater (`Capabilities::ios()`: Android's without the APK updates;
+the `apk_update_*` commands are Android's only). The iPhone shows the phone app, the iPad the full app unless its
+window is narrow (`uimode.ts`, by width); both sync as a companion with a database of their own. The Xcode project
+(`src-tauri/gen/apple`) is generated in CI (`.github/workflows/ios.yml`, `scripts/ios-project.py`), which also
+checks a simulator build on an iPhone and two iPads (`scripts/ios-smoke.sh`).
+
 ## Data model (`crates/arcalo-core/migrations/0001_init.sql`)
 
 | Table | Purpose |

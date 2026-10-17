@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the iOS app's Info.plist by `cargo tauri ios build` (docs/ios.md, src/mobile/ios.rs). -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Arcalo</string>
+	<!-- The app's own languages; the permission texts are in ios/*.lproj/InfoPlist.strings. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>de</string>
+		<string>en</string>
+	</array>
+	<!-- The iPad: every orientation, Split View, Slide Over and Stage Manager (no full screen only). -->
+	<key>UIRequiresFullScreen</key>
+	<false/>
+	<!-- The background sync (BGAppRefreshTask). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>de.mousewerk.arcalo.sync</string>
+	</array>
+	<!-- arcalo://capture?text=… (a shortcut or another app hands text to the quick capture). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>de.mousewerk.arcalo.capture</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>arcalo</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Markdown and text files: „Teilen“ → Arcalo and „Öffnen in“ (a copy in the app's Inbox). -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Markdown</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+				<string>public.plain-text</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/markdown</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<!-- A Git server in the user's own network (a NAS, a company server) asks iOS for access. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Arcalo connects to a Git server in your local network when your sync uses one.</string>
+	<!-- Only standard TLS for the connections (exempt; the database encryption is not offered on
+	     iOS): App Store Connect does not ask for every build. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

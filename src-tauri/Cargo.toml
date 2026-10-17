@@ -38,7 +38,7 @@ zip = { version = "4", default-features = false, features = ["deflate-flate2-zli
 tempfile = "3"
 
 # Desktop only (tray, global shortcuts, updates, autostart, one instance, clipboard, voice notes);
-# the Android companion app is built without them (see docs/android.md).
+# the Android and iOS apps are built without them (see docs/android.md, docs/ios.md).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # `arcalo pages list` & co.: the program is also the command line (docs/cli.md).
 arcalo-cli = { path = "../crates/arcalo-cli" }
@@ -57,6 +57,16 @@ cpal = "0.16"
 # Android: the Git sync runs on libgit2 (no `git` program on a phone).
 [target.'cfg(target_os = "android")'.dependencies]
 arcalo-core = { path = "../crates/arcalo-core", features = ["embedded-git"] }
+
+# iOS (`mobile/ios.rs`, `mobile/keychain.rs`): the Git sync on libgit2 as on Android (HTTPS through
+# the system's TLS), secrets in the Keychain, and UIKit, BackgroundTasks and the share sheet
+# through the Objective-C runtime.
+[target.'cfg(target_os = "ios")'.dependencies]
+arcalo-core = { path = "../crates/arcalo-core", features = ["embedded-git"] }
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
+security-framework = "3.7.0"
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).

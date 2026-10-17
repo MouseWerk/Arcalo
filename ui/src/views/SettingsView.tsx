@@ -2030,7 +2030,18 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           <p>{t("upd.version", { version })}</p>
         </div>
       </header>
-      {caps().desktopUpdater ? <UpdatesGroup draft={draft} update={update} /> : caps().androidUpdater ? <AndroidUpdatesGroup /> : null}
+      {caps().desktopUpdater ? (
+        <UpdatesGroup draft={draft} update={update} />
+      ) : caps().androidUpdater ? (
+        <AndroidUpdatesGroup />
+      ) : caps().platform === "ios" ? (
+        // iOS: the App Store updates the app; it may not update itself.
+        <Group title={t("set.about.updates")}>
+          <Row label={t("set.about.updates")} description={t("set.about.appStore")}>
+            <span />
+          </Row>
+        </Group>
+      ) : null}
       <WhatsNewGroup />
       <Group title={t("help.group")}>
         <Row label={t("help.docs")} description={t("help.docsDesc")}>

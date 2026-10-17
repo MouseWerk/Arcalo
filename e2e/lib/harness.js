@@ -399,7 +399,15 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         },
         { timeout, timeoutMsg: `${sel} not displayed after ${timeout}ms` },
       );
-      return browser.$(sel);
+      // The same race once more for the element handed back: a re-render right after the check.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await browser.$(sel);
+        } catch (e) {
+          if (attempt >= 20 || !/stale element/i.test(String(e?.message ?? e))) throw e;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
     },
     async waitText(sel, pattern, timeout = 8000) {
       await browser.waitUntil(async () => {

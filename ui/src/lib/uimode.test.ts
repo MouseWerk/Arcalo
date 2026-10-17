@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chooseInterface, DESKTOP_DP, factsFromViewport, HYSTERESIS_DP, isDesktopSetting, LARGE_DP, pageOf, switchAllowed, type DisplayFacts } from "./uimode";
+import { chooseInterface, DESKTOP_DP, factsFromViewport, HYSTERESIS_DP, IPAD_DP, isDesktopSetting, LARGE_DP, pageOf, switchAllowed, type DisplayFacts } from "./uimode";
+import { withViewport } from "./uiswitch";
 
 const touch = (width: number, height: number, more: Partial<DisplayFacts> = {}): DisplayFacts => ({
   width,
@@ -111,5 +112,60 @@ describe("the interface of the Android app", () => {
     expect(switchAllowed([now - 9000, now - 5000, now - 1000], now)).toBe(false);
     // Old switches do not count.
     expect(switchAllowed([now - 90_000, now - 60_000, now - 1000], now)).toBe(true);
+  });
+});
+
+describe("the interface of the iOS app", () => {
+  // iOS names only the device; the sizes are the WebView's (withViewport).
+  const ios = (ipad: boolean): DisplayFacts => ({ ...touch(0, 0), smallestWidth: 0, ipad });
+  const at = (ipad: boolean, w: number, h: number) => withViewport(ios(ipad), touch(w, h));
+
+  it("iPhones get the phone app, upright and sideways, the largest ones included", () => {
+    for (const [w, h] of [
+      [375, 667],
+      [393, 852],
+      [440, 956],
+      [956, 440],
+      [852, 393],
+    ]) {
+      expect(chooseInterface("auto", at(false, w, h), "phone"), `${w}x${h}`).toBe("phone");
+    }
+  });
+
+  it("iPads get the full app in full screen, half of Split View and wide Stage Manager windows", () => {
+    for (const [w, h] of [
+      [744, 1133], // iPad mini upright
+      [1133, 744],
+      [1032, 1376], // iPad Pro 13" upright
+      [1376, 1032],
+      [688, 1032], // half of a 13" iPad sideways
+      [560, 744], // half of an iPad mini sideways
+      [900, 500], // a wide, low window in Stage Manager
+    ]) {
+      expect(chooseInterface("auto", at(true, w, h), "phone"), `${w}x${h}`).toBe("full");
+    }
+  });
+
+  it("a narrow iPad window (Slide Over, a third of Split View) gets the phone app", () => {
+    for (const [w, h] of [
+      [320, 1032],
+      [375, 1032],
+      [438, 1376],
+    ]) {
+      expect(chooseInterface("auto", at(true, w, h), "full"), `${w}x${h}`).toBe("phone");
+    }
+  });
+
+  it("the full app stays while an iPad window shrinks a little below the line", () => {
+    expect(chooseInterface("auto", at(true, IPAD_DP - HYSTERESIS_DP + 1, 900), "full")).toBe("full");
+    expect(chooseInterface("auto", at(true, IPAD_DP - 1, 900), "phone")).toBe("phone");
+    expect(chooseInterface("phone", at(true, 1376, 1032), "full")).toBe("phone");
+  });
+
+  it("the system's own sizes win over the WebView's", () => {
+    const android = touch(800, 1280);
+    expect(withViewport(android, touch(10, 10))).toBe(android);
+    expect(withViewport(null, touch(400, 800)).width).toBe(400);
+    expect(at(true, 560, 744)).toMatchObject({ width: 560, height: 744, smallestWidth: 560, ipad: true });
   });
 });

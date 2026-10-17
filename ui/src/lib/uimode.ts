@@ -1,5 +1,5 @@
-// Which interface the Android app shows (1.20): the phone app (`mobile.html`) or the full app
-// (`index.html`). Chosen from the window and the device at the start and again whenever the
+// Which interface the Android and iOS apps show (1.20): the phone app (`mobile.html`) or the
+// full app (`index.html`). Chosen from the window and the device at the start and again whenever the
 // window changes (resized, moved to another display, a mouse or keyboard plugged in); the setting
 // „Oberfläche auf Android“ (`appearance.android_interface`) can fix it to one of them.
 //
@@ -31,12 +31,17 @@ export interface DisplayFacts {
   mouse: boolean;
   /** A hardware keyboard is connected (Configuration.keyboard QWERTY, not hidden). */
   keyboard: boolean;
+  /** An iPad (iOS, src-tauri/src/mobile/ios.rs): the full app unless the window is narrow. */
+  ipad?: boolean;
 }
 
 /** The shorter side of a window from which a touch device gets the full app (Android's tablet line). */
 export const LARGE_DP = 600;
 /** The same in a desktop setting (desktop window, external display, mouse and keyboard). */
 export const DESKTOP_DP = 480;
+/** The width from which an iPad window gets the full app: iPadOS's regular width (the compact
+ *  ones, Slide Over and a third in Split View, are 320 to about 440 points wide). */
+export const IPAD_DP = 500;
 /** How far below its line a window may shrink before the full app goes back to the phone app,
  * so a window resized around the line does not switch back and forth. */
 export const HYSTERESIS_DP = 48;
@@ -55,6 +60,14 @@ export function chooseInterface(choice: InterfaceChoice, f: DisplayFacts, curren
   if (choice === "phone" || choice === "full") return choice;
   // A PC is a desktop, however small its window.
   if (f.pc) return "full";
+  // An iPad: the full app in every window but a narrow one (Slide Over, a third in Split View, a
+  // narrow window in Stage Manager), whatever its height.
+  if (f.ipad) {
+    const w = f.width > 0 ? f.width : f.smallestWidth;
+    if (w <= 0) return current;
+    if (current === "full") return w >= IPAD_DP - HYSTERESIS_DP ? "full" : "phone";
+    return w >= IPAD_DP ? "full" : "phone";
+  }
   const line = isDesktopSetting(f) ? DESKTOP_DP : LARGE_DP;
   // Unknown sizes (0) fall back to the display's smallest width.
   const w = f.width > 0 ? f.width : f.smallestWidth;

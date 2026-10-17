@@ -26,10 +26,11 @@ use git2::{
 
 use super::{Git, GitOutput};
 
-/// Whether [`Git::new`] uses libgit2: always on Android; in tests of this crate when
+/// Whether [`Git::new`] uses libgit2: always on Android and iOS; in tests of this crate when
 /// `ARCALO_TEST_EMBEDDED_GIT` is set (the sync's tests then run on libgit2).
 pub(super) fn default_on() -> bool {
-    cfg!(target_os = "android") || (cfg!(test) && std::env::var_os("ARCALO_TEST_EMBEDDED_GIT").is_some())
+    cfg!(any(target_os = "android", target_os = "ios"))
+        || (cfg!(test) && std::env::var_os("ARCALO_TEST_EMBEDDED_GIT").is_some())
 }
 
 /// The CA bundle libgit2's OpenSSL checks servers against (Android: written by [`init_tls`]).
