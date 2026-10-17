@@ -484,15 +484,18 @@ pub fn mobile_shared_text() -> Option<String> {
     })
 }
 
-/// The colors behind the system bars follow the app's theme (`#rrggbb`).
+/// The colors behind the system bars follow the app's theme (`#rrggbb`; iOS: the margins around
+/// the WebView and the status bar's text).
 #[tauri::command(async)]
-pub fn mobile_bars(dark: bool, top: String, bottom: String) {
-    // iOS draws the status bar over the page and colors its text after the system's appearance.
-    if cfg!(target_os = "ios") {
-        return;
-    }
-    if let Err(e) = android::set_bars(dark, &top, &bottom) {
-        devlog::warn("mobile", format!("system bar colors not set: {e}"));
+pub fn mobile_bars(app: AppHandle, dark: bool, top: String, bottom: String) {
+    #[cfg(target_os = "ios")]
+    ios::set_bars(&app, dark, &top, &bottom);
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        if let Err(e) = android::set_bars(dark, &top, &bottom) {
+            devlog::warn("mobile", format!("system bar colors not set: {e}"));
+        }
     }
 }
 

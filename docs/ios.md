@@ -48,7 +48,7 @@ capabilities without the APK updates) and hides what does not exist instead of f
 | Notifications | yes, with buttons | `UNUserNotificationCenter` directly (`ios.rs`); the permission is asked with the first one. End of a focus session: „+5 Min.“ and „Pause“ (in the background); morning briefing: „Öffnen“ |
 | Background sync | yes | `BGAppRefreshTask` `de.mousewerk.arcalo.sync` (where Android has none and syncs while open): asked for again after each run, at the earliest after 15 minutes; iOS decides when. It runs the open app's sync for at most 25 s |
 | Proxy | the Wi-Fi's | `CFNetworkCopySystemProxySettings` for mode „System“ of the network settings (HTTPS proxy and its exceptions; a PAC address is shown, not evaluated, as on Android) |
-| Safe areas | yes | the WebView covers the whole window (`contentInsetAdjustmentBehavior = never`, `viewport-fit=cover`); the phone app pads with `env(safe-area-inset-*)` as on Android, the full app's shell and its toasts too (`ui/src/styles/app.css`, `platform-ios`) |
+| Safe areas | yes | the WebView fills the window's safe area (Auto Layout on `safeAreaLayoutGuide`, `ios::fit_webview`), so neither page, nor a dialog or overlay of it, reaches under the status bar, the notch, the home indicator or the rounded corners; the margins take the colors of the page's edges and the status bar's text the theme (`mobile_bars`; the phone app's header and tab bar, the full app's top and bottom edge, `lib/ios.ts` `followBars`). The pages' `env(safe-area-inset-*)` padding stays as a second line |
 | Hardware keyboard and trackpad | yes | the iPad reports itself as a Mac to the WebView, so the shortcuts use Cmd as on macOS (`lib/platform.ts`, `IS_MAC`): Cmd+K the palette, Cmd+click selects in the tree. Hover styles apply to a connected trackpad or mouse (`(any-hover: hover)`, `lib/hoverMedia.ts`) |
 | Apple Pencil | in drawings | Excalidraw switches to pen mode with the first Pencil stroke (pressure, the finger pans); the canvas boards take the Pencil as a pointer |
 | Updates | App Store / TestFlight | no self-update (App Store rules): `androidUpdater` is off, the APK commands are not even registered on iOS (`#[cfg(target_os = "android")]`); Über Arcalo says that the App Store updates the app |
@@ -123,14 +123,17 @@ CI (`.github/workflows/ios.yml`, called by `ci.yml` and `release.yml`) on a macO
 1. `cargo clippy -p arcalo --lib --target aarch64-apple-ios -- -D warnings`: the iOS code, for the device.
 2. The Xcode project as above, then a debug build for the simulator, unsigned:
    `cargo tauri ios build --target aarch64-sim --debug --no-sign`.
-3. The simulator check (`scripts/ios-smoke.sh`): an iPhone (the newest „iPhone NN Pro“), a 13" iPad Pro and an
-   iPad mini, each upright and sideways. The app is started with `ARCALO_SMOKE=1` (debug builds only; sideways
-   with `ARCALO_SMOKE_ORIENTATION=landscape`, which turns the window with `requestGeometryUpdate`); 10 and 20
-   seconds after the start it runs `src-tauri/src/mobile/ios_smoke.js` in the WebView and writes the result to
-   `smoke.json` in its data folder. `scripts/ios-smoke-check.py` fails the job when the iPhone does not show the
-   phone app or an iPad not the full app (with its ribbon), when the page overflows sideways, when a fixed control
-   (not in a scrolling area) sits inside the safe-area insets, or when the console has errors. The screenshots and
-   reports are the artifact `ios-simulator`.
+3. The simulator check (`scripts/ios-smoke.sh`): the runner's newest iPhone Pro, 13" iPad Pro and iPad mini (of
+   the newest iOS runtime), each upright and sideways. The app is started with `ARCALO_SMOKE=1` (debug builds only; sideways
+   with `ARCALO_SMOKE_ORIENTATION=landscape`: an iPhone window turns with `requestGeometryUpdate`); 10 and 20
+   seconds after the start it runs `src-tauri/src/mobile/ios_smoke.js` in the WebView, adds the window's size,
+   its safe-area insets and the WebView's frame, and writes the result to `smoke.json` in its data folder. An
+   iPad turns only with the device (an app that supports multitasking cannot turn its window), so the script
+   rotates the simulated device (Simulator's „Rotate Left“) before the sideways start. `scripts/ios-smoke-check.py`
+   fails the job when the iPhone does not show the phone app or an iPad not the full app (with its ribbon), when
+   the window is not in the expected orientation, when the WebView reaches outside the safe area, when the page
+   overflows sideways, when a fixed control (not in a scrolling area) sits inside the page's own insets, or when
+   the console has errors. The screenshots and reports are the artifact `ios-simulator`.
 4. With the Apple secrets: the signed archive for App Store Connect (artifact `arcalo-ios`) and, for a release,
    the upload to TestFlight ([release/ios.md](release/ios.md)).
 

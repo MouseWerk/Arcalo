@@ -108,6 +108,8 @@ export function MobileApp() {
   // Android's back button: an edit mode first, then the top screen, then „Heute“; on „Heute“
   // the app goes to the background (it never quits from here).
   useEffect(() => {
+    // iOS has no back button (and no listener for one).
+    if (onIos()) return;
     const listener = onBackButtonPress(() => {
       switch (backAction(routeRef.current, layers.current.length)) {
         case "layer":

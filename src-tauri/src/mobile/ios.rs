@@ -4,8 +4,8 @@
 //!
 //! - **The device.** Whether it is an iPad (`UIDevice.userInterfaceIdiom`), for the choice between
 //!   the phone app and the full app (`ui/src/lib/uimode.ts`); the sizes come from the WebView.
-//! - **The WebView.** It covers the whole window (no automatic content insets), and the pages
-//!   keep their controls out of the safe-area insets themselves (`env(safe-area-inset-*)`).
+//! - **The WebView.** It fills the window's safe area, so no page, dialog or overlay reaches under
+//!   the status bar, the notch or the home indicator; the margins take the page's colors.
 //! - **Files.** The document picker answers with `file://` addresses outside the app's sandbox:
 //!   they are read and written inside `startAccessingSecurityScopedResource` ([`with_scope`]).
 //! - **The share sheet.** „Öffnen“ on an attachment shows `UIActivityViewController` with a copy:
@@ -95,6 +95,21 @@ unsafe impl Encode for CGSize {
 // SAFETY: as above.
 unsafe impl Encode for CGRect {
     const ENCODING: Encoding = Encoding::Struct("CGRect", &[CGPoint::ENCODING, CGSize::ENCODING]);
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct UIEdgeInsets {
+    top: f64,
+    left: f64,
+    bottom: f64,
+    right: f64,
+}
+
+// SAFETY: the layout of UIKit's UIEdgeInsets on 64-bit iOS.
+unsafe impl Encode for UIEdgeInsets {
+    const ENCODING: Encoding =
+        Encoding::Struct("UIEdgeInsets", &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING]);
 }
 
 fn class(name: &CStr) -> Option<&'static AnyClass> {
@@ -192,25 +207,111 @@ pub fn init(app: &AppHandle) {
     smoke::start(app);
 }
 
-/// The WebView reaches into the corners and under the bars; the pages pad themselves with the
-/// safe-area insets (`viewport-fit=cover`, set by the UI on iOS).
+/// The WebView fills the safe area of the window (Auto Layout on the safe-area guide): nothing
+/// of either page, its dialogs and overlays included, sits under the status bar, the notch, the
+/// home indicator or the rounded corners, upright and sideways. Around it the window shows the
+/// app's background ([`set_bars`]).
 pub fn fit_webview(w: &tauri::WebviewWindow) {
     let done = w.with_webview(|pw| {
         let webview = pw.inner() as *mut AnyObject;
         if webview.is_null() {
             return;
         }
-        // SAFETY: `inner` is the WKWebView, on the main thread (with_webview runs there).
+        // SAFETY: `inner` is the WKWebView, on the main thread (with_webview runs there); the
+        // documented UIView and NSLayoutAnchor API.
         unsafe {
             let scroll: *mut AnyObject = msg_send![webview, scrollView];
             if !scroll.is_null() {
                 let _: () = msg_send![scroll, setContentInsetAdjustmentBehavior: INSETS_NEVER];
             }
+            let parent: *mut AnyObject = msg_send![webview, superview];
+            if parent.is_null() {
+                devlog::warn("ios", "the WebView has no superview, not fitted to the safe area");
+                return;
+            }
+            if let Some(color_class) = class(c"UIColor") {
+                let color: *mut AnyObject = msg_send![color_class, colorNamed: &*ns_string("LaunchBackground")];
+                if !color.is_null() {
+                    let _: () = msg_send![parent, setBackgroundColor: color];
+                }
+            }
+            let guide: *mut AnyObject = msg_send![parent, safeAreaLayoutGuide];
+            let _: () = msg_send![webview, setTranslatesAutoresizingMaskIntoConstraints: false];
+            let pairs: [(*mut AnyObject, *mut AnyObject); 4] = [
+                (msg_send![webview, topAnchor], msg_send![guide, topAnchor]),
+                (msg_send![webview, bottomAnchor], msg_send![guide, bottomAnchor]),
+                (msg_send![webview, leadingAnchor], msg_send![guide, leadingAnchor]),
+                (msg_send![webview, trailingAnchor], msg_send![guide, trailingAnchor]),
+            ];
+            for (a, b) in pairs {
+                let c: *mut AnyObject = msg_send![a, constraintEqualToAnchor: b];
+                let _: () = msg_send![c, setActive: true];
+            }
         }
     });
     if let Err(e) = done {
-        devlog::warn("ios", format!("WebView not adjusted: {e}"));
+        devlog::warn("ios", format!("WebView not fitted to the safe area: {e}"));
     }
+}
+
+/// The tag of the view under the home indicator ([`set_bars`]).
+const BOTTOM_TAG: isize = 0xA2C0;
+
+/// The margins around the WebView follow the app's theme (`#rrggbb`, from the pages through
+/// `mobile_bars`): `top` behind the status bar and at the sides, `bottom` under the home indicator
+/// (the phone app's tab bar); the status bar's text is dark or light after the theme.
+pub fn set_bars(app: &AppHandle, dark: bool, top: &str, bottom: &str) {
+    fn rgb(hex: &str) -> Option<(f64, f64, f64)> {
+        let h = hex.trim().trim_start_matches('#');
+        let v = u32::from_str_radix(h, 16).ok().filter(|_| h.len() == 6)?;
+        Some((((v >> 16) & 0xff) as f64 / 255.0, ((v >> 8) & 0xff) as f64 / 255.0, (v & 0xff) as f64 / 255.0))
+    }
+    let (Some(top), Some(bottom)) = (rgb(top), rgb(bottom)) else { return };
+    let Some(w) = app.get_webview_window("main") else { return };
+    let _ = w.with_webview(move |pw| {
+        let webview = pw.inner() as *mut AnyObject;
+        let (Some(color_class), Some(view_class)) = (class(c"UIColor"), class(c"UIView")) else { return };
+        if webview.is_null() {
+            return;
+        }
+        // SAFETY: on the main thread; the documented UIColor, UIView, NSLayoutAnchor and UIWindow API.
+        unsafe {
+            let color = |(r, g, b): (f64, f64, f64)| -> *mut AnyObject {
+                msg_send![color_class, colorWithRed: r, green: g, blue: b, alpha: 1.0f64]
+            };
+            let parent: *mut AnyObject = msg_send![webview, superview];
+            if !parent.is_null() {
+                let _: () = msg_send![parent, setBackgroundColor: color(top)];
+                let mut below: *mut AnyObject = msg_send![parent, viewWithTag: BOTTOM_TAG];
+                if below.is_null() {
+                    let view: *mut AnyObject = msg_send![view_class, new];
+                    let _: () = msg_send![view, setTag: BOTTOM_TAG];
+                    let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: false];
+                    let _: () = msg_send![parent, addSubview: view];
+                    let guide: *mut AnyObject = msg_send![parent, safeAreaLayoutGuide];
+                    let pairs: [(*mut AnyObject, *mut AnyObject); 4] = [
+                        (msg_send![view, topAnchor], msg_send![guide, bottomAnchor]),
+                        (msg_send![view, bottomAnchor], msg_send![parent, bottomAnchor]),
+                        (msg_send![view, leadingAnchor], msg_send![parent, leadingAnchor]),
+                        (msg_send![view, trailingAnchor], msg_send![parent, trailingAnchor]),
+                    ];
+                    for (a, b) in pairs {
+                        let c: *mut AnyObject = msg_send![a, constraintEqualToAnchor: b];
+                        let _: () = msg_send![c, setActive: true];
+                    }
+                    // `new` returned it retained; the parent keeps it now.
+                    let _ = Retained::from_raw(view);
+                    below = view;
+                }
+                let _: () = msg_send![below, setBackgroundColor: color(bottom)];
+            }
+            let window: *mut AnyObject = msg_send![webview, window];
+            if !window.is_null() {
+                // UIUserInterfaceStyleDark / Light: the status bar's text after the theme.
+                let _: () = msg_send![window, setOverrideUserInterfaceStyle: if dark { 2isize } else { 1isize }];
+            }
+        }
+    });
 }
 
 /// Whether this is an iPad (the full app's choice uses the window's width there).
@@ -695,16 +796,21 @@ mod smoke {
         if !cfg!(debug_assertions) || std::env::var("ARCALO_SMOKE").ok().as_deref() != Some("1") {
             return;
         }
-        if std::env::var("ARCALO_SMOKE_ORIENTATION").ok().as_deref() == Some("landscape") {
-            DispatchQueue::main().exec_async(|| autoreleasepool(|_| landscape()));
-        }
+        let landscape_wanted = std::env::var("ARCALO_SMOKE_ORIENTATION").ok().as_deref() == Some("landscape");
         let app = app.clone();
         std::thread::spawn(move || {
+            // The window turns once it is on screen (an iPhone; an iPad turns with the device,
+            // which the workflow rotates).
+            if landscape_wanted {
+                std::thread::sleep(Duration::from_secs(2));
+                DispatchQueue::main().exec_async(|| autoreleasepool(|_| landscape()));
+            }
             for round in 1..=2u32 {
                 std::thread::sleep(Duration::from_secs(10));
                 let Some(w) = app.get_webview_window("main") else { continue };
+                let native = native_geometry(&w);
                 let dir = app.state::<AppState>().data_dir.clone();
-                let res = w.eval_with_callback(SCRIPT, move |out| write(&dir, round, &out));
+                let res = w.eval_with_callback(SCRIPT, move |out| write(&dir, round, &out, &native));
                 if let Err(e) = res {
                     devlog::warn("ios", format!("simulator check not run: {e}"));
                 }
@@ -712,16 +818,53 @@ mod smoke {
         });
     }
 
-    fn write(dir: &Path, round: u32, out: &str) {
+    /// The window's size and safe-area insets and the WebView's frame in it, in points.
+    fn native_geometry(w: &tauri::WebviewWindow) -> serde_json::Value {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = w.with_webview(move |pw| {
+            let webview = pw.inner() as *mut AnyObject;
+            if webview.is_null() {
+                return;
+            }
+            // SAFETY: on the main thread; the documented UIView and UIWindow API.
+            let out = unsafe {
+                let window: *mut AnyObject = msg_send![webview, window];
+                if window.is_null() {
+                    return;
+                }
+                let insets: UIEdgeInsets = msg_send![window, safeAreaInsets];
+                let wb: CGRect = msg_send![window, bounds];
+                let bounds: CGRect = msg_send![webview, bounds];
+                let none: *mut AnyObject = std::ptr::null_mut();
+                let frame: CGRect = msg_send![webview, convertRect: bounds, toView: none];
+                serde_json::json!({
+                    "window": { "width": wb.size.width, "height": wb.size.height },
+                    "insets": { "top": insets.top, "left": insets.left, "bottom": insets.bottom, "right": insets.right },
+                    "webview": { "x": frame.origin.x, "y": frame.origin.y, "width": frame.size.width, "height": frame.size.height },
+                })
+            };
+            let _ = tx.send(out);
+        });
+        rx.recv_timeout(Duration::from_secs(5)).unwrap_or(serde_json::Value::Null)
+    }
+
+    fn write(dir: &Path, round: u32, out: &str, native: &serde_json::Value) {
         // The result of the script, a JSON string, comes JSON-encoded once more.
         let text = serde_json::from_str::<String>(out).unwrap_or_else(|_| out.to_owned());
         let mut report: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::json!({ "raw": text }));
         report["round"] = round.into();
         report["ipad"] = is_ipad().into();
+        report["native"] = native.clone();
+        if let Some(e) = lock(&ORIENTATION_ERROR).clone() {
+            report["orientationError"] = e.into();
+        }
         let file: PathBuf = dir.join("smoke.json");
         let _ = std::fs::write(&file, serde_json::to_vec_pretty(&report).unwrap_or_default());
         devlog::info("ios", format!("simulator check {round}: {report}"));
     }
+
+    /// Why the window did not turn (the error of `requestGeometryUpdate`).
+    static ORIENTATION_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
     /// Turns the window to landscape (`requestGeometryUpdate`, iOS 16+).
     fn landscape() {
@@ -741,8 +884,18 @@ mod smoke {
             let allocated: *mut AnyObject = msg_send![prefs_class, alloc];
             let prefs: *mut AnyObject = msg_send![allocated, initWithInterfaceOrientations: LANDSCAPE];
             let Some(prefs) = Retained::from_raw(prefs) else { return };
-            let no_handler: Option<&Block<dyn Fn(*mut AnyObject)>> = None;
-            let _: () = msg_send![scene, requestGeometryUpdateWithPreferences: &*prefs, errorHandler: no_handler];
+            let failed = RcBlock::new(|error: *mut AnyObject| {
+                let why: *mut AnyObject =
+                    if error.is_null() { std::ptr::null_mut() } else { msg_send![error, localizedDescription] };
+                let why = rust_string(why).unwrap_or_default();
+                devlog::warn("ios", format!("the window did not turn: {why}"));
+                *lock(&ORIENTATION_ERROR) = Some(why);
+            });
+            let root: *mut AnyObject = msg_send![window, rootViewController];
+            if !root.is_null() {
+                let _: () = msg_send![root, setNeedsUpdateOfSupportedInterfaceOrientations];
+            }
+            let _: () = msg_send![scene, requestGeometryUpdateWithPreferences: &*prefs, errorHandler: &*failed];
         }
     }
 }

@@ -39,8 +39,8 @@ thread (Kotlin answers on the main thread); files of Android's document picker g
 The same shell and the same mobile code build the **iOS app** for iPhone and iPad (docs/ios.md):
 `#[cfg(target_os = "ios")]` marks where iOS differs from Android. `mobile/ios.rs` calls UIKit, BackgroundTasks,
 UserNotifications and CFNetwork through the Objective-C runtime (`objc2`) where Android asks its Kotlin plugins:
-the device (`ipad` in `android_display`), the WebView over the whole window (the pages pad with the safe-area
-insets), security-scoped `file://` addresses of the document picker (`picked.rs`), the share sheet for „Öffnen“,
+the device (`ipad` in `android_display`), the WebView in the window's safe area (its margins in the page's
+colors), security-scoped `file://` addresses of the document picker (`picked.rs`), the share sheet for „Öffnen“,
 text and Markdown files shared to the app (`RunEvent::Opened`), notifications with buttons, the background sync
 (`BGAppRefreshTask`) and the Wi-Fi's proxy. Secrets are in the iOS Keychain (`mobile/keychain.rs`), git uses
 libgit2 with the system's TLS, and there is no updater (`Capabilities::ios()`: Android's without the APK updates;

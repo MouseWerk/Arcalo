@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The simulator check of the iOS app (.github/workflows/ios.yml, docs/ios.md): installs the debug
-# build on an iPhone, a 13" iPad Pro and an iPad mini, starts it upright and sideways with
+# build on the runner's newest iPhone Pro, 13" iPad Pro and iPad mini, upright and sideways, with
 # ARCALO_SMOKE=1 (src-tauri/src/mobile/ios.rs runs src-tauri/src/mobile/ios_smoke.js in the
 # WebView and writes smoke.json into the app's data folder), takes a screenshot of each and checks
 # the report with scripts/ios-smoke-check.py: the iPhone shows the phone app, the iPads the full
@@ -25,44 +25,62 @@ if [ -z "$runtime" ]; then
 fi
 echo "Runtime: $runtime"
 
-# The newest device type whose name matches (e.g. "iPhone 16 Pro" before "iPhone 15 Pro").
-devicetype() {
-  xcrun simctl list devicetypes -j | python3 -c '
+# The newest simulator of the runtime whose name matches (e.g. "iPhone 17 Pro" before
+# "iPhone 16 Pro"): the runner's own, so its device type fits the runtime.
+device() {
+  xcrun simctl list devices available -j | python3 -c '
 import json, re, sys
-pattern = re.compile(sys.argv[1])
-ts = [t for t in json.load(sys.stdin)["devicetypes"] if pattern.search(t["name"])]
-print(ts[-1]["identifier"] if ts else "")' "$1"
+pattern, runtime = re.compile(sys.argv[1]), sys.argv[2]
+ds = [d for d in json.load(sys.stdin)["devices"].get(runtime, []) if pattern.search(d["name"])]
+key = lambda d: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", d["name"])]
+ds.sort(key=key)
+print(ds[-1]["udid"], ds[-1]["name"]) if ds else print("")' "$1" "$runtime"
+}
+
+# Turns the simulated device to landscape: Simulator's „Rotate Left“ (Cmd+Left). An iPad app that
+# supports every orientation and multitasking turns with the device only; the app asks an iPhone
+# window itself (requestGeometryUpdate, src-tauri/src/mobile/ios.rs).
+rotate_left() {
+  osascript -e 'tell application "Simulator" to activate' \
+    -e 'delay 1' \
+    -e 'tell application "System Events" to key code 123 using command down' >/dev/null
+  sleep 3
 }
 
 status=0
 run() {
   local name="$1" pattern="$2" expect="$3"
-  local type
-  type=$(devicetype "$pattern")
-  if [ -z "$type" ]; then
-    echo "::error::No simulator device type matches '$pattern'"
+  local found udid
+  found=$(device "$pattern")
+  if [ -z "$found" ]; then
+    echo "::error::No simulator of $runtime matches '$pattern'"
     status=1
     return
   fi
-  echo "== $name ($type)"
-  local udid
-  udid=$(xcrun simctl create "arcalo-$name" "$type" "$runtime")
-  xcrun simctl boot "$udid"
+  udid="${found%% *}"
+  echo "== $name: ${found#* } ($udid)"
+  xcrun simctl boot "$udid" 2>/dev/null || true
   xcrun simctl bootstatus "$udid" -b >/dev/null
+  open -a Simulator --args -CurrentDeviceUDID "$udid"
+  sleep 5
+  xcrun simctl uninstall "$udid" "$BUNDLE" 2>/dev/null || true
   xcrun simctl install "$udid" "$APP"
   for orientation in portrait landscape; do
     local data report
     data=$(xcrun simctl get_app_container "$udid" "$BUNDLE" data)
     report="$data/Library/Application Support/$BUNDLE/smoke.json"
     rm -f "$report"
+    if [ "$orientation" = landscape ]; then
+      xcrun simctl terminate "$udid" "$BUNDLE" 2>/dev/null || true
+      rotate_left || echo "::warning::$name: Simulator could not be rotated"
+    fi
     SIMCTL_CHILD_ARCALO_SMOKE=1 SIMCTL_CHILD_ARCALO_SMOKE_ORIENTATION="$orientation" \
       xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE" >/dev/null
     # The report's second round (20 s after the start), when the page settled.
     local waited=0
     until [ -f "$report" ] && grep -q '"round": 2' "$report"; do
-      if [ "$waited" -ge 150 ]; then
+      if [ "$waited" -ge 600 ]; then
         echo "::error::$name $orientation: no report after ${waited}s"
-        find "$data" -name '*.log' -path '*logs*' -exec tail -n 40 {} \; 2>/dev/null || true
         status=1
         break
       fi
@@ -72,13 +90,12 @@ run() {
     xcrun simctl io "$udid" screenshot "$OUT/$name-$orientation.png" >/dev/null
     if [ -f "$report" ]; then
       cp "$report" "$OUT/$name-$orientation.json"
-      python3 "$(dirname "$0")/ios-smoke-check.py" "$OUT/$name-$orientation.json" "$expect" "$name $orientation" || status=1
+      python3 "$(dirname "$0")/ios-smoke-check.py" "$OUT/$name-$orientation.json" "$expect" "$orientation" "$name $orientation" || status=1
     fi
   done
   # The app's log, for a failure.
   find "$(xcrun simctl get_app_container "$udid" "$BUNDLE" data)" -name '*.log' -exec cp {} "$OUT/$name.log" \; 2>/dev/null || true
   xcrun simctl shutdown "$udid" || true
-  xcrun simctl delete "$udid" || true
 }
 
 run iphone '^iPhone [0-9]+ Pro$' phone

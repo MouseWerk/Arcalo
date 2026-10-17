@@ -34,7 +34,7 @@ import { loadCapabilities, onAndroid, onIos, onMobileDevice } from "./lib/capabi
 import { bootInterface, followInterface } from "./lib/uiswitch";
 import { flushAll, unsavedLeft } from "./lib/flush";
 import { installAndroidBack } from "./lib/androidBack";
-import { fitIosViewport } from "./lib/ios";
+import { fitIosViewport, followBars } from "./lib/ios";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -138,7 +138,11 @@ if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode
     // Android's back button closes what is open, else the app goes to the background.
     if (onAndroid()) installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
     // iOS: text shared to the app („Teilen“ → Arcalo) goes into the inbox.
-    if (onIos()) void import("./lib/iosShare").then(({ followShared }) => followShared());
+    if (onIos()) {
+      void import("./lib/iosShare").then(({ followShared }) => followShared());
+      // The margins around the WebView take the colors of the app's edges.
+      followBars((dark, top, bottom) => void import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_bars", { dark, top, bottom })).catch(() => {}));
+    }
     // Right before it goes: nothing typed while the flush ran (the editors' module is loaded by then).
     let editorsDirty = () => false;
     followInterface(
