@@ -8,7 +8,9 @@ src-tauri/ios, src-tauri/Info.ios.plist and src-tauri/tauri.ios.conf.json. This 
 - replaces the app icon and adds the launch screen's mark and color (src-tauri/ios/Assets.xcassets,
   made by scripts/ios-icons.py) and the launch screen (src-tauri/ios/LaunchScreen.storyboard);
 - copies the privacy manifest and the permission texts (de, en) into the app's folder;
-- makes the app universal (iPhone and iPad, TARGETED_DEVICE_FAMILY 1,2) in project.yml.
+- makes the app universal (iPhone and iPad, TARGETED_DEVICE_FAMILY 1,2) in project.yml and links
+  the system libraries libgit2 needs (zlib, iconv): the Rust static library names them, but Xcode
+  links it as a plain archive and does not read those names.
 
 Run in src-tauri after `cargo tauri ios init --ci`, then `xcodegen generate` in gen/apple.
 """
@@ -50,10 +52,10 @@ def main() -> int:
     spec = GEN / "project.yml"
     text = spec.read_text()
     if "TARGETED_DEVICE_FAMILY" not in text:
-        # The app's setting group (PRODUCT_BUNDLE_IDENTIFIER is in it): iPhone and iPad.
+        # The app's setting group (PRODUCT_BUNDLE_IDENTIFIER is in it): iPhone and iPad, zlib and iconv.
         text, n = re.subn(
             r"^(\s+)PRODUCT_BUNDLE_IDENTIFIER: (.+)$",
-            lambda m: f'{m.group(0)}\n{m.group(1)}TARGETED_DEVICE_FAMILY: "1,2"',
+            lambda m: f'{m.group(0)}\n{m.group(1)}TARGETED_DEVICE_FAMILY: "1,2"\n{m.group(1)}OTHER_LDFLAGS: "$(inherited) -lz -liconv"',
             text,
             count=1,
             flags=re.M,
