@@ -118,7 +118,12 @@ export function CalendarView() {
     if (selected === was) return;
     const box = root.current;
     if (selected && byKeys.current) {
-      requestAnimationFrame(() => box?.querySelector<HTMLElement>(".calv-detail h2, .calv-detail .calv-block-name")?.focus());
+      // Not while the user types in the panel: a new appointment changes its key when Outlook has
+      // it, and the focus left the time field being typed in (the typed end was lost).
+      requestAnimationFrame(() => {
+        if (box?.querySelector(".calv-detail")?.contains(document.activeElement)) return;
+        box?.querySelector<HTMLElement>(".calv-detail h2, .calv-detail .calv-block-name")?.focus();
+      });
     } else if (!selected && was) {
       requestAnimationFrame(() => {
         const at = document.activeElement;
