@@ -1,0 +1,139 @@
+name: e2e soak
+
+# The whole desktop end-to-end suite several times on one build (docs/quality/README.md): a test
+# that fails once in five runs is a bug to find, not luck. Fails on any single failure and keeps
+# the screenshots of every failed round. Started by hand (Actions -> e2e soak -> Run workflow, with
+# the number of rounds) and once a week on main.
+#
+# One suite takes about an hour on a runner, so the rounds run side by side, each on a runner of
+# its own, against the one build of the first job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "How many times the full suite runs"
+        required: true
+        default: "5"
+  schedule:
+    # Sundays, 02:17 UTC.
+    - cron: "17 2 * * 0"
+
+concurrency:
+  group: e2e-soak-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # whisper.cpp (voice notes) for every CPU of its kind, as in ci.yml.
+  GGML_NATIVE: "OFF"
+
+jobs:
+  build:
+    name: Build the app once
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      rounds: ${{ steps.rounds.outputs.list }}
+    steps:
+      - name: Rounds
+        id: rounds
+        env:
+          ROUNDS: ${{ github.event.inputs.rounds || '5' }}
+        run: |
+          case "$ROUNDS" in ''|*[!0-9]*) echo "rounds must be a number: $ROUNDS"; exit 1;; esac
+          if [ "$ROUNDS" -lt 1 ] || [ "$ROUNDS" -gt 20 ]; then echo "rounds must be 1 to 20: $ROUNDS"; exit 1; fi
+          echo "list=[$(seq -s, 1 "$ROUNDS")]" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: System packages (WebKitGTK)
+        run: |
+          sudo apt-get update
+          # libasound2-dev: microphone (cpal); cmake and libclang: whisper.cpp for voice notes.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libasound2-dev cmake clang libclang-dev libdbus-1-dev
+      - run: npm ci --prefix ui
+      # As e2e/run.sh builds it; without debug info the binary every round downloads stays small.
+      - name: Build the app and tauri-driver
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          npm --prefix ui run build
+          cargo build -p arcalo --features custom-protocol
+          cargo install tauri-driver --locked
+          mkdir -p soak-bin
+          cp target/debug/arcalo "$(command -v tauri-driver)" soak-bin/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-soak-app
+          path: soak-bin
+          retention-days: 1
+
+  round:
+    name: Desktop e2e, round ${{ matrix.round }} (Linux)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        round: ${{ fromJSON(needs.build.outputs.rounds) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: System packages (WebKitGTK, WebDriver, Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 libxdo3 libasound2t64 webkit2gtk-driver xvfb x11-utils dbus
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-soak-app
+          path: soak-bin
+      - name: Run the suite
+        env:
+          ROUND: ${{ matrix.round }}
+        run: |
+          chmod +x soak-bin/arcalo soak-bin/tauri-driver
+          export PATH="$PWD/soak-bin:$PATH"
+          npm ci --prefix e2e
+          shots="$PWD/soak/round-$ROUND"
+          mkdir -p "$shots"
+          if (cd e2e && ARCALO_APP="$PWD/../soak-bin/arcalo" ARCALO_SHOTS="$shots" node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$shots/report.tap" tests/*.test.js); then
+            echo "### Round $ROUND: clean" >> "$GITHUB_STEP_SUMMARY"
+            # Only failures are kept: the screenshots of a clean round are the usual ones.
+            rm -rf "$shots"
+          else
+            echo "::error::Round $ROUND failed"
+            {
+              echo "### Round $ROUND failed"
+              echo '```'
+              grep -E '^not ok' "$shots/report.tap" || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      # The screenshots, FAIL-*.png and the TAP report of a round that failed.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-soak-failures-round-${{ matrix.round }}
+          path: soak
+          if-no-files-found: ignore
+
+  result:
+    name: Every round clean
+    needs: round
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Result
+        env:
+          RESULT: ${{ needs.round.result }}
+        run: |
+          echo "Rounds: $RESULT"
+          [ "$RESULT" = success ]
