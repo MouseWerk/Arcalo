@@ -1,7 +1,8 @@
 // Issue keys in notes: `PROJ-123` of a project with synced issues becomes a live chip (type
 // icon, key, status dot and title) by decorations only; the Markdown keeps the plain key, so
-// search, backlinks and exports see it as written. A click opens the issue's note,
-// Ctrl/Cmd+click the issue in the browser; hovering shows the card of IssuePreview.
+// search, backlinks and exports see it as written. A click opens the issue view (its note is one
+// click away there), Ctrl/Cmd+click the issue in the browser; hovering shows the card of
+// IssuePreview.
 
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";

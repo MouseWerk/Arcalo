@@ -54,8 +54,9 @@ pub const DATA_FILES: [&str; 12] = [
 /// What stays in the old folder on a move: bound to this installation (updates, rollback,
 /// health, the instance and command locks, the portable copy's WebView profile, the Android
 /// update state), written anew when needed (scripts, mail temp files, the CA bundle for Git,
-/// the export of a sync without mirror, caches) or downloaded again (speech models).
-pub const STAYS: [&str; 14] = [
+/// the export of a sync without mirror, caches, the copies of Jira attachments opened from the
+/// issue view) or downloaded again (speech models).
+pub const STAYS: [&str; 15] = [
     "models",
     crate::update_state::UPDATES_DIR,
     crate::update_state::ROLLBACK_DIR,
@@ -70,6 +71,7 @@ pub const STAYS: [&str; 14] = [
     "git-sync-export",
     "network-ca-bundle.pem",
     "android-update.json",
+    "jira-files",
 ];
 /// Credential store entries taken over from the service of 1.14 and earlier (the shell's
 /// `secrets.rs`); it moves with the data, so a moved workspace does not read old entries again.

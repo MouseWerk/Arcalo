@@ -654,6 +654,55 @@ impl JiraClient {
         self.kind
     }
 
+    /// The site's address (without a trailing slash).
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// A request with the site's login; errors worded for the user (the issue view's calls).
+    pub(crate) async fn send_json(&self, method: Method, url: &str, body: Option<&Value>) -> Result<Value> {
+        self.send(method, url, body).await
+    }
+
+    /// The bytes of an image or file (`auth`: with the site's login), at most `limit` of them.
+    pub(crate) async fn fetch_bytes(&self, url: &str, auth: bool, limit: usize) -> Result<(String, Vec<u8>)> {
+        use futures_util::StreamExt;
+        let mut req = self.http.get(url).header("X-Atlassian-Token", "no-check").timeout(self.timeout);
+        if auth {
+            req = req.header(reqwest::header::AUTHORIZATION, &self.auth);
+        }
+        let resp = req.send().await.map_err(|e| network_error(&e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(status_error(self.kind, status.as_u16(), None, &text));
+        }
+        let mime = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_owned();
+        let mut out = vec![];
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| network_error(&e))?;
+            if out.len() + chunk.len() > limit {
+                return Err(Error::State(trf!(
+                    "Die Datei ist größer als {} MB",
+                    "The file is larger than {} MB",
+                    limit / 1_000_000
+                )));
+            }
+            out.extend_from_slice(&chunk);
+        }
+        Ok((mime, out))
+    }
+
     /// Sends a request; retries 429 and 503; turns error answers into readable errors.
     async fn send(&self, method: Method, url: &str, body: Option<&Value>) -> Result<Value> {
         let mut attempt = 0;

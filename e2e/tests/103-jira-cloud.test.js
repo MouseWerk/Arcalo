@@ -1,8 +1,8 @@
 // Jira Cloud (1.7): connecting a site in Settings → Jira (wrong token, „Verbindung testen“ with
 // the account's name, tokens only in the credential store), the background sync (paged search,
 // a 429 answered after Retry-After), a saved JQL search, the Issues page with its groups,
-// filters, search and the opened issue, and the three Jira widgets of the start page. Light and
-// dark screenshots of the page and the widgets.
+// filters, search and the opened issue, and the three Jira widgets of the start page (a row opens
+// the issue view, its menu the note). Light and dark screenshots of the page and the widgets.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -194,7 +194,13 @@ test("the Jira widgets on the start page", async () => {
   await sleep(300);
   await app.shot("103-widgets-dark");
   await setTheme("light");
-  // A click on a row opens the issue's note.
+  // A click on a row opens the issue view; its context menu has the issue's note.
   await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  await app.waitFor('[data-issue-view="OPS-7"] .iv-summary', 15000);
+  await app.keys(["Escape"]);
+  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".iv")), { timeoutMsg: "issue view not closed" });
+  const row = await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  await row.click({ button: "right" });
+  await clickText(".menu .menu-item", /^Notiz öffnen$/);
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.textContent ?? "")).includes("OPS-7 Nightly backup job"), { timeout: 10000, timeoutMsg: "note not opened" });
 });

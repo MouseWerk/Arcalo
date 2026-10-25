@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { useApp } from "../store/app";
 import { jiraApi, useIssueIndex, type ChipIssue } from "../lib/jira";
-import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
+import { openIssue, openIssueInBrowser } from "../lib/jiraActions";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { fmtDate } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -120,7 +120,7 @@ export function IssuePreview() {
       </div>
       {i ? (
         <>
-          <button type="button" className="link-preview-title issue-preview-title" onClick={(e) => (void openIssueNote(shown.key, { newTab: e.ctrlKey || e.metaKey }), setShown(null))}>
+          <button type="button" className="link-preview-title issue-preview-title" onClick={(e) => (void openIssue(shown.key, { note: e.shiftKey, newTab: e.shiftKey, browser: e.ctrlKey || e.metaKey }), setShown(null))}>
             {i.summary}
           </button>
           <dl className="issue-preview-meta">

@@ -2,7 +2,7 @@
 // the mouse or the keyboard) and its side panel (link, focus session, task done, Outlook, delete).
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { CalendarClock, Check, CircleCheck, ExternalLink, FileText, Play, RefreshCw, Target, Timer, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, CircleCheck, FileText, PanelTop, Play, RefreshCw, Target, Timer, Trash2, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, IconButton, Input } from "../components/ui";
@@ -281,7 +281,7 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
                 <b className="mono">{b.link.key}</b> {b.issue_summary && <span>{b.issue_summary}</span>}
               </span>
               {b.issue_status && <Badge>{b.issue_status}</Badge>}
-              <Button size="sm" variant="ghost" icon={ExternalLink} onClick={(e) => b.link.kind === "issue" && void openIssue(b.link.key, { browser: e.ctrlKey || e.metaKey })}>
+              <Button size="sm" variant="ghost" icon={PanelTop} onClick={(e) => b.link.kind === "issue" && void openIssue(b.link.key, { browser: e.ctrlKey || e.metaKey })}>
                 {t("blocks.openIssue")}
               </Button>
             </div>

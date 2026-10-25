@@ -20,7 +20,7 @@ import { hiddenCalendars, useHiddenCalendars } from "../lib/calvisibility";
 import { openTimesheetDay } from "../lib/reviewnav";
 import { requestWeekProposal } from "../lib/weekplan";
 import { briefingCounts, briefingSettings, missingLabel, shows } from "../lib/briefing";
-import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
+import { openIssue, openIssueInBrowser } from "../lib/jiraActions";
 import { useTimeTracking } from "../lib/timetracking";
 import { renderMarkdown } from "../lib/markdown";
 import { useT, type TKey } from "../lib/i18n";
@@ -429,7 +429,7 @@ function IssueRow({ i }: { i: BriefingIssue }) {
   const t = useT();
   return (
     <div className="bf-issue">
-      <button type="button" className="rv-row" onClick={(e) => void (e.ctrlKey || e.metaKey ? openIssueInBrowser(i.key, i.url) : openIssueNote(i.key))}>
+      <button type="button" className="rv-row" onClick={(e) => void openIssue(i.key, { browser: e.ctrlKey || e.metaKey, note: e.shiftKey, newTab: e.shiftKey })}>
         <span className="rv-ref mono">{i.key}</span>
         <span className="rv-main">
           <span className="rv-title ellipsis">{i.summary}</span>
