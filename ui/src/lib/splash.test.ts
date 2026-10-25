@@ -56,4 +56,9 @@ describe("mobile.html", () => {
     const conf = JSON.parse(read("../src-tauri/tauri.android.conf.json"));
     expect(conf.app.windows[0].url).toBe("mobile.html");
   });
+  it("lets the splash go once the phone app is ready, not after its 8 s limit", () => {
+    // The splash waits for body.ready (lib/splash.ts); the phone app marks it when its settings
+    // are loaded (on Android every start showed the splash for the full 8 s).
+    expect(read("src/mobile/MobileApp.tsx")).toMatch(/document\.body\.classList\.add\("ready"\)/);
+  });
 });
