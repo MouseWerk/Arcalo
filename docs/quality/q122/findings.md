@@ -25,6 +25,19 @@ What the guards ported from Arcalo Mail (`plan.md`, „Guards“) found when the
 | F16 | migrations positional | – | green; the gaps 0016, 0021–0025 and 0028 are listed and stay free |
 | F17 | phone (stock UI, found reading the screens for the emulator tour) | `mobile/screens/Time.tsx` reference field with a `datalist` (Android's suggestion strip) | the matching references in the app's own list below the field |
 
+| F18 | e2e on `main` (CI red since 9d7bcb4) | `harness.js` `app.reload()`: without a hash WebDriver passes `null`, the page got `#null` and a capture window reloaded as the main window (`68-capture-window`: „draft lost on reload“) | the hash is set only when given |
+| F19 | e2e on `main`: UI audit | `371-ui-audit`: the start page's task checkbox (`.dw-check`, 15x15 px) too small to hit; it showed once its fixture task (due 2026-10-20) became overdue | a 22 px target around the 15 px box (`::before`), the row unchanged |
+| F20 | phone, found by the browser check (`e2e/mobile/shots.mjs`, not in CI) | Git setup went blank after its first step: `useEffect(() => ref.current?.scrollTo(…))` returned the promise Chromium's `scrollTo` gives back, and React called it as the cleanup | braces; `ui/src/lib/effects.test.ts` refuses effects that return a DOM call on a ref |
+
+## Android emulator
+
+| # | Where | Finding | Fix |
+|---|-------|---------|-----|
+| E1 | start | the splash stayed its full 8 s on every start: the phone app never marked `body.ready` (the browser check removes the splash under WebDriver and did not see it) | `MobileApp` marks it once the settings are loaded; a guard in `splash.test.ts`, the time measured on the emulator |
+| E2 | Aufgaben, Notizen, Erfassen | the desktop's 10 px scrollbar gutter and the stretch at the ends of every scrolling screen | overlay scrollbars and `overscroll-behavior: contain` in the phone app |
+| E3 | Zeit, Erfassen (Buchung) | Leistungsart as a `<select>` (Android's picker dialog); the reference with a `datalist` (Android's suggestion strip) | the app's sheet (`Choice`) and its own suggestion list (F10, F17); their rows without the stock button look and not selectable as text |
+| E4 | every screen in the dark theme | the status and navigation bars stay in the light window color: both Kotlin plugins were registered under one Tauri plugin, the second replaced the first, and every `ShellPlugin` call (bar colors, shared text, Back at the root, the window's facts, the document picker, the proxy) answered „No command … found for plugin UpdatePlugin“ | each Kotlin plugin under a Tauri plugin of its own (`mobile/android.rs`); the emulator test measures the bars' pixels against the app's colors |
+
 ## Left for after the jira-modal merge
 
 The Jira files were being rewritten by the parallel round `jira-modal`; the guards ran on them too.
@@ -35,7 +48,3 @@ The Jira files were being rewritten by the parallel round `jira-modal`; the guar
 
 `crates/arcalo-core/src/issues/`, `src-tauri/src/jira.rs`, `ui/src/views/IssuesView.tsx` and
 `ui/src/editor/issueChips.ts`: no finding of the new guards.
-
-## Android emulator
-
-See `plan.md`, round table; each finding is listed here with its fix once the emulator suite has run.

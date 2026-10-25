@@ -145,9 +145,14 @@ export function recordSpinners() {
       }
     }
   };
-  sample();
   window.__spinnerTimer = setInterval(sample, 40);
-  new MutationObserver(sample).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  // As an init script it runs before the document has its root element.
+  const watch = () => {
+    sample();
+    new MutationObserver(sample).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  };
+  if (document.documentElement) watch();
+  else document.addEventListener("DOMContentLoaded", watch, { once: true });
 }
 
 /** The spinners recorded so far. */
