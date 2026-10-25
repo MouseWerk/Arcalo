@@ -583,6 +583,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
         <IconButton
           icon={ChevronDown}
           label={tr("tabs.all")}
+          aria-haspopup="menu"
           size={26}
           iconSize={15}
           onClick={(e) => {

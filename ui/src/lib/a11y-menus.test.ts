@@ -18,7 +18,7 @@ function sources(dir: string): string[] {
 }
 
 /** An onClick that opens a menu at the element (not a context menu, not a submenu item). */
-const OPENS_MENU = /\b(openMenuAt|openTreeMenuAt|open\w*MenuAt|setMenu)\(/;
+const OPENS_MENU = /\b(open\w*Menu\w*|set\w*Menu|(?!close|hide)\w+Menu)\(\s*(?!null|false|undefined)/;
 
 function offenders(file: string): string[] {
   const rel = path.relative(SRC, file).split(path.sep).join("/");
