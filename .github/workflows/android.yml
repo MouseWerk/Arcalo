@@ -4,23 +4,16 @@ name: Android
 # Signed with the release key when the four ANDROID_* secrets exist (docs/release/android.md),
 # else with a debug key (installable for a test, not for an update of a release install).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "src-tauri/**"
-      - "crates/**"
-      - "ui/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/android.yml"
   workflow_dispatch:
-  # The release (release.yml) builds the APK of its tag and attaches it to the release.
+  # CI (ci.yml) builds it on every push, with the debug APK of the emulator tests; the release
+  # (release.yml) builds the APK of its tag and attaches it to the release.
   workflow_call:
     inputs:
       tag:
-        description: "Release tag, e.g. v1.15.0"
-        required: true
+        description: "Release tag, e.g. v1.15.0 (empty: the commit of the calling run)"
+        required: false
         type: string
+        default: ""
 
 # Per calling workflow: a release does not cancel the APK of a push to main, nor the other way round.
 concurrency:
@@ -161,3 +154,22 @@ jobs:
       - name: Remove the key file
         if: always()
         run: rm -f "$RUNNER_TEMP/arcalo-release.jks" src-tauri/gen/android/keystore.properties
+      # The emulator tests (ci.yml, android-e2e): a debug build for x86_64, signed with the debug
+      # key, with the WebView's DevTools socket (MainActivity.kt). Not part of a release.
+      - name: Build the debug APK for the emulator tests
+        if: inputs.tag == ''
+        working-directory: src-tauri
+        run: |
+          rm -rf gen/android/app/build/outputs/apk
+          cargo tauri android build --debug --apk --target x86_64
+          mkdir -p "$RUNNER_TEMP/apk-debug"
+          apk=$(find gen/android/app/build/outputs/apk -name '*debug*.apk' | head -n 1)
+          test -n "$apk"
+          cp "$apk" "$RUNNER_TEMP/apk-debug/arcalo-debug.apk"
+      - uses: actions/upload-artifact@v4
+        if: inputs.tag == ''
+        with:
+          name: arcalo-android-debug
+          path: ${{ runner.temp }}/apk-debug/arcalo-debug.apk
+          if-no-files-found: error
+          retention-days: 7
