@@ -28,6 +28,7 @@ What the guards ported from Arcalo Mail (`plan.md`, „Guards“) found when the
 | F18 | e2e on `main` (CI red since 9d7bcb4) | `harness.js` `app.reload()`: without a hash WebDriver passes `null`, the page got `#null` and a capture window reloaded as the main window (`68-capture-window`: „draft lost on reload“) | the hash is set only when given |
 | F19 | e2e on `main`: UI audit | `371-ui-audit`: the start page's task checkbox (`.dw-check`, 15x15 px) too small to hit; it showed once its fixture task (due 2026-10-20) became overdue | a 22 px target around the 15 px box (`::before`), the row unchanged |
 | F20 | phone, found by the browser check (`e2e/mobile/shots.mjs`, not in CI) | Git setup went blank after its first step: `useEffect(() => ref.current?.scrollTo(…))` returned the promise Chromium's `scrollTo` gives back, and React called it as the cleanup | braces; `ui/src/lib/effects.test.ts` refuses effects that return a DOM call on a ref |
+| F21 | e2e in CI (2 of 3 runs): `407-calendar-entries` „Enter in the panel: end not written“ | a new appointment changes its key when Outlook has it; the Kalender then moved the focus to the panel's title, out of the time field being typed in, and the typed end was lost | the focus stays where it is inside the panel |
 
 ## Android emulator
 

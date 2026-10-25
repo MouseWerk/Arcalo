@@ -63,7 +63,8 @@ for (const [W, H] of [
           // The system bars in the app's colors (MobileApp sets them with every theme).
           const want = await page.evaluate(appBarColors);
           const got = device.barColors(path.join(dir, `${file}.png`));
-          for (const side of ["top", "bottom"]) {
+          // With the keyboard up the bottom is the keyboard's own bar.
+          for (const side of device.keyboardShown() ? ["top"] : ["top", "bottom"]) {
             if (want[side] && !device.sameColor(want[side], got[side])) seen.push(`system bar ${side === "top" ? "status" : "navigation"}: ${got[side]} on the screen, the app's ${want[side]}`);
           }
           for (const f of seen) {
