@@ -215,9 +215,14 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   await app.browser.waitUntil(open);
   await app.type("11");
   assert.equal(await active(), "110 %");
+  const width = () => app.browser.execute(() => window.innerWidth);
+  const before = await width();
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await value()) === "110");
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.appearance.ui_scale === 110, { timeoutMsg: "not saved" });
+  // The new scale reaches the window a moment later (the webview's zoom), and a window that
+  // changes its size closes an open list: wait for it before the next opening.
+  await app.browser.waitUntil(async () => (await width()) !== before, { timeoutMsg: "scale not applied" });
   // A click outside closes it.
   await app.keys([" "]);
   await app.browser.waitUntil(open);

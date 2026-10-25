@@ -29,6 +29,7 @@ What the guards ported from Arcalo Mail (`plan.md`, „Guards“) found when the
 | F19 | e2e on `main`: UI audit | `371-ui-audit`: the start page's task checkbox (`.dw-check`, 15x15 px) too small to hit; it showed once its fixture task (due 2026-10-20) became overdue | a 22 px target around the 15 px box (`::before`), the row unchanged |
 | F20 | phone, found by the browser check (`e2e/mobile/shots.mjs`, not in CI) | Git setup went blank after its first step: `useEffect(() => ref.current?.scrollTo(…))` returned the promise Chromium's `scrollTo` gives back, and React called it as the cleanup | braces; `ui/src/lib/effects.test.ts` refuses effects that return a DOM call on a ref |
 | F21 | e2e in CI (2 of 3 runs): `407-calendar-entries` „Enter in the panel: end not written“ | a new appointment changes its key when Outlook has it; the Kalender then moved the focus to the panel's title, out of the time field being typed in, and the typed end was lost | the focus stays where it is inside the panel |
+| F22 | soak round 2 (1 of 5): `36-settings-layout` „the dropdown“ | the scale chosen with Enter reaches the window a moment later (the webview's zoom); the window's resize closed the list the test had just opened with Space | the test waits for the zoom before it opens the list again (a list closing on a window resize stays as designed) |
 
 ## Android emulator
 

@@ -26,7 +26,9 @@ fix starts the count again.
 
 | Round | Date | Soak (5x) | Android e2e | Findings | Clean |
 |-------|------|-----------|-------------|----------|-------|
-| 0 | 2026-10-25 | – | – | guards on `main`: `findings.md` F1–F17, J1 | no |
+| 0 | 2026-10-25 | first soak 40215972409: rounds 2 and 5 red, the app was on the soak's PATH (workflow fixed) | CI 40171628604 to 40205555208: red (E1 to E4, harness) | guards on `main` F1–F17 and J1; CI red on `main` since 9d7bcb4 (F18, F19); F20, F21; emulator E1–E4 | no |
+| 1 | 2026-10-25 | run 40220894425: 4 of 5 (round 2: `36-settings-layout` dropdown, F22) | CI 40210972539 and 40220891741: all 6 jobs green, emulator included | F22 | no |
+| 2 | 2026-10-25 | see the report | | | |
 
 ## Guards
 
@@ -73,8 +75,8 @@ form), **present** (Arcalo had it), **n/a** (with the reason).
 | # | Area | Method | Bar | Status |
 |---|------|--------|-----|--------|
 | A1 | Guards | Port each applicable guard of Mail's table, run it on `main`, fix at the root | All green on `qa`; every exception listed with its reason and checked to still exist | done on `qa` (`findings.md`) |
-| A2 | e2e soak | `e2e-soak.yml` dispatched on `qa` with 5 rounds | 5 of 5 rounds clean | open |
-| A3 | Android emulator | `android-e2e` on every push: `phone.test.js` (layout, tab bar, screen ends, Leistungsart sheet, 130 %, spinners, stock UI), `tour.test.js` (every screen, menu and sheet in light and dark) | green; the tour's pictures looked at | open |
+| A2 | e2e soak | `e2e-soak.yml` with 5 rounds on `qa` (a pushed `soak/<name>` branch: a workflow can be dispatched only once it is on `main`) | 5 of 5 rounds clean | see round table |
+| A3 | Android emulator | `android-e2e` on every push: `phone.test.js` (splash, layout, tab bar, screen ends, Leistungsart sheet, system bar colors in dark, 130 %, spinners, stock UI), `tour.test.js` (every screen, menu and sheet in light and dark, the bars' pixels) | green; the tour's pictures looked at | green since 40210972539 |
 | A4 | Roadmap | Each item of `docs/ROADMAP.md` checked against the code and the release notes | done items moved out, real next candidates listed | done |
 
 ## TODO
