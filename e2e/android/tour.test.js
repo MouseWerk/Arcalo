@@ -90,6 +90,13 @@ for (const [W, H] of [
             await sleep(500);
           }
         };
+        /** Back until the tab bar shows (a keyboard, an edit mode and a stacked screen each take one). */
+        const toTabs = async () => {
+          for (let i = 0; i < 4 && !(await page.evaluate(() => !!document.querySelector(".m-tabbar")).catch(() => false)); i++) {
+            device.back();
+            await sleep(500);
+          }
+        };
         const tab = async (k) => {
           await page.click(`.m-tabbar .m-tab:nth-child(${k})`);
           await sleep(600);
@@ -103,10 +110,7 @@ for (const [W, H] of [
           } catch (e) {
             broken.push(`${name}: ${e.message.split("\n")[0]}`);
             device.screencap(path.join(dir, `FAIL-${name}.png`));
-            for (let i = 0; i < 3 && (await page.evaluate(() => !!document.querySelector(".m-head-back, .m-choice-sheet")).catch(() => false)); i++) {
-              device.back();
-              await sleep(500);
-            }
+            await toTabs();
             if (!device.inFront()) device.bringToFront();
             await tab(1).catch(() => {});
           }
@@ -151,10 +155,7 @@ for (const [W, H] of [
           await page.click(".m-head-actions .m-icon-btn");
           await sleep(800);
           await shot("page-edit");
-          device.back();
-          await sleep(500);
-          device.back();
-          await sleep(500);
+          await toTabs();
         });
         await section("search", async () => {
           await tab(5);

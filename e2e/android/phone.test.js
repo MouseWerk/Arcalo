@@ -170,34 +170,6 @@ for (const [W, H] of [
       assert.deepEqual(dialogs, [], "alert, confirm or prompt called");
     });
 
-    test("keeps every label whole with the system's font at 130 %", async () => {
-      device.shell("settings put system font_scale 1.3");
-      try {
-        await sleep(1500);
-        const cut = [];
-        const look = async (name) => {
-          await sleep(800);
-          shot(`font-130-${name}`);
-          cut.push(...(await page.evaluate(stock.measureStockUi)).filter((f) => f.startsWith("text cut off")).map((f) => `${name}: ${f}`));
-        };
-        await tab(1);
-        await look("today");
-        await tab(2);
-        await look("tasks");
-        await tab(4);
-        await look("time");
-        await tab(1);
-        await page.click('.m-head-actions [aria-label="Einstellungen"]');
-        await visible(".m-screen .m-section");
-        await look("settings");
-        device.back();
-        await sleep(500);
-        assert.deepEqual(cut, []);
-      } finally {
-        device.shell("settings put system font_scale 1.0");
-      }
-    });
-
     test("colors the system bars like the app, also in the dark theme", async () => {
       await tab(1);
       await page.evaluate(async () => {
@@ -232,6 +204,35 @@ for (const [W, H] of [
     test("draws every spinner small and round", async () => {
       await keepSpinners();
       assert.deepEqual(geo.spinnerProblems(spinnerLog), []);
+    });
+
+    // Last: Android may recreate the activity (and its WebView) when the font size changes.
+    test("keeps every label whole with the system's font at 130 %", async () => {
+      device.shell("settings put system font_scale 1.3");
+      try {
+        await sleep(1500);
+        const cut = [];
+        const look = async (name) => {
+          await sleep(800);
+          shot(`font-130-${name}`);
+          cut.push(...(await page.evaluate(stock.measureStockUi)).filter((f) => f.startsWith("text cut off")).map((f) => `${name}: ${f}`));
+        };
+        await tab(1);
+        await look("today");
+        await tab(2);
+        await look("tasks");
+        await tab(4);
+        await look("time");
+        await tab(1);
+        await page.click('.m-head-actions [aria-label="Einstellungen"]');
+        await visible(".m-screen .m-section");
+        await look("settings");
+        device.back();
+        await sleep(500);
+        assert.deepEqual(cut, []);
+      } finally {
+        device.shell("settings put system font_scale 1.0");
+      }
     });
   });
 }
