@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { Page } from "./cdp.js";
+import { readPng } from "../lib/png.js";
 
 export const PKG = "de.mousewerk.arcalo";
 const ADB = process.env.ADB ?? "adb";
@@ -108,6 +109,21 @@ export function unforward() {
 export function screencap(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, execFileSync(ADB, ["exec-out", "screencap", "-p"], { maxBuffer: 64 * 1024 * 1024 }));
+}
+
+/** The colors of a screenshot behind the status bar (top) and the navigation bar (bottom), as
+ *  `#rrggbb`: a pixel left of the middle, away from the clock, the icons and a camera cutout. */
+export function barColors(file) {
+  const png = readPng(fs.readFileSync(file));
+  const hex = ([r, g, b]) => `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  return { top: hex(png.pixel(Math.round(png.width * 0.38), 4)), bottom: hex(png.pixel(Math.round(png.width * 0.1), png.height - 4)) };
+}
+
+/** Whether two `#rrggbb` colors are the same within `tolerance` per channel. */
+export function sameColor(a, b, tolerance = 8) {
+  const ch = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const [x, y] = [ch(a), ch(b)];
+  return x.every((v, i) => Math.abs(v - y[i]) <= tolerance);
 }
 
 /** Closes system dialogs (a launcher that "isn't responding") that may lie over the app. */

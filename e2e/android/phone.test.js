@@ -45,6 +45,7 @@ for (const [W, H] of [
   describe(`Android phone ${W}×${H}`, () => {
     let page;
     let dpr = 2;
+    let splash = 0;
     const spinnerLog = [];
     /** The platform's own UI found on the screens so far. */
     const stockFound = [];
@@ -72,7 +73,7 @@ for (const [W, H] of [
 
     before(async () => {
       try {
-        ({ page, dpr } = await openApp(W, H, "light", { onPage: [geo.recordSpinners, stock.stubDialogs] }));
+        ({ page, dpr, splash } = await openApp(W, H, "light", { onPage: [geo.recordSpinners, stock.stubDialogs] }));
         await seed(page);
         await page.evaluate(geo.recordSpinners);
       } catch (e) {
@@ -86,6 +87,11 @@ for (const [W, H] of [
     after(async () => {
       await page?.close();
       device.unforward();
+    });
+
+    test("lets the splash go as soon as the app is there", async () => {
+      // lib/splash.ts: at least its animation (under 1 s) and the fade, never the 8 s limit.
+      assert.ok(splash < 3000, `the splash stayed ${splash} ms after the app was drawn`);
     });
 
     test("shows Heute on a screen that fits, with the five tabs in reach", async () => {
@@ -107,7 +113,7 @@ for (const [W, H] of [
       await tab(5);
       await visible(".m-tree-page");
       problems.push(...(await screen("notes")));
-      await page.click(".m-tree-page");
+      await page.click(".m-tree-page", { text: /^(Eingang|Inbox)$/ });
       await visible(".m-read");
       problems.push(...(await screen("page")));
       device.back();

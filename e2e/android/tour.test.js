@@ -15,7 +15,7 @@ import path from "node:path";
 import { guarded } from "../lib/harness.js";
 import * as stock from "../lib/stockui.js";
 import * as device from "./device.js";
-import { openApp, seed } from "./app.js";
+import { appBarColors, openApp, seed } from "./app.js";
 
 const OUT = path.resolve(import.meta.dirname, "../screenshots/android");
 const APK = process.env.ARCALO_APK;
@@ -60,6 +60,12 @@ for (const [W, H] of [
           const file = `${String(++n).padStart(2, "0")}-${name}`;
           device.screencap(path.join(dir, `${file}.png`));
           const seen = [...(await page.evaluate(stock.measureStockUi).catch((e) => [`(not measured: ${e.message})`])), ...(await page.evaluate(stock.nativeDialogs).catch(() => []))];
+          // The system bars in the app's colors (MobileApp sets them with every theme).
+          const want = await page.evaluate(appBarColors);
+          const got = device.barColors(path.join(dir, `${file}.png`));
+          for (const side of ["top", "bottom"]) {
+            if (want[side] && !device.sameColor(want[side], got[side])) seen.push(`system bar ${side === "top" ? "status" : "navigation"}: ${got[side]} on the screen, the app's ${want[side]}`);
+          }
           for (const f of seen) {
             found.add(f);
             if (!findings.has(f)) findings.set(f, new Set());
@@ -138,7 +144,7 @@ for (const [W, H] of [
           await page.waitForSelector(".m-tree-page");
           await shot("notes");
           await menus("notes");
-          await page.click(".m-tree-page");
+          await page.click(".m-tree-page", { text: /^(Eingang|Inbox)$/ });
           await page.waitForSelector(".m-read");
           await shot("page");
           await menus("page");

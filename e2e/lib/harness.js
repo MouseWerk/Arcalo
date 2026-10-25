@@ -178,7 +178,8 @@ export function guarded(test, getApp) {
         const app = getApp();
         const slug = name.replace(/[^a-z0-9]+/gi, "-").slice(0, 60);
         await app?.browser.saveScreenshot(path.join(SHOTS, `FAIL-${slug}.png`)).catch(() => {});
-        const dom = await app?.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "");
+        // A phone test's app (e2e/android) has a screenshot but no WebDriver session.
+        const dom = typeof app?.browser?.execute === "function" ? await app.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "") : "";
         if (dom) fs.writeFileSync(path.join(SHOTS, `FAIL-${slug}.html`), dom);
         throw e;
       }
