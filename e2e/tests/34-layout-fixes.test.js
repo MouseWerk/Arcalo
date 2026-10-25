@@ -40,7 +40,7 @@ test("many tabs: they shrink, the active one stays visible, + and the tab list a
   // Open pages are not opened twice: extra pages make the row overflow.
   const extra = Array.from({ length: 8 }, (_, i) => `Tab-Seite ${i + 1}`);
   for (const title of extra) await app.invoke("page_create", { parentId: null, title });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")));
   const titles = ["Willkommen", "Jour fixe 22.09.", "SAP CATS Leitfaden", "Kundentermin", "Besprechung", "PRJ-2026-X Rollout", ...extra, "Architektur"];
   for (const title of titles) {

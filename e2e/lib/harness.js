@@ -368,13 +368,15 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     /**
      * Reloads the page and waits until the new document is ready. `location.reload()` returns
      * before the old document goes: a check for `ready` right after it can still see the old one,
-     * and keys sent then are lost while the new one starts.
+     * and keys sent then are lost while the new one starts. `hash`, when given, is set in the same
+     * step, so the old document never sees it.
      */
-    async reload() {
-      await browser.execute(() => {
+    async reload(hash) {
+      await browser.execute((h) => {
         window.__arcaloOldDocument = true;
+        if (h !== undefined) location.hash = h;
         location.reload();
-      });
+      }, hash);
       await browser.waitUntil(
         async () => {
           try {

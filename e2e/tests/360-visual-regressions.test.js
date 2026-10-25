@@ -156,7 +156,7 @@ test("booked-time strips without room for a reference show the hatch only; today
   const view = await app.invoke("settings_get");
   const before = view.settings.workdays;
   await app.invoke("settings_save", { settings: { ...view.settings, workdays: six } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after the reload" });
   for (const [w, h] of [[1920, 1080], [1280, 800], [900, 700]]) {
     await app.browser.setWindowSize(w, h);

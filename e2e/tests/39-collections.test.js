@@ -30,7 +30,7 @@ test("a folder with three pages shows them as a table", async () => {
   kids.login = (await app.invoke("page_create", { parentId: parent.id, title: "Login bauen", icon: null, content: "Formular und Fehlertexte.\n" })).id;
   kids.export = (await app.invoke("page_create", { parentId: parent.id, title: "Export prüfen", icon: null, content: "---\nnotiz: frei\n---\nCSV und JSON.\n" })).id;
   kids.suche = (await app.invoke("page_create", { parentId: parent.id, title: "Suche planen", icon: null, content: "" })).id;
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
   await openTree("Sprint-Board");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");

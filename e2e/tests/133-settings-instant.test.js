@@ -140,7 +140,7 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
   await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
   const hidden = () => app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-items').hidden);
   assert.equal(await hidden(), true);
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await openSection("appearance");
   assert.equal(await hidden(), true, "remembered");

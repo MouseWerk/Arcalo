@@ -57,7 +57,7 @@ test("a callout without a title shows its type label; with a title only the titl
 
 test("„Symbol ändern“: German names, the list scrolls inside the window and sets the icon", async () => {
   const page = await create("Symbolseite", "Text");
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.browser.setWindowSize(1100, 700);
   await sleep(400);

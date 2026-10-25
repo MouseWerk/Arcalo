@@ -36,7 +36,7 @@ async function theme(mode, id) {
   if (mode === "light") ap.theme_light = id;
   else ap.theme_dark = id;
   await app.invoke("settings_save", { settings: { ...view.settings, theme: mode, appearance: ap } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after the reload" });
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.documentElement.dataset.themeId)) === id, { timeoutMsg: `theme ${id} not applied` });
   await app.waitFor(".sidebar .tree-row");

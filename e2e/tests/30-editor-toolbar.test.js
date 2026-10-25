@@ -59,7 +59,7 @@ const selectBlocks = (sel, from, to) =>
 test("toolbar: formatting, block type, insert menu", async () => {
   pageId = (await app.invoke("page_create", { title: "Werkzeugtest", parentId: null })).id;
   await app.invoke("page_save", { id: pageId, content: "Titelzeile\n\n- Zitrone\n- Apfel\n- Banane\n\nErster Absatz\n\nZweiter Absatz\n" });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")));
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === "Werkzeugtest") await r.click();
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .editor-toolbar");

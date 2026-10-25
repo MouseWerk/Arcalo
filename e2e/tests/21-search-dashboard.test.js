@@ -9,14 +9,7 @@ before(async () => (app = await launch()));
 after(async () => app?.close());
 
 const order = () => app.browser.execute(() => [...document.querySelectorAll(".dash-grid .dw")].map((e) => e.dataset.widget));
-const reload = async (hash = "") => {
-  await app.browser.execute((h) => {
-    location.hash = h;
-    location.reload();
-  }, hash);
-  await app.browser.pause(300);
-  await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
-};
+const reload = (hash = "") => app.reload(hash);
 /** Clicks the first `sel` element whose text is `text` (waits until there is one). */
 const clickText = async (sel, text) => {
   await app.browser.waitUntil(

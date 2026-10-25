@@ -54,7 +54,7 @@ before(async () => {
     },
   });
   await app.keys(["Control", "t"]);
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
   await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="vacation"] .wv-holiday', /\S/, 15000);
@@ -62,7 +62,7 @@ before(async () => {
   if (holidayToday) {
     const v = await app.invoke("settings_get");
     await app.invoke("settings_save", { settings: { ...v.settings, time: { ...v.settings.time, balance: { ...v.settings.time.balance, state: "" } } } });
-    await app.browser.execute(() => location.reload());
+    await app.reload();
     await app.browser.pause(300);
     await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
   }
@@ -163,13 +163,13 @@ test("deadlines: overdue first, countdowns, a click opens the page", async () =>
   const d = (await app.invoke("settings_get")).settings.dashboard;
   d.boards[0].widgets = d.boards[0].widgets.map((w) => (w.id === "deadlines" ? { ...w, config: { days: 1 } } : w));
   await app.invoke("dashboard_save", { dashboard: d });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="deadlines"] .wd-list', /Lizenzen prüfen/, 10000);
   assert.ok(!(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="deadlines"] .wd-list')).includes("Changelog"));
   d.boards[0].widgets = d.boards[0].widgets.map((w) => (w.id === "deadlines" ? { ...w, config: { days: 14 } } : w));
   await app.invoke("dashboard_save", { dashboard: d });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
 });
 
@@ -195,7 +195,7 @@ test("team: Anna busy in a meeting, Jörg out of office (free/busy only, no subj
   const anna = (await app.invoke("settings_get")).settings.calendar.outlook_calendars.find((c) => c.owner === "Anna Müller").id;
   d.boards[0].widgets = d.boards[0].widgets.map((w) => (w.id === "team" ? { ...w, config: { sources: [anna] } } : w));
   await app.invoke("dashboard_save", { dashboard: d });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="team"] .wt-list', /Anna Müller/, 15000);
   assert.ok(!(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="team"] .wt-list')).includes("Jörg"));

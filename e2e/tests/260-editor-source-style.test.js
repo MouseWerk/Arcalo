@@ -60,7 +60,7 @@ const openTree = async (title) => {
   }, { timeout: 8000, timeoutMsg: `no ${title} in the tree` });
 };
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 15000 });
 };
 

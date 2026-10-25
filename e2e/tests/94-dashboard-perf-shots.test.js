@@ -14,7 +14,7 @@ before(async () => {
 after(async () => app?.close());
 
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 30000, timeoutMsg: "not ready after reload" });
 };

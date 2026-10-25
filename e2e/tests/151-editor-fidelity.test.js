@@ -60,7 +60,7 @@ const inView = (sel, text) =>
 test("an edit keeps the Markdown other tools wrote", async () => {
   await app.invoke("page_create", { parentId: null, title: "Ziel 151", icon: "file-text", content: "# Ziel\n\n" + filler + "\n\nDer Block hier ^blk-1\n" });
   id = (await app.invoke("page_create", { parentId: null, title: "Treue 151", icon: "file-text", content: SOURCE })).id;
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 15000 });
   await openTree("Treue 151");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");

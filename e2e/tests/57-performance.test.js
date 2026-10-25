@@ -150,7 +150,7 @@ test("the sidebar renders only the rows in view of a large tree; keyboard, hover
       done(out);
     })();
   });
-  await app.browser.refresh();
+  await app.reload();
   await app.waitFor(".sidebar .tree [role=treeitem]", 20000);
   // A folder that comes later starts collapsed (1.19): open it.
   await app.browser.execute((id) => document.querySelector(`.sidebar .tree-row[data-id="${id}"] .tree-twisty`).click(), ids[0]);
@@ -223,7 +223,7 @@ test("hidden assistant suggestions do no work on page switches", async () => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, litellm_base_url: llm.url } });
   await app.invoke("api_key_set", { key: llm.apiKey });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
   const a = await create("Wechsel A", "A");
   const b = await create("Wechsel B", "B");

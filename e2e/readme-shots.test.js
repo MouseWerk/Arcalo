@@ -142,7 +142,7 @@ test("README screenshots", async () => {
   await app.browser.execute((id) => localStorage.setItem("arcalo.page-full", JSON.stringify([id])), sprint.id);
   await app.invoke("page_create", { parentId: null, title: "Statusbericht KW 39", icon: "flag", content: DECK });
   await app.invoke("page_create", { parentId: null, title: "Konzept Auftragsportal", icon: "book-open", content: BLOCKS });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 
   // Board and table, without the side panel so the columns have room.
@@ -191,7 +191,7 @@ test("README screenshots", async () => {
   await app.shot("theme-picker");
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme: "dark", appearance: { ...view.settings.appearance, theme_dark: "tokyo-night" } } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Konzept Auftragsportal");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");

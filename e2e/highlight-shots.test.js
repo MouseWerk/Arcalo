@@ -87,7 +87,7 @@ async function shoot(lang) {
   const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
   const ev = (await app.invoke("calendar_events", { from, to })).find((e) => (e.event?.title ?? e.title) === tx.meeting);
   await app.invoke("calendar_meeting_note", { key: ev.key });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await sleep(500);
   const meetings = lang === "de" ? "Besprechungen" : "Meetings";
@@ -113,7 +113,7 @@ async function shoot(lang) {
 
   // A diagram in a note.
   const page = await app.invoke("page_create", { title: tx.page, parentId: null, content: "```mermaid\n" + tx.diagram + "\n```\n" });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.browser.waitUntil(async () => !!(await rowRect(tx.page)), { timeout: 8000, timeoutMsg: `no row ${page.title}` });
   await app.browser.execute((t) => {

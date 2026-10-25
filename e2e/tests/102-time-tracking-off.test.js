@@ -27,7 +27,7 @@ before(async () => {
   pageId = page.id;
   await app.invoke("page_save", { id: pageId, content: `Besprechung vorbereitet\n\n<time-entry id="${out.entry.id}" hours="1" target="NP-8801/1020">Chip aus dem Test</time-entry>\n` });
   // The main window picks up the new page.
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
   entriesBefore = (await app.invoke("time_entries", { from: null, to: null })).length;

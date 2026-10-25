@@ -167,7 +167,7 @@ const sidebar = (open) =>
 const setTheme = async (theme) => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await sleep(800);
 };
@@ -298,7 +298,7 @@ async function seed() {
   focus.run(a, "1020", "NP-8801/1020", "Delta-Load Fehlerfälle", utc(at(3, 9)), utc(at(3, 9, 50)));
   db.close();
 
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -513,7 +513,7 @@ test("quick capture", { skip: !want("capture") }, async () => {
   for (const theme of ["light", "dark"]) {
     await setTheme(theme);
     const w = await openCapture(app);
-    await app.browser.refresh();
+    await app.reload();
     await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 10000 });
     await app.type(">konz");
     await app.waitText(".capture-picker .sugg-item.sel", /Konzept Auftragsportal/);

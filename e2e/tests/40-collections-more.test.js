@@ -38,7 +38,7 @@ test("500 pages: the table renders a window of rows and stays quick", async () =
   for (let i = 1; i <= 500; i++) {
     await app.invoke("page_create", { parentId: big.id, title: `Eintrag ${String(i).padStart(3, "0")}`, icon: null, content: `---\nstatus: ${i % 3 ? "Offen" : "Fertig"}\nnr: ${i}\n---\n` });
   }
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Großer Ordner");
   const t0 = Date.now();
@@ -110,7 +110,7 @@ test("board: reorder cards within a column, add a card to a column", async () =>
   });
   for (const t of ["Alpha", "Beta", "Gamma"]) kids[t] = (await app.invoke("page_create", { parentId: folder.id, title: t, icon: null, content: "---\nstatus: Offen\n---\n" })).id;
   await app.invoke("page_create", { parentId: null, title: "Notizen Team", icon: null, content: "Rückfrage an @Anna und @Bernd.\n" });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Team-Board");
   const col = '.pane.active > .pane-content:not([hidden]) .board-col[data-group="Offen"]';

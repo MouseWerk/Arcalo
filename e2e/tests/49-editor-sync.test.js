@@ -22,7 +22,7 @@ const openTree = async (title) => {
 const pageId = async (title, create = false) => (await app.invoke("page_resolve", { title, create })).id;
 const content = async (title) => (await app.invoke("page_get", { id: await pageId(title) })).content;
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 15000 });
   await sleep(500);
 };

@@ -96,7 +96,7 @@ test("closing without saving keeps the draft and its target", async () => {
   assert.equal(await value(), "Entwurf, noch nicht fertig");
   await app.waitText(".capture-chip.target", /Posteingang/);
   // It also survives a reload of the window (a restart of the app).
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await value()) === "Entwurf, noch nicht fertig", { timeoutMsg: "draft lost on reload" });
   await app.waitText(".capture-chip.target", /Posteingang/);
   await app.browser.execute(() => {

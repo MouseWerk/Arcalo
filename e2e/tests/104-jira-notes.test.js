@@ -34,7 +34,7 @@ after(async () => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const count = (sel) => app.browser.execute((s) => document.querySelectorAll(s).length, sel);
 async function reload() {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }

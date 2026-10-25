@@ -38,7 +38,7 @@ test("long notes get a scroll outline with heading marks", async () => {
   const id = (await app.invoke("page_create", { title: "Lange Seite", parentId: null })).id;
   const body = Array.from({ length: 12 }, (_, i) => `## Abschnitt ${i + 1}\n\n${"Text zum Scrollen. ".repeat(60)}`).join("\n\n");
   await app.invoke("page_save", { id, content: body + "\n" });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
   await openFromTree("Lange Seite");
   await app.waitFor(".scroll-outline");

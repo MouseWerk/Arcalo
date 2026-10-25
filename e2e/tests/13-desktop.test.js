@@ -89,10 +89,7 @@ test("Befehlszeile: Linux shows where the program is and changes nothing", async
 
 test("the capture UI (#capture) submits with Enter", async () => {
   // Load the capture view in this window: the separate window needs a global shortcut.
-  await app.browser.execute(() => {
-    location.hash = "#capture";
-    location.reload();
-  });
+  await app.reload("#capture");
   const input = await app.waitFor('textarea[aria-label="Schnellerfassung"]');
   await app.browser.waitUntil(() => app.browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Schnellerfassung"), {
     timeoutMsg: "capture input not focused",

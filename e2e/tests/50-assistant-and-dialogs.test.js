@@ -79,7 +79,7 @@ before(async () => {
       ai: { ...view.settings.ai, allowed_tools: [...new Set([...(view.settings.ai.allowed_tools ?? []), "http_request"])] },
     },
   });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 15000 });
   await sleep(500);
 });
@@ -170,7 +170,7 @@ test("time entry dialog: Enter twice in a row books once", async () => {
 });
 
 const openPage = async (title) => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 15000 });
   await sleep(500);
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === title) return r.click();

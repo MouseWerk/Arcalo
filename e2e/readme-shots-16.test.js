@@ -420,7 +420,7 @@ const save = async (patch) => {
 const setTheme = async (theme) => {
   if ((await settings()).theme === theme && (await app.browser.execute(() => document.documentElement.dataset.theme)) === theme) return;
   await save(() => ({ theme }));
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await sleep(800);
 };
@@ -771,7 +771,7 @@ async function seed() {
   }
   db2.close();
 
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -876,7 +876,7 @@ async function versions() {
     id: page.id,
     content: original.replace("- **Queue**: persistent processing with retry", "- **Queue**: persistent processing with retry, at most 5 attempts\n- **Monitoring**: Grafana dashboard with alerts").replace("A delay moves the acceptance.", "A delay moves the acceptance and the go-live."),
   });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Architecture");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
@@ -1006,7 +1006,7 @@ async function dashboard() {
     },
   ];
   await app.invoke("dashboard_save", { dashboard: { ...dash, version: 2, notes: dash.notes ?? {}, boards, active: "heute" } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await app.keys(["Control", "t"]);
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid .dw");
@@ -1019,7 +1019,7 @@ async function dashboard() {
   await unfit();
   if (dash.boards?.length) await app.invoke("dashboard_save", { dashboard: dash });
   await closeTabs();
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -1319,7 +1319,7 @@ async function dailyCalendar() {
   await settle();
   await shotOf(".calendar", "daily-calendar");
   await app.keys(["Escape"]);
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -1328,7 +1328,7 @@ async function search() {
   await closeTabs();
   const url = await app.browser.getUrl();
   await app.browser.url(url.replace(/#.*$/, "") + "#search");
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await app.waitFor(".search-app input, input.pal-input, .pal-input input");
   await app.type("OpenAPI");
@@ -1350,7 +1350,7 @@ async function themes() {
   await closeTabs();
   const s = await settings();
   await save((x) => ({ theme: "dark", appearance: { ...x.appearance, theme_dark: "tokyo-night" } }));
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Architecture");
   await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
@@ -1358,7 +1358,7 @@ async function themes() {
   await settle();
   await shot("theme-tokyo-night");
   await save(() => ({ theme: s.theme, appearance: s.appearance }));
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -1367,14 +1367,14 @@ async function backdrop() {
   await closeTabs();
   await panel(false);
   await save((s) => ({ appearance: { ...s.appearance, window_effect: "acrylic", window_opacity: 75 } }));
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openSettings("appearance");
   await sleep(700);
   await settle();
   await shotGroup("text:Window backdrop", "settings-backdrop-dark");
   await save((s) => ({ appearance: { ...s.appearance, window_effect: "none", window_opacity: 80 } }));
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -1535,7 +1535,7 @@ async function jiraScene() {
   const page = await app.invoke("page_resolve", { title: "Integration test plan", create: false });
   const original = (await app.invoke("page_get", { id: page.id })).content;
   await app.invoke("page_save", { id: page.id, content: original.replace("Integration test of the order flow portal → middleware → SAP.", "Integration test of the order flow portal → middleware → SAP.\nOpen bug: PORTAL-142") });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await sleep(600);
 
@@ -1652,7 +1652,7 @@ async function widgets() {
     ],
   };
   await app.invoke("dashboard_save", { dashboard: { ...dash, version: 2, boards: [...dash.boards.filter((b) => b.id !== "work"), board], active: "work" } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await sidebar(false);
   await app.keys(["Control", "t"]);
@@ -1672,14 +1672,14 @@ async function widgets() {
   await sidebar(true);
   await app.invoke("dashboard_save", { dashboard: dash });
   await closeTabs();
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
 async function capture() {
   await setTheme("light");
   const w = await openCapture(app);
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 10000 });
   await app.type(">order");
   await app.waitText(".capture-picker .sugg-item.sel", /Order portal concept/);
@@ -1802,8 +1802,7 @@ test("1.6 README screenshots", async () => {
       failed.push(`${name}: ${String(e).split("\n")[0]}`);
       await app.shot(`FAIL-${name}`).catch(() => {});
       await app.keys(["Escape"]).catch(() => {});
-      await app.browser.refresh().catch(() => {});
-      await ready().catch(() => {});
+      await app.reload().catch(() => {});
     }
   }
   if (failed.length) throw new Error(failed.join("\n"));

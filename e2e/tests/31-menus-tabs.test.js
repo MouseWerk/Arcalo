@@ -145,7 +145,7 @@ test("image menu: size, full view, remove", async () => {
   const saved = await app.invoke("attachment_save", { data: PNG, name: "Bild.png", mime: "image/png" });
   const id = (await app.invoke("page_create", { title: "Bildseite", parentId: null })).id;
   await app.invoke("page_save", { id, content: `Vorher\n\n![[${saved.name}]]\n\nNachher\n` });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")));
   await openTree("Bildseite");
   const img = await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror img.embed-image");

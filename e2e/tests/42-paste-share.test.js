@@ -184,7 +184,7 @@ test("with subpages: one file with a table of contents and links between the pag
   const parent = await pageId("Bericht");
   const child = await app.invoke("page_create", { title: "Anhang A", parentId: parent });
   await app.invoke("page_save", { id: child.id, content: "Zurück zum [[Bericht]].\n" });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
   const out = path.join(app.dataDir, "export", "Bericht mit Unterseiten.html");
   await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.innerText.trim() === "Bericht").click());

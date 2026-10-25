@@ -152,7 +152,7 @@ test("file errors name the file or the folder", async () => {
 test("code on slides is highlighted; the white Beamer slide uses light code colors in a dark theme", async () => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme: "dark" } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await openPage("Folien mit Code", "# Code auf Folien\n\n```ts\nconst antwort: number = 42; // Kommentar\nfunction frage(): string {\n  return \"Leben\";\n}\n```\n\n```rust\nfn main() { let x = 1; }\n```\n");
   await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');

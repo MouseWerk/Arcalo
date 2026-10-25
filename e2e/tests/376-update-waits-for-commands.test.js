@@ -145,7 +145,7 @@ test("an update postponed at three quits by a terminal command names it at the n
   await start(dir, 60);
   assert.deepEqual((await app.invoke("update_status")).postponed, { version: "1.9.0", times: 3, commands: ["arcalo serve"] });
   // The next start of the window says it.
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.waitText(".toast-title", /Das Update auf 1\.9\.0 wurde schon 3-mal verschoben/);
   const detail = await app.browser.execute(() => [...document.querySelectorAll(".toast")].find((t) => /verschoben/.test(t.textContent))?.textContent ?? "");
   assert.match(detail, /arcalo serve/);

@@ -67,7 +67,7 @@ async function look(mode, id, width, height) {
     else ap.theme_dark = id;
   }
   await app.invoke("settings_save", { settings: { ...view.settings, theme: mode, appearance: ap } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await sleep(600);
 }

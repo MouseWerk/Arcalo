@@ -14,7 +14,7 @@ const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86_400_000));
 
 async function reload() {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }

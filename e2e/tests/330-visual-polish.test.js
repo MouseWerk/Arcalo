@@ -220,7 +220,7 @@ test("German shortcut names, today's marker and one hour format", async () => {
   const workdays = view.settings.workdays;
   if (!workdays.includes(today)) {
     await app.invoke("settings_save", { settings: { ...view.settings, workdays: [...workdays, today].sort() } });
-    await app.browser.refresh();
+    await app.reload();
     await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after the reload" });
   }
   await ribbon("Tagesrückblick");

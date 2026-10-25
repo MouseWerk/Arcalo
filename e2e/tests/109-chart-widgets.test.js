@@ -13,7 +13,7 @@ let parent;
 const W = (id, kind, x, y, w, h, config = {}) => ({ id, kind, x, y, w, h, config });
 const SCHEMA = "---\neigenschaften:\n  status: {typ: auswahl, optionen: {Offen: grau, In Arbeit: blau, Fertig: grün}}\n  aufwand: zahl\nansicht: board\n---\n# Vorhaben\n";
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
 };
