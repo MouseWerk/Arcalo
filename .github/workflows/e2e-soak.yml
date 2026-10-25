@@ -3,7 +3,8 @@ name: e2e soak
 # The whole desktop end-to-end suite several times on one build (docs/quality/README.md): a test
 # that fails once in five runs is a bug to find, not luck. Fails on any single failure and keeps
 # the screenshots of every failed round. Started by hand (Actions -> e2e soak -> Run workflow, with
-# the number of rounds) and once a week on main.
+# the number of rounds) and once a week on main. A branch `soak/<name>` pushed runs it with 5 rounds
+# (a workflow can be started by hand only once it is on main).
 #
 # One suite takes about an hour on a runner, so the rounds run side by side, each on a runner of
 # its own, against the one build of the first job.
@@ -15,6 +16,8 @@ on:
         description: "How many times the full suite runs"
         required: true
         default: "5"
+  push:
+    branches: ["soak/**"]
   schedule:
     # Sundays, 02:17 UTC.
     - cron: "17 2 * * 0"
