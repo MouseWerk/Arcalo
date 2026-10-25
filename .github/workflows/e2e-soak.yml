@@ -67,8 +67,10 @@ jobs:
           npm --prefix ui run build
           cargo build -p arcalo --features custom-protocol
           cargo install tauri-driver --locked
-          mkdir -p soak-bin
-          cp target/debug/arcalo "$(command -v tauri-driver)" soak-bin/
+          # The driver on the PATH, the app not: a test checks that the test build is not on it.
+          mkdir -p soak-bin/app soak-bin/driver
+          cp target/debug/arcalo soak-bin/app/
+          cp "$(command -v tauri-driver)" soak-bin/driver/
       - uses: actions/upload-artifact@v4
         with:
           name: e2e-soak-app
@@ -101,12 +103,12 @@ jobs:
         env:
           ROUND: ${{ matrix.round }}
         run: |
-          chmod +x soak-bin/arcalo soak-bin/tauri-driver
-          export PATH="$PWD/soak-bin:$PATH"
+          chmod +x soak-bin/app/arcalo soak-bin/driver/tauri-driver
+          export PATH="$PWD/soak-bin/driver:$PATH"
           npm ci --prefix e2e
           shots="$PWD/soak/round-$ROUND"
           mkdir -p "$shots"
-          if (cd e2e && ARCALO_APP="$PWD/../soak-bin/arcalo" ARCALO_SHOTS="$shots" node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$shots/report.tap" tests/*.test.js); then
+          if (cd e2e && ARCALO_APP="$PWD/../soak-bin/app/arcalo" ARCALO_SHOTS="$shots" node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$shots/report.tap" tests/*.test.js); then
             echo "### Round $ROUND: clean" >> "$GITHUB_STEP_SUMMARY"
             # Only failures are kept: the screenshots of a clean round are the usual ones.
             rm -rf "$shots"
