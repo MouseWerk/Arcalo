@@ -2,18 +2,19 @@
 // demo data: run by hand when a release's highlights change (not part of the e2e suite).
 //   ARCALO_APP=… node --test e2e/highlight-shots.test.js
 // Each picture is a 336 × 210 crop of the window at 125 % UI scale.
-import { test, after } from "node:test";
+import { test as nodeTest, after } from "node:test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { launch } from "./lib/harness.js";
+import { launch, guarded } from "./lib/harness.js";
 import { launchEnglish } from "./lib/english.js";
 
 const OUT = path.resolve(import.meta.dirname, "../docs/releases/highlights/img");
 const W = 336;
 const H = 210;
 let app;
+const test = guarded(nodeTest, () => app);
 after(async () => app?.close());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

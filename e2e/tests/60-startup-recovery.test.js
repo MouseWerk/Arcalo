@@ -5,11 +5,10 @@
 // ARCALO_TEST_RECOVERY_CHOICE, everything else (dialog text, restore, restart, exit code) is real.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, stopStarted, startProcess } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
@@ -27,23 +26,16 @@ const log = (dir) => {
     return "";
   }
 };
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 /** Starts the app without WebDriver; resolves to its exit code (null: still running after `timeout`). */
 function run(dir, choice, timeout = 30000) {
-  const child = spawn(APP, [], { env: appEnv(dir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: choice } }), stdio: "ignore" });
+  const child = startProcess(APP, [], { env: appEnv(dir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: choice } }), stdio: "ignore" });
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), timeout);
     child.on("exit", (code) => {
@@ -76,7 +68,7 @@ test("a damaged database is restored from the last backup; the app starts with t
   await app.invoke("page_create", { parentId: null, title: "Nach der Sicherung", icon: null, content: "fehlt nach dem Wiederherstellen" });
   await app.close();
   app = null;
-  killApp();
+  stopStarted();
 
   // The database is damaged: text where SQLite expects its header.
   const db = path.join(dir, "workspace.db");
@@ -99,7 +91,7 @@ test("a damaged database is restored from the last backup; the app starts with t
   // The restarted app opens the restored database.
   await until("restarted app started", () => (log(dir).match(/Arcalo [\d.]+ started/g) ?? []).length >= 2);
   await sleep(1500);
-  killApp();
+  stopStarted();
   await sleep(500);
 
   app = await launch({ demo: false, dataDir: dir });

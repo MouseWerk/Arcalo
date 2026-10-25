@@ -9,12 +9,11 @@
 // anything still points into them (here: location.json, through a link).
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { APP, launch, guarded, homeDataDir } from "../lib/harness.js";
+import { launch, guarded, homeDataDir, stopStarted } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
@@ -36,13 +35,6 @@ let linkHome;
 let pageIds;
 let version;
 
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 const logOf = (dir) => {
   try {
     return fs.readFileSync(path.join(dir, "logs", "arcalo.log"), "utf8");
@@ -69,7 +61,7 @@ function storageFiles(dir) {
 }
 
 before(async () => {
-  killApp();
+  stopStarted();
   // Written by this build under the new names first.
   app = await start();
   const notiz = await app.invoke("page_create", { parentId: null, title: "Notiz aus 1.14", icon: null, content: "geschrieben mit 1.14" });
@@ -91,7 +83,7 @@ before(async () => {
   await sleep(2500);
   await app.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(800);
   assert.ok(!isPlain(path.join(newData, "workspace.db")), "encrypted");
 
@@ -116,7 +108,7 @@ before(async () => {
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   for (const d of [home, customHome, customDir, linkHome]) if (d) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 

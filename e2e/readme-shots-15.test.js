@@ -5,12 +5,12 @@
 // ARCALO_SCALE (default 2) is the device scale factor (GDK_SCALE); at 2 the X display must be at
 // least 2960x1840. ARCALO_SCENES=week,calendar,… takes only some scenes. The week is the current
 // one, so the pictures tell their story best on a Friday (the day review shows Thursday).
-import { test, before, after } from "node:test";
+import { test as nodeTest, before, after } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { launch } from "./lib/harness.js";
+import { launch, guarded } from "./lib/harness.js";
 import { week } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { startFakeLiteLLM } from "./lib/fake-litellm.js";
@@ -29,6 +29,7 @@ const prev2 = week(-2);
 const at = cur.at;
 
 let app, llm, dir;
+const test = guarded(nodeTest, () => app);
 
 // ---------------------------------------------------------------- fixtures
 

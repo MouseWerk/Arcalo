@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, launch, guarded } from "../lib/harness.js";
+import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -108,11 +108,7 @@ test("killing the app in the middle of saves leaves an intact database with a co
     { timeout: 20000, timeoutMsg: "bulk saves did not start" },
   );
   const acknowledged = await app.browser.execute(() => window.__bulk);
-  try {
-    execSync(`pkill -9 -f "${APP}"`);
-  } catch {
-    /* pkill also hits the shell that runs it */
-  }
+  app.kill("SIGKILL");
   await app.close();
 
   const db = path.join(dataDir, "workspace.db");

@@ -8,11 +8,10 @@
 // skipped from then on.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, startProcess } from "../lib/harness.js";
 import { startFeed, throwawayKey, writeShare } from "../lib/update-feed.js";
 
 const test = guarded(nodeTest, () => app);
@@ -111,7 +110,7 @@ test("the share is the only source; its file is verified, downloaded and install
 /** Starts the app without WebDriver and waits for it to end; returns the exit code. */
 function startPlain(extra) {
   return new Promise((resolve, reject) => {
-    const child = spawn(APP, [], { env: appEnv(dataDir, { env: env("1.9.0", extra) }), stdio: "ignore" });
+    const child = startProcess(APP, [], { env: appEnv(dataDir, { env: env("1.9.0", extra) }), stdio: "ignore" });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error("the start did not end"));

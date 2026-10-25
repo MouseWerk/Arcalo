@@ -4,11 +4,10 @@
 // capture then shows the lock screen instead of opening. The lock screen in English.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, launch, guarded } from "../lib/harness.js";
+import { launch, guarded, stopStarted } from "../lib/harness.js";
 import { captureVisible } from "../lib/capture.js";
 import { germanLeftovers, launchEnglish } from "../lib/english.js";
 
@@ -20,13 +19,6 @@ const PIN = "2468";
 let enDir;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 const locked = () => app.browser.execute(() => !!document.querySelector(".lock-screen"));
 const appShown = () => app.browser.execute(() => !!document.querySelector(".sidebar, .side-tabs"));
 async function typePin(pin) {
@@ -42,12 +34,12 @@ async function typePin(pin) {
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   for (const d of [dataDir, enDir]) if (d) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 test("a PIN set in the settings locks the next start; wrong PINs make it wait", async () => {
-  killApp();
+  stopStarted();
   await sleep(800);
   app = await launch({ demo: true, dataDir, env: ENV });
   await app.keys(["Control", ","]);
@@ -73,7 +65,7 @@ test("a PIN set in the settings locks the next start; wrong PINs make it wait", 
   assert.ok(!secrets.includes(`"${PIN}"`));
   await app.shot("138-lock-settings");
   await app.close();
-  killApp();
+  stopStarted();
   await sleep(500);
 
   app = await launch({ demo: false, dataDir, env: ENV });
@@ -126,7 +118,7 @@ test("idle time locks again and quick capture shows the lock screen instead", as
 test("the lock screen in English", async () => {
   await app.close();
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
   ({ app, dataDir: enDir } = await launchEnglish({ env: ENV }));
   const s = await app.invoke("applock_status");

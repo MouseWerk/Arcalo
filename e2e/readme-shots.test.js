@@ -3,10 +3,11 @@
 // readme-shots-16.test.js; these are for other uses. Run after building the app, with the output
 // folder of your choice:
 //   ARCALO_SHOTS=/tmp/shots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
-import { test, before, after } from "node:test";
-import { launch } from "./lib/harness.js";
+import { test as nodeTest, before, after } from "node:test";
+import { launch, guarded } from "./lib/harness.js";
 
 let app;
+const test = guarded(nodeTest, () => app);
 before(async () => (app = await launch()));
 after(async () => app?.close());
 

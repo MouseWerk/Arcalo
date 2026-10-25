@@ -9,14 +9,14 @@
 // 1). Views longer than the window are taken with a taller window (up to 1360 px), so the X
 // display must be at least 1600x1400 (at scale 2: 2960x2760). The week is the current one; the
 // pictures tell their story best from Wednesday to Friday (the daily review shows the day before).
-import { test, before, after } from "node:test";
+import { test as nodeTest, before, after } from "node:test";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import zlib from "node:zlib";
-import { launch, SHOTS } from "./lib/harness.js";
+import { launch, SHOTS, guarded } from "./lib/harness.js";
 import { week, outlookItem } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { readPng } from "./lib/png.js";
@@ -38,6 +38,7 @@ const prev2 = week(-2);
 const at = cur.at;
 
 let app, llm, tmp, jira, git, voice;
+const test = guarded(nodeTest, () => app);
 
 // ---------------------------------------------------------------- a fake AI server in English
 
