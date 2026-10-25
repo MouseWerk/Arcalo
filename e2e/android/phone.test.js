@@ -18,7 +18,7 @@ import { guarded } from "../lib/harness.js";
 import * as geo from "../lib/geometry.js";
 import * as stock from "../lib/stockui.js";
 import * as device from "./device.js";
-import { openApp, seed } from "./app.js";
+import { appBarColors, openApp, ready, seed } from "./app.js";
 
 const OUT = path.resolve(import.meta.dirname, "../screenshots/android");
 const APK = process.env.ARCALO_APK;
@@ -113,7 +113,7 @@ for (const [W, H] of [
       await tab(5);
       await visible(".m-tree-page");
       problems.push(...(await screen("notes")));
-      await page.click(".m-tree-page", { text: /^(Eingang|Inbox)$/ });
+      await page.click(".m-tree-page", { text: /Posteingang|Eingang|Inbox/ });
       await visible(".m-read");
       problems.push(...(await screen("page")));
       device.back();
@@ -153,6 +153,7 @@ for (const [W, H] of [
     });
 
     test("opens the settings on a screen that fits", async () => {
+      await tab(1);
       await page.click('.m-head-actions [aria-label="Einstellungen"]');
       await visible(".m-screen .m-section");
       const problems = await screen("settings");
@@ -195,6 +196,37 @@ for (const [W, H] of [
       } finally {
         device.shell("settings put system font_scale 1.0");
       }
+    });
+
+    test("colors the system bars like the app, also in the dark theme", async () => {
+      await tab(1);
+      await page.evaluate(async () => {
+        const view = await window.__TAURI_INTERNALS__.invoke("mobile_settings_get", {});
+        await window.__TAURI_INTERNALS__.invoke("mobile_settings_save", { settings: { ...view.settings, theme: "dark" } });
+      });
+      await keepSpinners();
+      await page.reload();
+      await ready(page);
+      await sleep(800);
+      const file = path.join(OUT, `android-${W}x${H}-bars-dark.png`);
+      device.screencap(file);
+      const want = await page.evaluate(appBarColors);
+      const got = device.barColors(file);
+      if (device.sameColor(want.top, got.top) && device.sameColor(want.bottom, got.bottom)) return;
+      // What the shell says when the page asks for the colors itself.
+      const direct = await page.evaluate(async (w) => {
+        try {
+          await window.__TAURI_INTERNALS__.invoke("mobile_bars", { dark: true, top: w.top, bottom: w.bottom });
+          return "answered";
+        } catch (e) {
+          return `refused: ${e}`;
+        }
+      }, want);
+      await sleep(800);
+      device.screencap(file.replace(".png", "-direct.png"));
+      const after = device.barColors(file.replace(".png", "-direct.png"));
+      const log = device.adb("logcat", "-d", "-v", "brief").split("\n").filter((l) => /bar|setBars|ShellPlugin|Tauri/i.test(l)).slice(-15).join("\n");
+      assert.fail(`bars ${JSON.stringify(got)}, the app's ${JSON.stringify(want)}; asked directly: ${direct}, then ${JSON.stringify(after)}\n${log}`);
     });
 
     test("draws every spinner small and round", async () => {

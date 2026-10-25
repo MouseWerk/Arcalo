@@ -144,7 +144,7 @@ for (const [W, H] of [
           await page.waitForSelector(".m-tree-page");
           await shot("notes");
           await menus("notes");
-          await page.click(".m-tree-page", { text: /^(Eingang|Inbox)$/ });
+          await page.click(".m-tree-page", { text: /Posteingang|Eingang|Inbox/ });
           await page.waitForSelector(".m-read");
           await shot("page");
           await menus("page");

@@ -130,8 +130,8 @@ export function layoutProblems(m) {
 export function recordSpinners() {
   if (window.__spinnerLog) return;
   window.__spinnerLog = [];
-  // A progress bar (the booked share of the day) is no spinner.
-  const SEL = ".m-spinner, .spinner, .m-spin svg, .splash-mark, [class*='spinner'], [class*='loader']";
+  // A progress bar (the booked share of the day) is no spinner, nor is the start-up logo.
+  const SEL = ".m-spinner, .spinner, .m-spin svg, [class*='spinner'], [class*='loader']";
   const sample = () => {
     for (const el of document.querySelectorAll(SEL)) {
       const s = getComputedStyle(el);
