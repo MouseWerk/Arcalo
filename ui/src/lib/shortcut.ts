@@ -3,6 +3,7 @@
 
 import { IS_MAC } from "./platform";
 import { t } from "./i18n";
+import { isTab } from "./ime";
 
 /**
  * A shortcut from a key press in the recorder field: `"Ctrl+Shift+Space"`, `""` (Entf/Backspace
@@ -25,7 +26,7 @@ export function recordShortcut(
       ? [e.metaKey && "Cmd", e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift"]
       : [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"]
   ).filter(Boolean) as string[];
-  if (e.key === "Tab" || e.key === "Escape") return undefined;
+  if (isTab(e) || e.key === "Escape") return undefined;
   if (!mods.length && (e.key === "Backspace" || e.key === "Delete")) return "";
   if (["Control", "Alt", "Shift", "Meta", "AltGraph", "OS"].includes(e.key)) return null;
   const key = e.code.replace(/^Key([A-Z])$/, "$1").replace(/^Digit(\d)$/, "$1").replace(/^Arrow/, "");

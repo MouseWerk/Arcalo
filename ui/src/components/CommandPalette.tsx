@@ -56,7 +56,7 @@ import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help
 import { newChat, openChatView, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
 import { caps } from "../lib/capabilities";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
 
@@ -454,7 +454,7 @@ export function CommandPalette() {
               } else if (e.key === "Escape") {
                 e.preventDefault();
                 close();
-              } else if (e.key === "Tab") {
+              } else if (isTab(e)) {
                 // The only control of the dialog: the focus stays here instead of reaching the app behind.
                 e.preventDefault();
               }

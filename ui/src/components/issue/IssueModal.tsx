@@ -18,7 +18,7 @@ import { Button, Dialog, IconButton, Segmented, useMenu, type MenuEntry } from "
 import { DateInput, TimeInput } from "../DateInput";
 import { useApp } from "../../store/app";
 import { t } from "../../lib/i18n";
-import { isComposing, isKey } from "../../lib/ime";
+import { isComposing, isKey, isTab } from "../../lib/ime";
 import { keys } from "../../lib/shortcut";
 import { dateTime, fileSize, fmtDate, fmtMinutes, isoDay, relative } from "../../lib/format";
 import { TYPE_SVG, typeOf } from "../../lib/issueTypes";
@@ -211,7 +211,7 @@ function IssueWindow({ issueKey, canGoBack }: { issueKey: string; canGoBack: boo
         return;
       }
       // Shift+Tab arrives in WebKitGTK as ISO_Left_Tab, with an unidentified key: the code still says Tab.
-      if (e.key === "Tab" || e.code === "Tab") {
+      if (isTab(e)) {
         // The whole Tab order inside the view is ours: the browser's own order can leave it from an
         // element it counts differently (a scroll container, a hidden field row).
         const all = [...el.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex], .ProseMirror")].filter(
