@@ -41,7 +41,10 @@ export function GitSetupScreen({ tokenStored, remoteUrl, save, onClose, onManual
   const scroll = useRef<HTMLDivElement>(null);
   const back = () => (index > 0 && s.step !== "done" ? dispatch({ type: "back" }) : onClose());
   useBackLayer(true, back);
-  useEffect(() => scroll.current?.scrollTo({ top: 0 }), [s.step]);
+  // Braces: Chromium's scrollTo returns a promise, and an effect may return only its cleanup.
+  useEffect(() => {
+    scroll.current?.scrollTo({ top: 0 });
+  }, [s.step]);
 
   const primary =
     s.step === "check" ? (s.check && !s.check.problem ? t("gitsetup.save") : t("gitsetup.check.again")) : s.step === "repo" && s.mode === "create" ? t("gitsetup.repo.createButton") : s.step === "repo" ? t("gitsetup.check.run") : t("gitsetup.next");
