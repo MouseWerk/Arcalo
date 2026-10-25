@@ -25,6 +25,7 @@ import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 import { weekRange } from "../lib/weekreview";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { currentLang, useT, type TKey } from "../lib/i18n";
+import { openIssue } from "../lib/jiraActions";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
 import { isComposing, isKey } from "../lib/ime";
@@ -601,7 +602,9 @@ function WorklogChip({ issue }: { issue: EntryIssue }) {
   return (
     <span className={`entry-jira wl-${shown}`} data-key={issue.issue_key} data-state={shown} title={title}>
       <span className="entry-jira-dot" aria-hidden />
-      <span className="mono">{issue.issue_key}</span>
+      <button type="button" className="entry-jira-key mono" title={t("iv.openWindow")} onClick={(e) => (e.stopPropagation(), void openIssue(issue.issue_key, { browser: e.ctrlKey || e.metaKey }))}>
+        {issue.issue_key}
+      </button>
       {shown !== "none" && <span className="entry-jira-state">{t(`time.wl.short.${shown}` as TKey)}</span>}
       {shown === "failed" && (
         <button type="button" className="entry-jira-retry" onClick={retry} disabled={busy} aria-label={t("time.wl.retry")} title={t("time.wl.retry")}>

@@ -19,7 +19,9 @@ import { Resizer, readSize } from "./components/Resizer";
 import { LinkPreview } from "./components/LinkPreview";
 import { IssuePreview } from "./components/IssuePreview";
 import { CreateIssueHost } from "./components/CreateIssueDialog";
-import { openIssueNote } from "./lib/jiraActions";
+import { openIssueView } from "./lib/issueFull";
+import { IssueModal } from "./components/issue/IssueModal";
+import { IssueOpenDialog } from "./components/issue/IssueOpenDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { CalendarPopover, openCalendar } from "./components/CalendarPopover";
 import { RightPanel } from "./panels/RightPanel";
@@ -246,7 +248,7 @@ export function App() {
         } else if (t.kind === "timesheet") st.openTab({ kind: "timesheet" });
         else if (t.kind === "issues") st.openTab({ kind: "issues" });
         else if (t.kind === "graph") st.openTab({ kind: "graph" });
-        else if (t.kind === "issue") void openIssueNote(t.key);
+        else if (t.kind === "issue") openIssueView(t.key);
         else if (t.kind === "timer_stop" && timeTrackingEnabled()) {
           await st.refreshTimer();
           stopTimer();
@@ -465,6 +467,8 @@ export function App() {
       <CommandPalette />
       <LinkPreview />
       <IssuePreview />
+      <IssueModal />
+      <IssueOpenDialog />
       <CreateIssueHost />
       <CalendarPopover />
       <WindowControls />

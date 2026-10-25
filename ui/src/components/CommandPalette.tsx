@@ -5,9 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, CalendarPlus, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply, CalendarCheck,
-  Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
+  Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug, PanelTop,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
+import { openIssuePrompt, openIssueView, parseIssueKey } from "../lib/issueFull";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -171,6 +172,11 @@ export function CommandPalette() {
       return out;
     }
 
+    // A typed issue key (or a Jira address): that issue in the issue view.
+    const typedKey = mode === "all" && s().settings?.settings.jira?.sites.length ? parseIssueKey(query) : null;
+    if (typedKey)
+      out.push({ id: "issue-key", section: t("cmd.issueSection"), title: t("cmd.issueOpenKey", { key: typedKey }), icon: ic(PanelTop), hint: "Enter", run: () => openIssueView(typedKey) });
+
     const pageItems = [...pages.values()]
       .map((p) => {
         const score = fuzzy(p.title, lower);
@@ -276,7 +282,12 @@ export function CommandPalette() {
       },
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
-      ...(s().settings?.settings.jira?.sites.length ? [{ id: "issues", title: t("cmd.issues"), subtitle: t("cmd.issuesSub"), icon: ic(Ticket), run: () => s().openTab({ kind: "issues" }) }] : []),
+      ...(s().settings?.settings.jira?.sites.length
+        ? [
+            { id: "issues", title: t("cmd.issues"), subtitle: t("cmd.issuesSub"), icon: ic(Ticket), run: () => s().openTab({ kind: "issues" }) },
+            { id: "issue-open", title: t("cmd.issueOpen"), subtitle: t("cmd.issueOpenSub"), icon: ic(PanelTop), run: () => setTimeout(openIssuePrompt, 0) },
+          ]
+        : []),
       { id: "graph", title: t("cmd.graph"), subtitle: t("cmd.graphSub"), icon: ic(Waypoints), run: () => s().openTab({ kind: "graph" }) },
       { id: "duplicates", title: t("cmd.duplicates"), subtitle: t("cmd.duplicatesSub"), icon: ic(Copy), run: () => openDuplicates() },
       { id: "local-graph", title: t("cmd.localGraph"), subtitle: t("cmd.localGraphSub"), icon: ic(Network), run: () => s().set({ panelOpen: true, panelTab: "graph" }) },

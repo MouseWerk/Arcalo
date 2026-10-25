@@ -10,13 +10,13 @@ import { configOf } from "../../lib/dashboard";
 import { fmtDate, isoDay } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { burndownPaths, columnsOf, JIRA_COLUMNS, jiraApi, overdue, priorityClass, type Issue, type JiraColumn, type SprintView } from "../../lib/jira";
-import { openIssue } from "../../lib/jiraActions";
+import { issueOpenMenu, openIssue } from "../../lib/jiraActions";
 import { setPlanData } from "../../lib/blocks";
 import { openSettingsSection } from "../../lib/calnav";
 import { useApp } from "../../store/app";
 
 const NO_QUERIES: never[] = [];
-import { Button, Input, Select } from "../ui";
+import { Button, Input, Select, useMenu } from "../ui";
 import { TYPE_SVG, typeOf } from "../../lib/issueTypes";
 import { Empty, Loadable, More, s } from "./common";
 import type { WidgetProps } from "./registry";
@@ -59,13 +59,15 @@ function Cell({ issue, col, today }: { issue: Issue; col: JiraColumn; today: str
 
 function IssueRows({ issues, columns }: { issues: Issue[]; columns: JiraColumn[] }) {
   const today = isoDay(new Date());
+  const [menu, openMenu] = useMenu();
   return (
     <ul className="dw-list dwj-list">
+      {menu}
       {issues.map((i) => {
         const kind = typeOf(i.issue_type);
         return (
           <li key={`${i.site}:${i.key}`}>
-            <button type="button" className="dw-row dwj-row" data-issue-row={i.key} title={`${i.key} ${i.summary}`} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })} onClick={(e) => void openIssue(i.key, { browser: e.ctrlKey || e.metaKey, newTab: e.shiftKey })}>
+            <button type="button" className="dw-row dwj-row" data-issue-row={i.key} title={`${i.key} ${i.summary}`} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })} onClick={(e) => void openIssue(i.key, { browser: e.ctrlKey || e.metaKey, note: e.shiftKey, newTab: e.shiftKey })} onContextMenu={(e) => openMenu(e, issueOpenMenu(i))}>
               <span className={`issue-type-icon issue-type-${kind}`} dangerouslySetInnerHTML={{ __html: TYPE_SVG[kind] }} aria-hidden />
               <span className="mono dwj-key">{i.key}</span>
               <span className="grow ellipsis">{i.summary}</span>

@@ -228,8 +228,9 @@ export function Dialog({
       if (e.key === "Escape") {
         e.stopPropagation();
         close.current();
-      } else if (e.key === "Tab" && box) {
-        // Focus stays inside the dialog: Tab from the last control wraps to the first and back.
+      } else if ((e.key === "Tab" || e.code === "Tab") && box) {
+        // Focus stays inside the dialog: Tab from the last control wraps to the first and back. Shift+Tab
+        // arrives in WebKitGTK as ISO_Left_Tab, with an unidentified key: the code still says Tab.
         const all = [...box.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], summary, [tabindex]")].filter(
           (el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
         );

@@ -43,6 +43,7 @@ describe("keyhelp", () => {
       ["kh.group.blocks", "views/CalendarBlocks.tsx", "const key = (e: ReactKeyboardEvent<HTMLDivElement>)"],
       ["kh.group.graph", "components/graph/GraphCanvas.tsx", "const onKeyDown = (e: React.KeyboardEvent)"],
       ["kh.group.tree", "components/PageTree.tsx", "const onRowKey = (e: React.KeyboardEvent<HTMLDivElement>, n: PageNode)"],
+      ["kh.group.issue", "components/issue/IssueModal.tsx", "const onKey = (e: KeyboardEvent)"],
     ];
     for (const [title, file, marker] of cases) {
       const keys = named(title);

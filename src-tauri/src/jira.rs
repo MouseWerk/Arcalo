@@ -77,17 +77,17 @@ fn client_with(state: &AppState, site: &JiraSite, token: Option<&str>, kind: Sit
     Ok(JiraClient::new(&site.id, &site.url, kind, &site.email, &token, http, timeout))
 }
 
-fn client(state: &AppState, site: &JiraSite) -> Result<JiraClient> {
+pub(crate) fn client(state: &AppState, site: &JiraSite) -> Result<JiraClient> {
     client_with(state, site, None, site.kind)
 }
 
-fn site_of(state: &AppState, id: &str) -> Result<JiraSite> {
+pub(crate) fn site_of(state: &AppState, id: &str) -> Result<JiraSite> {
     state.settings().jira.site(id).cloned().ok_or_else(|| Error::not_found("jira site", id))
 }
 
 /// The site an issue key belongs to: the cached issue's, else the site with its project, else
 /// the first active site.
-fn site_for_key(state: &AppState, key: &str) -> Result<JiraSite> {
+pub(crate) fn site_for_key(state: &AppState, key: &str) -> Result<JiraSite> {
     let settings = state.settings().jira;
     let cached = state.reader().issue_get(key)?.map(|i| i.site);
     let by_project = || {
@@ -782,7 +782,7 @@ pub fn kick_worklogs(app: AppHandle) {
 
 /// Posts the due worklogs, one runner at a time. A retry first looks for a worklog an
 /// interrupted try left on the issue; an entry is never posted twice (`worklog_claim`).
-async fn run_worklogs(app: &AppHandle) {
+pub(crate) async fn run_worklogs(app: &AppHandle) {
     let sync = app.state::<JiraSync>();
     if sync.worklogs.swap(true, Ordering::SeqCst) {
         sync.again.store(true, Ordering::SeqCst);

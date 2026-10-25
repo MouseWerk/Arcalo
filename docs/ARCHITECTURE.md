@@ -77,6 +77,7 @@ checks a simulator build on an iPhone and two iPads (`scripts/ios-smoke.sh`).
 | `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `arcalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 | `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
 | `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text) and the last comments (JSON), loaded when the issue is opened (1.19, `detail_at`, cleared when a sync finds the issue changed; searches ask for the list fields only; so the offline search of cached issues and the assistant's `jira_search` fallback without a connection match the description only of issues opened once, the others by summary, key and the list fields), and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
+| `issue_full` | The issue view's last copy of an issue opened in full (v41): `IssueFull` as JSON per site and key with `fetched_at`; shown read only while Jira cannot be reached, removed with its site and after 90 days unopened |
 | `issue_wbs_map`, `time_entry_issues` | Which Netzplan/Vorgang an issue or project books on (`learned` from the first booking) (v14); the issue key of a time entry (cascade with the entry) and its Jira worklog: `worklog_state` (`none`, `pending`, `posting`, `posted`, `failed`), `worklog_id` once posted (never posted twice), attempts and the next try |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
@@ -84,7 +85,7 @@ the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables; v41 adds `issue_full`.
 Migration v19 adds the filing (`filing.rs`): `pages.file_type`/`file_date`/`file_group` (kind, date and series or Jira
 project of a page the app created; daily and meeting notes are marked by the migration), `pages.system_folder`/`system_key`
 (folders the filing created or adopted and their place: `root`, `y2026`, `m2026-10`, `w2026-40`, `g:<group>`),
@@ -912,6 +913,62 @@ defineWidget({
   shortcut is the fifth slot of `apply_shortcuts` (`mail.shortcut`, off by default; after capture, palette, search and „Auswahl übernehmen“) and emits `mail://capture`.
 - Privacy: no assistant tool reads mails. „Aufgabe vorschlagen“ (`mail_suggest`) is only offered when the local tier's
   provider is marked local, and is sent as a private route, so availability fallbacks stay on local providers.
+
+## Issue-Ansicht (`issues/view.rs`, `issues/richtext.rs` in core, shell `issueview.rs`, `ui/src/components/issue/`)
+
+One Jira issue as Jira's own page shows it, in a modal over the app (`IssueModal`, mounted once in `App.tsx`; a stack of
+keys in `useIssueModal`, so an issue opened from a link or subtask goes on top and „Zurück“ returns). Below 640 px (the
+full app on a phone) it is a full-screen sheet; below 860 px the details go under the main column.
+
+- Entry points: a click on an issue chip in a note (Ctrl/Cmd+click: the browser; the note is in the view and in the
+  hover card with Shift), the Issues list (row action and menu „Als Fenster öffnen“, double click, Shift+Enter, „Vollansicht“
+  in the opened row), the Jira widgets and Jira due dates of the start page (click; their menu has the note), the briefing,
+  the plan blocks of the calendar, the issue key of a booking in Zeiterfassung, the canvas, the quick search, and the
+  palette (a typed key or Jira address, and „Issue öffnen…“, `IssueOpenDialog`). `jiraActions.openIssue` is the one
+  click rule; `issueOpenMenu` the shared context menu.
+- Reading (`JiraClient::full`): `GET issue/{key}?expand=renderedFields,names,schema,editmeta,transitions,transitions.fields,changelog&fields=*all,-comment`
+  with `mypermissions`, `remotelink` and `myself` in parallel, then the newest 50 comments (`comment?orderBy=-created&expand=renderedBody`;
+  a Server that ignores the order is asked for the last page instead), the newest worklogs (Cloud pages, Server sends
+  all) and, on Cloud, the newest history page (`changelog`). `parse_full` reads both flavors into `IssueFull`: Cloud users
+  by `accountId`, Server by name; sprints as objects or the old `Sprint@…[…]` strings; the epic from the parent or the
+  Epic Link field; story points by `jsw-story-points` or the field's name; every other non-empty custom field under its
+  `names` entry, shown by its schema type (`Shown`: text, rendered HTML, number, date, date-time, options, users, link,
+  issue, sprints, cascade). The rank, the development panel and an epic's color are left out, as on Jira's page.
+- Showing: Jira's `renderedFields` HTML (description, environment, text fields, comments) is sanitized in the UI
+  (`sanitizeJiraHtml`: DOMPurify and an allowlist pass, Jira's class names prefixed with `j-`, emoticons as their short
+  names, relative links made absolute, `/browse/KEY` links open that issue in the view). Where Jira sent no HTML, ADF is
+  drawn by `richtext::adf_to_html`. Images, thumbnails and avatars load through `jira_image` (the site's client, the login
+  only on the site's own origin, never in an address; SVG refused; data URLs, cached for the session) when they come into
+  view, four at a time; attachments open from a copy in `<data>/jira-files/<site>/` (removed after a week) or are saved where the user picks.
+- Editing follows `editmeta` (`EditField` with `EditKind` and the current value as `FieldInput`); fields without it are
+  read only, someone else's issue shows only what `mypermissions` allows („Mir zuweisen“ uses `PUT issue/{key}/assignee`).
+  `write_value` writes per flavor (options by id, users by `accountId` or `name`, dates, labels without spaces, cascades).
+  Rich text is edited in TipTap (`RichEditor`) whose JSON maps node for node onto ADF (`adf_to_doc`/`doc_to_adf`) and is
+  parsed from and written to wiki markup on Server (`wiki_to_doc`/`doc_to_wiki`). What the editor cannot edit (an expand,
+  a status lozenge, a smart link, a wiki macro, an image) is a `preserved` or `jiraMedia` node holding the original and is
+  written back unchanged; marks it cannot show (text color) are named before saving (`lossy`).
+- Every save is checked (`update_checked`): the field and `updated` are read first; when `updated` differs from the copy
+  the view shows, nothing is written and the view shows the value in Jira now and who changed it, with „Neuen Stand
+  zeigen“ and „Meine Änderung trotzdem speichern“. A save returns the value before as `undo` (the toast's „Rückgängig“,
+  checked the same way); a transition offers its way back when Jira has one without a screen; a comment and a worklog
+  posted from the view are deleted by their undo. Transitions with a screen show its fields (required ones block the
+  button) and an optional comment.
+- Worklogs: „Arbeit protokollieren“ posts `timeSpentSeconds`; with „Auch in der Zeiterfassung buchen“ it books
+  `/zeit <m>m KEY …` on the issue's WBS (its mapping, or a clear error), and when the site posts worklogs of bookings the
+  booking's worklog is the one (posted at once, never twice); otherwise the worklog is posted and its id stored with the
+  booking.
+- Offline: every read is stored in `issue_full` (v41, JSON per site and key, dropped with the site and after 90 days
+  unopened) and refreshes the issue's row in `issues`. `jira_full_cached` shows the copy at once, `jira_full` replaces it;
+  when Jira cannot be reached the copy stays, read only, with „Stand von …“ and the error. A skeleton shows while there
+  is no copy.
+- Large issues: 50 comments, worklogs and history entries per page („Ältere laden“), 24 attachments before „Alle zeigen“,
+  thumbnails only in view.
+- Keyboard: Esc cancels an edit or closes, Tab stays in the view, `e` edits the summary, `c` writes a comment, `t`
+  changes the status, Mod+Enter saves rich text; the focus returns to the value after an edit and to where it was when the
+  view closes (`kh.group.issue` in the shortcut help). Enter and Escape are IME-safe (`lib/ime.ts`).
+- Tests: `issues/view_tests.rs` (Cloud and Server fixtures in `issues/fixtures/`, every field type, rendered HTML,
+  editmeta, transitions, writes and undo for ADF and wiki, conflicts, paging, the login only on the site), `issueFull.test.ts`,
+  e2e `146-issue-view-cloud`, `147-issue-view-server` (English), `153-issue-view-phone` with the fake Jira of `e2e/lib/fake-jira.js`.
 
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 

@@ -1,0 +1,84 @@
+{
+  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+  "id": "21007",
+  "self": "https://jira.firma.de/rest/api/2/issue/21007",
+  "key": "ERP-7",
+  "fields": {
+    "summary": "Interface to the warehouse",
+    "issuetype": { "self": "x", "id": "3", "description": "", "iconUrl": "https://jira.firma.de/secure/viewavatar?size=xsmall&avatarId=10318&avatarType=issuetype", "name": "Task", "subtask": false, "avatarId": 10318 },
+    "status": { "self": "x", "description": "", "iconUrl": "x", "name": "Open", "id": "1", "statusCategory": { "self": "x", "id": 2, "key": "new", "colorName": "blue-gray", "name": "To Do" } },
+    "resolution": null,
+    "project": { "self": "x", "id": "10200", "key": "ERP", "name": "ERP Rollout", "projectTypeKey": "software" },
+    "description": "h2. Goal\nSync the *stock* levels every _15 minutes_.\nSee [the spec|https://wiki.firma.de/x/ERP] and ask [~jdoe].\n\n* first\n** nested\n# one\n\n{code:sql}\nSELECT * FROM stock;\n{code}\n\n{info}\nOnly the main warehouse.\n{info}\n\n||Site||Rows||\n|Hamburg|1200|\n\n!diagram.png|thumbnail!\n\n{color:red}urgent{color} and {{mono}}",
+    "environment": "SAP ECC 6.0",
+    "assignee": { "self": "x", "name": "mmeyer", "key": "JIRAUSER10100", "emailAddress": "mia@firma.de", "avatarUrls": { "48x48": "https://jira.firma.de/secure/useravatar?ownerId=JIRAUSER10100&avatarId=10500", "24x24": "https://jira.firma.de/secure/useravatar?size=small&ownerId=JIRAUSER10100&avatarId=10500" }, "displayName": "Mia Meyer", "active": true, "timeZone": "Europe/Berlin" },
+    "reporter": { "self": "x", "name": "jdoe", "key": "JIRAUSER10001", "displayName": "John Doe", "active": true, "avatarUrls": { "48x48": "https://jira.firma.de/secure/useravatar?avatarId=10122" } },
+    "creator": { "name": "jdoe", "key": "JIRAUSER10001", "displayName": "John Doe", "active": true },
+    "priority": { "self": "x", "iconUrl": "https://jira.firma.de/images/icons/priorities/major.svg", "name": "Major", "id": "3" },
+    "labels": ["interface"],
+    "components": [],
+    "fixVersions": [{ "self": "x", "id": "11000", "description": "", "name": "R3", "archived": false, "released": false, "releaseDate": "2026-12-01" }],
+    "versions": [],
+    "customfield_10101": ["com.atlassian.greenhopper.service.sprint.Sprint@4b3c[id=12,rapidViewId=3,state=CLOSED,name=ERP Sprint 11,startDate=2026-09-14T09:00:00.000+02:00,endDate=2026-09-28T09:00:00.000+02:00,completeDate=<null>,sequence=12,goal=]", "com.atlassian.greenhopper.service.sprint.Sprint@5c1d[id=13,rapidViewId=3,state=ACTIVE,name=ERP Sprint 12,startDate=2026-09-28T09:00:00.000+02:00,endDate=2026-10-12T09:00:00.000+02:00,completeDate=<null>,sequence=13,goal=Stock sync]"],
+    "customfield_10100": "ERP-1",
+    "customfield_10106": 8.0,
+    "customfield_10300": { "self": "x", "value": "High", "id": "10500", "disabled": false },
+    "customfield_10301": [{ "name": "mmeyer", "key": "JIRAUSER10100", "displayName": "Mia Meyer", "active": true }, { "name": "jdoe", "key": "JIRAUSER10001", "displayName": "John Doe", "active": true }],
+    "customfield_10302": "Plain *wiki* text",
+    "duedate": "2026-10-30",
+    "timetracking": { "originalEstimate": "3d", "remainingEstimate": "3d", "originalEstimateSeconds": 86400, "remainingEstimateSeconds": 86400 },
+    "timeoriginalestimate": 86400, "timeestimate": 86400, "timespent": null,
+    "created": "2026-09-15T08:12:00.000+0200",
+    "updated": "2026-10-19T16:40:12.000+0200",
+    "resolutiondate": null,
+    "attachment": [{ "self": "x", "id": "30100", "filename": "diagram.png", "author": { "name": "jdoe", "displayName": "John Doe" }, "created": "2026-09-15T08:20:00.000+0200", "size": 10240, "mimeType": "image/png", "content": "https://jira.firma.de/secure/attachment/30100/diagram.png", "thumbnail": "https://jira.firma.de/secure/thumbnail/30100/_thumb_30100.png" }],
+    "issuelinks": [],
+    "subtasks": [],
+    "watches": { "self": "x", "watchCount": 1, "isWatching": false },
+    "votes": { "self": "x", "votes": 0, "hasVoted": false },
+    "comment": { "comments": [], "maxResults": 0, "total": 0, "startAt": 0 },
+    "worklog": { "startAt": 0, "maxResults": 20, "total": 0, "worklogs": [] }
+  },
+  "renderedFields": {
+    "description": "<h2><a name=\"Goal\"></a>Goal</h2>\n<p>Sync the <b>stock</b> levels every <em>15 minutes</em>.<br/>\nSee <a href=\"https://wiki.firma.de/x/ERP\" class=\"external-link\" rel=\"nofollow\">the spec</a> and ask <a href=\"https://jira.firma.de/secure/ViewProfile.jspa?name=jdoe\" class=\"user-hover\" rel=\"jdoe\">John Doe</a>.</p>\n<ul>\n\t<li>first\n\t<ul>\n\t\t<li>nested</li>\n\t</ul>\n\t</li>\n</ul>\n<ol>\n\t<li>one</li>\n</ol>\n<div class=\"code panel\" style=\"border-width: 1px;\"><div class=\"codeContent panelContent\">\n<pre class=\"code-sql\">SELECT * FROM stock;</pre>\n</div></div>\n<div class=\"panel\" style=\"border-width: 1px;\"><div class=\"panelContent\">\n<p>Only the main warehouse.</p>\n</div></div>\n<div class='table-wrap'>\n<table class='confluenceTable'><tbody>\n<tr>\n<th class='confluenceTh'>Site</th>\n<th class='confluenceTh'>Rows</th>\n</tr>\n<tr>\n<td class='confluenceTd'>Hamburg</td>\n<td class='confluenceTd'>1200</td>\n</tr>\n</tbody></table>\n</div>\n<p><span class=\"image-wrap\" style=\"\"><a id=\"30100_thumb\" href=\"/secure/attachment/30100/30100_diagram.png\" title=\"diagram.png\" file-preview-type=\"image\"><img src=\"/secure/thumbnail/30100/_thumb_30100.png\" style=\"border: 0px solid black\" /></a></span></p>\n<p><font color=\"red\">urgent</font> and <tt>mono</tt></p>",
+    "environment": "<p>SAP ECC 6.0</p>",
+    "customfield_10302": "<p>Plain <b>wiki</b> text</p>"
+  },
+  "names": {
+    "summary": "Summary", "description": "Description", "customfield_10101": "Sprint", "customfield_10100": "Epic Link", "customfield_10106": "Story Points",
+    "customfield_10300": "Severity", "customfield_10301": "Reviewers", "customfield_10302": "Notes"
+  },
+  "schema": {
+    "summary": { "type": "string", "system": "summary" },
+    "description": { "type": "string", "system": "description" },
+    "customfield_10101": { "type": "array", "items": "string", "custom": "com.pyxis.greenhopper.jira:gh-sprint", "customId": 10101 },
+    "customfield_10100": { "type": "any", "custom": "com.pyxis.greenhopper.jira:gh-epic-link", "customId": 10100 },
+    "customfield_10106": { "type": "number", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:float", "customId": 10106 },
+    "customfield_10300": { "type": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select", "customId": 10300 },
+    "customfield_10301": { "type": "array", "items": "user", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiuserpicker", "customId": 10301 },
+    "customfield_10302": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea", "customId": 10302 }
+  },
+  "editmeta": {
+    "fields": {
+      "summary": { "required": true, "schema": { "type": "string", "system": "summary" }, "name": "Summary", "operations": ["set"] },
+      "description": { "required": false, "schema": { "type": "string", "system": "description" }, "name": "Description", "operations": ["set"] },
+      "assignee": { "required": false, "schema": { "type": "user", "system": "assignee" }, "name": "Assignee", "autoCompleteUrl": "https://jira.firma.de/rest/api/latest/user/assignable/search?issueKey=ERP-7&username=", "operations": ["set"] },
+      "customfield_10300": { "required": true, "schema": { "type": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select", "customId": 10300 }, "name": "Severity", "operations": ["set"], "allowedValues": [{ "self": "x", "value": "High", "id": "10500", "disabled": false }, { "self": "x", "value": "Low", "id": "10501", "disabled": false }] },
+      "customfield_10301": { "required": false, "schema": { "type": "array", "items": "user", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiuserpicker", "customId": 10301 }, "name": "Reviewers", "operations": ["add", "set", "remove"] }
+    }
+  },
+  "transitions": [
+    { "id": "4", "name": "Start Progress", "to": { "self": "x", "name": "In Progress", "id": "3", "statusCategory": { "id": 4, "key": "indeterminate" } }, "hasScreen": false, "fields": {} },
+    { "id": "5", "name": "Resolve Issue", "to": { "name": "Resolved", "id": "5", "statusCategory": { "key": "done" } }, "hasScreen": true,
+      "fields": { "resolution": { "required": true, "schema": { "type": "resolution", "system": "resolution" }, "name": "Resolution", "operations": ["set"], "allowedValues": [{ "name": "Fixed", "id": "1" }, { "name": "Won't Fix", "id": "2" }] },
+                  "fixVersions": { "required": false, "schema": { "type": "array", "items": "version", "system": "fixVersions" }, "name": "Fix Version/s", "operations": ["set", "add", "remove"], "allowedValues": [{ "name": "R3", "id": "11000" }] } } }
+  ],
+  "changelog": {
+    "startAt": 0, "maxResults": 3, "total": 3,
+    "histories": [
+      { "id": "90001", "author": { "name": "jdoe", "displayName": "John Doe" }, "created": "2026-09-15T08:30:00.000+0200", "items": [{ "field": "Story Points", "fieldtype": "custom", "from": null, "fromString": null, "to": null, "toString": "8" }] },
+      { "id": "90002", "author": { "name": "mmeyer", "displayName": "Mia Meyer" }, "created": "2026-10-01T09:00:00.000+0200", "items": [{ "field": "Sprint", "fieldtype": "custom", "from": "12", "fromString": "ERP Sprint 11", "to": "12, 13", "toString": "ERP Sprint 11, ERP Sprint 12" }] },
+      { "id": "90003", "author": { "name": "mmeyer", "displayName": "Mia Meyer" }, "created": "2026-10-19T16:40:12.000+0200", "items": [{ "field": "duedate", "fieldtype": "jira", "from": "2026-10-20", "fromString": "2026-10-20 00:00:00.0", "to": "2026-10-30", "toString": "2026-10-30 00:00:00.0" }] }
+    ]
+  }
+}

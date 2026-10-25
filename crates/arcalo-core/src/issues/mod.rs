@@ -16,8 +16,12 @@
 //! * **Tasks**: a task whose text names an issue is ticked when the issue is done in Jira.
 
 pub mod jira;
+pub mod richtext;
 #[cfg(test)]
 mod tests;
+pub mod view;
+#[cfg(test)]
+mod view_tests;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1089,7 +1093,7 @@ impl Database {
     /// Removes the cache of a site (it was removed from the settings).
     pub fn issues_remove_site(&self, site: &str) -> Result<()> {
         self.atomic(|| {
-            for t in ["issues", "issue_projects", "issue_sync"] {
+            for t in ["issues", "issue_projects", "issue_sync", "issue_full"] {
                 self.conn().execute(&format!("DELETE FROM {t} WHERE site = ?1"), [site])?;
             }
             Ok(())

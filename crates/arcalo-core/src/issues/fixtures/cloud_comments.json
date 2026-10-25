@@ -1,0 +1,14 @@
+{
+  "startAt": 0, "maxResults": 50, "total": 3,
+  "comments": [
+    { "self": "x", "id": "50003", "author": { "accountId": "acc-mia", "displayName": "Mia Meyer", "avatarUrls": { "48x48": "https://secure.gravatar.com/avatar/mia?d=48" }, "active": true },
+      "body": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Fixed on staging." }] }] },
+      "renderedBody": "<p>Fixed on staging.</p>", "created": "2026-10-20T10:00:00.000+0200", "updated": "2026-10-20T10:05:00.000+0200", "jsdPublic": true },
+    { "self": "x", "id": "50002", "author": { "accountId": "acc-tom", "displayName": "Tom Berger", "active": true },
+      "body": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Any news, " }, { "type": "mention", "attrs": { "id": "acc-mia", "text": "@Mia Meyer" } }, { "type": "text", "text": "?" }] }] },
+      "renderedBody": "<p>Any news, <a href=\"/secure/ViewProfile.jspa?accountId=acc-mia\" class=\"user-hover\">Mia Meyer</a>?</p>", "created": "2026-10-10T09:00:00.000+0200", "updated": "2026-10-10T09:00:00.000+0200" },
+    { "self": "x", "id": "50001", "author": { "accountId": "acc-tom", "displayName": "Tom Berger", "active": true },
+      "body": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Seen in prod." }] }] },
+      "created": "2026-10-01T09:30:00.000+0200", "updated": "2026-10-01T09:30:00.000+0200" }
+  ]
+}

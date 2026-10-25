@@ -40,6 +40,7 @@ mod graph;
 mod identity;
 #[cfg(desktop)]
 mod installer;
+mod issueview;
 mod jira;
 #[cfg(desktop)]
 mod jumplist;
@@ -5471,6 +5472,23 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         jira::jira_sprint,
         jira::jira_worklog_retry,
         jira::jira_tool,
+        issueview::jira_full_cached,
+        issueview::jira_full,
+        issueview::jira_full_comments,
+        issueview::jira_full_worklogs,
+        issueview::jira_full_history,
+        issueview::jira_full_update,
+        issueview::jira_full_assign,
+        issueview::jira_full_transition,
+        issueview::jira_full_comment_add,
+        issueview::jira_full_comment_edit,
+        issueview::jira_full_comment_delete,
+        issueview::jira_full_worklog_add,
+        issueview::jira_full_worklog_delete,
+        issueview::jira_full_users,
+        issueview::jira_body_doc,
+        issueview::jira_image,
+        issueview::jira_attachment,
         calsync::calendar_status,
         calsync::calendar_events,
         calsync::calendar_source_add,

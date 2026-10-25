@@ -1,0 +1,7 @@
+{
+  "startAt": 0, "maxResults": 50, "total": 2,
+  "comments": [
+    { "self": "x", "id": "70001", "author": { "self": "x", "name": "jdoe", "key": "JIRAUSER10001", "displayName": "John Doe", "active": true }, "body": "Please check *both* sites.", "renderedBody": "<p>Please check <b>both</b> sites.</p>", "updateAuthor": { "name": "jdoe" }, "created": "2026-09-16T10:00:00.000+0200", "updated": "2026-09-16T10:00:00.000+0200" },
+    { "self": "x", "id": "70002", "author": { "self": "x", "name": "mmeyer", "key": "JIRAUSER10100", "displayName": "Mia Meyer", "active": true }, "body": "Done for Hamburg.\n\nBremen next.", "renderedBody": "<p>Done for Hamburg.</p>\n\n<p>Bremen next.</p>", "created": "2026-10-02T11:00:00.000+0200", "updated": "2026-10-02T11:00:00.000+0200" }
+  ]
+}

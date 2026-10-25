@@ -224,8 +224,13 @@ access token); the token lives in the Windows Credential Manager or the macOS Ke
 saved JQL searches sync in the background and stay available offline. The **Issues** page groups them by
 site, project, status, sprint or priority; an opened issue shows its description, the last comments, the
 pages that name it and the activity it books on. A key such as `PROJ-123` in a note becomes a live chip with
-type, status and title and a hover card. `/time 1h PROJ-123 Fix login` books on the issue's activity and can
-post a worklog to Jira. There are widgets for your issues, a saved search and the active sprint.
+type, status and title and a hover card. A click on a chip, a list row, a widget or a key typed in the command
+palette opens the **issue view**: the whole issue as Jira shows it (rendered description with its images,
+every field, subtasks, links, attachments, comments, work log and history), editable where Jira allows it
+(fields, description, status with its screen, comments, work log, “Assign to me”), with undo, a conflict check
+when someone changed it meanwhile, and the last copy read-only offline. `/time 1h PROJ-123 Fix login` books
+on the issue's activity and can post a worklog to Jira. There are widgets for your issues, a saved search and
+the active sprint.
 
 <p align="center">
   <img src="docs/screenshots/jira-issues-dark.png" width="49%" alt="The Issues page with an opened bug: details, the activity it books on, description, comments and the page that names it">
