@@ -455,8 +455,8 @@ html.mobile body {
   font-size: var(--fs-lg);
   user-select: text;
 }
-.m-input:focus,
-.m-textarea:focus {
+.m-input:focus-visible,
+.m-textarea:focus-visible {
   outline: none;
   border-color: var(--border-focus);
   box-shadow: var(--focus-halo);

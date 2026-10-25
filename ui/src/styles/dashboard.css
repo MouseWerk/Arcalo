@@ -614,7 +614,7 @@
 .dw-random-head .dw-sub { margin: 0; }
 .dw-random-card {
   display: grid; gap: 4px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
+  background: var(--bg-raised); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .dw-random-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 .dw-random-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); min-width: 0; }

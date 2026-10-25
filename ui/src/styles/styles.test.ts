@@ -105,7 +105,8 @@ describe("selection and focus look", () => {
         .filter((d) => d.includes(":"))
         .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()] as const),
     }));
-  const STATE = /\.(active|selected|sel|current|on|checked|picked|now|today|focused|is-selected|is-editing|recording|running|live|playing|ProseMirror-selectednode)\b|:checked|:focus(-visible|-within)?\b|\[aria-(selected|current|pressed|checked)/;
+  const STATE =
+    /\.(active|selected|sel|current|on|checked|picked|now|today|focused|is-selected|is-editing|recording|running|live|playing|open|expanded|ProseMirror-selectednode)\b|:checked|:focus(-visible|-within)?\b|\[aria-(selected|current|pressed|checked|expanded)|\[data-(selected|active|current)/;
   // The accent and the status colors: a red frame around the running timer is the same "AI look".
   const ACCENT = /--(accent(-strong|-soft|-text)?|success|warning|danger|info)\b/;
   const FRAME = /^(border(-(top|right|bottom|left|inline|block|inline-start|inline-end))?(-color)?|outline(-color)?|box-shadow)$/;
@@ -164,6 +165,34 @@ describe("selection and focus look", () => {
   }
 
   for (const name of sheets) {
+    it(`${name}: no glow or gradient frame marks a state`, () => {
+      const bad: string[] = [];
+      for (const { selector, decls } of rules(name)) {
+        if (!STATE.test(selector) || DRAG.test(selector)) continue;
+        for (const [p, v] of decls) {
+          // A colored blur around an item (a glow), or a gradient painted as its frame.
+          const tinted = v.replace(/rgb\(0 0 0 \/ [\d.]+\)/g, "");
+          if (p === "box-shadow" && !/inset/.test(v) && /\b\d+(px)?\s+-?\d+(px)?\s+[1-9]\d*px/.test(v) && COLORED.test(tinted)) bad.push(`${selector} { ${p}: ${v} }`);
+          if (/^border(-image)?(-source)?$/.test(p) && /gradient\(/.test(v)) bad.push(`${selector} { ${p}: ${v} }`);
+          if (/^background(-image)?$/.test(p) && /gradient\(/.test(v) && /border-box/.test(v)) bad.push(`${selector} { ${p}: ${v} }`);
+        }
+      }
+      expect(bad, "use a neutral tint and the text weight").toEqual([]);
+    });
+
+    it(`${name}: focus rings only on :focus-visible`, () => {
+      // A ring drawn on plain :focus shows on every mouse click too: outline and box-shadow belong to
+      // :focus-visible (or :focus-within for a field group). `outline: none` is fine anywhere.
+      const bad: string[] = [];
+      for (const { selector, decls } of rules(name)) {
+        if (!selector.split(",").some((part) => /:focus(?!-visible|-within)/.test(part))) continue;
+        for (const [p, v] of decls) {
+          if ((/^outline(-color|-width|-style)?$/.test(p) && !/^(none|0)$/.test(v)) || (p === "box-shadow" && v !== "none")) bad.push(`${selector} { ${p}: ${v} }`);
+        }
+      }
+      expect(bad, "use :focus-visible").toEqual([]);
+    });
+
     it(`${name}: no colored frame marks a state`, () => {
       const bad: string[] = [];
       for (const { selector, decls } of rules(name)) {
@@ -210,6 +239,27 @@ describe("selection and focus look", () => {
       }
     }
     expect(bad).toEqual([]);
+  });
+
+  it("the dark and the light theme define the same tokens", () => {
+    const css = readFileSync(resolve(dir, "tokens.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = (sel: string) => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
+    const names = (b: string) => [...b.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]).sort();
+    const dark = names(block(':root[data-theme="dark"] {'));
+    expect(dark.length).toBeGreaterThan(40);
+    expect(names(block(':root[data-theme="light"] {'))).toEqual(dark);
+  });
+
+  it("uses only tokens that exist", () => {
+    const all = readdirSync(dir).filter((f) => f.endsWith(".css"));
+    const text = (f: string) => readFileSync(resolve(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const defined = new Set(all.flatMap((f) => [...text(f).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])));
+    // Tokens the code sets at run time (themes, custom accents, element sizes), not in a stylesheet.
+    const src = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? src(resolve(d, e.name)) : /\.tsx?$/.test(e.name) && !/\.test\./.test(e.name) ? [resolve(d, e.name)] : []));
+    for (const f of src(resolve(dir, ".."))) for (const m of readFileSync(f, "utf8").matchAll(/["'`](--[\w-]+)["'`]/g)) defined.add(m[1]);
+    const used = all.flatMap((f) => [...text(f).matchAll(/var\((--[\w-]+)\)/g)].map((m) => `${f}: ${m[1]}`));
+    expect([...new Set(used.filter((u) => !defined.has(u.split(": ")[1])))]).toEqual([]);
   });
 
   it("focus and selection tokens are neutral", () => {
@@ -280,6 +330,10 @@ describe("endless animations", () => {
       if (!name || props.some((p) => p !== "opacity" && p !== "transform")) bad.push(`${selector} (${name || "unknown keyframes"})`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it("stand still with reduced motion", () => {
+    expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   });
 
   it("never run on the live dots", () => {

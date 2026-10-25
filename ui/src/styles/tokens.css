@@ -9,6 +9,7 @@
   --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", "Cascadia Code", Consolas, ui-monospace, monospace;
 
+  --fs-3xs: 9px;
   --fs-2xs: 10px;
   --fs-xs: 11px;
   --fs-sm: 12px;
