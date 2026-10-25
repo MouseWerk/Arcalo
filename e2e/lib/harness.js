@@ -421,11 +421,13 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
      * step, so the old document never sees it.
      */
     async reload(hash) {
+      // WebDriver hands an `undefined` argument over as null: without a hash the page keeps its
+      // own (a reload of the capture window set „#null“ and loaded the main window).
       await browser.execute((h) => {
         window.__arcaloOldDocument = true;
-        if (h !== undefined) location.hash = h;
+        if (h != null) location.hash = h;
         location.reload();
-      }, hash);
+      }, hash ?? null);
       await browser.waitUntil(
         async () => {
           try {
