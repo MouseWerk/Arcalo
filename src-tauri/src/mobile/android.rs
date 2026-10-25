@@ -24,17 +24,29 @@ static UPDATE: OnceLock<PluginHandle<Wry>> = OnceLock::new();
 /// Package of the Kotlin plugins.
 const PACKAGE: &str = "de.mousewerk.arcalo";
 
-/// Registers both Kotlin plugins.
+/// Registers both Kotlin plugins, each under a Tauri plugin of its own: Tauri keeps one Kotlin
+/// plugin per Tauri plugin, so a second registration under the same name replaced the first and
+/// every `ShellPlugin` call went to `UpdatePlugin` („No command setBars found“).
 pub fn plugin() -> TauriPlugin<Wry> {
     Builder::<Wry>::new("arcalo-android")
         .setup(|_app, api| {
             #[cfg(target_os = "android")]
-            {
-                let _ = SHELL.set(api.register_android_plugin(PACKAGE, "ShellPlugin")?);
-                let _ = UPDATE.set(api.register_android_plugin(PACKAGE, "UpdatePlugin")?);
-            }
+            let _ = SHELL.set(api.register_android_plugin(PACKAGE, "ShellPlugin")?);
             #[cfg(not(target_os = "android"))]
             let _ = (api, PACKAGE);
+            Ok(())
+        })
+        .build()
+}
+
+/// The Kotlin plugin of the app's own updates (`UpdatePlugin.kt`).
+pub fn update_plugin() -> TauriPlugin<Wry> {
+    Builder::<Wry>::new("arcalo-android-update")
+        .setup(|_app, api| {
+            #[cfg(target_os = "android")]
+            let _ = UPDATE.set(api.register_android_plugin(PACKAGE, "UpdatePlugin")?);
+            #[cfg(not(target_os = "android"))]
+            let _ = api;
             Ok(())
         })
         .build()

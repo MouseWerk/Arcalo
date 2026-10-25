@@ -58,7 +58,7 @@ pub fn run() {
         // The full app's questions and the system's document picker for files (1.20).
         .plugin(tauri_plugin_dialog::init());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(keystore::plugin()).plugin(android::plugin());
+    let builder = builder.plugin(keystore::plugin()).plugin(android::plugin()).plugin(android::update_plugin());
     // iOS ends the WebView's content process when memory runs low in the background; the page
     // loads again instead of staying blank.
     #[cfg(target_os = "ios")]
