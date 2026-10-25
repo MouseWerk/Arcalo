@@ -1173,6 +1173,46 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
+    /// Numbers that branches took and gave up before they reached main. They stay free: a
+    /// database that ran a migration of such a branch counts it by position (CLAUDE.md).
+    const MIGRATION_GAPS: [u32; 7] = [16, 21, 22, 23, 24, 25, 28];
+
+    /// Migrations are positional (CLAUDE.md): `NNNN_words.sql`, each new one takes the next number
+    /// and no gap is filled, every file is in `MIGRATIONS` in the order of its number. Two branches
+    /// that both took the next number, or a file left out of the list, fail here instead of in a
+    /// user's database.
+    #[test]
+    fn migrations_are_positional() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut names: Vec<String> =
+            std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        let mut numbers = vec![];
+        for name in &names {
+            let (number, rest) = name.split_once('_').unwrap_or((name, ""));
+            assert!(number.len() == 4 && number.chars().all(|c| c.is_ascii_digit()), "{name}: name it NNNN_words.sql");
+            assert!(
+                rest.len() > 4
+                    && rest.ends_with(".sql")
+                    && rest[..rest.len() - 4].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "{name}: name it NNNN_words.sql"
+            );
+            numbers.push(number.parse::<u32>().unwrap());
+        }
+        let last = *numbers.last().unwrap();
+        let expected: Vec<u32> = (1..=last).filter(|n| !MIGRATION_GAPS.contains(n)).collect();
+        assert_eq!(numbers, expected, "migrations take the next number; a gap stays free and no number is taken twice");
+        assert_eq!(MIGRATIONS.len(), names.len(), "every file in migrations/ is in MIGRATIONS");
+        for (i, name) in names.iter().enumerate() {
+            let text = std::fs::read_to_string(dir.join(name)).unwrap();
+            assert_eq!(
+                MIGRATIONS[i].replace("\r\n", "\n"),
+                text.replace("\r\n", "\n"),
+                "MIGRATIONS[{i}] is not {name}"
+            );
+        }
+    }
+
     pub(crate) fn seeded() -> (Database, Netzplan) {
         let db = Database::open_in_memory().unwrap();
         let p = db.create_project("PRJ-2026-X", "Arcalo Rollout").unwrap();
