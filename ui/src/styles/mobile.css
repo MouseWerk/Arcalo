@@ -476,6 +476,8 @@ html.mobile body {
   gap: var(--sp-2);
   text-align: left;
   color: var(--text);
+  user-select: none;
+  cursor: pointer;
 }
 .m-choice > svg {
   flex: none;
@@ -502,8 +504,15 @@ html.mobile body {
   gap: 2px;
   min-height: var(--touch-min);
   padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: transparent;
   text-align: left;
   color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.m-suggest-opt:active {
+  background: var(--bg-active);
 }
 .m-suggest-opt + .m-suggest-opt {
   border-top: 1px solid var(--border);
@@ -556,9 +565,16 @@ html.mobile body {
   width: 100%;
   min-height: var(--touch-min);
   padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  background: transparent;
   color: var(--text);
   font-size: var(--fs-lg);
   text-align: left;
+  user-select: none;
+  cursor: pointer;
+}
+.m-choice-opt:active {
+  background: var(--bg-active);
 }
 .m-choice-opt.on {
   background: var(--bg-selected);
