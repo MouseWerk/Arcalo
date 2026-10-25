@@ -146,7 +146,7 @@ export function GitSetupScreen({ tokenStored, remoteUrl, save, onClose, onManual
               <>
                 <div className="m-gs-search">
                   <Search size={18} className="m-faint-icon" />
-                  <input className="m-input" type="search" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={s.query} placeholder={t("gitsetup.repo.search")} aria-label={t("gitsetup.repo.search")} onChange={(e) => dispatch({ type: "query", query: e.target.value })} />
+                  <input className="m-input" type="search" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={s.query} placeholder={t("gitsetup.repo.search")} aria-label={t("gitsetup.repo.search")} onChange={(e) => dispatch({ type: "query", query: e.target.value })} />
                 </div>
                 {s.busy === "repos" || !list ? (
                   <div className="m-loading">

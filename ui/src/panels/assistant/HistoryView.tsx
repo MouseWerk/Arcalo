@@ -150,6 +150,9 @@ export function HistoryView({ compact = false, onOpened }: { compact?: boolean; 
           aria-label={t("chat.searchHistory")}
           aria-controls="chat-history-list"
           aria-activedescendant={selected ? `chat-h-${selected.id}` : undefined}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           spellCheck={false}
           onChange={(e) => {
             setQuery(e.target.value);

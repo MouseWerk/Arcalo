@@ -10,7 +10,7 @@ import type { ProjectTree, TimeEntryRow, TimerStatus } from "../../lib/types";
 import { mobileApi, type RecentTarget } from "../api";
 import { errorText, useMobile } from "../context";
 import { bookingDays, entryReference, hours, weekEntries, zeitLine, type ZeitDraft } from "../model";
-import { Empty, Field, Header, Notice, Section, Segmented, Spinner } from "../ui";
+import { Choice, Empty, Field, Header, Notice, Section, Segmented, Spinner } from "../ui";
 
 export function TimeScreen() {
   const m = useMobile();
@@ -288,14 +288,13 @@ export function ZeitForm({ onBooked, withTimer = false }: { onBooked?: () => voi
           <input id="m-zeit-dur" className="m-input num" inputMode="decimal" value={draft.duration} placeholder={t("mob.time.durationPlaceholder")} onChange={(e) => set({ duration: e.target.value })} />
         </Field>
         <Field label={t("mob.time.la")} htmlFor="m-zeit-la">
-          <select id="m-zeit-la" className="m-input" value={draft.la} onChange={(e) => set({ la: e.target.value })}>
-            <option value="">{t("mob.time.laDefault")}</option>
-            {las.map(([code, desc]) => (
-              <option key={code} value={code}>
-                {desc ? `${code} · ${desc}` : code}
-              </option>
-            ))}
-          </select>
+          <Choice
+            id="m-zeit-la"
+            label={t("mob.time.la")}
+            value={draft.la}
+            onChange={(la) => set({ la })}
+            options={[{ value: "", label: t("mob.time.laDefault") }, ...las.map(([code, desc]) => ({ value: code, label: desc ? `${code} · ${desc}` : code }))]}
+          />
         </Field>
       </div>
       <Field label={t("mob.time.text")} htmlFor="m-zeit-text">

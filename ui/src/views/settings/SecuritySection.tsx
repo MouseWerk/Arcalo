@@ -301,7 +301,7 @@ function CipherWizard({ mode, status, onClose: close }: { mode: WizardMode; stat
           </div>
           {(mode === "encrypt" || rekey) && (
             <label className="sec-confirm">
-              <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+              <input type="checkbox" className="check" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
               <span>{rekey ? t("sec.rk.confirm") : t("sec.key.confirm")}</span>
             </label>
           )}

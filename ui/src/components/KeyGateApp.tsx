@@ -109,7 +109,7 @@ export function KeyGateApp() {
           </label>
         )}
         <label className="keygate-remember">
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          <input type="checkbox" className="check" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           <span>
             {t("keygate.remember")}
             <span className="faint small"> {status?.portable ? t("keygate.rememberPortable") : t("keygate.rememberHint", { store: status?.store ?? "" })}</span>

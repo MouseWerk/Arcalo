@@ -211,7 +211,7 @@ function BudgetRefs({ value, onChange }: { value: string[]; onChange: (v: string
     <div className="dws-checks">
       {rows.map((b) => (
         <label key={b.label} className="dws-check">
-          <input type="checkbox" checked={value.includes(b.label)} onChange={(e) => onChange(e.target.checked ? [...value, b.label] : value.filter((x) => x !== b.label))} />
+          <input type="checkbox" className="check" checked={value.includes(b.label)} onChange={(e) => onChange(e.target.checked ? [...value, b.label] : value.filter((x) => x !== b.label))} />
           <span className="mono">{b.label}</span>
           <span className="faint ellipsis">{b.title}</span>
         </label>
@@ -237,7 +237,7 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
           <div className="dws-checks">
             {TODAY_BLOCKS.filter((b) => timeTrackingEnabled() || !TODAY_TIME_BLOCKS.has(b)).map((b) => (
               <label key={b} className="dws-check">
-                <input type="checkbox" checked={blocks[b] !== false} onChange={(e) => set({ blocks: { ...blocks, [b]: e.target.checked } })} />
+                <input type="checkbox" className="check" checked={blocks[b] !== false} onChange={(e) => set({ blocks: { ...blocks, [b]: e.target.checked } })} />
                 <span>{t(`dash.block.${b}` as TKey)}</span>
               </label>
             ))}
@@ -264,7 +264,7 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
               <div className="dws-checks">
                 {all.map((id) => (
                   <label key={id} className="dws-check">
-                    <input type="checkbox" checked={!chosen.length || chosen.includes(id)} onChange={(e) => {
+                    <input type="checkbox" className="check" checked={!chosen.length || chosen.includes(id)} onChange={(e) => {
                       const base = chosen.length ? chosen : all;
                       const next = e.target.checked ? [...base, id] : base.filter((x) => x !== id);
                       set({ sources: next.length === all.length ? [] : next });

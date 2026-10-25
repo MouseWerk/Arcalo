@@ -407,7 +407,7 @@ export function TypedValue({ def, cell, label, onWrite, onAddOption }: { def: Pr
     return (
       <Invalid error={cell.error}>
         <label className="prop-check">
-          <input type="checkbox" checked={on} aria-label={label} onChange={() => onWrite(!on)} />
+          <input type="checkbox" className="check" checked={on} aria-label={label} onChange={() => onWrite(!on)} />
           {cell.error && <span className="cell-raw">{cell.text}</span>}
         </label>
       </Invalid>
