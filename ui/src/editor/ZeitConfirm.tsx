@@ -8,7 +8,7 @@ import { Button } from "../components/ui";
 import { confidenceLabel } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
 import { useT } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 export type ZeitChoice = "book" | "other" | "cancel";
 
@@ -24,7 +24,7 @@ export function ZeitConfirm({ guess, onChoice, style, className = "" }: { guess:
       let choice: ZeitChoice | null;
       if (e.key === "Escape") choice = "cancel";
       else if (e.key === "Enter" && !e.shiftKey) choice = ready ? "book" : null;
-      else if (e.key === "Tab") choice = ready ? "other" : null;
+      else if (isTab(e)) choice = ready ? "other" : null;
       else {
         // Typing on changes the line: the suggestion no longer applies.
         if ((e.key.length === 1 && !e.ctrlKey && !e.metaKey) || e.key === "Backspace" || e.key === "Delete") cb.current("cancel");

@@ -13,7 +13,7 @@ import { SaveFailed } from "./SaveFailed";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
 import { useSourceChips } from "./sourceChips";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { LONG_TEXT, pacer } from "../lib/pace";
 
 const INDENT = "  ";
@@ -311,7 +311,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       save();
       return;
     }
-    if (e.key === "Tab") {
+    if (isTab(e)) {
       e.preventDefault();
       const start = v.lastIndexOf("\n", a - 1) + 1;
       const end = b > a && v[b - 1] === "\n" ? b - 1 : b;

@@ -11,7 +11,7 @@ import { IconButton } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { caps } from "../lib/capabilities";
 
 const SIZES: { label: TKey; width: number | null }[] = [
@@ -90,7 +90,7 @@ export function ImageViewer({ src, name, onClose }: { src: string; name: string;
       if (isComposing(e)) return;
       if (e.key === "Escape") (e.stopPropagation(), onClose());
       // Like a dialog: the focus stays on the full view (its only control is „Schließen“).
-      else if (e.key === "Tab") {
+      else if (isTab(e)) {
         e.preventDefault();
         box.current?.querySelector<HTMLElement>("button")?.focus();
       }

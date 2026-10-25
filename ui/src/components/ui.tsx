@@ -4,7 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, ty
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Loader2, X, type LucideIcon } from "lucide-react";
 import { t } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -228,7 +228,7 @@ export function Dialog({
       if (e.key === "Escape") {
         e.stopPropagation();
         close.current();
-      } else if ((e.key === "Tab" || e.code === "Tab") && box) {
+      } else if (isTab(e) && box) {
         // Focus stays inside the dialog: Tab from the last control wraps to the first and back. Shift+Tab
         // arrives in WebKitGTK as ISO_Left_Tab, with an unidentified key: the code still says Tab.
         const all = [...box.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], summary, [tabindex]")].filter(
@@ -385,7 +385,7 @@ export function Menu({
         e.stopPropagation();
         restoreFocus();
         (onBack ?? onClose)();
-      } else if (e.key === "Tab") {
+      } else if (isTab(e)) {
         // Leaving the menu closes it (the focus returns to where it was).
         e.preventDefault();
         restoreFocus();

@@ -99,6 +99,17 @@ describe("<Select>", () => {
     expect(trigger.dataset.value).toBe("h3");
   });
 
+  it("Tab closes the list, also Shift+Tab as WebKitGTK sends it (key Unidentified, code Tab)", () => {
+    const picked: string[] = [];
+    const trigger = mount("h2", (v) => picked.push(v));
+    trigger.focus();
+    key(trigger, "ArrowDown");
+    expect(list()).not.toBeNull();
+    key(trigger, "Unidentified", { code: "Tab", shiftKey: true });
+    expect(list()).toBeNull();
+    expect(picked).toEqual([]);
+  });
+
   it("type-ahead while open and closed; Escape closes without choosing", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));

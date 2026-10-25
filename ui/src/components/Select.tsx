@@ -11,7 +11,7 @@
 import { Children, Fragment, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, type LucideIcon } from "lucide-react";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 export interface SelectOption {
   value: string;
@@ -208,14 +208,15 @@ export function Select({ value, onChange, options, children, disabled, className
         for (let k = 0; k < n; k++) j = step(items, j, dir);
         return j;
       };
+      if (isTab(e)) {
+        setOpen(false);
+        return;
+      }
       switch (e.key) {
         case "Escape":
           stop();
           setOpen(false);
           trigger.current?.focus();
-          return;
-        case "Tab":
-          setOpen(false);
           return;
         case "ArrowDown":
           stop();

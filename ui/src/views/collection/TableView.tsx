@@ -11,7 +11,7 @@ import { CellDisplay, ComboInput, Invalid, KIND_ICON, OptionPicker, Popover, edi
 import type { Ctx } from "./CollectionView";
 import { useT } from "../../lib/i18n";
 import { modLabel } from "../../lib/shortcut";
-import { isComposing } from "../../lib/ime";
+import { isComposing, isTab } from "../../lib/ime";
 
 const ROW_H = 34;
 /** Folders up to this size render every row; larger ones only the visible window. */
@@ -152,6 +152,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
       focusCell({ id: shown[nr].id, key: cols[nc] });
     };
     const kind = p.key === TITLE ? "title" : kindOf(defs, p.key);
+    if (isTab(e)) return move(0, e.shiftKey ? -1 : 1);
     switch (e.key) {
       case "ArrowUp":
         return move(-1, 0);
@@ -161,8 +162,6 @@ export function TableView({ ctx }: { ctx: Ctx }) {
         return move(0, -1);
       case "ArrowRight":
         return move(0, 1);
-      case "Tab":
-        return move(0, e.shiftKey ? -1 : 1);
       case "Home":
         return move(0, -cols.length);
       case "End":

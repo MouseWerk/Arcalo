@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isComposing, isKey } from "./ime";
+import { isComposing, isKey, isTab } from "./ime";
 
 describe("isComposing", () => {
   it("sees a composition by its flag or, in WebKit, by keyCode 229", () => {
@@ -18,5 +18,15 @@ describe("isComposing", () => {
     expect(isKey({ key: "Enter", keyCode: 229 }, "Enter")).toBe(false);
     expect(isKey({ key: "Escape", isComposing: true }, "Escape")).toBe(false);
     expect(isKey({ key: "Tab" }, "Enter")).toBe(false);
+  });
+});
+
+describe("isTab", () => {
+  it("is the Tab key by name or, for Shift+Tab in WebKitGTK (ISO_Left_Tab), by its code", () => {
+    expect(isTab({ key: "Tab", code: "Tab" })).toBe(true);
+    expect(isTab({ key: "Unidentified", code: "Tab" })).toBe(true);
+    expect(isTab({ key: "Tab" })).toBe(true);
+    expect(isTab({ key: "Enter", code: "Enter" })).toBe(false);
+    expect(isTab({ key: "Unidentified", code: "KeyQ" })).toBe(false);
   });
 });

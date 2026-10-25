@@ -12,7 +12,7 @@ import { AI_SHORTCUTS, aiSwitchOn } from "../../lib/aiswitch";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { TIME_SHORTCUTS, timeTrackingOn } from "../../lib/timetracking";
-import { isComposing } from "../../lib/ime";
+import { isComposing, isTab } from "../../lib/ime";
 import { caps } from "../../lib/capabilities";
 
 export function KeyboardSection({ draft, update }: SectionProps) {
@@ -87,7 +87,7 @@ export function KeyboardSection({ draft, update }: SectionProps) {
                     if (isComposing(e)) return;
                     if (recording !== c.id) return;
                     // Tab leaves the recorder as anywhere else (no command is bound to it).
-                    if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) return setRecording(null);
+                    if (isTab(e) && !e.ctrlKey && !e.altKey && !e.metaKey) return setRecording(null);
                     e.preventDefault();
                     e.stopPropagation();
                     if (e.key === "Escape") return setRecording(null);
