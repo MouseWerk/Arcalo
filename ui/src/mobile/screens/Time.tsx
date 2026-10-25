@@ -209,6 +209,13 @@ export function ZeitForm({ onBooked, withTimer = false }: { onBooked?: () => voi
       ),
     [tree],
   );
+  // The references that start with what is typed (the app's own list: a datalist would open
+  // Android's suggestion strip).
+  const suggestions = useMemo(() => {
+    const q = draft.reference.trim().toLowerCase();
+    if (!q) return [];
+    return references.filter((r) => r.value.toLowerCase().startsWith(q) && r.value.toLowerCase() !== q).slice(0, 5);
+  }, [references, draft.reference]);
   const line = zeitLine(draft, days.today);
   const set = (patch: Partial<ZeitDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -274,14 +281,17 @@ export function ZeitForm({ onBooked, withTimer = false }: { onBooked?: () => voi
         </div>
       )}
       <Field label={t("mob.time.reference")} htmlFor="m-zeit-ref">
-        <input id="m-zeit-ref" className="m-input" list="m-zeit-refs" autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={draft.reference} placeholder={t("mob.time.referencePlaceholder")} onChange={(e) => set({ reference: e.target.value })} />
-        <datalist id="m-zeit-refs">
-          {references.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </datalist>
+        <input id="m-zeit-ref" className="m-input" autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={draft.reference} placeholder={t("mob.time.referencePlaceholder")} onChange={(e) => set({ reference: e.target.value })} />
+        {suggestions.length > 0 && (
+          <div className="m-suggest" role="listbox" aria-label={t("mob.time.reference")}>
+            {suggestions.map((r) => (
+              <button key={r.value} type="button" role="option" aria-selected={false} className="m-suggest-opt" onClick={() => set({ reference: r.value })}>
+                <span className="m-suggest-main">{r.value}</span>
+                {r.label && <span className="m-suggest-sub">{r.label}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </Field>
       <div className="m-field-pair">
         <Field label={t("mob.time.duration")} htmlFor="m-zeit-dur">

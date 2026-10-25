@@ -479,6 +479,37 @@ html.mobile body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The references that match what is typed, below the field. */
+.m-suggest {
+  display: grid;
+  margin-top: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.m-suggest-opt {
+  display: grid;
+  gap: 2px;
+  min-height: var(--touch-min);
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  color: var(--text);
+}
+.m-suggest-opt + .m-suggest-opt {
+  border-top: 1px solid var(--border);
+}
+.m-suggest-main {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.m-suggest-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* The sheet of a choice: from the bottom, above the tab bar, over a dimmed screen. */
 .m-choice-scrim {
   position: fixed;
