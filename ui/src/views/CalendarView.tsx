@@ -67,6 +67,12 @@ const session: { anchor: Date | null; selected: string | null } = { anchor: null
 const entryEnd = (x: TimeEntryRow) => new Date(new Date(x.start_time).getTime() + (x.duration_minutes ?? 0) * 60000).toISOString();
 const entryRef = (x: TimeEntryRow) => `${x.netzplan_nr}${x.vorgang_nr ? `/${x.vorgang_nr}` : ""}`;
 
+/** The appointment a new one (`selected`, last shown as `was`) became once Outlook has it, or null. */
+export function successor(events: CalendarEvent[], selected: string | null, was: CalendarEvent | null): CalendarEvent | null {
+  if (!selected?.includes("|arcalo-entry-") || was?.key !== selected) return null;
+  return events.find((e) => e.source === was.source && e.title === was.title && e.start === was.start && !e.key.includes("|arcalo-entry-")) ?? null;
+}
+
 export function CalendarView() {
   const t = useT();
   const settings = useApp((s) => s.settings?.settings);
@@ -218,17 +224,16 @@ export function CalendarView() {
   }, [events, hidden, timeOn]);
   const booked = useMemo(() => new Map(shown.map((e) => [e.key, timeOn ? bookedEntry(e, entries) : null])), [shown, entries, timeOn]);
   const days = useMemo(() => (timeOn ? overview : new Map([...overview].map(([k, d]) => [k, { ...d, booked_minutes: 0 }]))), [overview, timeOn]);
-  const current = shown.find((e) => e.key === selected) ?? null;
-  // A new appointment gets its real key once Outlook has it: the selection follows it.
+  // A new appointment gets its real key once Outlook has it. The panel shows it under that key in
+  // the same render, so it stays as it is (a time or title being typed in keeps its text and the
+  // focus; between two renders it was gone and came back empty), and the selection follows.
   const lastShown = useRef<CalendarEvent | null>(null);
+  const current = shown.find((e) => e.key === selected) ?? successor(shown, selected, lastShown.current);
   if (current) lastShown.current = current;
   useEffect(() => {
-    const was = lastShown.current;
-    if (!selected?.includes("|arcalo-entry-") || current || was?.key !== selected) return;
-    const now = events.find((e) => e.source === was.source && e.title === was.title && e.start === was.start && !e.key.includes("|arcalo-entry-"));
-    if (now) setSelected(now.key);
+    if (current && current.key !== selected) setSelected(current.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events]);
+  }, [current?.key, selected]);
   const { blocks, patch: patchBlock } = useBlocks(range.from, range.to, version);
   const currentBlock = blocks.find((b) => b.id === blockIdOf(selected)) ?? null;
   const changeBlock = (b: FocusBlock, p: BlockPatch) => void saveBlock(b, p, patchBlock);

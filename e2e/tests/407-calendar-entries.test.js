@@ -4,7 +4,8 @@
 // next sync, once). A closed Outlook makes a change wait, a change made in Outlook too asks which
 // one applies, a received meeting stays read-only with „In Outlook öffnen“, an organized meeting
 // asks before the update goes to its attendees, a change Outlook refuses waits until it is
-// discarded, Enter in a time field takes the typed time. Switched off, nothing can be changed. The panels
+// discarded, Enter in a time field takes the typed time, also while a new appointment gets its key
+// from Outlook. Switched off, nothing can be changed. The panels
 // are checked in light, dark and high-contrast themes.
 import { test as nodeTest, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -115,6 +116,15 @@ const clickText = async (s, pattern) => {
   await app.browser.pause(150);
 };
 const waitWrite = (pred, msg) => app.browser.waitUntil(async () => entryWrites().some(pred), { timeout: 10000, timeoutMsg: msg });
+/** Selects the text of an input and types over it (the focus stays). */
+const typeInto = async (q, text) => {
+  await app.browser.execute((s) => {
+    const el = document.querySelector(s);
+    el.focus();
+    el.select();
+  }, q);
+  await app.type(text);
+};
 /** Types into the panel's input and leaves it (saved on blur). */
 const setInput = async (s, value) => {
   await app.browser.execute((q, v) => {
@@ -200,14 +210,6 @@ test("Enter in a time field of a panel takes the time just typed", async () => {
   await app.keys(["n"]);
   await app.waitFor(".calv-entry-editor");
   await app.type("Termin per Eingabe");
-  const typeInto = async (q, text) => {
-    await app.browser.execute((s) => {
-      const el = document.querySelector(s);
-      el.focus();
-      el.select();
-    }, q);
-    await app.type(text);
-  };
   await typeInto(".calv-entry-editor input[aria-label='Beginn']", "19:00");
   await app.keys(["Enter"]);
   await waitWrite((w) => w.op === "create" && w.fields.subject === "Termin per Eingabe", "Enter: not written");
@@ -221,6 +223,37 @@ test("Enter in a time field of a panel takes the time just typed", async () => {
   const all = entryWrites().filter((x) => x.fields?.end?.endsWith("T19:45:00"));
   assert.equal(all.length, 1, "saved once");
   assert.equal(all[0].fields.start, undefined, "only the end");
+});
+
+test("a time being typed in a new appointment's panel stays when Outlook gives it its key", async () => {
+  // Outlook closed: the new appointment waits under its own key while its end is typed.
+  fs.writeFileSync(`${log}.offline`, "");
+  await app.click(".calv-head h1");
+  await app.keys(["Escape"]);
+  await app.keys(["n"]);
+  await app.waitFor(".calv-entry-editor");
+  await app.type("Termin mit Schlüssel");
+  await typeInto(".calv-entry-editor input[aria-label='Beginn']", "20:00");
+  await app.keys(["Enter"]);
+  await app.waitFor('.calv-detail [data-write="pending"]');
+  await typeInto(".calv-detail input[aria-label='Ende']", "20:45");
+  // Outlook opened: written, and the appointment gets its real key while the field has the focus.
+  fs.rmSync(`${log}.offline`);
+  await app.invoke("calendar_entries_retry");
+  await waitWrite((w) => w.op === "create" && w.fields.subject === "Termin mit Schlüssel", "not written after Outlook opened");
+  await app.browser.waitUntil(
+    () => app.browser.execute(() => {
+      const k = document.querySelector('.calv-col [aria-expanded="true"]')?.getAttribute("data-key");
+      return !!k && !k.includes("|arcalo-entry-");
+    }),
+    { timeoutMsg: "the selection did not follow the real key" },
+  );
+  await sleep(300);
+  const field = await app.browser.execute(() => [document.activeElement?.getAttribute("aria-label"), document.querySelector(".calv-detail input[aria-label='Ende']")?.value]);
+  assert.deepEqual(field, ["Ende", "20:45"], "the focus and the typed end stay");
+  await app.keys(["Enter"]);
+  const { entryId } = entryWrites().find((x) => x.op === "create" && x.fields.subject === "Termin mit Schlüssel");
+  await waitWrite((x) => x.op === "update" && x.entryId === entryId && x.fields?.end?.endsWith("T20:45:00"), "the typed end was not written");
 });
 
 test("renamed, moved and resized: Outlook gets only what changed", async () => {

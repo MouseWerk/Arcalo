@@ -394,7 +394,9 @@ export function EntryEditor({ draft, cal, onChange, onClose, onCreated }: { draf
 export function EntryTitle({ e, onSave }: { e: CalendarEvent; onSave: (p: EntryFields) => void }) {
   const t = useT();
   const [title, setTitle] = useState(e.title);
-  useEffect(() => setTitle(e.title), [e.key, e.title]);
+  // Not on a new key alone: a new appointment gets its real one while the title may be typed in
+  // (another appointment chosen blurs the field first, which saves it).
+  useEffect(() => setTitle(e.title), [e.title]);
   const save = () => {
     const v = title.trim();
     if (v && v !== e.title) onSave({ title: v });
@@ -420,7 +422,7 @@ export function EntryTitle({ e, onSave }: { e: CalendarEvent; onSave: (p: EntryF
 export function EntryFieldsEdit({ e, onSave }: { e: CalendarEvent; onSave: (p: EntryFields) => void }) {
   const t = useT();
   const [location, setLocation] = useState(e.location);
-  useEffect(() => setLocation(e.location), [e.key, e.location]);
+  useEffect(() => setLocation(e.location), [e.location]);
   return (
     <>
       {!e.all_day && <WhenInputs start={new Date(e.start)} end={new Date(e.end)} onCommit={(s, en) => onSave({ start: s.toISOString(), end: en.toISOString() })} />}
