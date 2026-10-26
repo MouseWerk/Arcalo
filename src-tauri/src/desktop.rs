@@ -3,8 +3,9 @@
 //! this module only wires them to the window system.
 
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
 use arcalo_core::calsync::tz::Zone;
@@ -93,6 +94,9 @@ pub struct Desktop {
     /// The capture window is created once the user is idle, not right after the start (the
     /// desktop portal hangs, see [`precreate_capture`]).
     capture_deferred: AtomicBool,
+    /// The tray handles were touched on a thread other than the main thread (stays 0; checked by
+    /// the e2e tests, see [`tray_handles`]).
+    tray_off_main: AtomicU64,
 }
 
 impl Desktop {
@@ -105,12 +109,44 @@ fn desktop(app: &AppHandle) -> State<'_, Desktop> {
     app.state::<Desktop>()
 }
 
-/// The tray handles, copied out of the lock. Every call on the tray or its menu waits for the
-/// main thread, which takes this lock too (a settings save, `desktop_info`): made while holding
-/// it on another thread (the 30-second tick, a timer command), both waited for good. A guard in
-/// an `if let` scrutinee lives through the whole block, so the copy is taken here.
+/// The thread the tray was built on (the main thread; unset: no tray).
+static TRAY_THREAD: OnceLock<ThreadId> = OnceLock::new();
+
+/// Runs `f` on the main thread and waits for it. The tray icon is reference-counted without
+/// atomics (an `Rc` inside `TrayIcon`): a copy or a call made on another thread (the 30-second
+/// tick, a timer or voice command) raced with the main thread on that count, and the app
+/// aborted with "RefCell already borrowed" (CI soak, 390). So every touch of the tray handles
+/// happens on the main thread.
+fn on_tray_thread(app: &AppHandle, f: impl FnOnce(&AppHandle) + Send + 'static) {
+    match TRAY_THREAD.get() {
+        Some(id) if *id != std::thread::current().id() => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let app2 = app.clone();
+            if app
+                .run_on_main_thread(move || {
+                    f(&app2);
+                    let _ = tx.send(());
+                })
+                .is_ok()
+            {
+                // Err: the event loop ended (quitting) and dropped the task.
+                let _ = rx.recv();
+            }
+        }
+        _ => f(app),
+    }
+}
+
+/// The tray handles, copied out of the lock; only on the main thread (see [`on_tray_thread`]).
+/// A tray call made there runs right away, so holding the lock would not block, but the copy keeps
+/// a guard in an `if let` scrutinee from living through the whole block.
 fn tray_handles(app: &AppHandle) -> Option<TrayHandles> {
-    lock(&desktop(app).tray).clone()
+    let d = desktop(app);
+    if TRAY_THREAD.get().is_some_and(|id| *id != std::thread::current().id()) {
+        d.tray_off_main.fetch_add(1, Ordering::Relaxed);
+        crate::devlog::warn("desktop", "tray handles used off the main thread");
+    }
+    lock(&d.tray).clone()
 }
 
 pub fn show_main(app: &AppHandle) {
@@ -202,6 +238,10 @@ fn time_tracking(app: &AppHandle) -> bool {
 /// The display language changed: the tray menu, the macOS menu bar and the taskbar jump list
 /// are built again in the new language.
 pub fn relocalize(app: &AppHandle) {
+    on_tray_thread(app, relocalize_here);
+}
+
+fn relocalize_here(app: &AppHandle) {
     if let Some(t) = tray_handles(app) {
         let time = time_tracking(app);
         match tray_menu(app, time) {
@@ -249,6 +289,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     let tray = builder.build(app)?;
+    let _ = TRAY_THREAD.set(std::thread::current().id());
     let recording = crate::voice::is_recording(app);
     *lock(&desktop(app).tray) =
         Some(TrayHandles { tray, timer, time, recording, locked: crate::security::is_locked() });
@@ -341,6 +382,10 @@ fn resume_last(app: &AppHandle) -> Result<()> {
 /// Updates the tooltip (running timer) and which timer entry is enabled; rebuilds the menu
 /// when time tracking was switched on or off.
 pub fn refresh_tray(app: &AppHandle) {
+    on_tray_thread(app, refresh_tray_here);
+}
+
+fn refresh_tray_here(app: &AppHandle) {
     crate::jumplist::refresh(app);
     let Some(state) = app.try_state::<AppState>() else { return };
     let time = state.settings().time_tracking();
@@ -1395,6 +1440,8 @@ pub struct DesktopInfo {
     store: bool,
     /// Entry ids of the tray menu shown now (`None`: no tray).
     tray_menu: Option<Vec<&'static str>>,
+    /// How often the tray handles were touched off the main thread (always 0).
+    tray_off_main: u64,
 }
 
 #[tauri::command]
@@ -1431,6 +1478,7 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         mail_shortcut_active: slots[Role::Mail as usize].is_some(),
         voice_shortcut_active: slots[Role::Voice as usize].is_some(),
         capture_open_ms: Some(d.capture_open_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
+        tray_off_main: d.tray_off_main.load(Ordering::Relaxed),
     }
 }
 
