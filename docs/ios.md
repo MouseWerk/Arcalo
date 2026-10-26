@@ -125,12 +125,14 @@ CI (`.github/workflows/ios.yml`, called by `ci.yml` and `release.yml`) on a macO
    `cargo tauri ios build --target aarch64-sim --debug --no-sign`.
 3. The simulator check (`scripts/ios-smoke.sh`): the runner's newest iPhone Pro, 13" iPad Pro and iPad mini (of
    the newest iOS runtime), each upright and sideways. The app is started with `ARCALO_SMOKE=1` (debug builds only; sideways
-   with `ARCALO_SMOKE_ORIENTATION=landscape`: an iPhone window turns with `requestGeometryUpdate`); 10 and 20
-   seconds after the start it runs `src-tauri/src/mobile/ios_smoke.js` in the WebView, adds the window's size,
-   its safe-area insets and the WebView's frame, and writes the result to `smoke.json` in its data folder. An
+   with `ARCALO_SMOKE_ORIENTATION=landscape`: an iPhone window turns with `requestGeometryUpdate`); it runs
+   `src-tauri/src/mobile/ios_smoke.js` in the WebView every 2 seconds until the page is ready (the app finished
+   its start, `body.ready`; a first start on an iPad goes from the phone page to the full one first), then once
+   more 10 seconds later, adds the window's size, its safe-area insets and the WebView's frame, and writes the
+   result to `smoke.json` in its data folder (round 1 and 2; round 0 while the page still loads). An
    iPad turns only with the device (an app that supports multitasking cannot turn its window), so the script
    rotates the simulated device (Simulator's „Rotate Left“) before the sideways start. `scripts/ios-smoke-check.py`
-   fails the job when the iPhone does not show the phone app or an iPad not the full app (with its ribbon), when
+   fails the job when the page is not ready, when the iPhone does not show the phone app or an iPad not the full app (with its ribbon), when
    the window is not in the expected orientation, when the WebView reaches outside the safe area, when the page
    overflows sideways, when a fixed control (not in a scrolling area) sits inside the page's own insets, or when
    the console has errors. The screenshots and reports are the artifact `ios-simulator`.

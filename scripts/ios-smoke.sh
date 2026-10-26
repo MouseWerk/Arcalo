@@ -81,7 +81,7 @@ run() {
     SIMCTL_CHILD_ARCALO_SMOKE=1 SIMCTL_CHILD_ARCALO_SMOKE_ORIENTATION="$orientation" \
       SIMCTL_CHILD_ARCALO_SMOKE_DEMO="$demo" SIMCTL_CHILD_ARCALO_SKIP_ONBOARDING="$demo" \
       xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE" >/dev/null
-    # The report's second round (20 s after the start), when the page settled.
+    # The report's second round (10 s after the page got ready), when the page settled.
     local waited=0
     until [ -f "$report" ] && grep -q '"round": 2' "$report"; do
       if [ "$waited" -ge 600 ]; then

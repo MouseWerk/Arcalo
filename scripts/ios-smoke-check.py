@@ -18,6 +18,11 @@ def problems(report: dict, expect: str, orientation: str) -> list[str]:
     out = []
     if "raw" in report:
         return [f"the check did not run: {report['raw'][:300]}"]
+    if "loading" in report:
+        r = report["loading"]
+        return [f"the page never got ready ({r.get('page')}, loaded {r.get('loadedMs')} ms, ui {r.get('ui')}, switches {r.get('switches')})"]
+    if not report.get("ready"):
+        out.append(f"the page is not ready ({report.get('page')}, loaded {report.get('loadedMs')} ms, switches {report.get('switches')})")
     if report.get("ui") != expect:
         out.append(f"shows the {report.get('ui')} app on {report.get('page')}, expected the {expect} app")
     if expect == "full" and not report.get("ribbon"):
@@ -55,7 +60,7 @@ def main() -> int:
     found = problems(report, expect, orientation)
     vp = report.get("viewport", {})
     native = report.get("native") or {}
-    print(f"{label}: {report.get('ui')} app, page {vp.get('width')}x{vp.get('height')}, window {native.get('window')}, safe-area insets {native.get('insets')}")
+    print(f"{label}: {report.get('ui')} app, first start {report.get('firstRun')}, page {vp.get('width')}x{vp.get('height')}, window {native.get('window')}, safe-area insets {native.get('insets')}")
     for p in found:
         print(f"::error title=iOS simulator ({label})::{p}")
     return 1 if found else 0

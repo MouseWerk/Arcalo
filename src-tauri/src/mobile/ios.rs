@@ -785,8 +785,9 @@ pub fn system_proxy() -> arcalo_core::network::SystemProxy {
 // ---------------------------------------------------------------------------- simulator check
 
 /// The simulator check of CI (debug builds only, `ARCALO_SMOKE=1`): the page's geometry
-/// (`ios_smoke.js`) twice, 10 and 20 seconds after the start, as `smoke.json` in the data folder;
-/// with `ARCALO_SMOKE_ORIENTATION=landscape` the window turns to landscape first.
+/// (`ios_smoke.js`) as `smoke.json` in the data folder, once the page is ready (round 1) and 10
+/// seconds later (round 2); before that, readings of the page still loading as round 0. With
+/// `ARCALO_SMOKE_ORIENTATION=landscape` the window turns to landscape first.
 pub mod smoke {
     use super::*;
 
@@ -821,17 +822,48 @@ pub mod smoke {
                 std::thread::sleep(Duration::from_secs(2));
                 DispatchQueue::main().exec_async(|| autoreleasepool(|_| landscape()));
             }
-            for round in 1..=2u32 {
-                std::thread::sleep(Duration::from_secs(10));
-                let Some(w) = app.get_webview_window("main") else { continue };
-                let native = native_geometry(&w);
-                let dir = app.state::<AppState>().data_dir.clone();
-                let res = w.eval_with_callback(SCRIPT, move |out| write(&dir, round, &out, &native));
-                if let Err(e) = res {
-                    devlog::warn("ios", format!("simulator check not run: {e}"));
+            // A first start loads the phone page, goes over to the full one on an iPad and only
+            // then renders the app: a slow simulator takes longer than any fixed wait, and a
+            // script run during the page change never answers. So it asks until the page is ready.
+            let dir = app.state::<AppState>().data_dir.clone();
+            let ready = |r: &serde_json::Value| r.get("ready").and_then(|v| v.as_bool()) == Some(true);
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                match read(&app, 1) {
+                    Some(r) if ready(&r) => {
+                        write(&dir, &r, true);
+                        break;
+                    }
+                    // Still loading: kept as round 0, so a page that never gets ready shows why.
+                    Some(r) => write(&dir, &serde_json::json!({ "round": 0, "loading": r }), false),
+                    None => {}
+                }
+            }
+            std::thread::sleep(Duration::from_secs(8));
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                if let Some(r) = read(&app, 2) {
+                    write(&dir, &r, true);
+                    break;
                 }
             }
         });
+    }
+
+    /// One reading of the page (as `round`), or `None` when the script did not answer (the page
+    /// was changing).
+    fn read(app: &AppHandle, round: u32) -> Option<serde_json::Value> {
+        let w = app.get_webview_window("main")?;
+        let native = native_geometry(&w);
+        let (tx, rx) = std::sync::mpsc::channel();
+        if let Err(e) = w.eval_with_callback(SCRIPT, move |out| {
+            let _ = tx.send(out);
+        }) {
+            devlog::warn("ios", format!("simulator check not run: {e}"));
+            return None;
+        }
+        let out = rx.recv_timeout(Duration::from_secs(5)).ok()?;
+        Some(report(round, &out, &native))
     }
 
     /// The window's size and safe-area insets and the WebView's frame in it, in points.
@@ -864,7 +896,7 @@ pub mod smoke {
         rx.recv_timeout(Duration::from_secs(5)).unwrap_or(serde_json::Value::Null)
     }
 
-    fn write(dir: &Path, round: u32, out: &str, native: &serde_json::Value) {
+    fn report(round: u32, out: &str, native: &serde_json::Value) -> serde_json::Value {
         // The result of the script, a JSON string, comes JSON-encoded once more.
         let text = serde_json::from_str::<String>(out).unwrap_or_else(|_| out.to_owned());
         let mut report: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::json!({ "raw": text }));
@@ -874,9 +906,15 @@ pub mod smoke {
         if let Some(e) = lock(&ORIENTATION_ERROR).clone() {
             report["orientationError"] = e.into();
         }
+        report
+    }
+
+    fn write(dir: &Path, report: &serde_json::Value, log: bool) {
         let file: PathBuf = dir.join("smoke.json");
-        let _ = std::fs::write(&file, serde_json::to_vec_pretty(&report).unwrap_or_default());
-        devlog::info("ios", format!("simulator check {round}: {report}"));
+        let _ = std::fs::write(&file, serde_json::to_vec_pretty(report).unwrap_or_default());
+        if log {
+            devlog::info("ios", format!("simulator check {}: {report}", report["round"]));
+        }
     }
 
     /// Why the window did not turn (the error of `requestGeometryUpdate`).
