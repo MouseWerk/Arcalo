@@ -60,8 +60,11 @@ function EntryStatus({ flag }: { flag: StatusFlag }) {
 export function TimesheetView() {
   const t = useT();
   const version = useApp((s) => s.entriesVersion);
-  const [week, setWeek] = useState(() => weekStart(new Date()));
-  const [rows, setRows] = useState<TimeEntryRow[]>([]);
+  // The week asked for, and the week shown together with its entries: the header, the totals and the
+  // list switch at once when the entries arrive, so they never show two weeks while a load is on its way.
+  const [want, setWeek] = useState(() => weekStart(new Date()));
+  const [shown, setShown] = useState<{ week: Date; rows: TimeEntryRow[] }>(() => ({ week: want, rows: [] }));
+  const { week, rows } = shown;
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<TimeEntryRow | "new" | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -95,16 +98,17 @@ export function TimesheetView() {
   const seq = useRef(0);
   const load = () => {
     const n = ++seq.current;
+    const w = want;
     api
-      .entries(week.toISOString(), addDays(week, 7).toISOString())
-      .then((r) => n === seq.current && setRows(r))
+      .entries(w.toISOString(), addDays(w, 7).toISOString())
+      .then((r) => n === seq.current && setShown({ week: w, rows: r }))
       .catch((e) => s().error(t("time.loadFailed"), e));
   };
   useEffect(() => {
     load();
     setSelected(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week, version]);
+  }, [want, version]);
   const issues = useEntryIssues(rows);
 
   const done = rows.filter((r) => r.status_flag !== "running");
@@ -140,11 +144,11 @@ export function TimesheetView() {
           </div>
           <div className="view-actions ts-actions">
             <div className="week-nav">
-              <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(week, -7))} />
+              <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(want, -7))} />
               <Button size="sm" variant="ghost" onClick={() => setWeek(weekStart(new Date()))}>
                 {t("time.thisWeek")}
               </Button>
-              <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(week, 7))} />
+              <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(want, 7))} />
             </div>
             <IconButton icon={Printer} label={t("time.print")} onClick={() => window.print()} />
             {/* In a narrow pane the buttons show their icons only (the name stays as label and tooltip). */}
@@ -222,7 +226,8 @@ export function TimesheetView() {
       </div>
       {editing && <EntryDialog entry={editing === "new" ? null : editing} wbs={wbs} las={las} onClose={() => setEditing(null)} defaultDay={week} note={editing !== "new" && <WorklogEditNote issue={issues.get(editing.id)} />} />}
       {exporting && <ExportDialog week={week} onClose={() => setExporting(false)} />}
-      {proposing && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
+      {/* Opened from elsewhere for this week: once its entries are here. */}
+      {proposing && week === want && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
     </div>
   );
 }
