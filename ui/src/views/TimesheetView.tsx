@@ -29,6 +29,7 @@ import { openIssue } from "../lib/jiraActions";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
 import { isComposing, isKey } from "../lib/ime";
+import { copyText } from "../lib/clipboard";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone; icon: typeof Check }> = {
   running: { label: "time.status.running", tone: "info", icon: Timer },
@@ -448,7 +449,7 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
   const copyCats = async () => {
     const { text, ids } = catsGrid(rows, week, catsDecimalSep(s().settings?.settings.time?.cats_decimal));
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
     } catch (e) {
       return s().error(t("devlog.copyFailed"), e);
     }
@@ -1034,7 +1035,7 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
       // Clipboard: copy first, mark only once the copy succeeded.
       const res = await api.exportEntries({ format, ...range(), onlyReleased, markExported: mark && target === "file", path });
       if (target === "clipboard") {
-        await navigator.clipboard.writeText(res.content);
+        await copyText(res.content);
         if (mark && res.exported_ids.length) await api.setStatus(res.exported_ids, "exported");
       }
       s().toast({

@@ -43,6 +43,7 @@ import { openDayReview } from "../lib/reviewnav";
 import { t as tr, useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
 import { SHOWN_PLACE, selectShownTitle } from "../lib/keepalive";
+import { copyText } from "../lib/clipboard";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   useT();
@@ -508,7 +509,7 @@ function PageHeader({
             { label: tr("att.renameButton"), icon: PencilLine, onSelect: () => titleInput.current?.select() },
             { label: tr("sb.changeIcon"), icon: SmilePlus, onSelect: () => setIconOpen(true) },
             { label: tr("sb.openRight"), icon: Columns2, onSelect: () => s().splitTab(tab.id) },
-            { label: tr("pv.copyLink"), icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
+            { label: tr("pv.copyLink"), icon: Link2, onSelect: () => copyText(`[[${doc.title}]]`) },
             { label: tr("cmd.present"), icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
             { label: tr("pv.print"), icon: Printer, onSelect: () => printActivePane() },
             { label: tr("mw.pv.markdown"), icon: FileDown, onSelect: () => void reportMarkdown(doc) },

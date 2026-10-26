@@ -7,10 +7,12 @@ import { Badge, IconButton, Input } from "../../components/ui";
 import { formatShortcut, recordShortcut } from "../../lib/shortcut";
 import { IS_MAC } from "../../lib/platform";
 import { useT } from "../../lib/i18n";
+import { useApp } from "../../store/app";
 import type { Settings } from "../../lib/types";
 import type { HelpTopic } from "../../lib/helpLinks";
 import { openDocs } from "../../components/Help";
 import { isKey } from "../../lib/ime";
+import { copyText } from "../../lib/clipboard";
 
 export type Update = (p: Partial<Settings>) => void;
 export interface SectionProps {
@@ -223,7 +225,7 @@ export function PathValue({ value, className = "" }: { value: string; className?
         icon={copied ? Check : Copy}
         size="sm"
         label={copied ? t("common.copied") : t("common.copy")}
-        onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})}
+        onClick={() => void copyText(value).then(() => setCopied(true), (e) => useApp.getState().error(t("devlog.copyFailed"), e))}
       />
     </span>
   );

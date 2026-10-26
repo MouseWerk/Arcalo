@@ -16,6 +16,7 @@ import { linkKey, titleSet } from "../lib/links";
 import { pdfAnchor } from "../lib/linking";
 import { t } from "../lib/i18n";
 import { caps } from "../lib/capabilities";
+import { copyText } from "../lib/clipboard";
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 let root: Root | null = null;
@@ -101,7 +102,7 @@ export function fileMenu(editor: Editor, pos: number): MenuEntry[] {
     {
       label: t("file.copyEmbed"),
       icon: Copy,
-      onSelect: () => navigator.clipboard.writeText(embed).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))),
+      onSelect: () => copyText(embed).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))),
     },
     "separator",
     {

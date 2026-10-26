@@ -29,6 +29,8 @@ before(async () => {
 after(async () => app?.close());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Keys one after another in a single WebDriver request (an array to `keys` would be a chord). */
+const burst = (text) => [...text].reduce((a, ch) => a.down(ch).up(ch), app.browser.action("key")).perform();
 // Long dropdown values end in "…" on purpose.
 const real = (problems) => problems.filter((p) => !p.startsWith("select too narrow"));
 
@@ -176,9 +178,16 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
     assert.deepEqual(real(await app.browser.execute(auditLayout, ".pane.active > .pane-content:not([hidden]) .settings")), [], `${w}px`);
     await app.shot(`settings-about-${w}`);
   }
-  // The copy button confirms.
+  // The copy button confirms. The page notes the confirmation itself: it shows for 1.4 s, and on a
+  // busy machine one WebDriver round trip can take longer, so polling for it could miss it.
+  await app.browser.execute(() => {
+    const value = document.querySelector(".pane.active > .pane-content:not([hidden]) .path-text.data-dir").parentElement;
+    window.__copyConfirmed = false;
+    const seen = () => value.querySelector('button[aria-label="Kopiert"]') && (window.__copyConfirmed = true);
+    new MutationObserver(seen).observe(value, { subtree: true, childList: true, attributes: true });
+  });
   await app.click(".pane.active > .pane-content:not([hidden]) .path-text.data-dir + button");
-  await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .path-value button[aria-label="Kopiert"]')), { timeoutMsg: "no copy feedback" });
+  await app.browser.waitUntil(() => app.browser.execute(() => window.__copyConfirmed), { timeoutMsg: "no copy feedback" });
   await app.browser.execute(() => window.__arcaloUpdates.setState({ available: null, status: null }));
   await app.browser.setWindowSize(1480, 920);
 });
@@ -213,7 +222,9 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   // chooses it (and saves: Darstellung saves immediately).
   await app.keys(["Enter"]);
   await app.browser.waitUntil(open);
-  await app.type("11");
+  // Typed in one burst, as a person types: one key per WebDriver request can take longer than the
+  // type-ahead's 700 ms between two keys on a busy machine, and then starts a new search.
+  await burst("11");
   assert.equal(await active(), "110 %");
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await value()) === "110");
@@ -225,7 +236,7 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   await app.browser.waitUntil(async () => !(await open()), { timeoutMsg: "click outside did not close" });
   // Back to 100 %: typing a whole label while closed picks it, like a native select.
   await app.browser.execute((s) => document.querySelector(s).focus(), scale);
-  await app.type("100");
+  await burst("100");
   await app.browser.waitUntil(async () => (await value()) === "100", { timeoutMsg: "typed while closed" });
   assert.equal(await open(), false);
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.appearance.ui_scale === 100);
