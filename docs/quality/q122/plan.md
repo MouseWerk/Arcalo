@@ -29,7 +29,7 @@ fix starts the count again.
 | 0 | 2026-10-25 | first soak 40215972409: rounds 2 and 5 red, the app was on the soak's PATH (workflow fixed) | CI 40171628604 to 40205555208: red (E1 to E4, harness) | guards on `main` F1–F17 and J1; CI red on `main` since 9d7bcb4 (F18, F19); F20, F21; emulator E1–E4 | no |
 | 1 | 2026-10-25 | run 40220894425: 4 of 5 (round 2: `36-settings-layout` dropdown, F22) | CI 40210972539 and 40220891741: all 6 jobs green, emulator included | F22 | no |
 | 2 | 2026-10-26 | run 40226519835: 5 of 5 (test-side wait, replaced); run 40278419585 on the `Select` fix: 5 of 5 | CI 40278415721: green but the emulator (splash 3.3 s against a 3 s bound on a cold emulator; the bound is now under the 8 s limit) | F22, F23 | no |
-| 3 | 2026-10-26 | – | CI of the last push | – | – |
+| 3 | 2026-10-26 | (run 40278419585 above is on the same app code) | CI 40285045771: all 6 jobs green, emulator included | none | first clean round (automated part) |
 
 ## Guards
 
