@@ -2,6 +2,8 @@
 // window takes its lock too (settings saves, `desktop_info`). A tray call waits for the main
 // thread; made under the lock, the window froze for good once both met (CI, 115: time tracking off,
 // a settings save in the moment of the tick). Bursts of both, with time tracking off and on.
+// The tray icon's reference count is not atomic: a copy of it on another thread aborted the app
+// ("RefCell already borrowed", CI soak), so the tray is only ever touched on the main thread.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
@@ -57,6 +59,7 @@ test("tray refreshes on other threads never hold up the window (time tracking of
   assert.ok(Number.isInteger(rounds) && rounds > 0, String(rounds));
   // The window still answers.
   assert.equal(await app.browser.execute(() => document.body.classList.contains("ready")), true);
+  assert.equal((await app.invoke("desktop_info")).tray_off_main, 0);
 });
 
 test("the same while time tracking is switched on and off", async () => {
@@ -65,4 +68,5 @@ test("the same while time tracking is switched on and off", async () => {
   await setTimeTracking(true);
   const info = await app.invoke("desktop_info");
   if (info.tray_menu) assert.ok(info.tray_menu.includes("stop"), info.tray_menu.join(","));
+  assert.equal(info.tray_off_main, 0);
 });
