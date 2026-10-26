@@ -166,6 +166,10 @@ export function Select({ value, onChange, options, children, disabled, className
     return typeAhead(items, t.text, from);
   };
 
+  // A window that changes its size (also a new scale of the interface, which arrives a moment
+  // after it was chosen) places the open list again instead of closing it.
+  const [resized, setResized] = useState(0);
+
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
     if (!open) return setPos(null);
@@ -182,7 +186,7 @@ export function Select({ value, onChange, options, children, disabled, className
     const width = Math.max(r.width, el.offsetWidth);
     const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - width - MARGIN));
     setPos({ left, top: up ? r.top - GAP - height : r.bottom + GAP, minWidth: r.width, maxHeight: natural > room ? room : undefined, above: up });
-  }, [open]);
+  }, [open, resized]);
 
   // The selected option is in view when the list opens; the active one while moving.
   useLayoutEffect(() => {
@@ -256,13 +260,14 @@ export function Select({ value, onChange, options, children, disabled, className
     window.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", close);
+    const onResize = () => setResized((n) => n + 1);
+    window.addEventListener("resize", onResize);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("mousedown", onDown, true);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("blur", close);
     };
   });
