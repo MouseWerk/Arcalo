@@ -23,6 +23,7 @@ import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, onlyInVersion
 import { t, useT, withLabel, type TKey } from "../lib/i18n";
 import { isKey } from "../lib/ime";
 import { caps } from "../lib/capabilities";
+import { copyText } from "../lib/clipboard";
 
 const KINDS: { value: KindFilter; readonly label: string }[] = [
   withLabel({ value: "all" as KindFilter }, "att.kind.all"),
@@ -186,7 +187,7 @@ export function AttachmentsView() {
     {
       label: t("att.copyEmbed"),
       icon: Copy,
-      onSelect: () => navigator.clipboard.writeText(`![[${f.name}]]`).then(() => s().toast({ tone: "success", title: t("att.embedCopied") }), (e) => s().error(t("devlog.copyFailed"), e)),
+      onSelect: () => copyText(`![[${f.name}]]`).then(() => s().toast({ tone: "success", title: t("att.embedCopied") }), (e) => s().error(t("devlog.copyFailed"), e)),
     },
     "separator",
     { label: t("att.deleteMenu"), icon: Trash2, danger: true, onSelect: () => void remove(f) },

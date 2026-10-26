@@ -38,17 +38,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * further window, which froze the app for 5 s right after it got ready), elsewhere a bus that
  * X11 autolaunches. The tests expect a desktop without keyring, portal or notification service,
  * as on a machine without a session bus. "" when there is no dbus-daemon.
+ *
+ * Its socket is in /tmp, not in TMPDIR: a unix socket path has at most 107 bytes, and a test that
+ * starts the app below a deep TMPDIR (36-settings-layout) left the app on the machine's bus. A
+ * bus that does not start fails the run instead of falling back to that bus.
  */
 let busAddress = null;
 function sessionBus() {
   if (busAddress !== null) return busAddress;
   busAddress = "";
-  const conf = path.join(os.tmpdir(), `arcalo-e2e-bus-${process.pid}.conf`);
+  const conf = path.join("/tmp", `arcalo-e2e-bus-${process.pid}.conf`);
   try {
     fs.writeFileSync(
       conf,
       `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig><type>session</type><listen>unix:tmpdir=${os.tmpdir()}</listen>
+<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen>
 <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>`,
     );
     const out = execFileSync("dbus-daemon", ["--config-file", conf, "--fork", "--print-address=1", "--print-pid=1"], { encoding: "utf8", timeout: 5000 });
@@ -61,8 +65,9 @@ function sessionBus() {
       }
     });
     busAddress = address;
-  } catch {
-    /* no dbus-daemon: the machine's bus, if any */
+  } catch (e) {
+    // No dbus-daemon at all: the machine's bus, if any. One that does not start is an error.
+    if (e.code !== "ENOENT") throw new Error(`the test session bus did not start: ${e.stderr || e.message}`);
   } finally {
     fs.rmSync(conf, { force: true });
   }

@@ -31,6 +31,7 @@ import {
   type WeekPage, type WeekReview, type WeekTask,
 } from "../lib/weekreview";
 import { useT } from "../lib/i18n";
+import { copyText } from "../lib/clipboard";
 
 const s = useApp.getState;
 
@@ -254,7 +255,7 @@ export function WeekReviewView() {
                             icon={copied ? Check : Copy}
                             className="rv-copy"
                             onClick={() => {
-                              void navigator.clipboard.writeText(summaryText);
+                              void copyText(summaryText);
                               setCopied(true);
                               window.setTimeout(() => setCopied(false), 1200);
                             }}

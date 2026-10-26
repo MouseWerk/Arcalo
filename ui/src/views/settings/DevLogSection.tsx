@@ -12,6 +12,7 @@ import { t as tr, useT } from "../../lib/i18n";
 import type { DevLogEntry, DevLogStats } from "../../lib/types";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
+import { copyText } from "../../lib/clipboard";
 
 const LIMIT = 500;
 
@@ -81,7 +82,7 @@ export function DevLogSection({ draft, update }: SectionProps) {
   const shown = filterEntries(entries ?? [], filter);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(entriesText(shown));
+      await copyText(entriesText(shown));
       s().toast({ tone: "success", title: t("devlog.copied"), detail: t("devlog.lines", { n: shown.length }) });
     } catch (e) {
       s().error(t("devlog.copyFailed"), e);

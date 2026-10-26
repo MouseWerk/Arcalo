@@ -56,6 +56,7 @@ import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
 import { refreshI18n, t, useT } from "./lib/i18n";
 import { isComposing } from "./lib/ime";
+import { copyText } from "./lib/clipboard";
 
 export function App() {
   useT();
@@ -270,7 +271,7 @@ export function App() {
           persistent: true,
           title: t("app.captureFailed"),
           detail: `${msg}\n\n${text}`,
-          action: { label: t("app.copyText"), run: () => void navigator.clipboard?.writeText(text).catch(() => {}) },
+          action: { label: t("app.copyText"), run: () => void copyText(text).catch(() => {}) },
         }),
       ),
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.

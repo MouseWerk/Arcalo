@@ -29,6 +29,7 @@ import { useAi } from "../lib/aiswitch";
 import { AiErrorNote } from "../components/AiNotes";
 import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
 import { useT } from "../lib/i18n";
+import { copyText } from "../lib/clipboard";
 
 export function DayReviewView() {
   const t = useT();
@@ -262,7 +263,7 @@ export function DayReviewView() {
                             icon={copied ? Check : Copy}
                             className="rv-copy"
                             onClick={() => {
-                              void navigator.clipboard.writeText(summaryText);
+                              void copyText(summaryText);
                               setCopied(true);
                               window.setTimeout(() => setCopied(false), 1200);
                             }}

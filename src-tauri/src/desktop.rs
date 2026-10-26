@@ -748,6 +748,21 @@ fn clipboard_text(selection: bool) -> Option<String> {
     (!t.trim().is_empty()).then(|| t.chars().take(20_000).collect())
 }
 
+/// Puts `text` on the clipboard for the UI's copy buttons when the web clipboard refuses it: WebKitGTK
+/// lets a page write only with transient user activation, and a click handled while the app is
+/// busy can arrive without it (the write fails with NotAllowedError). The clipboard stays open for
+/// the whole run, as X11 serves its content from this process.
+#[tauri::command]
+pub fn clipboard_write(text: String) -> std::result::Result<(), String> {
+    use std::sync::{Mutex, OnceLock};
+    static CLIPBOARD: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
+    let mut cb = CLIPBOARD.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner());
+    if cb.is_none() {
+        *cb = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
+    }
+    cb.as_mut().map_or(Ok(()), |c| c.set_text(text).map_err(|e| e.to_string()))
+}
+
 /// Esc, or the capture was stored.
 #[tauri::command]
 pub fn capture_hide(app: AppHandle) {

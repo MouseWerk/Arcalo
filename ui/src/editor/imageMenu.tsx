@@ -13,6 +13,7 @@ import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
 import { isComposing, isTab } from "../lib/ime";
 import { caps } from "../lib/capabilities";
+import { copyText } from "../lib/clipboard";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -68,7 +69,7 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
       icon: ClipboardCopy,
       onSelect: () => copyImage(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
     },
-    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => navigator.clipboard.writeText(`![[${name}]]`) } as MenuEntry] : []),
+    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => copyText(`![[${name}]]`) } as MenuEntry] : []),
     "separator",
     {
       label: t("file.removeFromNote"),

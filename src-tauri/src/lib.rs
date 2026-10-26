@@ -5306,6 +5306,8 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         desktop::app_quit,
         desktop::capture_submit,
         #[cfg(desktop)]
+        desktop::clipboard_write,
+        #[cfg(desktop)]
         desktop::capture_hide,
         #[cfg(desktop)]
         desktop::capture_show,

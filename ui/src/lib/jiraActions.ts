@@ -7,6 +7,7 @@ import { useApp } from "../store/app";
 import { t } from "./i18n";
 import { jiraApi, useIssueIndex } from "./jira";
 import { openIssueView } from "./issueFull";
+import { copyText } from "./clipboard";
 
 const s = useApp.getState;
 
@@ -39,7 +40,7 @@ export async function openIssue(key: string, opts: { browser?: boolean; note?: b
 
 export async function copyIssueKey(key: string) {
   try {
-    await navigator.clipboard.writeText(key);
+    await copyText(key);
     s().toast({ tone: "success", title: t("jira.copied", { key }) });
   } catch (e) {
     s().error(t("jira.copyFailed"), e);

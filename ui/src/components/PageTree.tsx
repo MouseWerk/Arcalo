@@ -33,6 +33,7 @@ import { withTag } from "../lib/frontmatter";
 import { newMenuItems, TREE_RENAME_EVENT, createNew } from "./newItems";
 import { isTypeaheadKey, titleIfCut, typeaheadText } from "./treeKeys";
 import { treeWindow as treeWindowOf } from "../lib/treeWindow";
+import { copyText as writeClipboard } from "../lib/clipboard";
 
 /** Trees with this many visible rows render only the rows in view (plus a margin). */
 const VIRTUAL_ROWS = 150;
@@ -148,7 +149,7 @@ const SWATCHES = Object.fromEntries(
 ) as Record<string, LucideIcon>;
 
 const copyText = (text: string, what: string) =>
-  navigator.clipboard.writeText(text).then(
+  writeClipboard(text).then(
     () => s().toast({ tone: "success", title: tStatic("sb.copied", { what }) }),
     (e) => s().error(tStatic("sb.copyFailed"), e),
   );
