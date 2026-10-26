@@ -111,9 +111,10 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
               <Button
                 icon={copied ? Check : Copy}
                 onClick={() => {
-                  copyText(result);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
+                  void copyText(result).then(
+                    () => (setCopied(true), setTimeout(() => setCopied(false), 1200)),
+                    (e) => s().error(t("common.copyFailed"), e),
+                  );
                 }}
               >
                 {t("common.copy")}

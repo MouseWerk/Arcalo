@@ -18,6 +18,7 @@ export const de: Catalog = {
   "common.checking": "Prüfe…",
   "common.copy": "Kopieren",
   "common.copied": "Kopiert",
+  "common.copyFailed": "Kopieren fehlgeschlagen",
   "common.delete": "Löschen",
   "common.deleteFailed": "Löschen fehlgeschlagen",
   "common.saveFailed": "Speichern fehlgeschlagen",

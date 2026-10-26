@@ -225,7 +225,7 @@ export function PathValue({ value, className = "" }: { value: string; className?
         icon={copied ? Check : Copy}
         size="sm"
         label={copied ? t("common.copied") : t("common.copy")}
-        onClick={() => void copyText(value).then(() => setCopied(true), (e) => useApp.getState().error(t("devlog.copyFailed"), e))}
+        onClick={() => void copyText(value).then(() => setCopied(true), (e) => useApp.getState().error(t("common.copyFailed"), e))}
       />
     </span>
   );

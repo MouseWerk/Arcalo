@@ -5308,6 +5308,8 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         #[cfg(desktop)]
         desktop::clipboard_write,
         #[cfg(desktop)]
+        desktop::clipboard_write_image,
+        #[cfg(desktop)]
         desktop::capture_hide,
         #[cfg(desktop)]
         desktop::capture_show,

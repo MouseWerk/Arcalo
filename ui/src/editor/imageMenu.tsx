@@ -13,7 +13,7 @@ import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
 import { isComposing, isTab } from "../lib/ime";
 import { caps } from "../lib/capabilities";
-import { copyText } from "../lib/clipboard";
+import { copyImage, copyText } from "../lib/clipboard";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -23,7 +23,7 @@ const SIZES: { label: TKey; width: number | null }[] = [
 ];
 
 /** Copies an image as PNG to the clipboard (other formats are converted). */
-async function copyImage(src: string) {
+async function copyImageAt(src: string) {
   const blob = await (await fetch(src)).blob();
   let png = blob;
   if (blob.type !== "image/png") {
@@ -34,7 +34,7 @@ async function copyImage(src: string) {
     canvas.getContext("2d")!.drawImage(bmp, 0, 0);
     png = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("PNG"))), "image/png"));
   }
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+  await copyImage(png);
 }
 
 /** The menu for the image node at `pos`. `view` opens the full view. */
@@ -67,9 +67,9 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
     {
       label: t("img.copy"),
       icon: ClipboardCopy,
-      onSelect: () => copyImage(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
+      onSelect: () => copyImageAt(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
     },
-    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => copyText(`![[${name}]]`) } as MenuEntry] : []),
+    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => copyText(`![[${name}]]`).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))) } as MenuEntry] : []),
     "separator",
     {
       label: t("file.removeFromNote"),

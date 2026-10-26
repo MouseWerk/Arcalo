@@ -296,7 +296,7 @@ function CipherWizard({ mode, status, onClose: close }: { mode: WizardMode; stat
             <Button icon={Download} disabled={!code} onClick={() => void saveFile()}>
               {t("sec.key.save")}
             </Button>
-            <Button icon={Copy} disabled={!code} onClick={() => void copyText(code ?? "").catch(() => {})}>
+            <Button icon={Copy} disabled={!code} onClick={() => void copyText(code ?? "").catch((e) => useApp.getState().error(t("common.copyFailed"), e))}>
               {t("sec.key.copy")}
             </Button>
           </div>
