@@ -19,7 +19,7 @@
           { "type": "text", "text": " with a " }, { "type": "text", "text": "Visa", "marks": [{ "type": "em" }, { "type": "textColor", "attrs": { "color": "#ff5630" } }] },
           { "type": "text", "text": " card, see " }, { "type": "text", "text": "the runbook", "marks": [{ "type": "link", "attrs": { "href": "https://wiki.acme.de/runbook" } }] },
           { "type": "hardBreak" }, { "type": "text", "text": "Ping " }, { "type": "mention", "attrs": { "id": "acc-tom", "text": "@Tom Berger", "accessLevel": "" } },
-          { "type": "text", "text": " " }, { "type": "emoji", "attrs": { "shortName": ":warning:", "id": "26a0", "text": "⚠️" } },
+          { "type": "text", "text": " " }, { "type": "emoji", "attrs": { "shortName": ":warning:", "id": "26a0", "text": "\u26a0\ufe0f" } },
           { "type": "text", "text": " status " }, { "type": "status", "attrs": { "text": "BLOCKED", "color": "red", "localId": "s1" } }
         ] },
         { "type": "bulletList", "content": [

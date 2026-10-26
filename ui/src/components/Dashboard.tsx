@@ -283,6 +283,7 @@ export function Dashboard() {
                   <span
                     className="dash-tab-more"
                     role="button"
+                    aria-haspopup="menu"
                     tabIndex={-1}
                     aria-label={tr("dash.board.options", { name: b.name })}
                     onClick={(e) => {

@@ -2,7 +2,8 @@
 // surface it is shown on, in all built-in themes (light and dark), with every accent preset,
 // and in tokens.css (the Arcalo themes, which the app uses as they are). Tinted rows (hover,
 // current, selected) are laid over the surface underneath. Muted text (--text-3: dates,
-// counts, hints) reaches 4.5:1 on the plain surfaces and 4:1 on a highlighted row.
+// counts, hints) reaches 4.5:1 on the plain surfaces and 4:1 on a highlighted row. The high
+// contrast themes ask for 7:1 (WCAG AAA) for text on their plain surfaces.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -24,14 +25,14 @@ const TINTS = ["--bg-hover", "--bg-current", "--bg-selected", "--accent-soft"];
 const TEXT = ["--text", "--text-2", "--accent-text", "--success", "--warning", "--danger", "--info"];
 
 /** Every text/background pair below the minimum, as readable lines. */
-function failures(name: string, k: Record<string, string>): string[] {
+function failures(name: string, k: Record<string, string>, textMin = 4.5): string[] {
   const out: string[] = [];
   const check = (fg: string, bgName: string, bg: string, min: number) => {
     const c = contrast(k[fg], bg);
     if (c < min) out.push(`${name}: ${fg} on ${bgName} ${c.toFixed(2)} < ${min}`);
   };
   for (const s of SURFACES) {
-    for (const fg of [...TEXT, "--text-3"]) check(fg, s, k[s], 4.5);
+    for (const fg of [...TEXT, "--text-3"]) check(fg, s, k[s], fg === "--text-3" ? 4.5 : textMin);
     for (const tint of TINTS) {
       const bg = solid(k[tint], k[s]);
       for (const fg of TEXT) check(fg, `${tint} on ${s}`, bg, 4.5);
@@ -57,7 +58,7 @@ function failures(name: string, k: Record<string, string>): string[] {
 
 describe("text contrast in every theme", () => {
   it("built-in themes with their own accent", () => {
-    expect(BUILTIN_THEMES.flatMap((t) => failures(t.id, themeTokens(t)))).toEqual([]);
+    expect(BUILTIN_THEMES.flatMap((t) => failures(t.id, themeTokens(t), t.fixedAccent ? 7 : 4.5))).toEqual([]);
   });
 
   it("built-in themes with every accent preset", () => {

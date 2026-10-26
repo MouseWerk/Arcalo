@@ -27,7 +27,7 @@ export function interactiveTasks(html: string): string {
   let n = 0;
   return html.replace(/<input([^>]*?)type="checkbox"([^>]*)>/g, (_m, a: string, b: string) => {
     const checked = /checked/.test(a + b);
-    return `<input type="checkbox" class="dw-scratch-check" data-task="${n++}"${checked ? " checked" : ""}>`;
+    return `<input type="checkbox" class="check dw-scratch-check" data-task="${n++}"${checked ? " checked" : ""}>`;
   });
 }
 

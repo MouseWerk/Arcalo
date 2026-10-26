@@ -1159,7 +1159,7 @@ function WorklogForm({ view, onDone }: { view: FullView; onDone: (v: FullView) =
         </Button>
         {view.time_tracking && (
           <label className="iv-check">
-            <input type="checkbox" checked={book} onChange={(e) => setBook(e.target.checked)} />
+            <input type="checkbox" className="check" checked={book} onChange={(e) => setBook(e.target.checked)} />
             <span>{view.wbs ? t("iv.bookToo", { wbs: view.wbs }) : t("iv.bookTooNoWbs")}</span>
           </label>
         )}

@@ -72,8 +72,8 @@ export const BUILTIN_THEMES: ThemeDef[] = [
   { id: "rose-pine", name: "Rosé Pine", dark: true, colors: c("#191724", "#1f1d2e", "#e0def4", "#908caa", "#2a273f", "#c4a7e7", "#9ccfd8", "#f6c177", "#eb6f92"), app: "#131120", raised: "#211f32", overlay: "#26233a", text2: "#c9c6e0", info: "#9ccfd8" },
   { id: "everforest-light", name: "Everforest Light", dark: false, colors: c("#fdf6e3", "#f4f0d9", "#4f5b62", "#6f7c6c", "#e3dec5", "#8da101", "#35a77c", "#dfa000", "#f85552"), app: "#efebd4", raised: "#fffbef", overlay: "#fffbef", text2: "#5c6a72", info: "#3a94c5" },
   { id: "everforest-dark", name: "Everforest Dark", dark: true, colors: c("#2d353b", "#232a2e", "#d3c6aa", "#9da9a0", "#3d484d", "#a7c080", "#83c092", "#dbbc7f", "#e67e80"), app: "#1e2326", raised: "#343f44", overlay: "#3d484d", text2: "#c5b99e", info: "#7fbbb3" },
-  { id: "contrast-light", name: "Hoher Kontrast Hell", dark: false, colors: c("#ffffff", "#f2f2f2", "#000000", "#383838", "#6e6e6e", "#0037da", "#005a18", "#6b4100", "#b00020"), app: "#e6e6e6", text2: "#1a1a1a", info: "#004f8a", fixedAccent: true },
-  { id: "contrast-dark", name: "Hoher Kontrast Dunkel", dark: true, colors: c("#000000", "#0b0b0b", "#ffffff", "#d6d6d6", "#8c8c8c", "#1aebff", "#3ff23f", "#ffd500", "#ff6b6b"), app: "#000000", raised: "#111111", overlay: "#141414", text2: "#f0f0f0", info: "#6cc4ff", fixedAccent: true },
+  { id: "contrast-light", name: "Hoher Kontrast Hell", dark: false, colors: c("#ffffff", "#f2f2f2", "#000000", "#383838", "#6e6e6e", "#0037da", "#005a18", "#6b4100", "#9a001c"), app: "#e6e6e6", text2: "#1a1a1a", info: "#004f8a", fixedAccent: true },
+  { id: "contrast-dark", name: "Hoher Kontrast Dunkel", dark: true, colors: c("#000000", "#0b0b0b", "#ffffff", "#d6d6d6", "#8c8c8c", "#1aebff", "#3ff23f", "#ffd500", "#ff8585"), app: "#000000", raised: "#111111", overlay: "#141414", text2: "#f0f0f0", info: "#6cc4ff", fixedAccent: true },
 ];
 
 export const DEFAULT_LIGHT = "arcalo-light";

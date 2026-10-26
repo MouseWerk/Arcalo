@@ -586,8 +586,10 @@ mod tests {
 
     #[test]
     fn ticking_off_with_text_after_the_done_marker() {
-        // A multi-byte character within the first 10 bytes after ✅ (no date there) must not panic.
-        for rest in ["✅ erledigt äh", "✅ 🎉🎉🎉", "✅ ✅ ✅ ✅"] {
+        // A multi-byte character within the first 10 bytes after the done marker (no date there) must not panic.
+        for rest in
+            ["\u{2705} erledigt äh", "\u{2705} \u{1F389}\u{1F389}\u{1F389}", "\u{2705} \u{2705} \u{2705} \u{2705}"]
+        {
             let md = format!("- [ ] Rechnung prüfen every:monthly due:2026-10-05 {rest}\n");
             let out = one(&md, 0, TaskEdit::Done { done: true });
             let lines: Vec<&str> = out.lines().collect();

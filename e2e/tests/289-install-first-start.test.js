@@ -6,11 +6,10 @@
 // ones named like Annalo, stay as they are (the 1.17 cleanup only takes the old identifier's).
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded, homeDataDir } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, homeDataDir, stopStarted, startProcess } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
@@ -24,13 +23,6 @@ const tmp = (name) => {
 const ID = "de.mousewerk.arcalo";
 // The cleanup of the old identifier's folders runs a second after the start (default: 10 s).
 const ENV = { ARCALO_SECRET_STORE: "file", ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_CLEANUP_DELAY_SECS: "1" };
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 const overlay = () => app.browser.execute(() => !!document.querySelector(".fr-overlay"));
 /** Every file and folder below `dir` (relative), sorted. */
 function tree(dir) {
@@ -48,7 +40,7 @@ function tree(dir) {
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -120,7 +112,7 @@ test("a data folder that cannot be created: the recovery dialog, exit code 1, no
   fs.writeFileSync(path.join(blocked, ".local"), "kein Ordner");
   const env = appEnv(homeDataDir(blocked), { demo: false, home: blocked, env: { ...ENV, ARCALO_TEST_RECOVERY_CHOICE: "quit" } });
   let stderr = "";
-  const child = spawn(APP, [], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const child = startProcess(APP, [], { env, stdio: ["ignore", "ignore", "pipe"] });
   child.stderr.on("data", (d) => (stderr += d));
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve("timeout"), 30000);

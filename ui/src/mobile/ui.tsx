@@ -1,10 +1,11 @@
 // Small building blocks of the companion app's screens: the screen header, cards, list rows,
 // segmented choices, empty states. Touch targets are at least 44 px (mobile.css).
 
-import type { ReactNode } from "react";
-import { ChevronLeft, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Check, ChevronDown, ChevronLeft, X } from "lucide-react";
 import { t } from "../lib/i18n";
-import { useMobile } from "./context";
+import { useBackLayer, useMobile } from "./context";
 
 /** The header of a screen: a back (or close) button on stacked screens, the title, actions. */
 export function Header(p: { title: string; eyebrow?: string; back?: "back" | "close"; actions?: ReactNode }) {
@@ -49,6 +50,50 @@ export function Segmented<V extends string>(p: { value: V; options: { value: V; 
         </button>
       ))}
     </div>
+  );
+}
+
+/** A choice from a longer list: a field that opens a sheet of the options from the bottom (the
+ *  system's picker of a `<select>` would be a foreign Android dialog). Back and a tap beside the
+ *  sheet close it without a change. */
+export function Choice(p: { id?: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; label: string }) {
+  const [open, setOpen] = useState(false);
+  useBackLayer(open, () => setOpen(false));
+  const picked = p.options.find((o) => o.value === p.value);
+  return (
+    <>
+      <button id={p.id} type="button" className="m-input m-choice" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(true)}>
+        <span className="m-choice-label">{picked?.label ?? p.value}</span>
+        <ChevronDown size={18} aria-hidden="true" />
+      </button>
+      {open &&
+        createPortal(
+          <div className="m-choice-scrim" onClick={() => setOpen(false)}>
+            <div className="m-choice-sheet" role="dialog" aria-modal="true" aria-label={p.label} onClick={(e) => e.stopPropagation()}>
+              <div className="m-choice-title">{p.label}</div>
+              <div className="m-choice-list" role="listbox" aria-label={p.label}>
+                {p.options.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="option"
+                    aria-selected={o.value === p.value}
+                    className={o.value === p.value ? "m-choice-opt on" : "m-choice-opt"}
+                    onClick={() => {
+                      setOpen(false);
+                      if (o.value !== p.value) p.onChange(o.value);
+                    }}
+                  >
+                    <span className="m-choice-label">{o.label}</span>
+                    {o.value === p.value && <Check size={18} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

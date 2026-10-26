@@ -2018,7 +2018,7 @@ body.presenter-window .presenter { height: 100vh; }
 .calv-ev.short .calv-ev-title { display: block; flex: 0 1 auto; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
 .calv-ev.short .calv-ev-time { flex: none; }
 /* Running now: a small dot before the time. */
-.calv-ev.live .calv-ev-time::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ev) 25%, transparent); }
+.calv-ev.live .calv-ev-time::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev); }
 /* Over: half the tint, the title in the secondary color. */
 .calv-ev.past { --ev-fill: color-mix(in srgb, var(--ev) calc(var(--ev-tint) / 2), var(--bg-canvas)); --ev-bar: color-mix(in srgb, var(--ev) 55%, var(--bg-canvas)); --ev-title: var(--ev-meta); }
 .calv-ev.past .calv-ev-title { font-weight: var(--fw-medium); }

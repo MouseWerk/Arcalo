@@ -6,11 +6,10 @@
 // gives a plain SQLite file again.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, stopStarted, startProcess } from "../lib/harness.js";
 import { germanLeftovers } from "../lib/english.js";
 
 let app;
@@ -25,13 +24,6 @@ const secretsFile = path.join(dataDir, "secrets.json");
 const ENV = { ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_SECRET_STORE: "file" };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 const log = () => {
   try {
     return fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8");
@@ -59,7 +51,7 @@ async function afterRestart(what, re, before) {
   await sleep(2500);
   await app?.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(600);
 }
 /** Clicks a button that restarts the app (the click's answer would never come back). */
@@ -79,12 +71,12 @@ let pageCount;
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 test("encrypting a workspace with sample data keeps every row and leaves no plain text", async () => {
-  killApp();
+  stopStarted();
   await sleep(800);
   app = await launch({ demo: true, dataDir, env: ENV });
   const page = await app.invoke("page_create", { parentId: null, title: "Geheime Notiz", icon: null, content: "Kontonummer 4711-0815" });
@@ -138,7 +130,7 @@ test("encrypting a workspace with sample data keeps every row and leaves no plai
 test("without the key the recovery screen opens the workspace with the recovery key (English)", async () => {
   await app.close();
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
   // A new computer: the credential is gone.
   const secrets = JSON.parse(fs.readFileSync(secretsFile, "utf8"));
@@ -170,7 +162,7 @@ test("without the key the recovery screen opens the workspace with the recovery 
   await sleep(2500);
   await app.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
   assert.match(fs.readFileSync(secretsFile, "utf8"), /"db_key"/, "stored again");
   app = await start();
@@ -187,26 +179,26 @@ test("an encrypted backup restores from the settings and from the start-up recov
   await sleep(2500);
   await app.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
   app = await start();
   let now = await titles();
   assert.ok(now.includes("Geheime Notiz") && !now.includes("Nach der Sicherung"), `restored: ${now}`);
   await app.close();
   app = null;
-  killApp();
+  stopStarted();
 
   // A broken database: the recovery restores the newest (encrypted) backup, which opens with the key.
   for (const f of ["workspace.db-wal", "workspace.db-shm"]) fs.rmSync(path.join(dataDir, f), { force: true });
   fs.writeFileSync(db, Buffer.from("kein SQLite\n".repeat(300)));
-  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ...ENV, ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
+  const child = startProcess(APP, [], { env: appEnv(dataDir, { demo: false, env: { ...ENV, ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
   const exit = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 40000);
     child.on("exit", (c) => (clearTimeout(timer), resolve(c)));
   });
   assert.equal(exit, 0, "restored and restarted");
   await sleep(2500);
-  killApp();
+  stopStarted();
   await sleep(500);
   assert.ok(!isPlain(db), "the restored database is encrypted");
   app = await start();
@@ -224,7 +216,7 @@ test("decrypting gives a plain SQLite file with the same data", async () => {
   await sleep(2500);
   await app.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
   assert.ok(isPlain(db), "plain again");
   app = await start();

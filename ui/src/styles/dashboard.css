@@ -506,7 +506,6 @@
 .dws-control > .input, .dws-control > .select, .dws-control > .dws-picker, .dws-control > .dws-checks, .dws-control > .dws-pinned { width: 100%; }
 .dws-checks { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
 .dws-check { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); cursor: pointer; }
-.dws-check input { accent-color: var(--accent); margin: 0; }
 .dws-picker, .dws-pinned { display: grid; gap: 6px; }
 .dws-chosen { display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-hover); font-size: var(--fs-sm); }
 .dws-hits { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-overlay); box-shadow: var(--shadow-md); }
@@ -597,7 +596,7 @@
 .dw-scratch:hover .dw-scratch-tools, .dw-scratch-tools:focus-within { opacity: 1; }
 .dw-scratch .dw-md ul:has(> li > .dw-scratch-check) { list-style: none; padding-left: 2px; }
 .dw-scratch .dw-md li:has(> .dw-scratch-check) { display: flex; align-items: baseline; gap: 8px; }
-.dw-scratch-check { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--accent-strong); cursor: pointer; transform: translateY(2px); }
+.dw-scratch-check { transform: translateY(2px); }
 .dw-scratch li:has(> .dw-scratch-check:checked) { color: var(--text-3); text-decoration: line-through; }
 
 /* Posteingang */
@@ -621,7 +620,7 @@
 .dw-random-head .dw-sub { margin: 0; }
 .dw-random-card {
   display: grid; gap: 4px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
+  background: var(--bg-raised); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .dw-random-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 .dw-random-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); min-width: 0; }

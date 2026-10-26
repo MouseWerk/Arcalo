@@ -1022,7 +1022,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
           <>
             <IconButton icon={Undo2} label={`${t("canvas.undo")} (${keys("Mod Z")})`} disabled={!history.current.canUndo} onClick={undo} />
             <IconButton icon={Redo2} label={`${t("canvas.redo")} (${keys("Mod Shift Z")})`} disabled={!history.current.canRedo} onClick={redo} />
-            <IconButton icon={MoreHorizontal} label={t("canvas.export")} onClick={(e) => exportMenu(e.currentTarget)} />
+            <IconButton icon={MoreHorizontal} label={t("canvas.export")} aria-haspopup="menu" onClick={(e) => exportMenu(e.currentTarget)} />
           </>
         }
       />

@@ -305,9 +305,9 @@ describe("tasks in a page (A19)", () => {
   });
 
   it("adds the next occurrence of a repeating task below it and its subtasks", () => {
-    const md = '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> ✅ 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Danach';
+    const md = '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Danach';
     expect(withNextOccurrence(md, 0, "2026-10-19")).toBe(
-      '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> ✅ 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach',
+      '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach',
     );
     // Without a date: one is added; Windows line ends stay.
     expect(withNextOccurrence("- [x] Gießen wdh:täglich\r\nEnde", 0, "2026-10-13")).toBe("- [x] Gießen wdh:täglich\r\n- [ ] Gießen wdh:täglich due:2026-10-13\r\nEnde");

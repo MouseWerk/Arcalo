@@ -87,7 +87,7 @@ Root cause: `next_line` slices `&date[..10]` after checking `date.len() >= 10` (
 Fix: `date.get(..10).filter(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())`. Worth a grep for
 the same pattern elsewhere (none other found in core).
 
-Guard test: `taskedit` unit test with `✅ erledigt äh` and `✅ 🎉🎉🎉`: no panic, next occurrence added,
+Guard test: `taskedit` unit test with `✅ erledigt äh` and `✅` followed by three party poppers (U+1F389): no panic, next occurrence added,
 the text after the marker kept.
 
 ## C4 (high): The start page shows the flat daily target: own weekday targets, public holidays and absences are ignored („Heute“, „Zeit diese Woche“, week proposal total) — fixed in 1.16 (fc0d995, dashboard test start_page_targets_follow_…)

@@ -86,7 +86,7 @@
 }
 .input::placeholder { color: var(--text-3); }
 .input:hover { border-color: color-mix(in srgb, var(--border-strong) 50%, var(--text-3)); }
-.input:focus { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
+.input:focus-visible { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
 .input:disabled { opacity: 0.55; }
 .input[aria-invalid="true"], .input[data-invalid] { border-color: color-mix(in srgb, var(--danger) 60%, transparent); }
 /* Number fields: no spinner buttons (the arrow keys still step); the value stays readable. */

@@ -37,8 +37,15 @@ jobs:
       # The update installer (AppImage replacement against a file in a temp folder).
       - run: cargo test -p arcalo --lib installer
       - run: npm ci --prefix ui && npm run --prefix ui typecheck && npm test --prefix ui
-      # The automatic release's choice of version (auto-release.yml) and the APK signer of the Android feed.
-      - run: node --test scripts/release-pick.test.mjs scripts/apk-signer.test.mjs scripts/e2e-conventions.test.mjs
+      # The owner as author, no trailers (CLAUDE.md), on the commits of each push.
+      - name: Commit rules
+        if: github.event_name == 'push'
+        env:
+          COMMITS: ${{ toJSON(github.event.commits) }}
+        run: node scripts/commit-rules.mjs
+      # The automatic release's choice of version (auto-release.yml), the APK signer of the Android
+      # feed, the e2e conventions, the release notes' shape and the commit rules.
+      - run: node --test scripts/release-pick.test.mjs scripts/apk-signer.test.mjs scripts/e2e-conventions.test.mjs scripts/release-notes.test.mjs scripts/commit-rules.test.mjs
       - run: cargo install tauri-driver --locked
       - name: End-to-end tests against the desktop app
         run: npm ci --prefix e2e && e2e/run.sh
@@ -242,3 +249,55 @@ jobs:
     name: iOS
     uses: ./.github/workflows/ios.yml
     secrets: inherit
+
+  # The Android app (docs/android.md): the APK as the release builds it, and the debug APK of the
+  # emulator tests.
+  android:
+    name: Android
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  # The Android app on an emulator (e2e/android): the debug APK of the Android job, measured at
+  # 360x800 and 412x915 dp over the WebView's DevTools socket (android/phone.test.js), and a
+  # screenshot tour of every screen, menu and sheet in light and dark (android/tour.test.js) with
+  # the stock Android UI found on them. The screenshots and the findings are kept.
+  android-e2e:
+    name: Android emulator (phone screens)
+    needs: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The emulator needs hardware acceleration: KVM for the runner's user.
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: npm ci --prefix e2e
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcalo-android-debug
+          path: apk
+      - name: Phone tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
+          script: cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" timeout 4800 node --test --test-concurrency=1 --test-force-exit --test-reporter=spec android/phone.test.js android/tour.test.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-screenshots
+          path: |
+            e2e/screenshots/android
+            e2e/screenshots/FAIL-*
+          if-no-files-found: warn

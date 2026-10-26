@@ -306,7 +306,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
                     <Icon size={13} className="coll-th-icon" aria-hidden />
                     <span className="coll-th-label">{fieldLabel(k)}</span>
                     {sorted && (sorted === "auf" ? <ArrowUp size={12} className="coll-th-sort" aria-hidden /> : <ArrowDown size={12} className="coll-th-sort" aria-hidden />)}
-                    <button type="button" className="coll-th-menu" aria-label={t("coll.menuOf", { field: fieldLabel(k) })} onClick={(e) => ctx.propMenu(k, e.currentTarget.closest("th")!)}>
+                    <button type="button" className="coll-th-menu" aria-haspopup="menu" aria-label={t("coll.menuOf", { field: fieldLabel(k) })} onClick={(e) => ctx.propMenu(k, e.currentTarget.closest("th")!)}>
                       <ChevronDown size={13} />
                     </button>
                   </div>

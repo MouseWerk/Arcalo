@@ -9,11 +9,11 @@
 // by terminal commands names them at the next start.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { launch, guarded, APP } from "../lib/harness.js";
+import { launch, guarded, APP, startProcess } from "../lib/harness.js";
 import { startFeed, throwawayKey } from "../lib/update-feed.js";
 
 const test = guarded(nodeTest, () => app);
@@ -64,7 +64,7 @@ async function start(dir, waitSecs) {
 
 /** `arcalo pages create <title> --stdin` on the app's workspace: runs until its text is sent. */
 function longCommand(dir, title) {
-  const child = spawn(APP, ["--json", "pages", "create", title, "--stdin"], {
+  const child = startProcess(APP, ["--json", "pages", "create", title, "--stdin"], {
     env: { ...process.env, ARCALO_DATA_DIR: dir, XDG_DATA_HOME: path.join(dir, "xdg-data"), ARCALO_LOCALE: "de-DE" },
     stdio: ["pipe", "pipe", "pipe"],
   });

@@ -279,7 +279,7 @@ export function FieldControl({ issue, field, value, onChange, onSave, onCancel, 
         <div className="iv-checks" role="group" aria-label={label} onKeyDown={keyDown}>
           {field.allowed.map((c) => (
             <label key={c.id} className="iv-check">
-              <input type="checkbox" checked={ids.includes(c.id)} onChange={(e) => onChange({ t: "choices", v: e.target.checked ? [...ids, c.id] : ids.filter((x) => x !== c.id) })} />
+              <input type="checkbox" className="check" checked={ids.includes(c.id)} onChange={(e) => onChange({ t: "choices", v: e.target.checked ? [...ids, c.id] : ids.filter((x) => x !== c.id) })} />
               <span>{c.label}</span>
             </label>
           ))}

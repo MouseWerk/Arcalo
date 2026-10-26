@@ -159,6 +159,11 @@ export function MobileApp() {
   useEffect(() => {
     if (ready) takeShared();
   }, [ready, takeShared]);
+  // The settings are loaded and the first screen is drawn: the splash goes (lib/splash.ts waits
+  // for body.ready, else for its 8 s limit).
+  useEffect(() => {
+    if (ready) document.body.classList.add("ready");
+  }, [ready]);
 
   // Back in front: sync (at most every two minutes), show fresh numbers, take shared text.
   const gs = view?.settings.git_sync;

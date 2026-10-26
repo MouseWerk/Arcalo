@@ -1,5 +1,10 @@
 // Starts the real Arcalo desktop binary under tauri-driver and returns a
 // WebdriverIO session. Each call uses a fresh, isolated data directory.
+//
+// Processes: only what this run started is stopped. tauri-driver (with the WebDriver and the app
+// below it) and every app a test starts without WebDriver run in a process group of their own
+// (`startProcess`); an app that restarts itself stays in its group. Nothing is killed by name or
+// pattern: other runs may share the machine.
 
 import { spawn, execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +14,6 @@ import path from "node:path";
 import { remote } from "webdriverio";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-// Resolved, so `pkill -f APP` also matches an app that restarted itself (it runs as its real path).
 export const APP = path.resolve(process.env.ARCALO_APP ?? path.join(ROOT, "target/debug/arcalo"));
 /**
  * The first editor on screen. A kept tab keeps its editor in the document while hidden, and kept
@@ -30,6 +34,47 @@ function ensureXvfb() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** The process groups this run started (their leaders' PIDs), until they are empty. */
+const groups = new Set();
+
+/** Signals the process group `pgid`; false (and forgotten) once nothing of it runs any more. */
+function signalGroup(pgid, signal) {
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    groups.delete(pgid);
+    return false;
+  }
+}
+
+/** Waits until the group `pgid` has ended; SIGKILL for what is left after `timeout` ms. */
+async function groupEnded(pgid, timeout = 5000) {
+  const begun = Date.now();
+  while (signalGroup(pgid, 0)) {
+    if (Date.now() - begun > timeout) {
+      signalGroup(pgid, "SIGKILL");
+      await sleep(200);
+      return;
+    }
+    await sleep(100);
+  }
+}
+
+/** Starts a program in a process group of its own that `stopStarted` (and the end of the run) stops. */
+export function startProcess(command, args, options = {}) {
+  const child = spawn(command, args, { ...options, detached: true });
+  if (child.pid) groups.add(child.pid);
+  return child;
+}
+
+/** Sends `signal` to everything this run started that still runs (apps, drivers, restarted apps). */
+export function stopStarted(signal = "SIGTERM") {
+  for (const pgid of [...groups]) signalGroup(pgid, signal);
+}
+
+process.on("exit", () => stopStarted("SIGKILL"));
 
 /**
  * A session bus of this test run's own, with no services on it. Without one the app reaches
@@ -123,19 +168,23 @@ export const budget = (local, ci = Math.round(local * 1.6)) => (process.env.CI ?
 
 /** Wraps node:test's `test` so a failing test leaves a screenshot and the editor DOM behind. */
 export function guarded(test, getApp) {
-  return (name, fn) =>
-    test(name, async (t) => {
+  return (name, options, body) => {
+    // `options` of node:test (`{ timeout }`, a picture selection's `{ skip }`) may come before the body.
+    const fn = typeof options === "function" ? options : body;
+    return test(name, typeof options === "function" ? {} : options, async (t) => {
       try {
         await fn(t);
       } catch (e) {
         const app = getApp();
         const slug = name.replace(/[^a-z0-9]+/gi, "-").slice(0, 60);
         await app?.browser.saveScreenshot(path.join(SHOTS, `FAIL-${slug}.png`)).catch(() => {});
-        const dom = await app?.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "");
+        // A phone test's app (e2e/android) has a screenshot but no WebDriver session.
+        const dom = typeof app?.browser?.execute === "function" ? await app.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "") : "";
         if (dom) fs.writeFileSync(path.join(SHOTS, `FAIL-${slug}.html`), dom);
         throw e;
       }
     });
+  };
 }
 
 /**
@@ -221,7 +270,7 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
   const opened = path.join(os.tmpdir(), `arcalo-e2e-opened-${process.pid}-${++launches}.log`);
   const env = { ...appEnv(dataDir, { demo, onboarding, env: extraEnv, home }), ARCALO_E2E_OPENED: opened };
   const started = Date.now();
-  const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const driver = startProcess("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
   driver.stderr.on("data", (d) => (driverErr += d));
   await waitForPort(port);
@@ -377,7 +426,7 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         window.__arcaloOldDocument = true;
         if (h != null) location.hash = h;
         location.reload();
-      }, hash);
+      }, hash ?? null);
       await browser.waitUntil(
         async () => {
           try {
@@ -426,15 +475,15 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     async consoleErrors() {
       return browser.execute(() => window.__arcaloErrors ?? []);
     },
+    /** Sends `signal` to the app, its WebDriver and tauri-driver (SIGKILL: a crash or power cut). */
+    kill(signal = "SIGKILL") {
+      signalGroup(driver.pid, signal);
+    },
     async close() {
       await browser.deleteSession().catch(() => {});
-      driver.kill("SIGTERM");
-      await sleep(300);
-      try {
-        execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-      } catch {
-        /* already gone */
-      }
+      // tauri-driver, the WebDriver and the app (also one that restarted itself) end together.
+      signalGroup(driver.pid, "SIGTERM");
+      await groupEnded(driver.pid);
       // Helpers the app started (xdg-open, WebKit caches) may still write for a moment.
       if (!given) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       const handed = app.opened();

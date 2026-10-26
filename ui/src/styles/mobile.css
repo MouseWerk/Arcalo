@@ -8,6 +8,15 @@ html.mobile body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* A phone scrolls with overlay bars: the desktop's 10 px scrollbars (base.css) would narrow every
+   screen and show a gutter, and no area stretches or glows at its ends. */
+html.mobile ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+html.mobile * {
+  overscroll-behavior: contain;
+}
 html.mobile body {
   font-size: var(--fs-lg);
   background: var(--bg-app);
@@ -455,19 +464,125 @@ html.mobile body {
   font-size: var(--fs-lg);
   user-select: text;
 }
-.m-input:focus,
-.m-textarea:focus {
+.m-input:focus-visible,
+.m-textarea:focus-visible {
   outline: none;
   border-color: var(--border-focus);
   box-shadow: var(--focus-halo);
 }
-select.m-input {
-  appearance: none;
-  padding-right: var(--sp-6);
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%), linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
-  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
+.m-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: left;
+  color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.m-choice > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.m-choice-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The references that match what is typed, below the field. */
+.m-suggest {
+  display: grid;
+  margin-top: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.m-suggest-opt {
+  display: grid;
+  gap: 2px;
+  min-height: var(--touch-min);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.m-suggest-opt:active {
+  background: var(--bg-active);
+}
+.m-suggest-opt + .m-suggest-opt {
+  border-top: 1px solid var(--border);
+}
+.m-suggest-main {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.m-suggest-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The sheet of a choice: from the bottom, above the tab bar, over a dimmed screen. */
+.m-choice-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: flex-end;
+  /* Black dims in every theme, like the desktop's dialogs. */
+  background: rgb(0 0 0 / 0.45);
+}
+.m-choice-sheet {
+  width: 100%;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-3) 0 calc(var(--sp-3) + env(safe-area-inset-bottom));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-lg);
+}
+.m-choice-title {
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+.m-choice-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.m-choice-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-lg);
+  text-align: left;
+  user-select: none;
+  cursor: pointer;
+}
+.m-choice-opt:active {
+  background: var(--bg-active);
+}
+.m-choice-opt.on {
+  background: var(--bg-selected);
+  font-weight: var(--fw-semibold);
+}
+.m-choice-opt > svg {
+  flex: none;
+  color: var(--text-2);
 }
 .m-textarea {
   resize: none;

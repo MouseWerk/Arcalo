@@ -67,7 +67,7 @@ export function NotesScreen() {
       <div className="m-toolbar">
         <label className="m-search">
           <Search size={18} />
-          <input type="search" value={query} placeholder={t("mob.notes.searchPlaceholder")} aria-label={t("mob.notes.search")} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
+          <input type="search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={query} placeholder={t("mob.notes.searchPlaceholder")} aria-label={t("mob.notes.search")} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
           {query && (
             <button type="button" className="m-icon-btn m-icon-btn-quiet" aria-label={t("common.clear")} onClick={() => setQuery("")}>
               <X size={18} />
