@@ -5,7 +5,7 @@
 // one applies, a received meeting stays read-only with „In Outlook öffnen“, an organized meeting
 // asks before the update goes to its attendees, a change Outlook refuses waits until it is
 // discarded, Enter in a time field takes the typed time, also while a new appointment gets its key
-// from Outlook. Switched off, nothing can be changed. The panels
+// from Outlook (also when its answer comes with that list). Switched off, nothing can be changed. The panels
 // are checked in light, dark and high-contrast themes.
 import { test as nodeTest, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -254,6 +254,61 @@ test("a time being typed in a new appointment's panel stays when Outlook gives i
   await app.keys(["Enter"]);
   const { entryId } = entryWrites().find((x) => x.op === "create" && x.fields.subject === "Termin mit Schlüssel");
   await waitWrite((x) => x.op === "update" && x.entryId === entryId && x.fields?.end?.endsWith("T20:45:00"), "the typed end was not written");
+});
+
+test("a new appointment whose answer comes with the list that has its real key opens all the same", async () => {
+  // A busy computer: the answer of the new appointment and the list read after Outlook gave it its
+  // real key arrive together (one render, the list last). Held back in the page and let go so.
+  await app.browser.execute((title) => {
+    // The IPC goes through fetch (ipc://localhost/<command>); its answers are held back here.
+    const fetch = window.fetch;
+    // The Kalender reads its list, the time entries and the overview together: one round.
+    const READ = ["calendar_events", "time_entries", "daily_overview"];
+    let created = null;
+    let answer = null;
+    let round = null;
+    window.fetch = (input, init) => {
+      const cmd = decodeURIComponent(String(input?.url ?? input).split("?")[0].split("/").pop());
+      const call = fetch.call(window, input, init);
+      if (cmd === "calendar_entry_create" && String(init?.body ?? "").includes(title)) {
+        created = call;
+        return new Promise((done, fail) => (answer = () => call.then(done, fail)));
+      }
+      if (!created || !READ.includes(cmd)) return call;
+      if (cmd === "calendar_events") round = [];
+      const r = round;
+      if (!r) return call;
+      const i = r.push(null) - 1;
+      return new Promise((done, fail) => {
+        call.then(async (res) => ({ res, body: cmd === "calendar_events" ? await res.clone().json() : null }), (err) => ({ err })).then(async (got) => {
+          r[i] = { cmd, got, go: () => ("err" in got ? fail(got.err) : done(got.res)) };
+          if (r.length < READ.length || r.some((x) => !x)) return;
+          const list = r.find((x) => x.cmd === "calendar_events").got.body ?? [];
+          if (answer && list.some((x) => x.title === title && !x.key.includes("|arcalo-entry-"))) {
+            // The answer and then the round, in one go.
+            await created.catch(() => {});
+            window.fetch = fetch;
+            answer();
+            answer = null;
+            window.__heldRound = r.length;
+          }
+          for (const x of r) x.go();
+        });
+      });
+    };
+  }, "Termin im selben Takt");
+  await app.click(".calv-head h1");
+  await app.keys(["Escape"]);
+  await app.keys(["n"]);
+  await app.waitFor(".calv-entry-editor");
+  await app.type("Termin im selben Takt");
+  await app.keys(["Enter"]);
+  await app.browser.waitUntil(() => app.browser.execute(() => window.__heldRound === 3), { timeoutMsg: "the answer and the round did not come together" });
+  await sleep(500);
+  assert.equal(await app.browser.execute(() => document.querySelector(".calv-detail .calv-entry-name")?.value), "Termin im selben Takt", "its panel is open");
+  const shown = await app.browser.execute(() => [...document.querySelectorAll(".calv-col .calv-ev")].filter((el) => el.querySelector(".calv-ev-title")?.textContent === "Termin im selben Takt").map((el) => [el.getAttribute("data-key"), el.getAttribute("aria-expanded")]));
+  assert.equal(shown.length, 1, `shown once: ${JSON.stringify(shown)}`);
+  assert.ok(!shown[0][0].includes("|arcalo-entry-") && shown[0][1] === "true", `selected under its real key: ${JSON.stringify(shown)}`);
 });
 
 test("renamed, moved and resized: Outlook gets only what changed", async () => {

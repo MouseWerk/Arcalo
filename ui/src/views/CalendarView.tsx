@@ -67,10 +67,18 @@ const session: { anchor: Date | null; selected: string | null } = { anchor: null
 const entryEnd = (x: TimeEntryRow) => new Date(new Date(x.start_time).getTime() + (x.duration_minutes ?? 0) * 60000).toISOString();
 const entryRef = (x: TimeEntryRow) => `${x.netzplan_nr}${x.vorgang_nr ? `/${x.vorgang_nr}` : ""}`;
 
+/** Whether `e` is the new appointment `was` (under its own key) as Outlook has it, with its real key. */
+const becameOf = (was: CalendarEvent, e: CalendarEvent) =>
+  was.key.includes("|arcalo-entry-") && !e.key.includes("|arcalo-entry-") && e.source === was.source && e.title === was.title && e.start === was.start;
+
+/** `list` with the appointment `key` replaced by `e`, added, or removed (`e` null). */
+const patched = (list: CalendarEvent[], key: string, e: CalendarEvent | null) =>
+  e ? (list.some((x) => x.key === key) ? list.map((x) => (x.key === key ? { ...e, editable: e.editable ?? x.editable } : x)) : [...list, e]) : list.filter((x) => x.key !== key);
+
 /** The appointment a new one (`selected`, last shown as `was`) became once Outlook has it, or null. */
 export function successor(events: CalendarEvent[], selected: string | null, was: CalendarEvent | null): CalendarEvent | null {
-  if (!selected?.includes("|arcalo-entry-") || was?.key !== selected) return null;
-  return events.find((e) => e.source === was.source && e.title === was.title && e.start === was.start && !e.key.includes("|arcalo-entry-")) ?? null;
+  if (!was || was.key !== selected) return null;
+  return events.find((e) => becameOf(was, e)) ?? null;
 }
 
 export function CalendarView() {
@@ -252,8 +260,7 @@ export function CalendarView() {
     }
   };
   // Appointments changed here: shown at once, then as the backend has them.
-  const patchEvent = (key: string, e: CalendarEvent | null) =>
-    setEvents((list) => (e ? (list.some((x) => x.key === key) ? list.map((x) => (x.key === key ? { ...e, editable: e.editable ?? x.editable } : x)) : [...list, e]) : list.filter((x) => x.key !== key)));
+  const patchEvent = (key: string, e: CalendarEvent | null) => setEvents((list) => patched(list, key, e));
   const changeEntry = (e: CalendarEvent, p: EntryFields) => void saveEntry(e, p, patchEvent);
   const removeEntry = (e: CalendarEvent) => {
     if (selected === e.key) setSelected(null);
@@ -530,7 +537,10 @@ export function CalendarView() {
               onClose={() => setDraft(null)}
               onCreated={(e) => {
                 setDraft(null);
-                patchEvent(e.key, e);
+                // Outlook may have it already: the list read after the write can come before this
+                // answer (and then it is not added twice). Followed from here, shown or not.
+                setEvents((list) => (list.some((x) => becameOf(e, x)) ? list : patched(list, e.key, e)));
+                lastShown.current = e;
                 setSelected(e.key);
               }}
             />
