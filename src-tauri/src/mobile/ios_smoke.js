@@ -48,9 +48,23 @@
     const outside = r.top < inset.top - 0.5 || r.left < inset.left - 0.5 || r.right > vw - inset.right + 0.5 || r.bottom > vh - inset.bottom + 0.5;
     if (outside) bad.push(describe(el, r));
   }
+  // Why a reading looks the way it does: whether the app finished its start (`body.ready`, App.tsx,
+  // MobileApp.tsx), how long the page has been loaded, the first-start overlay's phase, and how
+  // often the page went over between the phone and the full app (lib/uiswitch.ts).
+  let switches = null;
+  try {
+    switches = JSON.parse(sessionStorage.getItem("arcalo.uiswitch.times") || "[]").length;
+  } catch {
+    /* no session storage */
+  }
+  const overlay = document.querySelector(".fr-overlay");
   const width = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0);
   return JSON.stringify({
     page,
+    ready: !!document.body && document.body.classList.contains("ready"),
+    loadedMs: Math.round(performance.now()),
+    firstRun: overlay ? (overlay.className.match(/fr-phase-(\w+)/) || [])[1] || "on" : null,
+    switches,
     ui: phone ? "phone" : "full",
     ribbon: !!document.querySelector(".ribbon"),
     viewport: { width: vw, height: vh },
