@@ -428,7 +428,7 @@ function Header({ canGoBack, onBack, onClose, loading }: { canGoBack: boolean; o
   const moreItems = (): MenuEntry[] => [
     { label: view.note_page_id ? t("jira.openNote") : t("jira.createNote", { key: issue.key }), icon: FileText, onSelect: () => (useIssueModal.getState().close(), void openIssueNote(issue.key)) },
     { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(issue.key) },
-    { label: t("iv.copyLink"), icon: Copy, onSelect: () => void copyText(issue.url).then(() => s().toast({ tone: "success", title: t("iv.linkCopied") })) },
+    { label: t("iv.copyLink"), icon: Copy, onSelect: () => void copyText(issue.url).then(() => s().toast({ tone: "success", title: t("iv.linkCopied") }), (e) => s().error(t("common.copyFailed"), e)) },
     { label: t("jira.addTask"), icon: ListPlus, onSelect: () => void addIssueTask(issue.key) },
     "separator",
     { label: t("iv.reload"), icon: RefreshCw, onSelect: reload },

@@ -748,19 +748,47 @@ fn clipboard_text(selection: bool) -> Option<String> {
     (!t.trim().is_empty()).then(|| t.chars().take(20_000).collect())
 }
 
-/// Puts `text` on the clipboard for the UI's copy buttons when the web clipboard refuses it: WebKitGTK
-/// lets a page write only with transient user activation, and a click handled while the app is
-/// busy can arrive without it (the write fails with NotAllowedError). The clipboard stays open for
-/// the whole run, as X11 serves its content from this process.
-#[tauri::command]
-pub fn clipboard_write(text: String) -> std::result::Result<(), String> {
+/// The clipboard for the UI's copies when the web clipboard refuses them: WebKitGTK lets a page
+/// write only with transient user activation, and a click handled while the app is busy can arrive
+/// without it (the write fails with NotAllowedError). It stays open for the whole run, as X11
+/// serves its content from this process.
+fn with_clipboard(
+    f: impl FnOnce(&mut arboard::Clipboard) -> std::result::Result<(), arboard::Error>,
+) -> std::result::Result<(), String> {
     use std::sync::{Mutex, OnceLock};
     static CLIPBOARD: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
     let mut cb = CLIPBOARD.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner());
     if cb.is_none() {
         *cb = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
     }
-    cb.as_mut().map_or(Ok(()), |c| c.set_text(text).map_err(|e| e.to_string()))
+    cb.as_mut().map_or(Ok(()), |c| f(c).map_err(|e| e.to_string()))
+}
+
+/// Puts `text` on the clipboard; with `html` as formatted text (`text` is its plain version).
+#[tauri::command]
+pub fn clipboard_write(text: String, html: Option<String>) -> std::result::Result<(), String> {
+    with_clipboard(|c| match html {
+        Some(html) => c.set_html(html, Some(text)),
+        None => c.set_text(text),
+    })
+}
+
+/// Puts an image on the clipboard: the request body holds its RGBA pixels, the headers its size.
+#[tauri::command]
+pub fn clipboard_write_image(request: tauri::ipc::Request<'_>) -> std::result::Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(rgba) = request.body() else {
+        return Err("no image".into());
+    };
+    let size =
+        |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    let (Some(width), Some(height)) = (size("x-arcalo-width"), size("x-arcalo-height")) else {
+        return Err("no image size".into());
+    };
+    if width == 0 || height == 0 || width.checked_mul(height).and_then(|n| n.checked_mul(4)) != Some(rgba.len()) {
+        return Err("the image size does not match its pixels".into());
+    }
+    let image = arboard::ImageData { width, height, bytes: std::borrow::Cow::Borrowed(rgba) };
+    with_clipboard(|c| c.set_image(image))
 }
 
 /// Esc, or the capture was stored.

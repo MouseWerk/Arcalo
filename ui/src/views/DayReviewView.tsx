@@ -263,9 +263,10 @@ export function DayReviewView() {
                             icon={copied ? Check : Copy}
                             className="rv-copy"
                             onClick={() => {
-                              void copyText(summaryText);
-                              setCopied(true);
-                              window.setTimeout(() => setCopied(false), 1200);
+                              void copyText(summaryText).then(
+                                () => (setCopied(true), window.setTimeout(() => setCopied(false), 1200)),
+                                (e) => s().error(t("common.copyFailed"), e),
+                              );
                             }}
                           >
                             {copied ? t("common.copied") : t("common.copy")}

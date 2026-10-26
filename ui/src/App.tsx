@@ -271,7 +271,7 @@ export function App() {
           persistent: true,
           title: t("app.captureFailed"),
           detail: `${msg}\n\n${text}`,
-          action: { label: t("app.copyText"), run: () => void copyText(text).catch(() => {}) },
+          action: { label: t("app.copyText"), run: () => void copyText(text).catch((e) => useApp.getState().error(t("common.copyFailed"), e)) },
         }),
       ),
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.

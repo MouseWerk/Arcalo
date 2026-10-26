@@ -21,6 +21,7 @@ export const en = {
   "common.checking": "Checking…",
   "common.copy": "Copy",
   "common.copied": "Copied",
+  "common.copyFailed": "Copy failed",
   "common.delete": "Delete",
   "common.deleteFailed": "Deletion failed",
   "common.saveFailed": "Saving failed",
