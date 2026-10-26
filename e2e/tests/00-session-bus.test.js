@@ -3,13 +3,16 @@
 // bytes: with the bus socket below such a TMPDIR, dbus-daemon did not start, and the app went to
 // the machine's bus. On CI that is a user bus whose desktop portal cannot start: the app took 25 s
 // to start and froze for seconds later on, so a click on a copy button showed no feedback in time.
-import { test } from "node:test";
+import { test as nodeTest } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { appEnv } from "../lib/harness.js";
+import { appEnv, guarded } from "../lib/harness.js";
+
+// No app runs here, so a failure leaves no screenshot.
+const test = guarded(nodeTest, () => null);
 
 test("the app's session bus starts below a deep TMPDIR and answers", () => {
   const deep = path.join(os.tmpdir(), "arcalo-e2e-long", "Benutzer", "maurice.kleindienst", "AppData", "Roaming", "de.mousewerk.arcalo");
