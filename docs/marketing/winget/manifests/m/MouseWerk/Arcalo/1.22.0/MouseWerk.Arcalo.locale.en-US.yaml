@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: MouseWerk.Arcalo
+PackageVersion: 1.22.0
+PackageLocale: en-US
+Publisher: MouseWerk
+PublisherUrl: https://github.com/MouseWerk
+PublisherSupportUrl: https://github.com/MouseWerk/Arcalo/issues
+PrivacyUrl: https://arcalo.mousewerk.de/privacy-app/
+Author: Maurice Kleindienst
+PackageName: Arcalo
+PackageUrl: https://arcalo.mousewerk.de/
+License: MIT
+LicenseUrl: https://github.com/MouseWerk/Arcalo/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Mousewerk, Maurice Kleindienst
+ShortDescription: Local-first notes, tasks, meetings and time tracking with SAP CATS and Jira export and optional AI.
+Description: |-
+  Arcalo is a desktop app for the workday: Markdown notes with [[links]] and backlinks, tasks and projects,
+  meetings from Outlook Classic and ICS calendars, and time tracking. Type /time in any note to book hours on
+  an SAP PS activity or a Jira issue; the weekly timesheet exports to SAP CATS, Jira worklogs, CSV or JSON.
+  Jira issues open inside the app and can be edited there. An Obsidian vault imports as it is. The optional
+  assistant uses the AI providers you add (Ollama, LiteLLM, OpenAI-compatible, Azure OpenAI) or none at all.
+  All data stays in one database on your computer, with no account and no telemetry; Git sync, backups and
+  encryption are optional. Installs per user without admin rights.
+Moniker: arcalo
+Tags:
+  - notes
+  - markdown
+  - time-tracking
+  - timesheet
+  - sap
+  - jira
+  - tasks
+  - calendar
+  - productivity
+  - knowledge-base
+  - local-first
+  - open-source
+ReleaseNotesUrl: https://github.com/MouseWerk/Arcalo/releases/tag/v1.22.0
+Documentations:
+  - DocumentLabel: README
+    DocumentUrl: https://github.com/MouseWerk/Arcalo#readme
+  - DocumentLabel: Documentation
+    DocumentUrl: https://arcalo.mousewerk.de/docs/
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
