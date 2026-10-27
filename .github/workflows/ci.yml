@@ -44,8 +44,8 @@ jobs:
           COMMITS: ${{ toJSON(github.event.commits) }}
         run: node scripts/commit-rules.mjs
       # The automatic release's choice of version (auto-release.yml), the APK signer of the Android
-      # feed, the e2e conventions, the release notes' shape and the commit rules.
-      - run: node --test scripts/release-pick.test.mjs scripts/apk-signer.test.mjs scripts/e2e-conventions.test.mjs scripts/release-notes.test.mjs scripts/commit-rules.test.mjs
+      # feed, the e2e conventions, the release notes' shape, the commit rules and the X poster.
+      - run: node --test scripts/release-pick.test.mjs scripts/apk-signer.test.mjs scripts/e2e-conventions.test.mjs scripts/release-notes.test.mjs scripts/commit-rules.test.mjs scripts/x-post.test.mjs
       - run: cargo install tauri-driver --locked
       - name: End-to-end tests against the desktop app
         run: npm ci --prefix e2e && e2e/run.sh

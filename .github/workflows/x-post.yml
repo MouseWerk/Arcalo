@@ -1,0 +1,95 @@
+name: X post
+
+# One post from docs/marketing/x-queue per run, only after the owner approves it (docs/marketing/x-setup.md).
+# The first job shows the exact text and image in the run summary; the second waits in the environment
+# x-approval (required reviewer: the owner) and posts once approved. A rejected or expired approval posts
+# nothing and leaves the file queued: the next run shows it again.
+on:
+  push:
+    branches: [main]
+    paths: ["docs/marketing/x-queue/**"]
+  schedule:
+    - cron: "5 9 * * *"
+      timezone: "Europe/Berlin"
+  workflow_dispatch:
+
+# One run at a time, none cancelled: a run waiting for approval holds the next one back, so two runs never
+# offer the same file. GitHub keeps one pending run per group, so missed days do not pile up.
+concurrency:
+  group: x-post
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Preview
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      file: ${{ steps.pick.outputs.file }}
+      digest: ${{ steps.pick.outputs.digest }}
+    steps:
+      # The current main, not the commit that started the run: posted.json may have moved on since.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pick the next post and show it
+        id: pick
+        run: |
+          file="$(node scripts/x-post.mjs next)"
+          if [ -z "$file" ]; then
+            echo "Nothing to post: every due file in docs/marketing/x-queue is posted." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          PREVIEW_SHA="$(git rev-parse HEAD)" node scripts/x-post.mjs preview "$file" >> "$GITHUB_STEP_SUMMARY"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "digest=$(node scripts/x-post.mjs digest "$file")" >> "$GITHUB_OUTPUT"
+
+  post:
+    name: Post to X
+    needs: preview
+    if: needs.preview.outputs.file != ''
+    runs-on: ubuntu-24.04
+    # The approval button: the owner is the required reviewer of this environment, which also holds the keys.
+    environment: x-approval
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Refuses a file that is posted already or changed after the preview (--expect).
+      - name: Post
+        env:
+          FILE: ${{ needs.preview.outputs.file }}
+          DIGEST: ${{ needs.preview.outputs.digest }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+        run: node scripts/x-post.mjs post "$FILE" --expect "$DIGEST"
+      # The owner as author, no trailers (CLAUDE.md). Pushes with GITHUB_TOKEN start no further runs.
+      - name: Record in posted.json
+        env:
+          FILE: ${{ needs.preview.outputs.file }}
+        run: |
+          git config user.name "Maurice Kleindienst"
+          git config user.email "kleindiema@gmail.com"
+          git add docs/marketing/x-queue/posted.json
+          git commit -m "X: posted $(basename "$FILE")"
+          for i in 1 2 3 4 5; do
+            git push origin HEAD:main && exit 0
+            sleep $((i * 5))
+            git pull --rebase origin main
+          done
+          echo "::error::Posted, but posted.json could not be pushed. Add this entry by hand before the next run:"
+          git show HEAD -- docs/marketing/x-queue/posted.json
+          exit 1
