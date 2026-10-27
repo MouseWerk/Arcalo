@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gpu: [swiftshader_indirect, guest]
+        gpu: [swiftshader_indirect]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,4 +36,6 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu ${{ matrix.gpu }} -noaudio -no-boot-anim -camera-back none -no-snapshot-save
-          script: cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" N=80 node android/stress-start.mjs
+          script: |
+            sh -c 'while adb get-state >/dev/null 2>&1; do adb logcat -v threadtime; sleep 1; done' > "$GITHUB_WORKSPACE/e2e/logcat.txt" 2>&1 < /dev/null &
+            cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" node android/stress-start.mjs

@@ -23,8 +23,16 @@ import { appBarColors, openApp, ready, seed } from "./app.js";
 const OUT = path.resolve(import.meta.dirname, "../screenshots/android");
 const APK = process.env.ARCALO_APK;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// A failing test leaves the phone's screen behind (FAIL-*.png), as the desktop tests do.
-const test = guarded(nodeTest, () => ({ browser: { saveScreenshot: async (file) => device.screencap(file) } }));
+// A failing test leaves the phone's screen behind (FAIL-*.png), as the desktop tests do, and what
+// the device says (FAIL-*-diagnose.txt: the process, the crash buffer, the end of the log).
+const test = guarded(nodeTest, () => ({
+  browser: {
+    saveScreenshot: async (file) => {
+      device.screencap(file);
+      device.diagnose(file.replace(/\.png$/, "-diagnose.txt"));
+    },
+  },
+}));
 
 before(() => {
   if (APK) device.install(APK);

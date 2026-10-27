@@ -1,27 +1,21 @@
-// Temporary: starts the app many times as openApp does and records what `am start -W` said and
-// when `pidof` first saw the process.
+// Temporary: the dead-app paths of device.start() and the CI logcat reader.
 import * as device from "./device.js";
-import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pidof = () => { try { return execFileSync("adb", ["shell", `pidof ${device.PKG}`], { encoding: "utf8" }).trim(); } catch (e) { return `(exit ${e.status}) ${(e.stdout ?? "").trim()}`; } };
 device.install(process.env.ARCALO_APK);
-const sizes = [[412, 915], [360, 800], [360, 800], [412, 915], [412, 915]];
-const N = Number(process.env.N ?? 80);
-let late = 0, never = 0;
-for (let i = 0; i < N; i++) {
-  const [w, h] = sizes[i % sizes.length];
-  device.fresh();
-  device.setScreen(w, h, 2);
-  const t0 = Date.now();
-  const am = device.shell(`am start -W -n ${device.PKG}/.MainActivity`).replace(/\s+/g, " ").trim();
-  const tAm = Date.now() - t0;
-  const first = pidof();
-  let pid = /^\d/.test(first) ? first : "", waited = 0;
-  while (!pid && waited < 30000) { await sleep(100); waited += 100; const p = pidof(); if (/^\d/.test(p)) pid = p; }
-  const crash = device.adb("logcat", "-d", "-b", "crash").trim();
-  const ps = device.shell(`ps -A -o PID,NAME | grep -i -e arcalo -e pre-init || true`).replace(/\s+/g, " ").trim();
-  if (!/^\d/.test(first)) { if (pid) late++; else never++; }
-  console.log(`#${i} ${w}x${h} am ${tAm}ms first-pidof=[${first}] pid=${pid || "none"} after +${waited}ms | ${am} | ps: ${ps}${crash ? ` | CRASH: ${crash.slice(0, 2000)}` : ""}`);
-  await sleep(1500 + (i % 3) * 1500);
-}
-console.log(`summary: ${N} starts, pidof empty right after am start -W: ${late + never} (process appeared later: ${late}, never: ${never})`);
+device.fresh();
+device.shell("log -t ARCALO_MARK after-clear");
+const pid = await device.start();
+console.log(`started, pid ${pid}`);
+await sleep(3000);
+device.shell(`am crash ${device.PKG}`);
+await sleep(3000);
+console.log(`after am crash: pidOf=${device.pidOf()} crash buffer has the app: ${!!device.appCrash()}`);
+device.diagnose("/tmp/diag.txt");
+// A start whose process dies at once: the crash from the buffer, not a pidof error.
+device.shell(`am start -W -n ${device.PKG}/.MainActivity`);
+try { await device.start(5000); console.log("start after crash: ok (relaunch)"); } catch (e) { console.log(`start after crash: ${e.message.split("\n")[0]}`); }
+device.fresh();
+try { device.shell("am start -W -n de.mousewerk.arcalo/.NoSuchActivity"); console.log("bad activity: am did not error"); } catch (e) { console.log(`bad activity threw: ${e.message.split("\n")[0]}`); }
+const log = fs.readFileSync(`${process.env.GITHUB_WORKSPACE}/e2e/logcat.txt`, "utf8");
+console.log(`logcat.txt: ${log.split("\n").length} lines, marker after clear: ${log.includes("after-clear")}, FATAL: ${/FATAL EXCEPTION/.test(log)}`);
