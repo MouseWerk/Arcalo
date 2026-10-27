@@ -479,10 +479,18 @@ jobs:
           fetch-depth: 0
       # The checkout may leave the tag lightweight; fetch the annotated tag object for its message.
       - run: git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+      # Only the release files: the iOS check's simulator reports and Xcode project stay CI artifacts.
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: release-*
           merge-multiple: true
+      # A failed APK does not hold up the release.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: arcalo-android-apk
+          path: dist
 
       - name: Release notes and update feed
         shell: bash
