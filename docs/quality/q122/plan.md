@@ -30,6 +30,17 @@ fix starts the count again.
 | 1 | 2026-10-25 | run 40220894425: 4 of 5 (round 2: `36-settings-layout` dropdown, F22) | CI 40210972539 and 40220891741: all 6 jobs green, emulator included | F22 | no |
 | 2 | 2026-10-26 | run 40226519835: 5 of 5 (test-side wait, replaced); run 40278419585 on the `Select` fix: 5 of 5 | CI 40278415721: green but the emulator (splash 3.3 s against a 3 s bound on a cold emulator; the bound is now under the 8 s limit) | F22, F23 | no |
 | 3 | 2026-10-26 | (run 40278419585 above is on the same app code) | CI 40285045771: all 6 jobs green, emulator included | none | first clean round (automated part) |
+| 4 | 2026-10-26 | on `main` eb4e06f: run 40308230957 4 of 5 (`390-tray-refresh-deadlock`: the app crashed, tray handles used off the main thread) | CI 40293815598 green | tray crash, copy without feedback (`36-settings-layout`), iOS check race (iPad mini), Kalender panel races (`407`), all fixed on `main` | no |
+| 5 | 2026-10-26 | on `main` f2b5a4a: run 40369410350 5 of 5; run 40380974886 4 of 5 (`25-controls`: week header and entries switched apart) | CI 40348252362 attempts 1 and 2 green | Zeiterfassung week switch, fixed on `main` (af4c137) | no |
+| 6 | 2026-10-27 | on `main` af4c137: run 40422921838 5 of 5 | CI 40413922236 attempt 1: all 6 jobs green, emulator included | none | yes |
+| 7 | 2026-10-27 | on `main` af4c137: run 40431554917 5 of 5 | CI 40413922236 attempt 2: all 6 jobs green | none | yes |
+| 8 | 2026-10-27 | on `main` af4c137: run 40441485751 5 of 5 | CI 40413922236 attempt 3: all 6 jobs green | none | yes |
+
+Rounds 6 to 8 meet the automated part of the exit criterion on `af4c137`: 15 full desktop e2e runs and 3 full CI
+runs (Linux, Windows, macOS, iOS simulator, Android APK and emulator) without a single failure. A one-off emulator
+failure on a branch (`pidof` gave up on the first empty answer) was a harness bug, fixed on `fix-emu` with logcat
+collection and merged after round 8. Still open before the criterion is fully met: the manual checklists of
+`docs/testing/` on real devices.
 
 ## Guards
 
