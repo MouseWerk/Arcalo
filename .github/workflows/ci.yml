@@ -292,7 +292,12 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
-          script: cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" timeout 4800 node --test --test-concurrency=1 --test-force-exit --test-reporter=spec android/phone.test.js android/tour.test.js
+          # The device's whole log for the run (uploaded when a test failed), from a reader that
+          # starts again when logd lets it go (the tests clear the log before each start) and ends
+          # with the emulator.
+          script: |
+            sh -c 'while adb get-state >/dev/null 2>&1; do adb logcat -v threadtime; sleep 1; done' > "$GITHUB_WORKSPACE/e2e/logcat.txt" 2>&1 < /dev/null &
+            cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" timeout 4800 node --test --test-concurrency=1 --test-force-exit --test-reporter=spec android/phone.test.js android/tour.test.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -300,4 +305,10 @@ jobs:
           path: |
             e2e/screenshots/android
             e2e/screenshots/FAIL-*
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-logcat
+          path: e2e/logcat.txt
           if-no-files-found: warn

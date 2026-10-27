@@ -59,15 +59,42 @@ export function fresh() {
   dismissSystemDialogs();
 }
 
-export async function start(timeout = 60000) {
-  shell(`am start -W -n ${PKG}/.MainActivity`);
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeout) {
+/** The app's process id, or null while there is none. Toybox's `pidof` exits with 1 when no
+ *  process has the name, and a process forked from the zygote has it only once it is bound to the
+ *  app, which may be after `am start -W` returned. */
+export function pidOf() {
+  try {
     const pid = shell(`pidof ${PKG}`).trim().split(/\s+/)[0];
-    if (pid) return Number(pid);
+    return pid ? Number(pid) : null;
+  } catch (e) {
+    if (e.status === 1 && !String(e.stderr ?? "").trim()) return null;
+    throw e;
+  }
+}
+
+/** The crash buffer when it has an entry of the app since `fresh()` (a Java exception or a native
+ *  crash's tombstone), else "". */
+export function appCrash() {
+  const log = adb("logcat", "-d", "-b", "crash");
+  return log.includes(PKG) ? log.trim() : "";
+}
+
+/** Starts the app and waits for its process; a crash or no process within `timeout` fails. */
+export async function start(timeout = 60000) {
+  const said = shell(`am start -W -n ${PKG}/.MainActivity`).trim();
+  if (/^Error/m.test(said)) throw new Error(`the app did not start:\n${said}`);
+  const t0 = Date.now();
+  for (let first = true; Date.now() - t0 < timeout; first = false) {
+    const pid = pidOf();
+    if (pid) {
+      if (!first) console.log(`the app's process was there ${Date.now() - t0} ms after am start -W returned (${said.replace(/\s+/g, " ")})`);
+      return pid;
+    }
+    const crash = appCrash();
+    if (crash) throw new Error(`the app crashed while starting:\n${crash}`);
     await sleep(300);
   }
-  throw new Error("the app did not start");
+  throw new Error(`the app did not start: no process after ${timeout} ms; am start -W said:\n${said}`);
 }
 
 let forwarded = null;
@@ -218,7 +245,8 @@ export function diagnose(file) {
       parts.push(`== ${label}\n(failed: ${e.message})`);
     }
   };
-  run("pidof", () => shell(`pidof ${PKG}`));
+  run("pidof", () => String(pidOf() ?? "(no process)"));
+  run("crash buffer", () => adb("logcat", "-d", "-b", "crash"));
   run("devtools sockets", () => shell("cat /proc/net/unix").split("\n").filter((l) => l.includes("devtools")).join("\n"));
   run("forwards", () => adb("forward", "--list"));
   run("reverse", () => adb("reverse", "--list"));
