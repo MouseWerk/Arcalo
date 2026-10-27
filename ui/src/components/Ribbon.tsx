@@ -19,6 +19,7 @@ import { openDayReview } from "../lib/reviewnav";
 import { openBriefing } from "../lib/briefing";
 import { openChatView, useChat } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
+import { caps } from "../lib/capabilities";
 
 export async function openToday() {
   const s = useApp.getState();
@@ -128,15 +129,17 @@ export function Ribbon() {
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       {ai && <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" className="ribbon-assistant" onClick={openAssistant} />}
       {ai && <IconButton icon={MessagesSquare} label={withHint(t("ribbon.chat"), "chat_view")} active={tab?.kind === "chat"} aria-current={tab?.kind === "chat" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-chat" onClick={() => void openChatView()} />}
-      <IconButton
-        icon={Mic}
-        label={t(recording ? "voice.stopRecording" : "voice.record")}
-        active={recording}
-        tooltipSide={side}
-        size="lg"
-        className={`ribbon-voice ${recording ? "is-recording" : ""}`}
-        onClick={() => void (recording ? stopVoice() : startVoice())}
-      />
+      {caps().voice && (
+        <IconButton
+          icon={Mic}
+          label={t(recording ? "voice.stopRecording" : "voice.record")}
+          active={recording}
+          tooltipSide={side}
+          size="lg"
+          className={`ribbon-voice ${recording ? "is-recording" : ""}`}
+          onClick={() => void (recording ? stopVoice() : startVoice())}
+        />
+      )}
       <span className="ribbon-sep" />
       <QuickLinks />
       <span className="grow" />

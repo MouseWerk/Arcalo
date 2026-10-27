@@ -93,7 +93,7 @@ test("in a low window the popover stays inside and scrolls", async () => {
 test("dark theme", async () => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme: "dark" } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await (await app.waitFor(".ribbon .quick-group")).click();
   await app.waitFor(".link-pop");

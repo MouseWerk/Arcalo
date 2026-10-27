@@ -14,7 +14,7 @@ import { t as tr, useT } from "../lib/i18n";
 import { EntryDialog, iconOf, type EntryEdit } from "./LinkDialogs";
 import { openBookmarkImport } from "./BookmarkImport";
 import { FILTER_FROM, OPEN_ALL_CONFIRM, colorHex, filterItems, groupChoices, isGroup, kindOf, moveItem, normalizeLinks, removeItem, shortUrl, webItems, type Loc } from "../lib/quicklinks";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 export { guessIcon } from "./LinkDialogs";
 
@@ -408,7 +408,7 @@ function LinkGroupPopover({
       } else if (e.key === "Enter") {
         e.preventDefault();
         open(sel, e.ctrlKey || e.metaKey);
-      } else if (e.key === "Tab") {
+      } else if (isTab(e)) {
         onClose(false);
       } else if (filtering && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement !== input.current) {
         input.current?.focus();

@@ -103,13 +103,13 @@ test("a file embed renders as a chip with size and menu", async () => {
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title: "Anhänge", create: false })) !== null);
   await app.invoke("page_save", { id: await pageId("Anhänge"), content: "Bericht: ![[Bericht Q3.docx]] und ![[fehlt.xlsx]]\n" });
   await reload();
-  await app.waitText(".pane.active .file-embed .file-embed-name", /^Bericht Q3\.docx$/);
-  await app.waitText(".pane.active .file-embed .file-embed-size", /^12 B$/);
-  await app.waitText(".pane.active .file-embed.is-missing .file-embed-size", /Datei fehlt/);
-  assert.equal(await app.browser.execute(() => !!document.querySelector('.pane.active .file-embed[data-file="Bericht Q3.docx"] svg')), true, "type icon");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-name", /^Bericht Q3\.docx$/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-size", /^12 B$/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed.is-missing .file-embed-size", /Datei fehlt/);
+  assert.equal(await app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .file-embed[data-file="Bericht Q3.docx"] svg')), true, "type icon");
   await app.shot("file-chip");
 
-  const labels = await contextMenu('.pane.active .file-embed[data-file="Bericht Q3.docx"]');
+  const labels = await contextMenu('.pane.active > .pane-content:not([hidden]) .file-embed[data-file="Bericht Q3.docx"]');
   assert.deepEqual(labels, ["Öffnen", "Im Ordner zeigen", "Einbettung kopieren", "Aus der Notiz entfernen"]);
   await clickMenu("Aus der Notiz entfernen");
   await app.browser.waitUntil(async () => !(await content("Anhänge")).includes("Bericht Q3.docx"), { timeoutMsg: "embed not removed" });
@@ -121,7 +121,7 @@ test("a file embed renders as a chip with size and menu", async () => {
 test("a dropped file is stored and embedded", async () => {
   await app.caretToEnd();
   const handled = await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const dt = new DataTransfer();
     dt.items.add(new File([new TextEncoder().encode("a;b\n1;2\n")], "Messwerte.csv", { type: "text/csv" }));
     const r = pm.lastElementChild.getBoundingClientRect();
@@ -132,7 +132,7 @@ test("a dropped file is stored and embedded", async () => {
   assert.ok(handled, "drop handled");
   await app.browser.waitUntil(async () => (await content("Anhänge")).includes("![[Messwerte.csv]]"), { timeoutMsg: "dropped file not embedded" });
   assert.equal(fs.readFileSync(att("Messwerte.csv"), "utf8"), "a;b\n1;2\n");
-  await app.waitText(".pane.active .file-embed .file-embed-name", /^Messwerte\.csv$/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-name", /^Messwerte\.csv$/);
 });
 
 test("a PDF shows its first page and opens in the viewer", async () => {
@@ -140,7 +140,7 @@ test("a PDF shows its first page and opens in the viewer", async () => {
   assert.equal(pdf.name, "Handbuch.pdf");
   await app.invoke("page_save", { id: await pageId("Anhänge"), content: `Handbuch:\n\n${pdf.markdown}\n` });
   await reload();
-  const card = '.pane.active .pdf-embed[data-file="Handbuch.pdf"]';
+  const card = '.pane.active > .pane-content:not([hidden]) .pdf-embed[data-file="Handbuch.pdf"]';
   await app.browser.waitUntil(() => app.browser.execute((s) => document.querySelector(s)?.classList.contains("is-ready"), card), {
     timeout: 20000,
     timeoutMsg: "PDF preview not rendered",

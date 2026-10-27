@@ -9,7 +9,7 @@ import { AssistantPanel } from "./AssistantPanel";
 import { UnlinkedMentions } from "./Mentions";
 import { api } from "../lib/api";
 import { linkContext } from "../components/linkContext";
-import { outgoingLinks, titleSet } from "../lib/links";
+import { linkKey, outgoingLinks, titleSet } from "../lib/links";
 import { baseName, fileExtension, isImageName, isPdfName } from "../editor/fileEmbed";
 import { openFile, openPdfViewer } from "../editor/files";
 import { t as tr, useT } from "../lib/i18n";
@@ -141,8 +141,8 @@ function LinksPanel() {
   const pages = useApp((s) => s.pages);
   if (tab?.kind !== "page" || !doc) return <EmptyState icon={Link2} title={tr("panel.noPage")}>{tr("panel.noPageHint")}</EmptyState>;
   const titles = titleSet(pages);
-  const { pages: unique, files } = outgoingLinks(doc.content, (t) => titles.has(t.toLowerCase()));
-  const find = (t: string) => [...pages.values()].find((p) => p.title.toLowerCase() === t.toLowerCase());
+  const { pages: unique, files } = outgoingLinks(doc.content, (t) => titles.has(linkKey(t)));
+  const find = (t: string) => [...pages.values()].find((p) => linkKey(p.title) === linkKey(t));
   const s = useApp.getState;
   return (
     <div className="links-panel">

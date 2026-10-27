@@ -21,6 +21,7 @@ import { t as tr, useT } from "../lib/i18n";
 import { embedLabel, embedProblem, splitTarget } from "../editor/embedSyntax";
 import { time } from "../lib/format";
 import { isComposing } from "../lib/ime";
+import { caps } from "../lib/capabilities";
 
 /** Design size of a slide; it is scaled to the screen (and to the previews). */
 const STAGE_W = 1600;
@@ -406,6 +407,8 @@ function Presentation({ pageId }: { pageId: number }) {
         s().error(t("present.failed"), e);
         s().set({ presenting: null });
       });
+    // Full screen and the presenter's own window are the desktop's (Android shows the overlay).
+    if (!caps().popupWindows) return;
     void api.presentationBegin().catch(() => {});
     return () => {
       void api.presentationEnd().catch(() => {});
@@ -470,7 +473,7 @@ function Presentation({ pageId }: { pageId: number }) {
       return;
     }
     if (presenter === "overlay") return setPresenter("off");
-    const opened = await api.presenterOpen().catch(() => false);
+    const opened = caps().popupWindows ? await api.presenterOpen().catch(() => false) : false;
     setPresenter(opened ? "window" : "overlay");
   }, [presenter]);
 

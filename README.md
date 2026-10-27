@@ -96,7 +96,7 @@ Get the latest version from the [**Releases page**](https://github.com/MouseWerk
 
 | System | File | Notes |
 |---|---|---|
-| **Windows 10/11** (x64) | `Arcalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
+| **Windows 10/11** (x64) | `Arcalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. If WebView2 is missing, the setup installs it with the bootstrapper it carries (needs internet; offline, install Microsoft's full WebView2 runtime first) |
 | **Windows 10/11** portable | `Arcalo_<version>_x64-portable.zip` | Unpack anywhere (a USB stick) and start `Arcalo.exe`: all data stays in `data` next to it, nothing is written to the user profile (no autostart, no jump list). Updates: unpack the new ZIP over the folder. API keys and tokens are kept in each computer's Credential Manager, not on the stick |
 | **macOS 11+** Apple Silicon | `Arcalo_<version>_aarch64.dmg` | Drag into *Applications*. Updates itself. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
 | **macOS 11+** Intel | `Arcalo_<version>_x64.dmg` | Same as above |
@@ -114,7 +114,7 @@ Git sync, security and the desktop keep their defaults and are linked from the l
 ### Notes that link to each other
 
 Live-preview Markdown editing, with `[[wiki links]]`, backlinks, tags, tables, tasks and a page tree. Hovering a link
-shows a preview of the linked page.
+shows a preview of the linked page (or of the linked section).
 
 <p align="center">
   <img src="docs/screenshots/note-dark.png" width="49%" alt="A note in dark mode">
@@ -124,6 +124,14 @@ shows a preview of the linked page.
   <img src="docs/screenshots/table-toolbar.png" width="49%" alt="Table editing toolbar">
   <img src="docs/screenshots/versions-diff.png" width="49%" alt="Version history with a diff against now">
 </p>
+
+The file tree shows where the open page lives (its folders open and the tree scrolls to it) and how many pages each
+folder holds. “New” creates a page, folder, canvas, drawing, table or a page from a template, at the top level or in
+the folder you right-clicked. Ctrl+click selects several pages; the selection bar then adds them to the favorites,
+colors, tags, duplicates, exports, moves or deletes them at once. Drag a page into a note to link it, or onto a pane
+to open it there.
+
+<p align="center"><img src="docs/screenshots/file-tree-new.png" width="70%" alt="The file tree with the open page shown in its folder, page counts per folder and the “New” menu: page, folder, canvas, drawing, table, from template"></p>
 
 ### Tables, boards and page layouts
 
@@ -180,7 +188,7 @@ written into it.
 
 <p align="center"><img src="docs/screenshots/dashboard-widgets-dark.png" width="90%" alt="Start page with the overtime balance, vacation, the next meeting with a countdown, hours per activity as a bar chart, deadlines and team availability"></p>
 
-<p align="center"><img src="docs/screenshots/balance-vacation-dark.png" width="60%" alt="Overtime balance of +11.75 h and the vacation account with days left, taken and planned and the next public holiday"></p>
+<p align="center"><img src="docs/screenshots/balance-vacation-dark.png" width="60%" alt="The overtime balance and the vacation account with days left, taken and planned, a planned vacation and the next public holiday"></p>
 
 ### Time tracking with `/time`
 
@@ -216,12 +224,17 @@ access token); the token lives in the Windows Credential Manager or the macOS Ke
 saved JQL searches sync in the background and stay available offline. The **Issues** page groups them by
 site, project, status, sprint or priority; an opened issue shows its description, the last comments, the
 pages that name it and the activity it books on. A key such as `PROJ-123` in a note becomes a live chip with
-type, status and title and a hover card. `/time 1h PROJ-123 Fix login` books on the issue's activity and can
-post a worklog to Jira. There are widgets for your issues, a saved search and the active sprint.
+type, status and title and a hover card. A click on a chip, a list row, a widget or a key typed in the command
+palette opens the **issue view**: the whole issue as Jira shows it (rendered description with its images,
+every field, subtasks, links, attachments, comments, work log and history), editable where Jira allows it
+(fields, description, status with its screen, comments, work log, “Assign to me”), with undo, a conflict check
+when someone changed it meanwhile, and the last copy read-only offline. `/time 1h PROJ-123 Fix login` books
+on the issue's activity and can post a worklog to Jira. There are widgets for your issues, a saved search and
+the active sprint.
 
 <p align="center">
-  <img src="docs/screenshots/jira-issues-dark.png" width="59%" alt="The Issues page with an opened bug: details, description, a comment and the page that names it">
-  <img src="docs/screenshots/jira-chip-dark.png" width="39%" alt="An issue key in a note as a chip with its hover card">
+  <img src="docs/screenshots/jira-issues-dark.png" width="49%" alt="The Issues page with an opened bug: details, the activity it books on, description, comments and the page that names it">
+  <img src="docs/screenshots/jira-chip-dark.png" width="49%" alt="An issue key in a note as a chip with its hover card">
 </p>
 
 ### Voice notes
@@ -233,7 +246,7 @@ Face, each checked against its SHA-256); the audio is kept as FLAC and never upl
 summary, decisions and the action items as real tasks with `@Person` and `due:`; `#privat` notes stay on the
 local model.
 
-<p align="center"><img src="docs/screenshots/voice-note-dark.png" width="70%" alt="A voice note with the audio file, the collapsed transcript, a summary, a decision, two tasks and an open point"></p>
+<p align="center"><img src="docs/screenshots/voice-note-dark.png" width="60%" alt="A summarized voice note: the collapsed transcript, a summary, a decision, two tasks with person and due date and an open point"></p>
 
 ### AI that stays on your server
 
@@ -268,6 +281,13 @@ meeting link. The join button finds Teams, Zoom, Webex, Google Meet and other li
 description, behind company link protection such as Microsoft Safe Links or Proofpoint. Meetings you do not book can
 be marked “Don't book”, and the timesheet lists the week's meetings that are not booked yet.
 
+With Outlook Classic you also plan in the Calendar itself: drag over a free stretch of a day, double-click or press
+N for a new appointment, and move, resize, rename or delete your own appointments. Every change goes back to your
+Outlook calendar (the default one or another of yours), only with the fields you changed; a closed Outlook is never
+started, the change waits until it runs. If the same field changed in Outlook meanwhile, you choose which version
+applies. Meetings you organize ask before Outlook sends the update to the attendees; meetings from others and series
+stay read-only and open in Outlook. Writing is off until you switch it on (the Calendar offers it on first use).
+
 <p align="center">
   <img src="docs/screenshots/calendar-meeting.png" width="49%" alt="A meeting with its Teams join button, Book time and Meeting note">
   <img src="docs/screenshots/outlook-calendars.png" width="49%" alt="Choose calendars: the default calendar, a sub-calendar, a colleague's shared calendar, a free/busy calendar and a room">
@@ -281,12 +301,12 @@ that calendar.
 
 <p align="center"><img src="docs/screenshots/week-proposal-dark.png" width="90%" alt="Propose the week: proposals by day with source, time, length, WBS and a confidence badge"></p>
 
-An e-mail becomes a task or a note in two clicks: select it in Outlook Classic and choose “Take over current e-mail”
+An e-mail becomes a task or a note in two clicks: select it in Outlook Classic and choose “Import current e-mail”
 (palette or your own global shortcut), drop an `.eml`/`.msg` file onto the window or paste the header lines of a
 forwarded mail. The task gets a due date and priority, the note the sender, date, text and the attachments you
 ticked; both carry an e-mail chip that opens the mail again in Outlook.
 
-<p align="center"><img src="docs/screenshots/mail-to-task.png" width="70%" alt="Take over e-mail: a mail from Outlook becomes a task with due date, priority and an attachment"></p>
+<p align="center"><img src="docs/screenshots/mail-to-task.png" width="70%" alt="Import e-mail: a mail from Outlook becomes a task with due date, priority and an attachment"></p>
 
 ### Quick capture and link groups
 
@@ -361,6 +381,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 - Slash menu (`/`), formatting toolbar on selection, a table toolbar (rows, columns, header) while the cursor is in a table, find in page (Ctrl F)
 - Version history: “Versions…” in the page menu lists earlier states (kept 30 days) with a diff against now, and restores them
 - Tabs, favorites, a drag-and-drop page tree, a command palette (Ctrl K) and a quick switcher (Ctrl O)
+- File tree: the open page is shown in its folder (Ctrl Shift R brings it into view), folders show how many pages they hold, typing letters jumps to the next matching page, and the filter highlights what matched and finds paths such as `Customer/Offer`. “New” creates pages, folders, canvases, drawings, tables and pages from a template. Ctrl+click selects several pages for favorites, color, tags, duplicate, HTML export, move and delete at once
 - Links and apps in the ribbon (“Add app / link”): web pages, folders, `mailto:` and programs, each with an icon, and groups of them (one icon with a count; a click lists the entries next to the ribbon, arrows and Enter open them, longer groups filter as you type). Drag a link onto a group to move it in, drag icons to reorder; right-click for edit, move, remove and “Open all links”
 - “Import bookmarks” from Chrome, Edge, Brave, Vivaldi, Opera, Arc, Chromium, Firefox and Safari or an HTML export: folders become link groups or Markdown pages, duplicates are skipped, one “Undo” takes it back
 - Import an Obsidian vault (folders, frontmatter, links, tags and images kept), export everything back to Markdown files
@@ -385,11 +406,12 @@ it. The settings also cover proxy and certificates for company networks and Git 
 - Day, work week, week, month and list with week numbers; meetings as calm tinted blocks in their calendar's color, overlapping meetings side by side, past, running, booked, tentative and free/busy states at a glance; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
 - Join links: Teams (also `teams.cloud.microsoft`), Zoom, Webex, Google Meet, Jitsi, Whereby, Chime, BlueJeans, RingCentral and others, found in the location, the link fields and the description, also behind Microsoft Safe Links, Proofpoint or Google redirects
 - “Book time” from a meeting (prefilled, WBS remembered per series or subject), “Meeting note”, “Don't book”; booked meetings get a check mark
+- Appointments created and changed in the Calendar (Outlook Classic, Settings → Calendar → “Write appointments to Outlook”): drag over a free stretch, double-click, N or “New appointment…” in the palette; own appointments move, resize, get renamed and deleted (to Outlook's Deleted Items, with Undo). Only the changed fields are written, a lost answer never creates a second appointment, a change made in Outlook too asks “Use Outlook's version” or “Keep my change”, an organized meeting asks before the update goes to its attendees; received meetings, series and free/busy calendars stay read-only with “Open in Outlook”. Without Outlook Classic (macOS, Linux, the new Outlook) the Calendar only shows appointments
 - Background sync every 15 minutes (Settings → Calendar); private appointments keep only their time unless you allow more; the assistant does not see your appointments
 - Start page widgets “Today” and “Meetings”, and “Book meetings” in the timesheet
 
 **E-mail as a task or note**
-- “Take over current e-mail”: the mails selected in Outlook Classic (or the open one) through a second bundled PowerShell script; Exchange senders are resolved to their SMTP address
+- “Import current e-mail”: the mails selected in Outlook Classic (or the open one) through a second bundled PowerShell script; Exchange senders are resolved to their SMTP address
 - `.eml` and `.msg` files dropped anywhere on the window, and pasted Outlook header blocks (From:/Sent:/To:/Subject: or Von:/Gesendet:/An:/Betreff:)
 - Task (current page, daily note, another page or the new note; due date with Today/Tomorrow/Fri/Next week; priority from the importance) and/or note below “Emails” with from/to/date/subject, the text as a quote and the chosen attachments; activity and Outlook categories optional
 - The link is `[E-mail: Subject (Sender, Date)](arcalo-mail://id)`, shown as a chip that opens the mail in Outlook (or the stored `.eml`/`.msg`); the Markdown export writes the text only
@@ -429,8 +451,8 @@ it. The settings also cover proxy and certificates for company networks and Git 
 
 1. **Install and start.** A short intro shows what Arcalo does, then the setup asks for language, theme, working time
    (and whether you book time in SAP), workspace, AI (none, a local Ollama found automatically, or your company's
-   server with a connection test), calendar, Git sync, backups and desktop. Every answer is saved at once, every step
-   can be skipped and changed later under Settings. Settings → About has “Replay the introduction” (also in the
+   server with a connection test) and calendar; Git sync, backups, security and the desktop are linked from its last
+   step. Every answer is saved at once, every step can be skipped and changed later under Settings. Settings → About has “Replay the introduction” (also in the
    command palette) and “Reset setup”, which only forgets that the intro was seen, never your notes
 2. **Look around the demo workspace.** Press **Ctrl K** for the command palette, **Ctrl O** to jump to a page and
    **Ctrl Shift D** for today's daily note
@@ -441,7 +463,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 
 <br clear="right">
 
-<p align="center"><img src="docs/screenshots/first-run-setup-dark.png" width="70%" alt="Setup step “How do you work?”: book time or just notes, workdays, daily target and rounding"></p>
+<p align="center"><img src="docs/screenshots/first-run-setup-dark.png" width="70%" alt="Setup step “Do you track your time?”: yes or no, workdays, target per workday and rounding"></p>
 
 ## Connecting AI providers
 
@@ -495,8 +517,11 @@ PAC files are JavaScript. The core does not embed a JS engine: the UI evaluates 
 remote when the settings are saved or tested and at every start, and stores the answers. Limitations: no DNS
 (`isInNet` only matches IP addresses, `dnsResolve` only returns IP literals, `myIpAddress()` is `127.0.0.1`), and
 other hosts (the assistant's HTTP tool) use the answer for the AI server. Git receives the proxy through
-`http_proxy`/`https_proxy`/`no_proxy` and the CA through `http.sslCAInfo` (extra CA plus the system bundle); Git for
-Windows verifies with the Windows certificate store (schannel), so install the root CA there.
+`http_proxy`/`https_proxy`/`no_proxy` and the extra CA through `http.sslCAInfo`: a bundle of the extra CA and the
+system's root certificates, on every system (Git for Windows reads it with OpenSSL, as its Secure Channel backend
+ignores the file; the Android app adds it to its built-in Git). Without an extra CA, Git for Windows checks with its own
+bundle unless it was set up for the Windows certificate store (`git config --global http.sslBackend schannel`), so for a
+proxy that inspects HTTPS, choose its root CA as the extra CA of the profile.
 
 ## Customizing
 
@@ -549,7 +574,11 @@ developer cannot be verified” or “is damaged”). Once, either:
 
 - in Finder, right-click (Ctrl-click) *Arcalo* in *Applications* → **Open** → **Open**
   (on macOS 15: System Settings → Privacy & Security → “Open Anyway”), or
-- in the Terminal: `xattr -cr "/Applications/Arcalo.app"`
+- in the Terminal: `xattr -cr "/Applications/Arcalo.app"` (the only way when macOS calls the app “damaged”)
+
+Start Arcalo from *Applications*, not from the disk image or from *Downloads*: macOS runs it from a temporary
+read-only place then, and updates, “Open at login” and the `arcalo` command do not work (Arcalo says so at the
+start).
 
 On macOS the app follows the platform conventions: a menu bar in the app's language (⌘, settings, ⌘\ sidebar, ⌘.
 focus mode), the tab bar sits in the title bar, and every in-app shortcut uses ⌘ instead of Ctrl. Closing the window
@@ -628,16 +657,33 @@ secrets; apps installed with the old key must be updated once by hand.
 ## Git sync
 
 Settings → **Backup** → “Git sync” pushes the Markdown copy (pages, images, `Zeiterfassung/*.csv`) to a Git
-repository, for example on GitHub, GitLab or Azure DevOps. It needs Git installed ([git-scm.com](https://git-scm.com)).
+repository, for example on GitHub, GitLab, Gitea/Forgejo (Codeberg), Bitbucket or Azure DevOps. It needs Git
+installed ([git-scm.com](https://git-scm.com)).
 
-<p align="center"><img src="docs/screenshots/settings-git-sync.png" width="70%" alt="Git sync settings"></p>
+“Set up Git sync…” guides you through it in four steps:
 
-1. Create an empty private repository and enter its **Remote URL** (and the branch, default `main`)
-2. HTTPS: create a personal access token with write access to the repository and save it under **Access token**. It is
-   stored in the Windows Credential Manager and sent to Git only through environment variables, never on the command
-   line, in `.git/config` or in any log. SSH URLs (`git@github.com:…`) use your system's SSH keys and agent instead
-3. **Test connection** runs `git ls-remote`; **Sync now** syncs immediately
-4. Choose when to sync: **With every backup** (daily and “Back up now”) or **Hourly**
+1. **Provider**: GitHub, GitLab, Gitea/Forgejo, Bitbucket or another server, with your own server's address if you
+   have one. You can also paste the address of a repository straight from the browser (with or without `.git`; for an
+   SSH address the HTTPS address is offered)
+2. **Token**: one button opens the provider's token page with the needed rights already chosen; paste the token. It is
+   stored in the Windows Credential Manager or the macOS Keychain, only ever sent to its own server, and handed to Git
+   through environment variables, never on the command line, in `.git/config` or in any log. Bitbucket uses
+   repository, project or workspace access tokens
+3. **Repository**: pick one from the list of your repositories, create a new private one, or enter its address
+4. **Check**: Arcalo checks the server, the token, the repository, the write right, the Git connection and the branch,
+   and says in plain words what is wrong and how to fix it (token expired or without the right, no write right,
+   repository not found, proxy or certificate). It also says what the first sync does with content already in the
+   repository; nothing is overwritten. “Save and switch on” turns the sync on
+
+<p align="center">
+  <img src="docs/screenshots/settings-git-sync.png" width="49%" alt="Set up Git sync, step Repository: the repositories of your account with one picked">
+  <img src="docs/screenshots/git-sync-check.png" width="49%" alt="Set up Git sync, step Check: server, token, repository, rights, Git connection and branch all fine">
+</p>
+
+The previous form stays under “Set up manually” (remote URL, branch, author, access token; SSH URLs such as
+`git@github.com:…` use your system's SSH keys and agent). **Sync now** syncs immediately. Choose when to sync: **With
+every backup** (daily and “Back up now”) or **Hourly**. Opening the setup again keeps syncing the branch your notes are
+on.
 
 Every sync commits only when something changed. The working copy lives in `git-sync` in the data folder. Optionally
 the latest database backup is committed as `arcalo-workspace.db` (“Include the database”; this grows the repository
@@ -654,6 +700,18 @@ on one side only are merged automatically; for the rest you pick “Mine”, “
 
 **Restore**: “Restore from Git…” clones the repository and imports it as a new top-level page “Git import <date>”
 (images included); existing pages are left alone.
+
+## Command line and AI agents
+
+The program is also a command line on your workspace: `arcalo pages show "Weekly sync"`, `arcalo tasks add
+"Angebot schicken" --page id:42 --due tomorrow`, `arcalo daily append "…"`, `arcalo zeit NP-8801/1020 1.5h …`,
+and everything else you do with notes, tasks, time, projects, attachments, the trash and the settings. With `--json`
+every command prints JSON and errors come with stable exit codes, so scripts and AI agents with a terminal can read
+and change your workspace while the app is open: the app shows the changes within a second, typing in an open note is
+never lost, and every change keeps a version you can go back to. The Windows installer, the Microsoft Store, Scoop and
+the Linux packages put `arcalo` on the PATH; on macOS (and for the portable copy) Settings → Desktop → „Befehlszeile“
+does it on request. See [docs/cli.md](docs/cli.md) for the commands, where the program is on each system, and how to
+point an AI agent at it.
 
 ## Tests
 
@@ -682,7 +740,7 @@ in light and dark. Run it after building the app with `ARCALO_SHOTS=<folder>` an
 | Path | Contents |
 |---|---|
 | `crates/arcalo-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/time` parser, time tracking, budgets, CPM, exports, idle detection (Win32), AI clients, router, RAG, tools, calendars, backups, vault import/export |
-| `crates/arcalo-cli` | `arcalo` command line on the same database |
+| `crates/arcalo-cli` | `arcalo` command line on the app's workspace, for people, scripts and AI agents ([docs/cli.md](docs/cli.md)); the app's program runs it when started with a command |
 | `src-tauri` | Tauri v2 desktop shell: IPC commands, credential storage, global shortcuts, tray, quick capture, reminders, activity sampler, updater |
 | `ui` | React + TypeScript + TipTap frontend (Vite), Lucide icons; the English and German texts in `ui/src/locales` |
 | `e2e` | WebdriverIO end-to-end tests against the desktop app |
@@ -722,6 +780,10 @@ git tag -a v1.1.0 -m "What's new …" && git push origin v1.1.0
 
 Or, without a local tag: write the notes to `docs/releases/v1.1.0.md`, then GitHub → **Actions → Release → Run
 workflow** with the version `1.1.0`. The workflow creates the annotated tag itself.
+
+Or automatically: push `docs/releases/v1.1.0.md` to `main`; when CI has passed for that commit and it is still the
+newest on `main`, the release starts by itself ([docs/release/automatic.md](docs/release/automatic.md); switched off
+with the repository variable `AUTO_RELEASE` = `false`).
 
 The [Release workflow](.github/workflows/release.yml) builds Windows, Linux and both macOS variants, signs the update
 files and publishes everything together with `latest.json` on the Releases page.

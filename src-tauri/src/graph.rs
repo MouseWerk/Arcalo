@@ -2,7 +2,7 @@
 //! changed after a save or rename, and the view's stored state (layout, presets, display).
 //! The logic lives in `arcalo_core::graph`.
 
-use arcalo_core::graph::{GraphData, GraphFilter};
+use arcalo_core::graph::{GraphData, GraphFilter, GraphTable};
 use tauri::State;
 
 use crate::{AppState, Result};
@@ -10,6 +10,12 @@ use crate::{AppState, Result};
 #[tauri::command(async)]
 pub fn graph_data(state: State<AppState>, filter: Option<GraphFilter>) -> Result<GraphData> {
     state.reader().graph_data(&filter.unwrap_or_default())
+}
+
+/// The graph as the graph view loads it: rows and link pairs instead of objects (`GraphTable`).
+#[tauri::command(async)]
+pub fn graph_compact(state: State<AppState>, filter: Option<GraphFilter>) -> Result<GraphTable> {
+    Ok(state.reader().graph_data(&filter.unwrap_or_default())?.into())
 }
 
 #[tauri::command(async)]

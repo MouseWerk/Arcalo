@@ -16,6 +16,7 @@ live at https://arcalo.mousewerk.de.
 - Ctrl/Cmd+click in the tree selects; pages are filed in year/month folders, existing pages move only via
   "Aufräumen". Whisper models are downloaded from GitHub (release `whisper-models-v1`, keep it).
 - The Android companion APK is attached to each release but not advertised on the website or in the README.
+- iOS companion app via TestFlight/App Store (same Apple team as Arcalo Mail).
 - The setup does not offer Git sync, backups, encryption or desktop options; its last step links them
   („Später einrichten“). The old Annalo data folders and credential entries kept by the 1.15 migration are
   deleted in 1.17.
@@ -67,6 +68,9 @@ See `docs/dev-setup-macos.md`. e2e tests do not run natively on macOS; use `e2e/
 
 ## Release
 
-Push to `main` first, then run the Release workflow (`release.yml`, input `version`, e.g. `1.12.0`). Then
-update the website (changelog, version, screenshots). Quality plans and findings per release are in
-`docs/quality/`.
+Releases start by themselves: when CI is green on `main` and `docs/releases/v<version>.md` exists for a
+version newer than every tag, `auto-release.yml` tags that commit and runs `release.yml`
+(`docs/release/automatic.md`). So add the notes file only with the owner's go, in the last push of a release,
+after everything else is green. The Release workflow can still be run by hand (input `version`, e.g.
+`1.12.0`); the repository variable `AUTO_RELEASE=false` switches the automatic one off. Then update the
+website (changelog, version, screenshots). Quality plans and findings per release are in `docs/quality/`.

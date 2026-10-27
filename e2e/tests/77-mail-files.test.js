@@ -2,6 +2,9 @@
 // dialog instead of being embedded (task and note, the .eml stored as the link target, its PDF
 // attachment embedded); a pasted Outlook header block becomes a task in the daily note; the
 // Markdown export writes the links as text.
+// The fixture mails have fixed times, so the dates are German dates (the app and this file run in
+// Europe/Berlin, not in the harness's morning zone, which moves them to another day in the evening).
+process.env.TZ = "Europe/Berlin";
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -21,8 +24,8 @@ const content = async (id) => (await app.invoke("page_get", { id })).content;
 test("an .eml dropped onto a note opens the dialog instead of an embed", async () => {
   page = await app.invoke("page_create", { parentId: null, title: "Lieferung", icon: null, content: "Liefertermine\n" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.waitText(".pane.active .ProseMirror", /Liefertermine/);
-  await dropFiles(app, ".pane.active .ProseMirror", [{ name: "Rückfrage Liefertermin.eml", type: "message/rfc822", text: EML }]);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Liefertermine/);
+  await dropFiles(app, ".pane.active > .pane-content:not([hidden]) .ProseMirror", [{ name: "Rückfrage Liefertermin.eml", type: "message/rfc822", text: EML }]);
   await app.waitText(".mailx-subject", /Rückfrage Liefertermin/);
   const card = await app.text(".mailx-card");
   assert.match(card, /Jörg Weiß <joerg@example\.com>/);

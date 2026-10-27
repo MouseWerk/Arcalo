@@ -1,19 +1,22 @@
 // Kalender: meetings from Outlook and ICS next to the booked time. Day, work week, week, month
 // and a list; a meeting opens a side panel to book it (prefilled, WBS remembered per series or
-// subject), write its meeting note or mark it „nicht buchen“.
+// subject), write its meeting note or mark it „nicht buchen“. With Outlook Classic, appointments
+// are created by dragging over a free stretch, a double click or N, and own ones are moved,
+// resized, renamed and deleted (written back to Outlook, `CalendarEntries.tsx`).
 
 import { DayOffChip } from "../components/dashboard/work";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarCheck, CalendarDays, CalendarRange, Check, Target, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarCheck, CalendarClock, CalendarDays, CalendarRange, Check, Target, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { startVoice, useVoice } from "../lib/voice";
+import { caps } from "../lib/capabilities";
 import { Badge, Button, EmptyState, IconButton, Segmented, Select } from "../components/ui";
 import { openDailyNote, pickDate } from "../components/CalendarPopover";
-import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative } from "../lib/format";
+import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative, shownWeek } from "../lib/format";
 import {
   attendeeName, bookedEntry, bookingPrefill, dayItems, durationMinutes, hasSources, isAllDayLike, keyAction, layoutDay, minutesOfDay, monthCells, onDay as coversDay, rangeTitle, sourceColor, sourceName, step, timeRange, viewRange, weekLabel,
   type BookingPrefill, type CalView, type Range,
@@ -29,9 +32,12 @@ import { useTimeTracking } from "../lib/timetracking";
 import { useT, t as tr, type TKey } from "../lib/i18n";
 import { blockFit } from "../lib/eventlook";
 import { BlockDetail, BlockItem, DropGhost, deleteBlock, saveBlock, useBlocks } from "./CalendarBlocks";
-import { blockIdOf, blockKey, blockMinutes, canPlan, dropRange, linkOf, minuteAt, plannedMinutes, readPlanData, type PlanItem } from "../lib/blocks";
+import { blockIdOf, blockKey, blockMinutes, canPlan, dropRange, linkOf, minuteAt, plannedMinutes, readPlanData, SNAP, type PlanItem } from "../lib/blocks";
 import type { BlockPatch, FocusBlock } from "../lib/types";
 import { PrepActions } from "../components/MeetingWork";
+import { canCreate, canEdit, deleteEntry, EntryEditor, EntryFieldsEdit, EntryGhost, EntryItem, EntryState, EntryTitle, entryLabel, saveEntry, writesOn } from "./CalendarEntries";
+import type { EntryFields } from "../lib/types";
+import { takeNewEntry } from "../lib/calentries";
 import { isComposing } from "../lib/ime";
 
 /** Pixels per hour in the time grid. */
@@ -61,6 +67,20 @@ const session: { anchor: Date | null; selected: string | null } = { anchor: null
 const entryEnd = (x: TimeEntryRow) => new Date(new Date(x.start_time).getTime() + (x.duration_minutes ?? 0) * 60000).toISOString();
 const entryRef = (x: TimeEntryRow) => `${x.netzplan_nr}${x.vorgang_nr ? `/${x.vorgang_nr}` : ""}`;
 
+/** Whether `e` is the new appointment `was` (under its own key) as Outlook has it, with its real key. */
+const becameOf = (was: CalendarEvent, e: CalendarEvent) =>
+  was.key.includes("|arcalo-entry-") && !e.key.includes("|arcalo-entry-") && e.source === was.source && e.title === was.title && e.start === was.start;
+
+/** `list` with the appointment `key` replaced by `e`, added, or removed (`e` null). */
+const patched = (list: CalendarEvent[], key: string, e: CalendarEvent | null) =>
+  e ? (list.some((x) => x.key === key) ? list.map((x) => (x.key === key ? { ...e, editable: e.editable ?? x.editable } : x)) : [...list, e]) : list.filter((x) => x.key !== key);
+
+/** The appointment a new one (`selected`, last shown as `was`) became once Outlook has it, or null. */
+export function successor(events: CalendarEvent[], selected: string | null, was: CalendarEvent | null): CalendarEvent | null {
+  if (!was || was.key !== selected) return null;
+  return events.find((e) => becameOf(was, e)) ?? null;
+}
+
 export function CalendarView() {
   const t = useT();
   const settings = useApp((s) => s.settings?.settings);
@@ -84,8 +104,11 @@ export function CalendarView() {
   const setSelected = (k: string | null) => {
     session.selected = k;
     setSelectedState(k);
+    if (k) setDraft(null);
   };
   const [booking, setBooking] = useState<{ event: CalendarEvent; prefill: BookingPrefill; hint: WbsHint | null } | null>(null);
+  // A new appointment whose panel is open.
+  const [draft, setDraft] = useState<{ start: Date; end: Date } | null>(null);
   const [syncTick, setSyncTick] = useState(0);
   const [now, setNow] = useState(() => new Date());
   const { wbs, las } = useWbs();
@@ -109,7 +132,12 @@ export function CalendarView() {
     if (selected === was) return;
     const box = root.current;
     if (selected && byKeys.current) {
-      requestAnimationFrame(() => box?.querySelector<HTMLElement>(".calv-detail h2, .calv-detail .calv-block-name")?.focus());
+      // Not while the user types in the panel: a new appointment changes its key when Outlook has
+      // it, and the focus left the time field being typed in (the typed end was lost).
+      requestAnimationFrame(() => {
+        if (box?.querySelector(".calv-detail")?.contains(document.activeElement)) return;
+        box?.querySelector<HTMLElement>(".calv-detail h2, .calv-detail .calv-block-name")?.focus();
+      });
     } else if (!selected && was) {
       requestAnimationFrame(() => {
         const at = document.activeElement;
@@ -163,6 +191,8 @@ export function CalendarView() {
       }),
       on("calendar://syncing", load),
       on("settings://changed", load),
+      // Appointments changed here: their state (waiting, written, conflict) changed.
+      on("calendar://entries", () => setSyncTick((x) => x + 1)),
     ];
     return () => offs.forEach((u) => u.then((f) => f()));
   }, [cal?.sources.length, cal?.outlook]);
@@ -202,7 +232,16 @@ export function CalendarView() {
   }, [events, hidden, timeOn]);
   const booked = useMemo(() => new Map(shown.map((e) => [e.key, timeOn ? bookedEntry(e, entries) : null])), [shown, entries, timeOn]);
   const days = useMemo(() => (timeOn ? overview : new Map([...overview].map(([k, d]) => [k, { ...d, booked_minutes: 0 }]))), [overview, timeOn]);
-  const current = shown.find((e) => e.key === selected) ?? null;
+  // A new appointment gets its real key once Outlook has it. The panel shows it under that key in
+  // the same render, so it stays as it is (a time or title being typed in keeps its text and the
+  // focus; between two renders it was gone and came back empty), and the selection follows.
+  const lastShown = useRef<CalendarEvent | null>(null);
+  const current = shown.find((e) => e.key === selected) ?? successor(shown, selected, lastShown.current);
+  if (current) lastShown.current = current;
+  useEffect(() => {
+    if (current && current.key !== selected) setSelected(current.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.key, selected]);
   const { blocks, patch: patchBlock } = useBlocks(range.from, range.to, version);
   const currentBlock = blocks.find((b) => b.id === blockIdOf(selected)) ?? null;
   const changeBlock = (b: FocusBlock, p: BlockPatch) => void saveBlock(b, p, patchBlock);
@@ -220,6 +259,57 @@ export function CalendarView() {
       s().error(t("blocks.createFailed"), e);
     }
   };
+  // Appointments changed here: shown at once, then as the backend has them.
+  const patchEvent = (key: string, e: CalendarEvent | null) => setEvents((list) => patched(list, key, e));
+  const changeEntry = (e: CalendarEvent, p: EntryFields) => void saveEntry(e, p, patchEvent);
+  const removeEntry = (e: CalendarEvent) => {
+    if (selected === e.key) setSelected(null);
+    void deleteEntry(e, patchEvent);
+  };
+  const createOn = canCreate(cal, status?.entries_available);
+  // A new appointment from `start` to `end` (writing switched on first when it is off).
+  const newEntry = async (start: Date, end: Date) => {
+    if (!createOn || !(await writesOn())) return;
+    setSelected(null);
+    setDraft({ start, end });
+  };
+  const newEntryAt = (day: Date, minute: number) => {
+    const len = cal?.entry_minutes || 30;
+    const m = Math.max(0, Math.min(minute, 24 * 60 - len));
+    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, m);
+    void newEntry(start, new Date(start.getTime() + len * 60_000));
+  };
+  // N or the palette: today at the next half hour, another day at 9:00.
+  const newEntryNow = () => {
+    const d = new Date();
+    const day = range.days.find((x) => isoDay(x) === isoDay(d)) ?? (view === "month" || view === "agenda" ? d : anchor);
+    const minute = isoDay(day) === isoDay(d) ? Math.ceil((d.getHours() * 60 + d.getMinutes() + 1) / 30) * 30 : 9 * 60;
+    if (view === "month" || view === "agenda") setView(view === "month" ? "week" : view === "agenda" ? "workweek" : view);
+    if (isoDay(day) !== isoDay(anchor)) setAnchor(day);
+    newEntryAt(day, Math.min(minute, 23 * 60));
+  };
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const newRef = useRef(newEntryNow);
+  newRef.current = newEntryNow;
+  // Asked for from the command palette: once the status says new appointments can be made here.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (takeNewEntry()) asked.current = true;
+    if (asked.current && createOn) {
+      asked.current = false;
+      newRef.current();
+    }
+  }, [createOn]);
+  useEffect(() => {
+    const open = () => {
+      if (!takeNewEntry()) return;
+      if (canCreate(useApp.getState().settings?.settings.calendar, statusRef.current?.entries_available)) newRef.current();
+      else asked.current = true;
+    };
+    window.addEventListener("arcalo:calendar-new", open);
+    return () => window.removeEventListener("arcalo:calendar-new", open);
+  }, []);
   const syncing = status?.sources.some((x) => x.enabled && x.syncing) ?? false;
   const errors = status?.sources.filter((x) => x.enabled && x.status?.error) ?? [];
   const configured = (status ? hasSources(cal, status.outlook_available) : true) || planOnly || blocks.length > 0;
@@ -232,8 +322,8 @@ export function CalendarView() {
   };
 
   // Keys work while this pane is the active one and nothing else (a field, a dialog, a menu) has them.
-  const keyState = useRef({ selected, go, today, setView });
-  keyState.current = { selected, go, today, setView };
+  const keyState = useRef({ selected, go, today, setView, draft, createOn, newEntryNow });
+  keyState.current = { selected, go, today, setView, draft, createOn, newEntryNow };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isComposing(e)) return;
@@ -248,10 +338,16 @@ export function CalendarView() {
       if (document.querySelector(".dialog, .menu, .palette, .calendar, .select-pop")) return;
       const k = keyState.current;
       if (e.key === "Escape") {
-        if (k.selected) {
+        if (k.selected || k.draft) {
           e.preventDefault();
           setSelected(null);
+          setDraft(null);
         }
+        return;
+      }
+      if ((e.key === "n" || e.key === "N") && k.createOn && !e.shiftKey) {
+        e.preventDefault();
+        k.newEntryNow();
         return;
       }
       const a = keyAction(e.key);
@@ -311,7 +407,7 @@ export function CalendarView() {
   const pickerDay = isoDay(anchor);
 
   return (
-    <div className={`calv ${current || currentBlock ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label={t("nav.calendar")}>
+    <div className={`calv ${current || currentBlock || draft ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label={t("nav.calendar")}>
       <header className="calv-head">
         <div className="calv-heading">
           <h1>{title}</h1>
@@ -323,7 +419,7 @@ export function CalendarView() {
               <span className="calv-week-review-label">{t("week.title")}</span>
             </button>
           )}
-          {view === "month" && <span className="calv-kw">{t("time.weekNo", { n: `${isoWeek(range.days[0])}–${isoWeek(range.days[range.days.length - 1])}` })}</span>}
+          {view === "month" && <span className="calv-kw">{t("time.weekNo", { n: `${shownWeek(range.days[0])}–${isoWeek(range.days[range.days.length - 1])}` })}</span>}
         </div>
         <div className="calv-tools">
           <div className="calv-nav" role="group" aria-label={t("feed.range.custom")}>
@@ -424,9 +520,31 @@ export function CalendarView() {
                 onDropItem={(d, m, item) => void createBlock(d, m, item)}
                 onBlockChange={changeBlock}
                 onBlockDelete={removeBlock}
+                createOn={createOn}
+                draft={draft}
+                onCreateRange={(start, end) => void newEntry(start, end)}
+                onCreateAt={newEntryAt}
+                onEntryChange={changeEntry}
+                onEntryDelete={removeEntry}
               />
             )}
           </div>
+          {draft && !current && !currentBlock && (
+            <EntryEditor
+              draft={draft}
+              cal={cal}
+              onChange={setDraft}
+              onClose={() => setDraft(null)}
+              onCreated={(e) => {
+                setDraft(null);
+                // Outlook may have it already: the list read after the write can come before this
+                // answer (and then it is not added twice). Followed from here, shown or not.
+                setEvents((list) => (list.some((x) => becameOf(e, x)) ? list : patched(list, e.key, e)));
+                lastShown.current = e;
+                setSelected(e.key);
+              }}
+            />
+          )}
           {currentBlock && !current && (
             <BlockDetail block={currentBlock} timeOn={timeOn} onClose={() => setSelected(null)} onChange={changeBlock} onDelete={removeBlock} />
           )}
@@ -439,8 +557,10 @@ export function CalendarView() {
               onClose={() => setSelected(null)}
               onBook={() => void book(current)}
               onNote={() => void note(current)}
-              onRecord={() => void startVoice({ meetingKey: current.key }).then((ok) => ok && setSyncTick((x) => x + 1))}
+              onRecord={caps().voice ? () => void startVoice({ meetingKey: current.key }).then((ok) => ok && setSyncTick((x) => x + 1)) : undefined}
               onSkip={() => void skip(current)}
+              onSave={(p) => changeEntry(current, p)}
+              onLocal={patchEvent}
             />
           )}
         </div>
@@ -548,6 +668,7 @@ function eventClass(e: CalendarEvent, booked: Booked, selected: string | null, c
     past ? "past" : "",
     live ? "live" : "",
     e.private || freeBusy ? "veiled" : "",
+    e.write ? `write-${e.write.state}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -561,6 +682,9 @@ function EventMarks({ e, booked }: { e: CalendarEvent; booked: Booked }) {
       {!booked.get(e.key) && e.skip && <EyeOff className="calv-mark" size={11} aria-label={t("review.meeting.skipped")} />}
       {e.private && <Lock className="calv-mark" size={10} aria-label={t("calv.private")} />}
       {e.recurring && <Repeat className="calv-mark faint-mark" size={10} aria-label={t("calv.series")} />}
+      {e.write?.state === "pending" && <CalendarClock className="calv-mark" size={11} aria-label={t("entries.pendingShort")} />}
+      {e.write?.state === "conflict" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.conflict")} />}
+      {e.write?.state === "refused" && <AlertTriangle className="calv-mark conflict" size={11} aria-label={t("entries.refused")} />}
     </>
   );
 }
@@ -648,9 +772,28 @@ function TimeGrid(props: {
   onDropItem: (day: Date, minute: number, item: PlanItem) => void;
   onBlockChange: (b: FocusBlock, p: BlockPatch) => void;
   onBlockDelete: (b: FocusBlock) => void;
+  /** New appointments can be made by dragging over a free stretch or a double click. */
+  createOn: boolean;
+  draft: { start: Date; end: Date } | null;
+  onCreateRange: (start: Date, end: Date) => void;
+  onCreateAt: (day: Date, minute: number) => void;
+  onEntryChange: (e: CalendarEvent, p: EntryFields) => void;
+  onEntryDelete: (e: CalendarEvent) => void;
 }) {
   const t = useT();
   const { range, events, entries, overview, cal, booked, now, selected, onSelect, onDay, blocks } = props;
+  // Dragging over a free stretch of a day: from and to (minutes of that day).
+  const [sweep, setSweep] = useState<{ iso: string; day: Date; from: number; to: number } | null>(null);
+  const free = (e: { target: EventTarget; currentTarget: EventTarget }) => {
+    const el = e.target as HTMLElement;
+    return el === e.currentTarget || el.classList.contains("calv-meetings");
+  };
+  const sweepRange = (sw: { day: Date; from: number; to: number }) => {
+    const lo = Math.min(sw.from, sw.to);
+    const hi = Math.max(sw.from, sw.to) + SNAP;
+    const d = sw.day;
+    return { start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, lo), end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.min(hi, 24 * 60)) };
+  };
   // Where a dragged task or issue would land: day and minute.
   const [dropAt, setDropAt] = useState<{ iso: string; minute: number } | null>(null);
   const minuteOf = (e: DragEvent<HTMLElement>) => minuteAt(e.clientY - e.currentTarget.getBoundingClientRect().top, HOUR);
@@ -731,6 +874,32 @@ function TimeGrid(props: {
                 role="group"
                 aria-label={dayLabel(d)}
                 data-date={iso}
+                onPointerDown={(e) => {
+                  if (!props.createOn || e.button !== 0 || !free(e)) return;
+                  const at = Math.min(24 * 60 - SNAP, Math.floor(((e.clientY - e.currentTarget.getBoundingClientRect().top) / HOUR) * 4) * SNAP);
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  setSweep({ iso, day: d, from: at, to: at });
+                }}
+                onPointerMove={(e) => {
+                  if (sweep?.iso !== iso) return;
+                  const at = Math.max(0, Math.min(24 * 60 - SNAP, Math.floor(((e.clientY - e.currentTarget.getBoundingClientRect().top) / HOUR) * 4) * SNAP));
+                  if (at !== sweep.to) setSweep({ ...sweep, to: at });
+                }}
+                onPointerUp={(e) => {
+                  if (sweep?.iso !== iso) return;
+                  e.currentTarget.releasePointerCapture?.(e.pointerId);
+                  setSweep(null);
+                  // A click alone makes nothing (a double click does).
+                  if (sweep.to === sweep.from) return;
+                  const r = sweepRange(sweep);
+                  props.onCreateRange(r.start, r.end);
+                }}
+                onPointerCancel={() => setSweep(null)}
+                onDoubleClick={(e) => {
+                  if (!props.createOn || !free(e)) return;
+                  const at = Math.floor(((e.clientY - e.currentTarget.getBoundingClientRect().top) / HOUR) * 2) * 30;
+                  props.onCreateAt(d, at);
+                }}
                 onDragOver={(e) => {
                   if (!canPlan([...e.dataTransfer.types])) return;
                   e.preventDefault();
@@ -781,6 +950,41 @@ function TimeGrid(props: {
                       width: `calc((100% + 2px) / ${p.cols} - 2px)`,
                     } as CSSProperties;
                     const fit = blockFit(height, p.height, !!e.location);
+                    if (canEdit(e) && !e.all_day) {
+                      return (
+                        <EntryItem
+                          key={e.key}
+                          event={e}
+                          className={`${eventClass(e, booked, selected, cal, now)} ${fit.oneLine ? "short" : ""}`}
+                          style={{ ...style, "--lines": fit.titleLines } as CSSProperties}
+                          hourPx={HOUR}
+                          dayIndex={dayIndex}
+                          dayCount={range.days.length}
+                          label={entryLabel(e)}
+                          tooltip={`${e.title} · ${timeRange(e)}`}
+                          selected={selected === e.key}
+                          onSelect={onSelect}
+                          onChange={props.onEntryChange}
+                          onDelete={props.onEntryDelete}
+                        >
+                          {(shown) => {
+                            const when = timeRange({ ...e, ...shown });
+                            return (
+                              <>
+                                <span className="calv-ev-title">{e.title}</span>
+                                <span className="calv-ev-meta calv-ev-time">
+                                  <span className="ellipsis">{fit.oneLine ? when.slice(0, 5) : fit.place || !e.location ? when : `${when} · ${e.location}`}</span>
+                                  <span className="calv-ev-marks">
+                                    <EventMarks e={e} booked={booked} />
+                                  </span>
+                                </span>
+                                {fit.place && <span className="calv-ev-meta calv-ev-place">{e.location}</span>}
+                              </>
+                            );
+                          }}
+                        </EntryItem>
+                      );
+                    }
                     return (
                       <button
                         type="button"
@@ -830,6 +1034,8 @@ function TimeGrid(props: {
                   </div>
                 )}
                 {dropAt?.iso === iso && <DropGhost minute={dropAt.minute} length={props.dropLength} hourPx={HOUR} />}
+                {sweep?.iso === iso && sweep.to !== sweep.from && <EntryGhost {...sweepRange(sweep)} hourPx={HOUR} />}
+                {!sweep && props.draft && isoDay(props.draft.start) === iso && <EntryGhost start={props.draft.start} end={props.draft.end} hourPx={HOUR} />}
                 {iso === todayIso && <div className="calv-now" style={{ top: (minutesOfDay(now) / 60) * HOUR }} aria-hidden />}
               </div>
             );
@@ -872,7 +1078,7 @@ function MonthGrid(props: {
       </div>
       {weeks.map((week) => (
         <div key={isoDay(week[0])} className="calv-month-row" role="row">
-          <div className="calv-month-kw">{isoWeek(week[0])}</div>
+          <div className="calv-month-kw">{shownWeek(week[0])}</div>
           {week.map((d) => {
             const iso = isoDay(d);
             const cell = cells.get(iso);
@@ -1031,7 +1237,7 @@ function AgendaList({ range, events, blocks, cal, booked, selected, onSelect }: 
 
 // ---------------------------------------------------------------- detail
 
-function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, onRecord, onSkip }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; timeOn: boolean; onClose: () => void; onBook: () => void; onNote: () => void; onRecord: () => void; onSkip: () => void }) {
+function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, onRecord, onSkip, onSave, onLocal }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; timeOn: boolean; onClose: () => void; onBook: () => void; onNote: () => void; onRecord?: () => void; onSkip: () => void; onSave: (p: EntryFields) => void; onLocal: (key: string, e: CalendarEvent | null) => void }) {
   const recording = useVoice((v) => !!v.status.recording);
   const t = useT();
   const l = dateLocale();
@@ -1061,18 +1267,25 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
         <IconButton icon={X} label={t("calv.closeEsc")} size="sm" onClick={onClose} />
       </div>
       <div className="calv-detail-top">
-        <h2 className="calv-detail-title" tabIndex={-1}>
-          {e.title}
-        </h2>
-        <div className="calv-detail-when">
-          <span>{when}</span>
-          {e.recurring && (
-            <span className="calv-detail-series">
-              <Repeat size={12} aria-hidden />
-              {t("calv.partOfSeries")}
-            </span>
-          )}
-        </div>
+        {canEdit(e) ? (
+          <EntryTitle e={e} onSave={onSave} />
+        ) : (
+          <h2 className="calv-detail-title" tabIndex={-1}>
+            {e.title}
+          </h2>
+        )}
+        {/* An appointment that can be changed shows its times as fields below. */}
+        {!(canEdit(e) && !e.all_day) && (
+          <div className="calv-detail-when">
+            <span>{when}</span>
+            {e.recurring && (
+              <span className="calv-detail-series">
+                <Repeat size={12} aria-hidden />
+                {t("calv.partOfSeries")}
+              </span>
+            )}
+          </div>
+        )}
         {e.link && (
           <Button icon={Video} variant={past ? "secondary" : "primary"} className="calv-join" onClick={() => void openUrl(e.link!).catch((err) => useApp.getState().error(t("links.openFailed"), err))}>
             {t("calv.join", { kind: linkKind })}
@@ -1080,9 +1293,17 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
         )}
       </div>
 
-      {(e.location || e.organizer || e.attendees.length > 0) && (
+      {canEdit(e) && (
+        <section className="calv-detail-sec calv-entry-fields">
+          <EntryFieldsEdit e={e} onSave={onSave} />
+        </section>
+      )}
+
+      {(e.editable && e.editable !== "ics") || e.write ? <EntryState e={e} onLocal={onLocal} /> : null}
+
+      {((e.location && !canEdit(e)) || e.organizer || e.attendees.length > 0) && (
         <section className="calv-detail-sec calv-detail-rows">
-          {e.location && (
+          {e.location && !canEdit(e) && (
             <div className="calv-detail-row">
               <MapPin size={14} aria-hidden />
               <span>{e.location}</span>
@@ -1188,9 +1409,11 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           <Button variant={!timeOn && !(e.link && !past) ? "primary" : "secondary"} icon={NotebookPen} onClick={onNote}>
             {e.note_page_id != null ? t("calv.openNote") : t("calv.note")}
           </Button>
-          <Button variant="secondary" icon={Mic} className="calv-record-btn" disabled={recording} onClick={onRecord}>
+          {onRecord && (
+<Button variant="secondary" icon={Mic} className="calv-record-btn" disabled={recording} onClick={onRecord}>
             {t("calv.record")}
           </Button>
+)}
           {!e.private && !e.all_day && <PrepActions eventKey={e.key} />}
           {timeOn && !booked && (
             <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>

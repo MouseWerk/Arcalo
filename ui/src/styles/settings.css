@@ -413,7 +413,7 @@
 }
 .sec-key-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .sec-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); color: var(--text); cursor: pointer; }
-.sec-confirm input { margin-top: 3px; accent-color: var(--accent); }
+.sec-confirm input { margin-top: 3px; }
 .sec-pin-form { display: grid; gap: 10px; }
 .sec-pin-form p { margin: 0; min-height: 1.4em; }
 @container (max-width: 560px) { .sec-code { grid-template-columns: repeat(4, auto); } }
@@ -470,7 +470,7 @@
 .keygate-field { display: grid; gap: 6px; font-size: var(--fs-md); font-weight: var(--fw-medium); }
 .keygate-code { resize: none; font-family: var(--font-mono); font-variant-ligatures: none; font-size: var(--fs-base); letter-spacing: 0.05em; line-height: 1.6; padding: 8px 10px; }
 .keygate-remember { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); cursor: pointer; }
-.keygate-remember input { margin-top: 3px; accent-color: var(--accent); }
+.keygate-remember input { margin-top: 3px; }
 .keygate-msg { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--text-2); }
 .keygate-msg.tone-danger { color: var(--danger); }
 .keygate-lost { margin: 0; }
@@ -562,3 +562,72 @@
 .search-model-name { font-family: var(--font-mono); font-variant-ligatures: none; color: var(--text); overflow-wrap: anywhere; }
 .search-index { display: grid; gap: 8px; width: 100%; min-width: 0; }
 .search-index-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; font-size: var(--fs-sm); color: var(--text-2); }
+
+/* ---- guided Git sync setup (1.20): a dialog of four steps; selected states as a neutral tint ---- */
+.gs-entry { display: flex; flex-wrap: wrap; gap: 8px; }
+.gs-body { display: grid; gap: 14px; min-height: 260px; align-content: start; }
+.gs-body:has(.gs-done) { min-height: 0; }
+.gs-stack > .segmented { justify-self: start; }
+.gs-stack { display: grid; gap: 14px; min-width: 0; }
+.gs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gs-text { margin: 0; color: var(--text-2); line-height: 1.55; }
+.gs-manual { margin-right: auto; }
+.gs-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; }
+.gs-steps li { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 4px; border-radius: var(--r-pill); color: var(--text-3); font-size: var(--fs-sm); }
+.gs-steps li.on { background: var(--bg-current); color: var(--text); font-weight: var(--fw-semibold); }
+.gs-steps li.done { color: var(--text-2); }
+.gs-step-num { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--bg-hover); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.gs-steps li.on .gs-step-num { background: var(--bg-raised); color: var(--text); }
+.gs-providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.gs-provider { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); color: var(--text-2); text-align: left; transition: background var(--dur-fast) ease-out, border-color var(--dur-fast) ease-out; }
+.gs-provider:hover { background: var(--bg-hover); }
+.gs-provider.on { background: var(--bg-selected); }
+.gs-provider:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.gs-mark { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-sm); background: var(--bg-hover); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.02em; }
+.gs-provider.on .gs-mark { background: var(--bg-current); color: var(--text); }
+.gs-provider-text { display: grid; gap: 1px; min-width: 0; }
+.gs-provider-name { color: var(--text); font-weight: var(--fw-medium); }
+.gs-provider.on .gs-provider-name { font-weight: var(--fw-semibold); }
+.gs-provider-sub { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-3); }
+.gs-note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.gs-note svg { flex: none; color: var(--success); }
+.gs-callout { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-hover); color: var(--text); line-height: 1.55; }
+.gs-callout > svg { flex: none; margin-top: 2px; color: var(--info); }
+.gs-callout > div { display: grid; gap: 6px; min-width: 0; }
+.gs-callout > div > .btn { justify-self: start; }
+/* The manual form's „Testen“ ran without the stored token (another server). */
+.git-test-note { margin: 4px 0 0; font-size: var(--fs-sm); }
+.gs-callout p { margin: 0; overflow-wrap: anywhere; }
+.gs-callout-warn { background: var(--warning-soft); }
+.gs-callout-warn > svg { color: var(--warning); }
+.gs-callout-error { background: var(--danger-soft); }
+.gs-callout-error > svg { color: var(--danger); }
+.gs-problem-title { font-weight: var(--fw-semibold); }
+.gs-detail summary { width: fit-content; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.gs-detail summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--r-2xs); }
+.gs-detail code { display: block; margin-top: 4px; font-family: var(--font-mono); font-variant-ligatures: none; font-size: var(--fs-xs); color: var(--text-2); overflow-wrap: anywhere; user-select: text; }
+.gs-pick { display: grid; gap: 8px; min-width: 0; }
+.gs-search { display: flex; align-items: center; gap: 8px; height: var(--ctl-md); padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-input); }
+.gs-search:focus-within { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
+.gs-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); outline: none; font: inherit; }
+.gs-count { flex: none; font-size: var(--fs-sm); }
+.gs-repos { display: grid; gap: 1px; max-height: 248px; overflow-y: auto; padding: 2px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.gs-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); text-align: left; }
+.gs-repo:hover { background: var(--bg-hover); }
+.gs-repo.on { background: var(--bg-current); color: var(--text); }
+.gs-repo:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.gs-repo-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-repo.on .gs-repo-name { font-weight: var(--fw-semibold); }
+.gs-repo-badges { display: inline-flex; gap: 4px; }
+.gs-repo-desc { grid-column: 1 / -1; font-size: var(--fs-sm); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-checks { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.gs-check { display: flex; align-items: center; gap: 10px; min-height: 28px; color: var(--text-2); }
+.gs-check-ok { color: var(--text); }
+.gs-check-fail { color: var(--text); font-weight: var(--fw-medium); }
+.gs-check svg { flex: none; }
+.gs-ok { color: var(--success); }
+.gs-fail { color: var(--danger); }
+.gs-done { display: flex; align-items: flex-start; gap: 14px; padding: 8px 0; }
+.gs-done-icon { flex: none; color: var(--success); }
+.gs-done-title { margin: 2px 0 6px; font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.gs-done .gs-text + .gs-text { margin-top: 6px; }

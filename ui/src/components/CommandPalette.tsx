@@ -3,11 +3,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, CalendarPlus, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply, CalendarCheck,
-  Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
+  Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug, PanelTop,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
+import { openIssuePrompt, openIssueView, parseIssueKey } from "../lib/issueFull";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -16,6 +17,7 @@ import { AI_COMMANDS, useAi } from "../lib/aiswitch";
 import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
+import { entriesAvailable, newCalendarEntry } from "../lib/calentries";
 import { PageIcon } from "./icons";
 import { tabTitle } from "./Shell";
 import { createSubpage } from "../views/PageView";
@@ -53,7 +55,8 @@ import { startFirstRun } from "../onboarding/state";
 import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help";
 import { newChat, openChatView, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
-import { isComposing } from "../lib/ime";
+import { caps } from "../lib/capabilities";
+import { isComposing, isTab } from "../lib/ime";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
 
@@ -83,6 +86,12 @@ export function CommandPalette() {
   const activeTabObj = useApp((s) => s.tabs.find((x) => x.id === s.activeTabId) ?? null);
   const timeOn = useTimeTracking();
   const ai = useAi();
+  // „Neuer Termin…“ only where appointments can be written (Outlook Classic, its calendar read).
+  const calOutlook = useApp((s) => !!s.settings?.settings.calendar.outlook);
+  const [entriesHere, setEntriesHere] = useState(false);
+  useEffect(() => {
+    if (open && calOutlook) void entriesAvailable().then(setEntriesHere);
+  }, [open, calOutlook]);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -97,7 +106,8 @@ export function CommandPalette() {
     }
   }, [open, initial]);
   // The focus goes back where it was (the editor's caret, a tree row) when the palette closes,
-  // unless the chosen command put it somewhere else.
+  // unless the chosen command put it somewhere else. A command that showed a tab of another pane
+  // made that pane the active one: the focus going back would make the old one active again.
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement;
@@ -105,6 +115,7 @@ export function CommandPalette() {
       const back = () => {
         const now = document.activeElement;
         if (now && now !== document.body && !now.closest(".palette")) return;
+        if (opener?.closest(".pane:not(.active)")) return;
         if (opener instanceof HTMLElement && opener.isConnected && opener.offsetParent !== null) opener.focus({ preventScroll: true });
       };
       // After the command ran and React drew what it opened.
@@ -161,6 +172,11 @@ export function CommandPalette() {
       return out;
     }
 
+    // A typed issue key (or a Jira address): that issue in the issue view.
+    const typedKey = mode === "all" && s().settings?.settings.jira?.sites.length ? parseIssueKey(query) : null;
+    if (typedKey)
+      out.push({ id: "issue-key", section: t("cmd.issueSection"), title: t("cmd.issueOpenKey", { key: typedKey }), icon: ic(PanelTop), hint: "Enter", run: () => openIssueView(typedKey) });
+
     const pageItems = [...pages.values()]
       .map((p) => {
         const score = fuzzy(p.title, lower);
@@ -200,6 +216,9 @@ export function CommandPalette() {
       { id: "calendar", title: t("cmd.calendar"), subtitle: t("cmd.calendarSub"), icon: ic(CalendarDays), hint: hint("calendar"), run: () => setTimeout(() => openCalendar(), 0) },
       { id: "calendar-view", title: t("cmd.calendarView"), subtitle: t("cmd.calendarViewSub"), icon: ic(CalendarRange), hint: hint("calendar_view"), run: () => s().openTab({ kind: "calendar" }) },
       { id: "calendar-sync", title: t("cmd.calendarSync"), icon: ic(RefreshCw), run: () => void syncCalendarsNow() },
+      ...(entriesHere && calOutlook
+        ? [{ id: "calendar-entry-new", title: t("entries.newMenu"), icon: ic(CalendarPlus), run: () => newCalendarEntry() }]
+        : []),
       { id: "mail-capture", title: t("cmd.mailCapture"), subtitle: t("cmd.mailCaptureSub"), icon: ic(Mail), run: () => setTimeout(() => void captureFromOutlook(), 0) },
       { id: "mail-dialog", title: t("cmd.mailDialog"), subtitle: t("cmd.mailDialogSub"), icon: ic(MailPlus), run: () => setTimeout(() => openMailDialog(), 0) },
       { id: "tidy-up", title: t("fl.tidy"), subtitle: t("fl.tidySub"), icon: ic(Wand2), run: () => setTimeout(() => openTidyUp(null), 0) },
@@ -263,7 +282,12 @@ export function CommandPalette() {
       },
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
-      ...(s().settings?.settings.jira?.sites.length ? [{ id: "issues", title: t("cmd.issues"), subtitle: t("cmd.issuesSub"), icon: ic(Ticket), run: () => s().openTab({ kind: "issues" }) }] : []),
+      ...(s().settings?.settings.jira?.sites.length
+        ? [
+            { id: "issues", title: t("cmd.issues"), subtitle: t("cmd.issuesSub"), icon: ic(Ticket), run: () => s().openTab({ kind: "issues" }) },
+            { id: "issue-open", title: t("cmd.issueOpen"), subtitle: t("cmd.issueOpenSub"), icon: ic(PanelTop), run: () => setTimeout(openIssuePrompt, 0) },
+          ]
+        : []),
       { id: "graph", title: t("cmd.graph"), subtitle: t("cmd.graphSub"), icon: ic(Waypoints), run: () => s().openTab({ kind: "graph" }) },
       { id: "duplicates", title: t("cmd.duplicates"), subtitle: t("cmd.duplicatesSub"), icon: ic(Copy), run: () => openDuplicates() },
       { id: "local-graph", title: t("cmd.localGraph"), subtitle: t("cmd.localGraphSub"), icon: ic(Network), run: () => s().set({ panelOpen: true, panelTab: "graph" }) },
@@ -309,8 +333,13 @@ export function CommandPalette() {
       { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("arcalo.panel", v); } },
       { id: "focus", title: t("cmd.focusMode"), icon: ic(Focus), hint: hint("focus_mode"), run: () => s().set({ focusMode: !s().focusMode }) },
       { id: "theme", title: t("cmd.theme"), icon: ic(Moon), run: () => toggleTheme() },
-      { id: "import", title: t("cmd.importVault"), icon: ic(FolderInput), run: () => importVault() },
-      { id: "export", title: t("cmd.exportMd"), icon: ic(Download), run: () => exportVault() },
+      // Obsidian vaults are folders on this computer (not on Android).
+      ...(caps().folders
+        ? [
+            { id: "import", title: t("cmd.importVault"), icon: ic(FolderInput), run: () => importVault() },
+            { id: "export", title: t("cmd.exportMd"), icon: ic(Download), run: () => exportVault() },
+          ]
+        : []),
       {
         id: "index",
         title: t("cmd.reindex"),
@@ -381,7 +410,7 @@ export function CommandPalette() {
     if (tagHits) out.unshift({ id: "tag", section: t("palette.tags"), title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj]);
+  }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj, entriesHere, calOutlook]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
@@ -425,7 +454,7 @@ export function CommandPalette() {
               } else if (e.key === "Escape") {
                 e.preventDefault();
                 close();
-              } else if (e.key === "Tab") {
+              } else if (isTab(e)) {
                 // The only control of the dialog: the focus stays here instead of reaching the app behind.
                 e.preventDefault();
               }
@@ -515,6 +544,7 @@ export function askWeeklyReport(now = new Date()) {
 
 /** „Sprachnotiz aufnehmen“ (a new page, or into the open page) or „Aufnahme beenden“. */
 function voiceCommands(): { id: string; title: string; subtitle?: string; icon: React.ReactNode; run: () => void }[] {
+  if (!caps().voice) return [];
   if (useVoice.getState().status.recording) return [{ id: "voice-stop", title: t("voice.stopRecording"), icon: ic(Square), run: () => void stopVoice() }];
   const st = useApp.getState();
   const tab = st.tabs.find((x) => x.id === st.activeTabId);

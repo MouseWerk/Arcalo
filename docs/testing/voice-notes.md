@@ -9,9 +9,20 @@ The e2e tests `e2e/tests/111-voice-notes.test.js` (German) and `112-voice-notes-
 | `ARCALO_TEST_TRANSCRIPT` | Whisper: lines `[00:12] Text` (inline or as a file path); the progress runs in five steps. |
 | `ARCALO_TEST_MODEL_BASES` | The GitHub and Hugging Face addresses, as `<github base>|<huggingface base>`, so a download never leaves the test machine. |
 
+`120-voice-microphone-recovery.test.js` feeds digital silence (a blocked microphone): the voice bar's hint,
+no voice note on stop, two starts at once, the question on quit, and a transcription a crash cut off.
+
 Release builds ignore them. The unit tests in `crates/arcalo-core/src/voice/` cover the model registry and
 its checksums, the source order with a local HTTP server, resuming (HTTP range and a file share), the
 transcript as Markdown, FLAC encoding and the parsing of action items.
+
+Real whisper.cpp runs in the unit tests of `src-tauri/src/voice.rs` when `ARCALO_TEST_WHISPER_MODEL` names a
+model file (ggml-tiny.bin from whisper.cpp is enough): several transcriptions in a row complete, a cancel stops
+one within a pass. Without the variable that test is skipped:
+
+```
+ARCALO_TEST_WHISPER_MODEL=/path/to/ggml-tiny.bin cargo test -p arcalo --lib voice::
+```
 
 In the Linux test container the audio player shows „Das Audio lässt sich hier nicht abspielen“: WebKitGTK has
 no sound output there. Check playback on Windows and macOS.

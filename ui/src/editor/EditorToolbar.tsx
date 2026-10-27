@@ -11,6 +11,7 @@ import {
   ArrowDownAZ, ArrowUpAZ, ListX, Clock, BarChart3, Sparkles, MoreHorizontal, Heading,
 } from "lucide-react";
 import { IconButton, Select, useMenu, type MenuEntry } from "../components/ui";
+import { scrollEdges } from "../components/SideScroll";
 import { keys, replaceHint } from "../lib/shortcut";
 import { slashItems, type SlashOptions } from "./extensions";
 import { changeSelectionCase, clearFormatting, dedupeSelectedLines, moveBlock, sortSelectedLines, statsText, textStats } from "./tools";
@@ -80,6 +81,14 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
         if (k === 1) need += MORE_W;
       }
       if (k !== level) setLevel(k);
+      edges();
+    };
+    // Scrolled sideways (even the essentials do not fit): a fade on each edge that hides buttons
+    // instead of a button cut in half, as in the tab strip.
+    const edges = () => {
+      const { left, right } = scrollEdges(el);
+      el.classList.toggle("fade-left", left);
+      el.classList.toggle("fade-right", right);
     };
     fit();
     // On the next frame: changing the toolbar inside the observer's callback would loop.
@@ -89,9 +98,11 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
       frame = requestAnimationFrame(fit);
     });
     ro.observe(host);
+    el.addEventListener("scroll", edges, { passive: true });
     return () => {
       cancelAnimationFrame(frame);
       ro.disconnect();
+      el.removeEventListener("scroll", edges);
     };
   }, [level]);
   const shown = (k: number) => level < k;

@@ -118,8 +118,10 @@ test("„Später erinnern“ hides the update until then; „Jetzt anzeigen“ b
 
 test("quitting installs the ready update after a database backup and keeps the old version", async () => {
   await app.invoke("page_create", { parentId: null, title: "Vor dem Update", icon: null, content: "Bleibt" });
+  // Quits after this call has answered: a quit that wins the race ends the WebDriver session
+  // before the answer, and the call fails with "invalid session id".
   await app.browser.execute(() => {
-    window.__TAURI_INTERNALS__.invoke("app_quit");
+    setTimeout(() => window.__TAURI_INTERNALS__.invoke("app_quit"), 50);
   });
   const note = path.join(dataDir, "updates", "fake-install.json");
   for (let i = 0; i < 100 && !fs.existsSync(note); i++) await new Promise((r) => setTimeout(r, 100));

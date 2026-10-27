@@ -67,7 +67,7 @@ const clickRow = (sel, re) =>
   );
 const openReview = async () => {
   await app.click(".ribbon .ribbon-review");
-  await app.waitFor(".pane.active .rv-view .rv-stats");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view .rv-stats");
 };
 
 test("the day's sections show what was done", async () => {
@@ -113,17 +113,17 @@ test("the day's sections show what was done", async () => {
 
 test("rows open the page, the Kalender at the meeting and the Zeiterfassung", async () => {
   assert.ok(await clickRow(".rv-pages .rv-page", /Rückblick Konzept/));
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue().catch(() => "")) === "Rückblick Konzept", { timeoutMsg: "page not opened" });
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue().catch(() => "")) === "Rückblick Konzept", { timeoutMsg: "page not opened" });
   await openReview();
   assert.ok(await clickRow(".rv-meetings .rv-meeting", /Kundentermin Rückblick/));
-  await app.waitText(".pane.active .calv-detail-title", /Kundentermin Rückblick/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .calv-detail-title", /Kundentermin Rückblick/);
   await openReview();
   assert.ok(await clickRow(".rv-time .rv-wbs", /NP-8801\/1020/));
-  await app.waitFor(".pane.active .week-grid");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .week-grid");
   await app.waitText(".pane.active .tab.active", /Zeiterfassung/);
   await openReview();
   assert.ok(await clickRow(".rv-tasks .rv-task", /Review vorbereiten/));
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue().catch(() => "")) === "Rückblick Konzept", { timeoutMsg: "task page not opened" });
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue().catch(() => "")) === "Rückblick Konzept", { timeoutMsg: "task page not opened" });
 });
 
 test("←, → and T move between days", async () => {
@@ -172,32 +172,32 @@ test("„In Tagesnotiz übernehmen“ writes one block and replaces it on repeat
   assert.equal(second.split("<!-- rückblick -->")[0], first.split("<!-- rückblick -->")[0], "text before the block kept");
   // The note shows the block and links back to the review.
   await app.click(".toast .btn");
-  await app.waitFor(".pane.active .page-review-link");
-  await app.waitText(".pane.active .ProseMirror h2", /Rückblick/);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .page-review-link");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror h2", /Rückblick/);
   await app.shot("73-daily-note-block");
-  await app.click(".pane.active .page-review-link");
-  await app.waitText(".pane.active .rv-date", /^Heute · /);
+  await app.click(".pane.active > .pane-content:not([hidden]) .page-review-link");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .rv-date", /^Heute · /);
 });
 
 test("the Kalender day header and narrow panes", async () => {
   await app.keys(["Control", "Shift", "e"]);
-  await app.waitFor(".pane.active .calv");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv");
   // The meeting opened earlier is still selected: close its detail panel.
-  if (await (await app.$(".pane.active .calv-detail")).isExisting()) {
+  if (await (await app.$(".pane.active > .pane-content:not([hidden]) .calv-detail")).isExisting()) {
     await app.browser.execute(() => document.activeElement?.blur());
     await app.keys(["Escape"]);
-    await app.browser.waitUntil(async () => !(await (await app.$(".pane.active .calv-detail")).isExisting()), { timeoutMsg: "detail still open" });
+    await app.browser.waitUntil(async () => !(await (await app.$(".pane.active > .pane-content:not([hidden]) .calv-detail")).isExisting()), { timeoutMsg: "detail still open" });
   }
   // A seven-day week leaves no room for the chips: today's own view has them.
-  if (!(await app.browser.execute((d) => !!document.querySelector(`.pane.active .calv-dayhead[data-date="${d}"] .calv-review-btn`)?.offsetWidth, today)))
-    await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .calv-dayhead-date`);
-  await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .calv-review-btn`);
-  await app.waitText(".pane.active .rv-date", /^Heute · /);
+  if (!(await app.browser.execute((d) => !!document.querySelector(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${d}"] .calv-review-btn`)?.offsetWidth, today)))
+    await app.click(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${today}"] .calv-dayhead-date`);
+  await app.click(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${today}"] .calv-review-btn`);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .rv-date", /^Heute · /);
   // A narrow window: one column, no horizontal scroll.
   await app.browser.setWindowSize(1000, 900);
   await app.browser.pause(400);
   const overflow = await app.browser.execute(() => {
-    const v = document.querySelector(".pane.active .view-scroll");
+    const v = document.querySelector(".pane.active > .pane-content:not([hidden]) .view-scroll");
     return v ? v.scrollWidth - v.clientWidth : -1;
   });
   assert.ok(overflow <= 1, `no horizontal overflow (${overflow})`);

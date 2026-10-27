@@ -268,6 +268,7 @@ fn event(uid: &str, instance: &str, start: DateTime<Utc>, minutes: i64, title: &
         busy: Busy::Busy,
         private: false,
         categories: vec![],
+        meta: Default::default(),
     }
 }
 
@@ -533,6 +534,15 @@ fn applying_books_drafts_links_sources_and_learns() {
 
     // The same week again: everything is booked.
     assert!(week(&db, t(25, 16, 0)).proposals.is_empty());
+    // Applied a second time (another window, a retry after a timeout): nothing is booked twice.
+    let again = apply(&db, &items, t(25, 16, 5), &Thresholds::default()).unwrap();
+    assert!(again.entry_ids.is_empty(), "{:?}", again.entry_ids);
+    assert_eq!(db.list_time_entries(&EntryFilter::default()).unwrap().len(), 3);
+    assert_eq!(
+        db.calendar_event(&event_key(OUTLOOK, "jf", "2026-09-21T08:00:00Z")).unwrap().entry_id,
+        Some(out.entry_ids[0]),
+        "the mark keeps its first entry"
+    );
     // Next week the page and the series come with the chosen WBS, the goal as well.
     // Edited right after the meeting: one block with it.
     edited(&db, portal, t(28, 9, 50), 40);

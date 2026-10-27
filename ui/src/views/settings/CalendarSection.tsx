@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { caps } from "../../lib/capabilities";
 import { FileUp, FolderOpen, Link2, MoreHorizontal, Palette, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { api, on } from "../../lib/api";
 import { useApp } from "../../store/app";
@@ -16,6 +17,8 @@ import { OutlookCalendars } from "./OutlookCalendars";
 import { outlookSummary } from "../../lib/outlookcal";
 import { DocLink, Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
 import { isKey } from "../../lib/ime";
+import { targetCalendars } from "../CalendarEntries";
+import { sourceName } from "../../lib/agenda";
 
 const COLORS = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#ca8a04"];
 const COLOR_NAMES: TKey[] = ["calset.color.blue", "calset.color.petrol", "calset.color.violet", "calset.color.orange", "calset.color.pink", "calset.color.green", "calset.color.cyan", "calset.color.gold"];
@@ -49,7 +52,7 @@ export function CalendarSection({ draft, update }: SectionProps) {
   useEffect(() => {
     const load = () => api.calendarStatus().then(setStatus).catch(() => {});
     load();
-    const offs = [on("calendar://synced", load), on("calendar://syncing", load), on("settings://changed", load)];
+    const offs = [on("calendar://synced", load), on("calendar://syncing", load), on("settings://changed", load), on("calendar://entries", load)];
     return () => offs.forEach((u) => u.then((f) => f()));
   }, []);
 
@@ -148,9 +151,12 @@ export function CalendarSection({ draft, update }: SectionProps) {
             <Button icon={Link2} onClick={() => setAdding("url")} disabled={busy}>
               {t("calset.addUrl")}
             </Button>
-            <Button icon={FileUp} variant="ghost" onClick={() => setAdding("file")} disabled={busy}>
-              {t("calset.addFile")}
-            </Button>
+            {/* A file source is read again at every sync: a path of this computer (not on Android). */}
+            {caps().folders && (
+              <Button icon={FileUp} variant="ghost" onClick={() => setAdding("file")} disabled={busy}>
+                {t("calset.addFile")}
+              </Button>
+            )}
           </div>
           <p className="calset-note faint">{t("calset.secretNote", { store: status?.secret_storage ?? t("calset.secretStore") })}</p>
         </Unfiltered>
@@ -207,6 +213,43 @@ export function CalendarSection({ draft, update }: SectionProps) {
           <Row label={t("blocks.outlook")} description={t("blocks.outlookDesc")}>
             <Switch label={t("blocks.outlook")} checked={!!cal.blocks_outlook} onChange={(v) => set({ blocks_outlook: v })} />
           </Row>
+        )}
+      </Group>
+
+      <Group title={t("entries.settings")} description={status?.entries_available ? t("entries.settingsDesc") : t("entries.unavailableDesc")}>
+        {status?.entries_available && (
+          <>
+            <Row label={t("entries.outlook")} description={t("entries.outlookDesc")}>
+              <Switch label={t("entries.outlook")} checked={!!cal.entries_outlook} onChange={(v) => set({ entries_outlook: v })} />
+            </Row>
+            {targetCalendars(cal).length > 1 && (
+              <Row label={t("entries.target")} description={t("entries.targetDesc")}>
+                <Select
+                  aria-label={t("entries.target")}
+                  value={targetCalendars(cal).some((c) => c.id === cal.entry_target) ? cal.entry_target! : "outlook"}
+                  onChange={(e) => set({ entry_target: e.target.value })}
+                  options={targetCalendars(cal).map((c) => ({ value: c.id, label: sourceName(c.id, cal) }))}
+                />
+              </Row>
+            )}
+            <Row label={t("entries.length")} description={t("entries.lengthDesc")}>
+              <Select
+                aria-label={t("entries.length")}
+                value={String(cal.entry_minutes ?? 30)}
+                onChange={(e) => set({ entry_minutes: Number(e.target.value) })}
+                options={[15, 30, 45, 60, 90, 120].map((m) => ({ value: String(m), label: t("focus.minutes", { n: m }) }))}
+              />
+            </Row>
+            {(!!status.entries_waiting?.pending || !!status.entries_waiting?.conflict || !!status.entries_waiting?.refused) && (
+              <Row label={t("entries.pending")}>
+                <span className="calset-waiting">
+                  {!!status.entries_waiting?.pending && <StatusNote tone="info">{t("entries.waiting", { n: status.entries_waiting.pending })}</StatusNote>}
+                  {!!status.entries_waiting?.conflict && <StatusNote tone="warning">{t("entries.conflicts", { n: status.entries_waiting.conflict })}</StatusNote>}
+                  {!!status.entries_waiting?.refused && <StatusNote tone="warning">{t("entries.refusedCount", { n: status.entries_waiting.refused })}</StatusNote>}
+                </span>
+              </Row>
+            )}
+          </>
         )}
       </Group>
 

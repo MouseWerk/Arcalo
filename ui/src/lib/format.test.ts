@@ -5,7 +5,7 @@ import { fmtApprox, fmtDuration, fmtHours, setFormatPrefs } from "./format";
 import * as dayreview from "./dayreview";
 import * as focus from "./focus";
 import { hoursLabel } from "./calendar";
-import { fileSize, importProgress, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
+import { fileSize, importProgress, isoWeek, shownWeek, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
   const ok: [string, number][] = [
@@ -152,5 +152,17 @@ describe("hours: one format everywhere (q116 V15, T4)", () => {
       for (const m of src.matchAll(/`\$\{[^`]*\/ 60[^`]*\}:\$\{[^`]*\} h`|\bh1\([^()]*\/ 60\)|\bh1\(\w+\.\w*hours\)/g)) bad.push(`${path.basename(f)}: ${m[0].slice(0, 80)}`);
     }
     expect(bad).toEqual([]);
+  });
+});
+
+describe("shownWeek", () => {
+  it("is the ISO week of a shown week whichever day it starts on", () => {
+    // Sun 11 – Sat 17 Oct 2026: six of its days are in ISO week 42.
+    expect(shownWeek(new Date(2026, 9, 11))).toBe(42);
+    expect(shownWeek(new Date(2026, 9, 12))).toBe(42);
+    expect(isoWeek(new Date(2026, 9, 11))).toBe(41);
+    // Across the turn of the year: Sun 27 Dec 2026 starts the week of Mon 28 Dec (ISO week 53).
+    expect(shownWeek(new Date(2026, 11, 27))).toBe(53);
+    expect(shownWeek(new Date(2027, 0, 3))).toBe(1);
   });
 });

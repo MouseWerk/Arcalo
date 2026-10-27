@@ -283,6 +283,7 @@ export function Dashboard() {
                   <span
                     className="dash-tab-more"
                     role="button"
+                    aria-haspopup="menu"
                     tabIndex={-1}
                     aria-label={tr("dash.board.options", { name: b.name })}
                     onClick={(e) => {
@@ -628,7 +629,7 @@ function WidgetCard({
       tabIndex={editing ? 0 : undefined}
       onKeyDown={onKeyDown}
     >
-      <header className="dw-head" onPointerDown={editing && full ? onGrab : undefined}>
+      <header className="dw-head" onPointerDown={editing && full ? onGrab : undefined} data-native-press={editing && full ? "" : undefined}>
         {editing && <GripVertical size={14} className="faint dw-grip" aria-hidden />}
         <Icon size={14} className="dw-head-icon" aria-hidden />
         {open && !editing ? (

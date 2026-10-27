@@ -39,21 +39,22 @@ pub fn settings_export(state: State<'_, AppState>, path: String) -> Result<()> {
         exported_at: Local::now().to_rfc3339(),
         settings: &settings,
     };
-    std::fs::write(path.trim(), serde_json::to_string_pretty(&file)? + "\n").at(path.trim())?;
-    Ok(())
+    let text = serde_json::to_string_pretty(&file)? + "\n";
+    crate::picked::output(&path, |p| std::fs::write(p, text).at(p))
 }
 
 /// Reads a settings file for the import preview (JSON only, at most 1 MB). The UI
 /// validates it and shows the differences before anything is saved.
 #[tauri::command(async)]
 pub fn settings_file_read(path: String) -> Result<String> {
-    let path = PathBuf::from(path.trim());
+    let file = crate::picked::input(&path)?;
+    let path = file.path();
     if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
         return Err(Error::State(
             arcalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
         ));
     }
-    if std::fs::metadata(&path).at(&path)?.len() > MAX_IMPORT_BYTES {
+    if std::fs::metadata(path).at(path)?.len() > MAX_IMPORT_BYTES {
         return Err(Error::State(
             arcalo_core::tr!(
                 "Die Datei ist zu groß für eine Einstellungsdatei",
@@ -62,7 +63,7 @@ pub fn settings_file_read(path: String) -> Result<String> {
             .into(),
         ));
     }
-    std::fs::read_to_string(&path).at(&path)
+    std::fs::read_to_string(path).at(path)
 }
 
 /// Writes a custom theme as a theme file (Settings → Darstellung → Exportieren).
@@ -71,8 +72,7 @@ pub fn theme_export(path: String, theme: prefs::CustomTheme) -> Result<()> {
     let theme = prefs::normalize_custom_themes(vec![theme]).pop().ok_or_else(|| {
         Error::State(arcalo_core::tr!("Das Theme enthält ungültige Farben", "The theme contains invalid colors").into())
     })?;
-    std::fs::write(path.trim(), prefs::theme_file_json(&theme)).at(path.trim())?;
-    Ok(())
+    crate::picked::output(&path, |p| std::fs::write(p, prefs::theme_file_json(&theme)).at(p))
 }
 
 /// Reads and checks a theme file; the UI adds the theme to the custom themes.

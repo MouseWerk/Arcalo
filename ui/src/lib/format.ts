@@ -239,6 +239,8 @@ export function isoWeek(d: Date) {
   const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
   return Math.ceil(((t.getTime() - y.getTime()) / 86400000 + 1) / 7);
 }
+/** The ISO week of a week shown from `start`: one that starts on Sunday counts as the week of its Monday (six of its seven days). */
+export const shownWeek = (start: Date) => isoWeek(start.getDay() === 0 ? addDays(start, 1) : start);
 
 const DURATION_UNITS: Record<string, number> = {
   h: 60, std: 60, stunde: 60, stunden: 60, hr: 60, hrs: 60, hour: 60, hours: 60,

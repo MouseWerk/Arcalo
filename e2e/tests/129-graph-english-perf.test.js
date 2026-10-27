@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const canvasSel = ".graph-view .graph-canvas canvas";
 
 async function reload() {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }

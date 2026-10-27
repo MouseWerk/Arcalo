@@ -22,8 +22,8 @@ const bg = (sel) => app.browser.execute((s) => getComputedStyle(document.querySe
 const settings = async () => (await app.invoke("settings_get")).settings;
 
 async function openAppearance() {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="appearance"]').click());
   await app.waitText(".settings-head h1", /Darstellung/);
 }
@@ -73,7 +73,7 @@ test("the picker switches themes: tokens change, the mode follows, the choice pe
   }, { timeoutMsg: "light choice not saved" });
 
   // The next start shows the same theme (and the splash remembers its colors).
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.browser.waitUntil(async () => (await themeId()) === "solarized-light", { timeoutMsg: "theme not restored" });
   assert.equal(await cssVar("--bg-canvas"), "#fdf6e3");
@@ -165,7 +165,7 @@ test("custom themes round-trip through a theme file; invalid files are refused",
   const ids = saved.settings.appearance.custom_themes.map((t) => t.id);
   assert.equal(new Set(ids).size, 2);
   assert.ok(ids.every((id) => /^custom-/.test(id)));
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await openAppearance();
   await app.waitText(".theme-card-name", /^Papier Import$/);

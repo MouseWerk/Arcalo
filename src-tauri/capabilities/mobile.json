@@ -1,12 +1,18 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
-  "description": "Permissions of the Android companion app's only window (app commands, events, links opened in the browser)",
+  "description": "Permissions of the Android app's only window (app commands, events, links opened in the browser; the full app's questions and Android's document picker for files, 1.20)",
   "platforms": ["android", "iOS"],
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:event:default",
-    "opener:default"
+    "core:window:allow-set-title",
+    "opener:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-message"
   ]
 }

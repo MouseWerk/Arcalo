@@ -9,14 +9,7 @@ before(async () => (app = await launch()));
 after(async () => app?.close());
 
 const order = () => app.browser.execute(() => [...document.querySelectorAll(".dash-grid .dw")].map((e) => e.dataset.widget));
-const reload = async (hash = "") => {
-  await app.browser.execute((h) => {
-    location.hash = h;
-    location.reload();
-  }, hash);
-  await app.browser.pause(300);
-  await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
-};
+const reload = (hash = "") => app.reload(hash);
 /** Clicks the first `sel` element whose text is `text` (waits until there is one). */
 const clickText = async (sel, text) => {
   await app.browser.waitUntil(
@@ -122,7 +115,7 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   await clickText(".dash-bar button", "Abbrechen");
   assert.deepEqual(await order(), expected);
   await app.keys(["Control", "t"]);
-  await app.browser.waitUntil(async () => (await app.$$(".dash")).length >= 1 && (await app.$(".pane.active .dash-grid")).isExisting());
+  await app.browser.waitUntil(async () => (await app.$$(".dash")).length >= 1 && (await app.$(".pane.active > .pane-content:not([hidden]) .dash-grid")).isExisting());
   assert.deepEqual(await app.consoleErrors(), []);
 });
 

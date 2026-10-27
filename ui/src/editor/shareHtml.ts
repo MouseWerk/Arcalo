@@ -13,7 +13,7 @@ import { highlightCodeBlocks } from "./languages";
 import { splitFrontmatter } from "./extensions";
 import { tocTree, type TocTree } from "./blocks";
 import { baseName, formatSize, isFileLinkTarget } from "./fileEmbed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { EMBED_FILE_BYTES, buildHtmlDocument, dataUri, htmlFileName, mimeOf, type ExportSection } from "../lib/htmlExport";
 import { api } from "../lib/api";
 import { fmtDate } from "../lib/format";
@@ -175,7 +175,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   const titles = titleSet(useApp.getState().pages);
   for (const a of root.querySelectorAll<HTMLElement>("a[data-wikilink]")) {
     const target = (a.getAttribute("data-target") ?? "").trim();
-    if (!isFileLinkTarget(target) || ctx.anchors.has(target.toLowerCase()) || titles.has(target.toLowerCase())) continue;
+    if (!isFileLinkTarget(target) || ctx.anchors.has(target.toLowerCase()) || titles.has(linkKey(target))) continue;
     const label = a.textContent ?? "";
     a.replaceWith(el(doc, "span", { "data-file": baseName(target), ...(label && label !== target ? { "data-alt": label } : {}) }));
   }
@@ -439,9 +439,9 @@ export function resolveSectionLinks(sections: ExportSection[]): ExportSection[] 
   }));
 }
 
-/** Builds the HTML file of a page (and its subpages). */
-export async function exportPagesHtml(pageId: number, withChildren: boolean, files: AttachmentSource = appFiles): Promise<{ title: string; html: string }> {
-  const list = collectPages(pageId, withChildren);
+/** Builds the HTML file of a page (and its subpages), or of several pages one after the other. */
+export async function exportPagesHtml(pageId: number | number[], withChildren: boolean, files: AttachmentSource = appFiles): Promise<{ title: string; html: string }> {
+  const list = (Array.isArray(pageId) ? pageId : [pageId]).flatMap((id) => collectPages(id, withChildren));
   const docs = await Promise.all(list.map((p) => api.page(p.id)));
   const anchors = new Map(docs.map((d) => [d.title.toLowerCase(), `page-${d.id}`]));
   const sections: ExportSection[] = [];
@@ -456,12 +456,14 @@ export async function exportPagesHtml(pageId: number, withChildren: boolean, fil
 /** Asks for „Als HTML-Datei teilen“ of a page (`detail: { id, withChildren, path? }`); without a path the save dialog asks. */
 export const SHARE_HTML_EVENT = "arcalo:share-html";
 
-/** Page menu „Als HTML-Datei teilen…“: save dialog (unless `path` is given), then one self-contained file. */
-export async function sharePageAsHtml(pageId: number, withChildren: boolean, path?: string) {
+/** Page menu „Als HTML-Datei teilen…“: save dialog (unless `path` is given), then one self-contained file.
+ *  Several pages (the sidebar's selection) go into one file. */
+export async function sharePageAsHtml(pageId: number | number[], withChildren: boolean, path?: string) {
   const s = useApp.getState();
   try {
     await flushAllEditors().catch(() => {});
-    const title = s.pages.get(pageId)?.title ?? t("share.page");
+    const ids = Array.isArray(pageId) ? pageId : [pageId];
+    const title = ids.length > 1 ? t("share.pages", { n: ids.length }) : (s.pages.get(ids[0])?.title ?? t("share.page"));
     const chosen = path ?? (await saveDialog({ defaultPath: htmlFileName(title), filters: [{ name: "HTML", extensions: ["html"] }] }));
     if (!chosen) return;
     const file = /\.html?$/i.test(chosen) ? chosen : `${chosen}.html`;
@@ -475,7 +477,8 @@ export async function sharePageAsHtml(pageId: number, withChildren: boolean, pat
 
 if (typeof window !== "undefined") {
   window.addEventListener(SHARE_HTML_EVENT, (e) => {
-    const d = (e as CustomEvent<{ id: number; withChildren?: boolean; path?: string }>).detail;
-    if (d?.id != null) void sharePageAsHtml(d.id, !!d.withChildren, d.path);
+    const d = (e as CustomEvent<{ id?: number; ids?: number[]; withChildren?: boolean; path?: string }>).detail;
+    const which = d?.ids?.length ? d.ids : d?.id;
+    if (which != null) void sharePageAsHtml(which, !!d.withChildren, d.path);
   });
 }

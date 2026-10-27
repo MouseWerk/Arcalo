@@ -10,7 +10,7 @@ import type { ProjectTree, TimeEntryRow, TimerStatus } from "../../lib/types";
 import { mobileApi, type RecentTarget } from "../api";
 import { errorText, useMobile } from "../context";
 import { bookingDays, entryReference, hours, weekEntries, zeitLine, type ZeitDraft } from "../model";
-import { Empty, Field, Header, Notice, Section, Segmented, Spinner } from "../ui";
+import { Choice, Empty, Field, Header, Notice, Section, Segmented, Spinner } from "../ui";
 
 export function TimeScreen() {
   const m = useMobile();
@@ -123,6 +123,7 @@ function TimerCard({ timer }: { timer: TimerStatus }) {
   const seconds = Math.max(0, Math.floor((end - new Date(timer.entry.start_time).getTime()) / 1000) - (timer.paused_seconds ?? 0));
   const clock = `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const [reference, setReference] = useState("");
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   useEffect(() => {
     api
       .wbs()
@@ -160,8 +161,20 @@ function TimerCard({ timer }: { timer: TimerStatus }) {
             <Square size={16} />
             {t("mob.time.stop")}
           </button>
-          <button type="button" className="m-btn m-btn-quiet" onClick={run(() => api.timerDiscard())}>
-            {t("mob.time.discard")}
+          {/* Discarding loses the running time: the first tap asks, a second within 3 s discards. */}
+          <button
+            type="button"
+            className={confirmDiscard ? "m-btn m-btn-danger" : "m-btn m-btn-quiet"}
+            onClick={
+              confirmDiscard
+                ? run(() => api.timerDiscard())
+                : () => {
+                    setConfirmDiscard(true);
+                    window.setTimeout(() => setConfirmDiscard(false), 3000);
+                  }
+            }
+          >
+            {confirmDiscard ? t("mob.time.discardConfirm") : t("mob.time.discard")}
           </button>
         </div>
       </div>
@@ -196,6 +209,13 @@ export function ZeitForm({ onBooked, withTimer = false }: { onBooked?: () => voi
       ),
     [tree],
   );
+  // The references that start with what is typed (the app's own list: a datalist would open
+  // Android's suggestion strip).
+  const suggestions = useMemo(() => {
+    const q = draft.reference.trim().toLowerCase();
+    if (!q) return [];
+    return references.filter((r) => r.value.toLowerCase().startsWith(q) && r.value.toLowerCase() !== q).slice(0, 5);
+  }, [references, draft.reference]);
   const line = zeitLine(draft, days.today);
   const set = (patch: Partial<ZeitDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -261,28 +281,30 @@ export function ZeitForm({ onBooked, withTimer = false }: { onBooked?: () => voi
         </div>
       )}
       <Field label={t("mob.time.reference")} htmlFor="m-zeit-ref">
-        <input id="m-zeit-ref" className="m-input" list="m-zeit-refs" autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={draft.reference} placeholder={t("mob.time.referencePlaceholder")} onChange={(e) => set({ reference: e.target.value })} />
-        <datalist id="m-zeit-refs">
-          {references.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </datalist>
+        <input id="m-zeit-ref" className="m-input" autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={draft.reference} placeholder={t("mob.time.referencePlaceholder")} onChange={(e) => set({ reference: e.target.value })} />
+        {suggestions.length > 0 && (
+          <div className="m-suggest" role="listbox" aria-label={t("mob.time.reference")}>
+            {suggestions.map((r) => (
+              <button key={r.value} type="button" role="option" aria-selected={false} className="m-suggest-opt" onClick={() => set({ reference: r.value })}>
+                <span className="m-suggest-main">{r.value}</span>
+                {r.label && <span className="m-suggest-sub">{r.label}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </Field>
       <div className="m-field-pair">
         <Field label={t("mob.time.duration")} htmlFor="m-zeit-dur">
           <input id="m-zeit-dur" className="m-input num" inputMode="decimal" value={draft.duration} placeholder={t("mob.time.durationPlaceholder")} onChange={(e) => set({ duration: e.target.value })} />
         </Field>
         <Field label={t("mob.time.la")} htmlFor="m-zeit-la">
-          <select id="m-zeit-la" className="m-input" value={draft.la} onChange={(e) => set({ la: e.target.value })}>
-            <option value="">{t("mob.time.laDefault")}</option>
-            {las.map(([code, desc]) => (
-              <option key={code} value={code}>
-                {desc ? `${code} · ${desc}` : code}
-              </option>
-            ))}
-          </select>
+          <Choice
+            id="m-zeit-la"
+            label={t("mob.time.la")}
+            value={draft.la}
+            onChange={(la) => set({ la })}
+            options={[{ value: "", label: t("mob.time.laDefault") }, ...las.map(([code, desc]) => ({ value: code, label: desc ? `${code} · ${desc}` : code }))]}
+          />
         </Field>
       </div>
       <Field label={t("mob.time.text")} htmlFor="m-zeit-text">

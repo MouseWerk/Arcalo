@@ -1,6 +1,7 @@
 // Jira in notes (1.7): an issue key of a synced project becomes a live chip (type, key, status,
-// title; `ISO-9001` stays text), hovering shows the issue's card, a click opens the issue's note
-// („PROJ-123 Summary“ with `jira: PROJ-123`) and the issue lists the pages naming it. A task
+// title; `ISO-9001` stays text), hovering shows the issue's card, a click opens the issue view and
+// from there the issue's note („PROJ-123 Summary“ with `jira: PROJ-123`), and the issue lists the
+// pages naming it. A task
 // becomes a Jira issue from its context menu (the key is appended); „Als Aufgabe übernehmen“
 // puts an issue into the daily note, and that task is ticked once the issue is done in Jira.
 // With Jira stopped, the Issues page and the chips keep showing the cached issues.
@@ -34,7 +35,7 @@ after(async () => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const count = (sel) => app.browser.execute((s) => document.querySelectorAll(s).length, sel);
 async function reload() {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }
@@ -240,10 +241,12 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   await setTheme("light");
 });
 
-test("a click on the chip opens the issue's note; the issue lists the pages naming it", async () => {
+test("a click on the chip opens the issue view, its note is one click away; the issue lists the pages naming it", async () => {
   await clickText(".sidebar .tree-row", /^Sprint-Planung/);
   const chip = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-123"]');
   await chip.click();
+  await app.waitFor('[data-issue-view="PROJ-123"] .iv-arcalo', 15000);
+  await clickText('[data-issue-view="PROJ-123"] .iv-arcalo button', /Notiz für PROJ-123 anlegen/);
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.textContent ?? "")).includes("PROJ-123 Login fails on SSO"), { timeout: 10000, timeoutMsg: "issue note not opened" });
   const view = await app.invoke("jira_issue_view", { key: "PROJ-123" });
   assert.ok(view.note_page_id, "note page created");

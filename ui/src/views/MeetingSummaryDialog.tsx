@@ -16,6 +16,7 @@ import { toMarkdown } from "../editor/schema";
 import { useT } from "../lib/i18n";
 import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes";
 import { useAi } from "../lib/aiswitch";
+import { copyText } from "../lib/clipboard";
 
 interface Props {
   page: { id: number; title: string };
@@ -110,9 +111,10 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
               <Button
                 icon={copied ? Check : Copy}
                 onClick={() => {
-                  navigator.clipboard.writeText(result);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
+                  void copyText(result).then(
+                    () => (setCopied(true), setTimeout(() => setCopied(false), 1200)),
+                    (e) => s().error(t("common.copyFailed"), e),
+                  );
                 }}
               >
                 {t("common.copy")}

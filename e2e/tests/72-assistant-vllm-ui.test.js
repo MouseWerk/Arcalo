@@ -84,13 +84,24 @@ test("Stop ends a wait for the server", async () => {
 });
 
 test("a fallback to the small local model is said in the answer", async () => {
+  // Another setting saved meanwhile (here the daily target) rebuilds the AI clients. 1.18 forgot
+  // with it that the model rejects tools: the question went out with tools again, the 400 put
+  // the model into the server's cooldown and the answer waited for it first, which on a busy
+  // machine ran past this test's time (q119, the single failure of this test).
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...view.settings, daily_target_hours: view.settings.daily_target_hours + 0.5 } });
   // A model group without deployments for a minute: another model answers, visibly.
   llm.cooldown.add("vllmserver");
+  const answers = (await app.$$(".msg-ai .msg-meta")).length;
+  const before = chats().length;
   await ask("Noch eine Frage");
-  await app.browser.waitUntil(async () => (await app.$$(".msg-ai .msg-meta")).length === 4, { timeout: 10000 });
-  const notes = await app.browser.execute(() => [...document.querySelectorAll(".msg-route-notes")].pop()?.innerText ?? "");
+  await app.browser.waitUntil(async () => (await app.$$(".msg-ai .msg-meta")).length === answers + 1, { timeout: 10000 });
+  const notes = await app.browser.execute(() => [...document.querySelectorAll(".msg-ai")].pop()?.querySelector(".msg-route-notes")?.innerText ?? "");
   assert.match(notes, /Ausweichmodell „gemma4:e2b · Ollama“ ist ein kleineres lokales Modell/);
   assert.equal(ollama.chats().length, 1);
+  // Asked once, without the tools the model rejected, and not waited for a cooldown.
+  assert.deepEqual(chats().slice(before).map((r) => [r.body.model, r.body.tools]), [["vllmserver", undefined]]);
+  assert.doesNotMatch(notes, /Server kurz ausgelastet/);
   llm.cooldown.delete("vllmserver");
   await app.shot("assistant-fallback-note");
 });

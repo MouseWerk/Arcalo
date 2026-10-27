@@ -39,7 +39,7 @@ before(async () => {
     content: "# Zebrafink Projekt\n\nDas Zebrafink-Projekt hat ein Budget von 48.000 Euro. Der Go-Live ist im März.\n",
   });
   await app.invoke("ai_index_pending").catch(() => 0);
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
 });
 after(async () => {
@@ -80,7 +80,7 @@ const setLook = async (mode, id = null, width = 1440, height = 900) => {
   if (mode === "light") ap.theme_light = id ?? "arcalo-light";
   else ap.theme_dark = id ?? "arcalo-dark";
   await app.invoke("settings_save", { settings: { ...view.settings, theme: mode, appearance: ap } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.waitFor(`${V} .composer textarea`);
   await sleep(600);

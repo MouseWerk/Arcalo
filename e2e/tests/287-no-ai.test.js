@@ -116,10 +116,10 @@ test("nothing about AI shows: ribbon, panel, status bar, start page, palette", a
   assert.equal(await app.browser.execute(() => !!document.querySelector(".assistant, .chat-view, .tab[data-kind='chat']")), false);
   // The start page: no AI widget, no „KI einrichten“.
   await app.click(".pane.active .tabbar-home");
-  await app.waitFor(".pane.active .dash-grid");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid");
   await app.browser.pause(500);
   assert.equal(await app.browser.execute(() => !!document.querySelector(".dw-suggest, .dw-bf-ai")), false);
-  assert.doesNotMatch(await app.text(".pane.active .home"), /KI einrichten|Assistent/);
+  assert.doesNotMatch(await app.text(".pane.active > .pane-content:not([hidden]) .home"), /KI einrichten|Assistent/);
   await app.shot("287-start-page");
   // The palette: no assistant, chat or index commands, and „?“ asks nothing.
   // (Creating a page of that name is offered, as for any word.)
@@ -131,11 +131,11 @@ test("nothing about AI shows: ribbon, panel, status bar, start page, palette", a
 test("the editor has no inline AI and the slash menu no AI commands", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Notiz ohne KI", icon: null, content: "Ein Absatz über das Angebot für den Kunden.\n" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.waitFor(".pane.active .ProseMirror");
-  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active .tb-ai")), false, "toolbar AI");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .tb-ai")), false, "toolbar AI");
   // A selection: the bubble has no AI button; Ctrl+J opens no inline bar.
   await app.browser.execute(() => {
-    const p = document.querySelector(".pane.active .ProseMirror p");
+    const p = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror p");
     const r = document.createRange();
     r.selectNodeContents(p);
     getSelection().removeAllRanges();
@@ -183,7 +183,7 @@ test("using the app sends nothing to the AI or embedding servers; AI commands ar
   await app.invoke("page_create", { parentId: null, title: "Kostenvoranschlag", icon: null, content: "Kostenvoranschlag für Kunde Müller.\n- [ ] nachfassen\n" });
   await palette("Angebot Müller");
   await app.keys(["Control", "Shift", "a"]);
-  await app.waitFor(".pane.active .task-list, .pane.active .empty");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .task-list, .pane.active > .pane-content:not([hidden]) .empty");
   await app.keys(["Control", "Shift", "e"]);
   await app.browser.pause(800);
   await app.invoke("day_review", { date: null });

@@ -1,33 +1,86 @@
-// Collapsed folders of the sidebar tree, kept in localStorage (`arcalo.collapsed`).
+// Open folders of the sidebar tree, kept in localStorage per workspace (`arcalo.expanded.<tag>`,
+// the tag of the data folder the shell gives the window): page ids of another data folder never
+// count here, nor are they pruned here. Folders start collapsed: only the ones opened by hand are
+// stored, so a new folder (a new year of daily notes, an import) does not unfold the tree. Before
+// 1.19 the collapsed ones were stored (`arcalo.collapsed`); the first start with a tree turns
+// that list into this one. The first 1.19 builds kept one list for all (`arcalo.expanded`): the
+// first workspace that starts takes it over.
 
 import type { PageNode } from "./types";
 
-const KEY = "arcalo.collapsed";
+const SHARED_KEY = "arcalo.expanded";
+const OLD_KEY = "arcalo.collapsed";
+/** The key of this workspace (the shared one without a tag, e.g. in a test). */
+const key = () => {
+  const tag = typeof window === "undefined" ? undefined : (window as { __ARCALO_WORKSPACE__?: unknown }).__ARCALO_WORKSPACE__;
+  return typeof tag === "string" && tag ? `${SHARED_KEY}.${tag}` : SHARED_KEY;
+};
 /** Fired when folders were collapsed from outside the sidebar (e.g. after an import). */
 export const COLLAPSED_EVENT = "arcalo:collapsed";
 
-export function readCollapsed(): Set<number> {
+const parse = (raw: string | null): number[] | null => {
+  if (raw == null) return null;
   try {
-    return new Set(JSON.parse(localStorage.getItem(KEY) ?? "[]"));
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x) => typeof x === "number") : null;
   } catch {
-    return new Set();
+    return null;
   }
+};
+const read = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+/** The stored open folders; `null` while nothing was stored yet (see `migrateCollapsed`). */
+export function readExpanded(): Set<number> | null {
+  const k = key();
+  let ids = parse(read(k));
+  if (!ids && k !== SHARED_KEY) {
+    // The list of the first 1.19 builds (one for every workspace): this workspace takes it over.
+    ids = parse(read(SHARED_KEY));
+    if (ids) writeExpanded(new Set(ids));
+  }
+  return ids ? new Set(ids) : null;
 }
 
-export function writeCollapsed(ids: Set<number>) {
+export function writeExpanded(ids: Set<number>) {
   try {
-    localStorage.setItem(KEY, JSON.stringify([...ids]));
+    const k = key();
+    localStorage.setItem(k, JSON.stringify([...ids]));
+    localStorage.removeItem(OLD_KEY);
+    if (k !== SHARED_KEY) localStorage.removeItem(SHARED_KEY);
   } catch {
     // Storage full or blocked: the state just is not remembered.
   }
 }
 
-/** Collapses `ids` (in addition to the already collapsed ones). */
+/** The collapsed folders a version before 1.19 stored, if any. */
+export const readOldCollapsed = (): number[] | null => parse(read(OLD_KEY));
+
+/** The open folders of a tree whose collapsed ones were stored (every other folder was open). */
+export function migrateCollapsed(collapsed: Iterable<number>, folders: Iterable<number>): Set<number> {
+  const closed = new Set(collapsed);
+  return new Set([...folders].filter((id) => !closed.has(id)));
+}
+
+/** `ids` without the ones that are gone (deleted pages); the same set when nothing is gone. */
+export function pruneIds(ids: Set<number>, alive: (id: number) => boolean): Set<number> {
+  for (const id of ids) if (!alive(id)) return new Set([...ids].filter(alive));
+  return ids;
+}
+
+/** Collapses `ids` (they leave the stored open folders). */
 export function collapsePages(ids: number[]) {
   if (!ids.length) return;
-  const next = readCollapsed();
-  ids.forEach((id) => next.add(id));
-  writeCollapsed(next);
+  const open = readExpanded();
+  if (open) {
+    ids.forEach((id) => open.delete(id));
+    writeExpanded(open);
+  }
   window.dispatchEvent(new CustomEvent(COLLAPSED_EVENT));
 }
 

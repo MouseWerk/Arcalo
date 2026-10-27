@@ -28,7 +28,7 @@ test("closing quits by default and hides (or minimizes) with close to tray", asy
 test("the close button keeps the app running, the window comes back with the edit", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Schließen-Test", icon: null, content: "Anfang\n" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === page.title, {
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === page.title, {
     timeoutMsg: "page not open",
   });
   await app.browser.pause(400);

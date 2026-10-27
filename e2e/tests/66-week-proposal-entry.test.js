@@ -53,10 +53,10 @@ test("the palette opens the proposal of this week", async () => {
 });
 
 test("the meeting card and the gap row lead into the same review", async () => {
-  await app.click(".pane.active .week-nav .icon-btn[aria-label='Vorherige Woche']");
+  await app.click(".pane.active > .pane-content:not([hidden]) .week-nav .icon-btn[aria-label='Vorherige Woche']");
   // Last week's Jour fixe of the Team series is not booked: the card offers it.
-  await app.waitText(".pane.active .ts-meetings .ts-meeting-title", /Jour fixe Änderungen/);
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .ts-meetings .card-head .btn")].find((b) => /Alle übernehmen/.test(b.textContent)).click());
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ts-meetings .ts-meeting-title", /Jour fixe Änderungen/);
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ts-meetings .card-head .btn")].find((b) => /Alle übernehmen/.test(b.textContent)).click());
   await app.waitFor(".dialog .wp-days");
   const texts = await app.browser.execute(() => [...document.querySelectorAll(".wp-row .wp-text .input")].map((i) => i.value));
   assert.deepEqual(texts, ["Jour fixe Änderungen"]);
@@ -64,14 +64,14 @@ test("the meeting card and the gap row lead into the same review", async () => {
   await app.waitText(".dialog .wp-bare", /Ohne Vorschlag: Di/);
   await app.shot("66-week-proposal-dark");
   await closeDialog();
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .week-gaps .btn")].find((b) => /Lücken füllen/.test(b.textContent)).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .week-gaps .btn")].find((b) => /Lücken füllen/.test(b.textContent)).click());
   await app.waitFor(".dialog .wp-days");
   await closeDialog();
 });
 
 test("in a narrow window the rows stack; keyboard focus stays in the list", async () => {
   await app.browser.setWindowSize(900, 760);
-  await app.click(".pane.active .wp-open");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitFor(".dialog .wp-days");
   const layout = await app.browser.execute(() => {
     const row = document.querySelector(".wp-row");
@@ -91,7 +91,7 @@ test("in a narrow window the rows stack; keyboard focus stays in the list", asyn
 
 test("coming back after the reminder opens the proposal; the reminder can be switched off", async () => {
   await app.keys(["Control", "t"]);
-  await app.waitFor(".pane.active .dash");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash");
   await app.browser.executeAsync((done) => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "nav://week-proposal", payload: null }).then(done, done));
   await app.waitFor(".dialog .wp");
   assert.equal(await app.text(".pane.active .tab.active .tab-title"), "Zeiterfassung");

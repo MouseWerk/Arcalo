@@ -105,7 +105,7 @@ test("a PIN the app lock refuses keeps the dialog open and says so", async () =>
   await app.type("2468");
   await app.keys(["Enter"]);
   await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".lock-screen") && !!document.querySelector(".sidebar, .side-tabs")), { timeout: 10000, timeoutMsg: "not unlocked" });
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings-nav")))) await app.keys(["Control", ","]);
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-nav")))) await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.invoke("applock_configure", { config: { ...(await app.invoke("applock_status")).config, mode: "off" }, pin: null });
   await app.dismissToasts();

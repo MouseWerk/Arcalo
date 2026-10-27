@@ -8,6 +8,7 @@ import { useApp } from "../store/app";
 import { collapsePages, foldersBelow } from "./collapsed";
 import { importProgress, importSummary } from "./format";
 import { t } from "./i18n";
+import { writeSettings } from "./settingsWrite";
 
 /** Light, dark or the OS: picks the light or dark color theme (Settings → Darstellung). */
 export function applyTheme(theme: "system" | "light" | "dark", appearance?: AppearancePrefs) {
@@ -15,13 +16,11 @@ export function applyTheme(theme: "system" | "light" | "dark", appearance?: Appe
 }
 
 export async function toggleTheme() {
-  const s = useApp.getState();
-  const view = s.settings ?? (await api.settings());
   const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-  const next = { ...view.settings, theme: current === "dark" ? ("light" as const) : ("dark" as const) };
-  const saved = await api.saveSettings(next);
-  s.set({ settings: saved });
-  applyTheme(next.theme);
+  const theme = current === "dark" ? ("light" as const) : ("dark" as const);
+  // Only the theme changes: a settings change saved meanwhile stays.
+  const saved = await writeSettings((cur) => ({ ...cur, theme }));
+  applyTheme(saved.settings.theme);
 }
 
 export async function pickFolder(title: string): Promise<string | null> {

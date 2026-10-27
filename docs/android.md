@@ -1,7 +1,9 @@
-# Arcalo for Android (companion app)
+# Arcalo for Android
 
-The Android app is a companion to Arcalo on the desktop, not the whole desktop app on a phone. It shows
-what matters during the day and keeps your notes in step with the desktop through the same Git repository.
+On a phone the Android app is a companion to Arcalo on the desktop, not the whole desktop app: it shows what
+matters during the day and keeps your notes in step with the desktop through the same Git repository. On a
+large screen (a tablet, Android's desktop mode on an external display, Android on a PC) the same app shows the
+full desktop app (1.20, see „Phone app or full app“ below).
 
 Application id: `de.mousewerk.arcalo` (the identifier the desktop takes with 1.15, see
 `docs/quality/plan115-rename.md`). Minimum Android version: 8.0 (API 26).
@@ -11,16 +13,107 @@ Application id: `de.mousewerk.arcalo` (the identifier the desktop takes with 1.1
 | Screen | What you can do |
 |---|---|
 | **Heute** | Date, time booked today against the day's target (holidays and absences included) and this week, the running timer (pause, stop), today's meetings (from the desktop's calendars, see below), tasks due today or overdue, the way to the daily note. A notice when the last sync failed or a note needs merging. |
-| **Erfassen** (the + in the tab bar) | A note or tasks into today's daily note or the inbox (due dates: today, tomorrow, next week, or typed like on the desktop: `due:morgen`, „bis Fr“), or a booking. |
+| **Erfassen** (the + in the tab bar) | A note or tasks into today's daily note or the inbox (due dates: today, tomorrow, next week, or typed like on the desktop: `due:morgen`, „bis Fr“), or a booking. Text shared from another app („Teilen“ → Arcalo) opens it with that text. |
 | **Tagesnotiz** | The daily note of a day, read or edited, previous and next day. A day without a note shows „Tagesnotiz anlegen“: the phone creates a daily note only when you start one, so it does not meet the desktop's note of the same day as a conflict. A daily note pulled from the desktop becomes the phone's daily note of that day. |
 | **Aufgaben** | Open tasks grouped like the desktop's task view (overdue, today, this week, later, no date), „Fällig“ (up to this week) and the tasks done in the last 14 days. One tap ticks a task off; a repeating task gets its next date in its note, as on the desktop. |
-| **Zeit** | The timer (start on a reference, pause, stop, discard), a booking with the desktop's `/zeit` syntax built from a form (the references booked last as chips, Netzpläne and Vorgänge as suggestions, Leistungsart, description, today or yesterday; the line is shown before booking), and this week's bookings per day. |
-| **Notizen** | Search, recently edited pages, the page tree; a page is shown rendered from its Markdown (tables, code, links, `/zeit` chips and due dates as small labels, embedded drawings and PDFs as a note that they show on the desktop) and edited as Markdown text. |
-| **Einstellungen** | Git sync (remote URL, branch, author, access token, automatic sync, test, sync now, deletions held back, conflicts), appearance (system, light, dark), language (system, German, English), about. |
+| **Zeit** | The timer (start on a reference, pause, stop, discard after a second tap), a booking with the desktop's `/zeit` syntax built from a form (the references booked last as chips, Netzpläne and Vorgänge as suggestions, Leistungsart, description, today or yesterday; the line is shown before booking), and this week's bookings per day. |
+| **Notizen** | Search, recently edited pages, the page tree; a page is shown rendered from its Markdown (tables, code, links, `/zeit` chips and due dates as small labels, embedded drawings and PDFs as a note that they show on the desktop) and edited as Markdown text. A tap on a task's box ticks it off (or opens it again) in the page, saved like an edit, so a change a sync brought meanwhile is merged; a repeating task gets its next date below it, as on the desktop. |
+| **Einstellungen** | Git sync (remote URL, branch, author, access token, automatic sync, test, sync now, deletions held back, conflicts), appearance (system, light, dark, high contrast), language (system, German, English), updates, about. |
+
+Android's back button (and gesture) closes the page editor first, then the open screen, then goes to Heute;
+on Heute it sends the app to the background, as Android apps do, and never quits it.
 
 Not in this version: AI, voice notes, Outlook and Jira, the start page boards, the projects view, canvas
 and drawings (a canvas page shows a notice), templates, the calendar's own subscriptions, the app lock and
 the database encryption.
+
+## Phone app or full app (1.20)
+
+The Android window opens the phone app's page (`mobile.html`, `src-tauri/tauri.android.conf.json`). Before
+it shows anything, the page asks which interface fits (`ui/src/lib/uiswitch.ts`, `bootInterface`) and goes
+over to the full app's page (`index.html`) when that one fits; the full app's page asks the same and goes back
+to the phone app. Both pages are entries of one build (`ui/vite.config.ts`) and run on the same shell, state
+and workspace in the same process: switching loads the other page, nothing is copied or synced.
+
+**The decision** (`ui/src/lib/uimode.ts`, `chooseInterface`, tested in `uimode.test.ts`) uses what Android
+reports through `ShellPlugin.kt` (`display`, read by `android_display` in `src-tauri/src/mobile/mod.rs`): the
+window's size in dp (`Configuration.screenWidthDp`/`screenHeightDp`), the display's smallest width, Android on
+a PC (`FEATURE_PC`), desktop mode (`UI_MODE_TYPE_DESK`), a freely sized window (in multi-window mode and
+smaller than the display on both sides, from `WindowMetrics`), split screen, an external display (not
+`DEFAULT_DISPLAY`), a mouse or touchpad (`InputDevice`) and a hardware keyboard (`Configuration.keyboard`).
+
+| Situation | Interface |
+|---|---|
+| The shorter side of the window at least 600 dp (a tablet, half of a landscape tablet) | full app |
+| A desktop setting (desktop mode, a desktop window, an external display, mouse and keyboard): at least 480 dp | full app |
+| Android on a PC | full app, at any size |
+| Otherwise (a phone, a third of a tablet, a phone-sized window) | phone app |
+| Einstellungen → Darstellung → „Oberfläche auf Android“ (also in the phone app's settings): „Telefon“ or „Vollständig“ | that one |
+
+The full app stays until the window is 48 dp below its line, so a window resized around the line does not
+switch back and forth; after three switches within 30 seconds the interface stays for the session.
+
+**Following the window.** The manifest keeps the activity when the size, the display, the density or the
+input devices change (`configChanges`), so the page stays and `ShellPlugin` announces the change to it (the
+DOM event `arcalo-display`, also on a mouse or keyboard plugged in or out); the page also listens to its own
+`resize`. A change is decided once the window rests (0.6 s). Before the page goes over, the unsaved text is
+stored: the full app's editors (`flushAllEditors`) and the phone app's page editor (`lib/flush.ts`); while a
+dialog is open or a field outside the editors holds typed text, the switch waits; when storing fails it waits
+and tries again. The setting „Oberfläche auf Android“ (`appearance.android_interface`, settings step 18)
+belongs to the device and is not synced with the settings.
+
+**What the full app does on Android.** Everything that works there: notes, tasks, the calendar (its
+subscriptions sync as on the desktop), time tracking, the assistant (its keys in the Android Keystore, read a
+few seconds after the start), Git sync (as the phone syncs: HTTPS with an access token, the desktop's
+projects and appointments from its database copy; `git_sync_now` uses the phone's sync), split panes, the file
+sidebar, keyboard shortcuts, drag and drop. The shell registers every shared command on Android too (one list,
+`commands()` in `src-tauri/src/lib.rs`); only the desktop's own are left out (`#[cfg(desktop)]`, named in
+`platform::DESKTOP_ONLY`, a test keeps both in step). The UI asks `app_capabilities` once
+(`ui/src/lib/capabilities.ts`) and hides what Android does not have instead of failing: voice notes, the
+encryption and the app lock, tray, autostart, global shortcuts, the command line, the desktop's updater (Über
+Arcalo shows Android's updates, `AndroidUpdatesGroup`), the quick-capture, quick-search and presenter windows,
+local folders (data folder, backups and their destinations, the Markdown copy, Obsidian vaults, calendar
+files, CA files, „Im Ordner zeigen“), programs as quick links, PAC scripts and the window's frame and
+backdrop.
+
+**Files.** The file dialog is Android's document picker (the dialog plugin), which answers with `content://`
+addresses: a file to read is copied into the app's cache under its own name and read from there, a file to
+write is written there and copied to the address the picker created (`src-tauri/src/picked.rs`,
+`ShellPlugin.kt`: `uriName`, `copyFromUri`, `copyToUri`). So inserting files and images, importing bookmarks,
+settings and themes, and saving exports (time tracking, HTML, diagrams, settings, themes, the diagnostics
+package) work. „Öffnen“ on an attachment hands a copy (cache folder `open`, `res/xml/file_paths.xml`) to the
+app Android has for its type.
+
+**Input.** Mouse, trackpad, keyboard and touch together. Hover styles apply only where a pointer can hover: at
+build time every `:hover` rule of the app's stylesheets goes into `@media (hover: hover)`, and a rule that only
+reveals a control shows it without the hover under `(hover: none)` (`ui/src/lib/hoverMedia.ts`), so a tap
+leaves no tinted row. A long press sends `contextmenu` where the WebView did not (`ui/src/lib/longpress.ts`;
+text fields and the editor keep Android's selection), a tap shows no tooltip, and splitters and table column
+handles get a finger-wide grip on coarse pointers. Android's back button closes a dialog, menu or popover
+first and otherwise sends the app to the background (`ui/src/lib/androidBack.ts`).
+
+**Commands off the main thread.** Android runs a command without `async` on its main thread, where the Kotlin
+plugins (Keystore, window, files) answer too; a command that reads a secret there would wait forever. On
+Android every command goes to one worker thread first, in the order they came (`off_main_thread` in
+`src-tauri/src/mobile/mod.rs`).
+
+The trade-off: a synchronous command runs on that thread to its end, and every command after it (also an
+`async` one, which only goes on from there) waits. One thread keeps the order the main thread had, which the
+Keystore relies on (a token stored, then the status that reads it; a setting saved, then the AI clients built
+with its keys), so it stays one thread; a pool would let a later read overtake an earlier write. What can take
+long does not run there: the sync, backups, exports, the diagnostics bundle, the network tests and the guided
+Git setup are `async` (or `#[tauri::command(async)]`) and leave the worker at once, the log viewer's read of up
+to 5000 lines too (`devlog_read`, `devlog_stats`, 1.20). The synchronous commands left are short reads and
+writes of the database or the settings. A new command that can take more than a few milliseconds is made
+`async`, unless it reads or writes a secret and must keep its place in the order.
+
+**Tests on the desktop.** A debug build started with `ARCALO_SIMULATE_ANDROID=1` reports Android's
+capabilities and refuses the desktop-only commands as Android does (`platform::guard`), and its window may
+be as narrow as a tablet; `e2e/tests/400-android-full-app.test.js` opens the ribbon, the palette, every
+settings section, the sidebar's menus (right click and long press) and split panes with it, checks the
+console, and takes the screenshots of the full app at 800x1280, 1280x800 and in a 1480x920 window, light and
+dark (`e2e/screenshots/android-*`). What only a device shows is in the manual checklist of
+docs/release/android.md.
 
 ## How bookings reach the desktop
 
@@ -56,8 +149,9 @@ cannot be read on the phone (its key stays on the desktop); it is skipped with a
    your name and e-mail for the commits, paste the token and tap „Token speichern“. The token goes into the
    Android Keystore (an AES key that never leaves it encrypts the token; only the encrypted value is kept in
    the app's private storage).
-4. „Verbindung testen“ checks the URL and the token. „Jetzt synchronisieren“ clones the repository: the
-   desktop's notes appear as pages, the Netzpläne and meetings are taken over.
+4. „Verbindung testen“ checks the URL and the token. „Jetzt synchronisieren“ takes over the repository's
+   newest state (not its history, which holds every database copy the desktop synced): the desktop's notes
+   appear as pages, the Netzpläne and meetings are taken over.
 5. Switch on „Automatisch synchronisieren“: the app syncs when it starts, every 15 minutes while it is open
    and when it comes back to the front (at most every two minutes).
 
@@ -67,6 +161,12 @@ changes do not overlap, else „Überall meine“, „Überall andere“ or „B
 the desktop. Many deletions at once are held back until you confirm („Löschungen übertragen“), as on the
 desktop.
 
+A sync that Android ends in the middle (the app swiped away or stopped in the background), or one whose upload
+fails after it took the desktop's changes, loses nothing: the next sync brings the desktop's changes again
+instead of uploading the phone's older state over them, and git's lock files of an ended sync are removed at
+once. A note being edited on the phone while a sync takes the desktop's text of it over keeps both: the
+editor saves against the text it started from, and the two are merged.
+
 ## How it is built
 
 - **Same core, same shell.** The Android app is the Tauri shell (`src-tauri`) built for Android with
@@ -75,10 +175,13 @@ desktop.
   replaced by small stand-ins in `src-tauri/src/mobile/` (`#[cfg_attr(mobile, path = …)]`). The desktop-only
   crates (tray-dependent plugins, global shortcuts, updater, autostart, single instance, clipboard, Whisper,
   audio input) are target dependencies for non-mobile targets only. `run()` is the desktop's; the app's entry
-  point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the list of commands the
-  phone uses.
-- **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, navigation with Android's back button
-  through the browser history), loaded only on Android as a separate chunk; it uses the desktop's API
+  point is `mobile::run()` (`#[tauri::mobile_entry_point]`) with its own setup and the shared command list
+  (`commands()`, since 1.20 for both interfaces).
+- **UI.** `ui/src/mobile/` is a shell of its own (tab bar, screens, Android's back button through Tauri's
+  `onBackButtonPress`, see `backAction` in `mobile/model.ts`) with a page of its own: the Android window opens
+  `mobile.html` (`src-tauri/tauri.android.conf.json`), whose entry `ui/src/mobile/main.tsx` decides first
+  whether the full app fits (then it goes to `index.html`, above) and otherwise loads the mobile shell, the design tokens and `mobile.css`, never the desktop app's bundle and stylesheets (1.19: 1.46 MB
+  in 11 files at the start instead of 3.44 MB in 69, of it 36 KB of CSS instead of 499 KB); it uses the desktop's API
   wrappers, i18n catalogs (`mob.*` keys), design tokens, Markdown rendering, task and capture helpers.
   Editing a page is plain Markdown text in v1: the TipTap editor's menus, popovers and drag handles are
   built for a pointer and a keyboard.
@@ -87,14 +190,32 @@ desktop.
   the sync code, its conflict handling and its guards are unchanged, and the sync's tests run on both
   (`ARCALO_TEST_EMBEDDED_GIT=1`). HTTPS uses OpenSSL, built from source like the SQLCipher encryption needs
   anyway; the certificates are the Android system's (`/system/etc/security/cacerts`, the updatable store of
-  Android 14), else Mozilla's root store compiled in. The token is given to the server when it asks for
+  Android 14), else Mozilla's root store compiled in, plus the certificates the user installed
+  (Einstellungen → Sicherheit → Verschlüsselung & Anmeldedaten): the app's network security config
+  (`res/xml/network_security_config.xml`) trusts them, which is how Android lets an app accept a company
+  proxy's own certificate, and `ShellPlugin.kt` (`userCertificates`, `AndroidCAStore` entries `user:…`)
+  passes them to `gitlib::set_user_certificates`. The token is given to the server when it asks for
   credentials (HTTP Basic, `x-access-token`), never written to `.git/config`.
+- **Proxy (1.19).** When the app has no proxy of its own (the network profile of the Git sync is in mode
+  „System“, the default), the Git sync uses Android's proxy: `ConnectivityManager.getDefaultProxy` (the global
+  proxy, else the one of the network in use, e.g. a Wi-Fi's own proxy) with its exclusions, read by
+  `ShellPlugin.kt` (`proxy`) before each sync and every minute and set with `network::set_platform_proxy`;
+  from there it takes the desktop's path (`git_network` → libgit2's proxy options). A PAC script runs in
+  Android's own local proxy, which Android names as the proxy; a PAC address without it is logged and the
+  connection is direct. libgit2 sends HTTPS through the proxy (`CONNECT`); a plain `http://` remote is
+  reached directly.
 - **HTTP clients** (`network::client_for`) check certificates against Mozilla's root store on Android: the
   platform verifier of rustls needs the app's JVM context there.
 - **Secrets.** `secrets.rs` has a Keystore backend on Android (`mobile/keystore.rs` and the Kotlin plugin
   `SecretsPlugin.kt` in `src-tauri/gen/android`).
+- **Window and updates.** `mobile/android.rs` talks to two more Kotlin plugins: `ShellPlugin.kt` (the
+  colors behind the system bars after the app's theme, the app to the background on the root's back
+  button, text shared to the app, since 1.20 the window and the device for the choice of the interface,
+  picked files and opening an attachment in another app) and `UpdatePlugin.kt` (what Android knows about the
+  installed app and a downloaded APK, metered network, the permission to install apps, the hand-over to the
+  installer).
 - **Android project.** `src-tauri/gen/android` is generated by `cargo tauri android init` and committed as
-  Tauri recommends, with the app's changes: the Keystore plugin, insets for the system bars and the keyboard,
+  Tauri recommends, with the app's changes: the Keystore, window and update plugins, the share target, insets for the system bars and the keyboard,
   window colors of the app, the launcher icon from the Arcalo mark, no backup of the app data (the Keystore
   key does not travel with a backup), release signing from `keystore.properties`.
 
@@ -117,10 +238,43 @@ npm --prefix ui run build
 node e2e/mobile/shots.mjs --out /tmp/arcalo-shots
 ```
 
+It taps through every screen at 360x800 and 412x915 in light and dark (and in high contrast, at 360x640,
+430x932, in landscape, on tablets and with Android's font size at 130 %), checks touch targets, sideways
+overflow, console errors, the back button, the update banner and its permission flow, shared text, the
+keyboard and that every command the UI invokes is registered for Android. Look at the screenshots.
+
+## Updates
+
+The app updates itself from the GitHub release (`mobile/apkupdate.rs`, `arcalo_core::update_android`;
+the release side is docs/release/android.md → Updates of the app):
+
+1. It asks `android-latest.json` of the latest release at the start, then once a day while it runs, and on
+   Einstellungen → Updates → „Nach Updates suchen“.
+2. A newer version with a higher version code is downloaded in the background into the app's cache, on
+   Wi-Fi only unless „Updates auch über mobile Daten laden“ is on or the user taps „Jetzt über mobile Daten
+   laden“; an interrupted download continues where it stopped.
+3. Before anything is offered: the minisign signature of the file with the update key compiled into the
+   release build (the desktop's key) and the version named in it; the package, the version code and the
+   signing certificate as Android reads them from the file. A file that fails is deleted.
+4. „Version … ist bereit“: a notification and the banner on Heute with „Was ist neu“ (the release notes) and
+   „Update installieren“. One tap opens Android's installer, which asks for confirmation; the first time
+   Android also wants the permission „Unbekannte Apps installieren“ for Arcalo, which the app explains and
+   opens. Notes, settings and the token stay (it is an update of the same app).
+5. A version signed with another APK key (the debug-signed APKs before the release key) cannot be installed
+   over the app; the app says so and links the release page instead of failing in the installer.
+
+The preferences of the updater (mobile data, the last check) are in `android-update.json` in the app's data
+folder: they belong to this phone and never sync.
+
 ## Limits of v1
 
-- The first real build is the CI workflow: the Kotlin plugin, the insets and the libgit2/OpenSSL build for
-  Android have been type-checked and unit-tested on the host, not run on a device yet.
+- The Kotlin plugins (Keystore, window, updates) are reviewed against Tauri's plugin API but compiled only by
+  the CI workflow; the Rust side is type-checked for Android on the host. None of it has run on a
+  device yet: see the manual checklist in docs/release/android.md.
+- The full app on large screens (1.20) is tested on the desktop with Android's capabilities simulated; its
+  Android-only parts (the window's facts, the switch on a real resize, the document picker, opening a file in
+  another app, touch and a long press in Android's WebView) need a device: the checklist names them. Android
+  offers no public flag for a freely sized window; the app infers it from the window's bounds.
 - Bookings made on the phone reach the desktop's time tracking only through „Erneut buchen“ on their chip.
 - Meetings and Netzpläne need „Datenbank mitsichern“ on the desktop; an encrypted database copy is skipped.
 - HTTPS remotes only (no SSH keys on the phone); a pinned server key (Einstellungen → Netzwerk on the desktop)

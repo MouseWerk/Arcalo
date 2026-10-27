@@ -109,10 +109,10 @@ const mark = (text, name) => app.browser.execute((t, n) => ([...document.querySe
 
 test("the proposal lists last week's meetings, focus and page work around the booking", async () => {
   await app.click(".ribbon .icon-btn[aria-label='Zeiterfassung']");
-  await app.waitFor(".pane.active .view-header");
-  await app.click(".pane.active .week-nav .icon-btn[aria-label='Vorherige Woche']");
-  await app.waitText(".pane.active .entry-desc", /Abstimmung Anforderungen/);
-  await app.click(".pane.active .wp-open");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .view-header");
+  await app.click(".pane.active > .pane-content:not([hidden]) .week-nav .icon-btn[aria-label='Vorherige Woche']");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .entry-desc", /Abstimmung Anforderungen/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitFor(".dialog .wp-days");
   const list = await rows();
   const by = Object.fromEntries(list.map((r) => [r.text, r]));
@@ -176,14 +176,14 @@ test("a changed WBS is taken over with the rest by Enter; drafts appear in the g
   assert.equal(events.find((e) => e.title === "Jour fixe Änderungen").entry_id, got["Jour fixe Änderungen"].id);
   assert.ok((await app.invoke("focus_entry_ids")).includes(got["Mapping Materialstamm"].id));
   // The week grid shows the drafts.
-  await app.waitText(".pane.active .week-grid tbody th.mono", /NP-8802\/2010/);
-  await app.waitText(".pane.active .entry-desc", /Konzept Portal/);
-  await app.browser.execute(() => document.querySelector(".pane.active .week-grid").scrollIntoView({ block: "center" }));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .week-grid tbody th.mono", /NP-8802\/2010/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .entry-desc", /Konzept Portal/);
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .week-grid").scrollIntoView({ block: "center" }));
   await app.shot("65-week-proposal-applied");
 });
 
 test("the next proposal is empty for the week and has learned the WBS", async () => {
-  await app.click(".pane.active .wp-open");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitFor(".dialog .wp-days");
   const list = await rows();
   assert.deepEqual(list.map((r) => r.text), ["Architektur-Runde"], "only the meeting without WBS is left");
@@ -199,8 +199,8 @@ test("the next proposal is empty for the week and has learned the WBS", async ()
   assert.equal(monday[0].wbs.basis, "learned");
   assert.equal(monday[0].minutes, 120, "10:00–12:00: no booking that week");
   assert.deepEqual(monday[0].sources.map((s) => s.kind), ["calendar", "page"]);
-  await app.click(".pane.active .week-nav .icon-btn[aria-label='Vorherige Woche']");
-  await app.click(".pane.active .wp-open");
+  await app.click(".pane.active > .pane-content:not([hidden]) .week-nav .icon-btn[aria-label='Vorherige Woche']");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitText(".dialog .wp-reason", /wie letzte Woche|wie am/);
   await app.shot("65-week-proposal-learned");
   await app.keys(["Escape"]);

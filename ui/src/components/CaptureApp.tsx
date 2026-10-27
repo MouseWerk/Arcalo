@@ -51,7 +51,7 @@ import {
 import { fmtDate, time as clockTime } from "../lib/format";
 import { IS_MAC } from "../lib/platform";
 import { keys } from "../lib/shortcut";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { SuggestionPopup, type PopupHandle, type PopupItem } from "../editor/suggestion-popup";
 import { lacksReference, referenceOffset, zeitToken, type ZeitToken } from "../editor/zeit-suggest";
 import { ZeitConfirm, type ZeitChoice } from "../editor/ZeitConfirm";
@@ -591,7 +591,7 @@ export function CaptureApp() {
         req.current++;
         setSugg(null);
       } else hide();
-    } else if (e.key === "Tab" && !mod && !e.altKey) {
+    } else if (isTab(e) && !mod && !e.altKey) {
       e.preventDefault();
       setTarget(cycleTarget(quick, target.target, e.shiftKey ? -1 : 1));
       setError(null);

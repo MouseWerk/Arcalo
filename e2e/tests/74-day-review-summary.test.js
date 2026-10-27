@@ -35,7 +35,7 @@ after(async () => {
 
 const openReview = async () => {
   await app.click(".ribbon .ribbon-review");
-  await app.waitFor(".pane.active .rv-view .rv-stats");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view .rv-stats");
 };
 
 test("the summary is written by the local model only and goes into the daily note", async () => {

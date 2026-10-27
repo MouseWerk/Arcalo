@@ -38,22 +38,36 @@ zip = { version = "4", default-features = false, features = ["deflate-flate2-zli
 tempfile = "3"
 
 # Desktop only (tray, global shortcuts, updates, autostart, one instance, clipboard, voice notes);
-# the Android companion app is built without them (see docs/android.md).
+# the Android and iOS apps are built without them (see docs/android.md, docs/ios.md).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# `arcalo pages list` & co.: the program is also the command line (docs/cli.md).
+arcalo-cli = { path = "../crates/arcalo-cli" }
 tauri-plugin-autostart = "2"
 # The native question of the update rollback, shown before the window exists.
 rfd = { version = "0.16", default-features = false, features = ["gtk3", "common-controls-v6"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-# Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
-arboard = { version = "3", default-features = false }
-whisper-rs = "0.16"
+# Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection); copies of text,
+# formatted text and images when the web clipboard refuses them (desktop.rs, clipboard_write).
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+# raw-api: the abort, progress and log callbacks are set up here (see voice.rs).
+whisper-rs = { version = "0.16", features = ["raw-api"] }
 cpal = "0.16"
 
 # Android: the Git sync runs on libgit2 (no `git` program on a phone).
 [target.'cfg(target_os = "android")'.dependencies]
 arcalo-core = { path = "../crates/arcalo-core", features = ["embedded-git"] }
+
+# iOS (`mobile/ios.rs`, `mobile/keychain.rs`): the Git sync on libgit2 as on Android (HTTPS through
+# the system's TLS), secrets in the Keychain, and UIKit, BackgroundTasks and the share sheet
+# through the Objective-C runtime.
+[target.'cfg(target_os = "ios")'.dependencies]
+arcalo-core = { path = "../crates/arcalo-core", features = ["embedded-git"] }
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
+security-framework = "3.7.0"
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).
@@ -61,6 +75,8 @@ auto-launch = "0.5"
 winreg = "0.10"
 windows-sys = { version = "0.61", features = [
   "Wdk_System_SystemServices",
+  # The command line writes into the console it was typed in (a release build has none of its own).
+  "Win32_System_Console",
   "Win32_System_SystemInformation",
   # The Microsoft Store build: does this process run from an MSIX package (store.rs)?
   "Win32_Foundation",

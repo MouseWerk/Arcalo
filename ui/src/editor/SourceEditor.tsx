@@ -13,7 +13,7 @@ import { SaveFailed } from "./SaveFailed";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
 import { useSourceChips } from "./sourceChips";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { LONG_TEXT, pacer } from "../lib/pace";
 
 const INDENT = "  ";
@@ -96,20 +96,28 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     chips.checked(content);
     const mergesBefore = merges.current;
     const p: Promise<void> = (saving.current ?? Promise.resolve())
-      .then(() => api.savePage(doc.id, content))
+      // With the page as this editor knew it: a change made elsewhere since is merged, not overwritten.
+      .then(() => api.savePage(doc.id, content, base.current))
       .then((saved) => {
         failed.current = false;
         if (!unmounted.current) setStatus("saved");
+        const stored = saved.merged ?? content;
         if (merges.current === mergesBefore) base.current = content;
-        cb.current({ ...saved, content });
-        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
+        cb.current({ ...saved, content: stored });
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: stored, from: instance.current } }));
+        // Merged with a change made elsewhere: shown here too, with what was typed since.
+        if (saved.merged !== undefined && !unmounted.current) {
+          base.current = content;
+          absorbRef.current(saved.merged);
+        }
       })
       .catch((e) => {
         dirty.current = true;
         // Reported once per failure series, not on every retry.
         if (!failed.current) useApp.getState().error(t("editor.saveFailed"), e);
         failed.current = true;
-        if (unmounted.current) return keepUnsaved(doc.id, content, api.savePage);
+        // Closed meanwhile: kept unless a newer save of this editor follows (it holds these edits too).
+        if (unmounted.current) return void (saving.current === p && keepUnsaved(doc.id, content, api.savePage, base.current));
         setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(timer.current);
@@ -182,16 +190,19 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   useEffect(() => {
     unmounted.current = false;
     // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
-    const kept = takeUnsaved(doc.id);
+    const kept = takeUnsaved(doc.id, latest.current);
     if (kept !== undefined && kept !== latest.current) {
       replaceText(kept);
       dirty.current = true;
       timer.current = window.setTimeout(save, saveDelay());
     }
-    const unregister = registerFlusher(async () => {
-      await save();
-      if (dirty.current) throw new Error(t("ne.changesNotSaved"));
-    });
+    const unregister = registerFlusher(
+      async () => {
+        await save();
+        if (dirty.current) throw new Error(t("ne.changesNotSaved"));
+      },
+      () => dirty.current,
+    );
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
       if (d.id === doc.id && d.from !== instance.current) absorbRef.current(d.content);
@@ -300,7 +311,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       save();
       return;
     }
-    if (e.key === "Tab") {
+    if (isTab(e)) {
       e.preventDefault();
       const start = v.lastIndexOf("\n", a - 1) + 1;
       const end = b > a && v[b - 1] === "\n" ? b - 1 : b;
@@ -326,9 +337,11 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   return (
     <div className="source-editor" data-save-status={status}>
       {status === "failed" && <SaveFailed />}
+      {/* data-flush: `flushAllEditors` stores this text, so the Android interface switch need not wait for it. */}
       <textarea
         ref={ref}
         className="source-text"
+        data-flush
         value={value}
         spellCheck={false}
         aria-label={t("editor.source")}

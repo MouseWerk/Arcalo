@@ -2,8 +2,6 @@
 //! (read-only, off the main thread). The logic lives in `arcalo_core::bookmarks`; what goes into
 //! the ribbon is decided by the dialog and saved through `quick_links_save`.
 
-use std::path::PathBuf;
-
 use arcalo_core::Error;
 use arcalo_core::bookmarks::{self, Location, Os, Roots, Source, Tree, discover};
 use serde::Serialize;
@@ -45,7 +43,7 @@ pub async fn bookmarks_read(source: String) -> Result<SourceTree> {
 /// A bookmarks file the user chose (a browser's HTML export).
 #[tauri::command]
 pub async fn bookmarks_read_file(path: String) -> Result<Tree> {
-    blocking(move || bookmarks::read_export_file(&PathBuf::from(path))).await
+    blocking(move || bookmarks::read_export_file(crate::picked::input(&path)?.path())).await
 }
 
 /// The text of a dropped bookmarks file.

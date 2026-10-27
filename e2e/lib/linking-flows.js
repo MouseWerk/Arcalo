@@ -35,8 +35,8 @@ export function helpers(app) {
   const create = async (title, text) => app.invoke("page_create", { title, parentId: null, content: text });
   async function open(id, title) {
     await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-    await b().waitUntil(async () => (await b().execute(() => document.querySelector(".pane.active .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
-    await app.waitFor(".pane.active .ProseMirror");
+    await b().waitUntil(async () => (await b().execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
+    await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   }
   async function waitContent(id, check, msg) {
     let last = "";
@@ -110,7 +110,7 @@ export async function mentionsFlow(app, L, shot) {
   // In the open page itself: the editor shows the new link.
   await app.click(`.mentions .mention-group[data-page="${pay.id}"] .mention-link`);
   await h.waitContent(portal.id, (c) => c.includes(`[[${L.pay}]]`), "link in the open page");
-  await app.waitFor(`.pane.active .ProseMirror .wikilink[data-target="${L.pay}"]`);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink[data-target="${L.pay}"]`);
   // The backlinks moved with it: the portal page now has backlinks from the linked pages.
   const doc = await app.invoke("page_get", { id: portal.id });
   assert.deepEqual(doc.backlinks.map((x) => x.page_id).sort(), [plan.id, maint.id].sort());
@@ -121,9 +121,9 @@ export async function mentionsFlow(app, L, shot) {
   await app.invoke("settings_save", { settings: { ...view.settings, editor: { ...view.settings.editor, mention_hints: true } } });
   const note = await h.create(L.hintPage, L.hintText);
   await h.open(note.id, L.hintPage);
-  await app.waitFor(".pane.active .ProseMirror .mention-hint", 10000);
-  await app.click(".pane.active .ProseMirror .mention-hint");
-  await app.waitFor(`.pane.active .ProseMirror .wikilink[data-target="${L.pay}"]`);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .mention-hint", 10000);
+  await app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror .mention-hint");
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink[data-target="${L.pay}"]`);
   await h.waitContent(note.id, (c) => c.includes(`[[${L.pay}`), "inline hint");
   await app.invoke("settings_save", { settings: { ...view.settings, editor: { ...view.settings.editor, mention_hints: false } } });
 }
@@ -135,9 +135,9 @@ export async function tagsFlow(app, L) {
   await h.create(L.tagB, L.tagBText);
   const p = await h.create(L.tagPage, L.tagPageText);
   await h.open(p.id, L.tagPage);
-  await app.waitFor(`.pane.active .tag-suggest-chip[data-tag="${L.tag}"]`, 10000);
-  await app.waitText(".pane.active .tag-suggest-label", new RegExp(L.suggestionLabel));
-  await app.click(`.pane.active .tag-suggest-chip[data-tag="${L.tag}"] .tag-suggest-accept`);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .tag-suggest-chip[data-tag="${L.tag}"]`, 10000);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .tag-suggest-label", new RegExp(L.suggestionLabel));
+  await app.click(`.pane.active > .pane-content:not([hidden]) .tag-suggest-chip[data-tag="${L.tag}"] .tag-suggest-accept`);
   await h.waitContent(p.id, (c) => c.startsWith(`---\ntags: [${L.tag}]\n---\n`), "accepted tag");
   assert.ok((await app.invoke("page_get", { id: p.id })).tags.includes(L.tag));
   void a;
@@ -150,9 +150,9 @@ export async function duplicatesFlow(app, L, shot) {
   const b = await h.create(L.dupB, `${L.dupText}\n\n${L.dupExtra}`);
   const src = await h.create(L.dupSrc, `[[${L.dupB}]]`);
   await h.open(a.id, L.dupA);
-  await app.waitFor(".pane.active .dup-hint", 10000);
-  await app.waitText(".pane.active .dup-hint", new RegExp(`${L.similarLabel}.*${L.dupB}.*\\d+ %`));
-  await app.click(".pane.active .dup-compare");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dup-hint", 10000);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .dup-hint", new RegExp(`${L.similarLabel}.*${L.dupB}.*\\d+ %`));
+  await app.click(".pane.active > .pane-content:not([hidden]) .dup-compare");
   await app.waitFor(".compare .compare-row");
   const changed = await app.browser.execute(() => [...document.querySelectorAll(".compare-row.is-changed pre.diff-add")].map((p) => p.textContent));
   assert.ok(changed.includes(L.dupExtra), JSON.stringify(changed));
@@ -160,7 +160,7 @@ export async function duplicatesFlow(app, L, shot) {
   await app.keys(["Escape"]);
   await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".compare"))), { timeoutMsg: "compare dialog open" });
 
-  await app.click(".pane.active .dup-merge");
+  await app.click(".pane.active > .pane-content:not([hidden]) .dup-merge");
   await app.waitFor(".dialog .btn-primary");
   await app.click(".dialog .btn-primary");
   await h.waitContent(a.id, (c) => c.includes(`## ${L.dupB}`) && c.includes(L.dupExtra), "merged content");
@@ -184,7 +184,7 @@ export async function pdfFlow(app, L, shot) {
   const page = await h.create(L.readPage, `${L.readIntro} [[${L.pdf}]] [[${L.scan}]]`);
   await h.open(page.id, L.readPage);
   // A click on the file link opens the viewer.
-  await app.click(`.pane.active .ProseMirror .wikilink.file-link[data-file-link="${L.pdf}"]`);
+  await app.click(`.pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink.file-link[data-file-link="${L.pdf}"]`);
   await app.waitFor('.pdf-overlay .pdf-page[data-page="2"].is-rendered .textLayer span', 15000);
   // Select the text of page 2 and highlight it in green.
   await app.browser.execute(() => document.querySelector('.pdf-overlay .pdf-page[data-page="2"]').scrollIntoView({ block: "center" }));
@@ -223,9 +223,9 @@ export async function pdfFlow(app, L, shot) {
   await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".pdf-overlay"))), { timeoutMsg: "viewer still open" });
 
   // The link in the quote opens the PDF on page 2 and flashes the highlight.
-  await app.waitFor(`.pane.active .ProseMirror .wikilink.file-link[data-file-link="${L.pdf}"]`);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink.file-link[data-file-link="${L.pdf}"]`);
   await app.browser.execute((label) => {
-    const link = [...document.querySelectorAll(".pane.active .ProseMirror .wikilink.file-link")].find((a) => a.textContent.trim() === label);
+    const link = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink.file-link")].find((a) => a.textContent.trim() === label);
     link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
   }, `${L.pageLabel} 2`);
   await app.waitFor(".pdf-overlay .pdf-mark.is-flash", 15000);
@@ -247,7 +247,7 @@ export async function pdfFlow(app, L, shot) {
   await app.keys(["Escape"]);
 
   // A PDF without text: the hint.
-  await app.click(`.pane.active .ProseMirror .wikilink.file-link[data-file-link="${L.scan}"]`);
+  await app.click(`.pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink.file-link[data-file-link="${L.scan}"]`);
   await app.waitText(".pdf-overlay .pdf-notext", new RegExp(L.noText), 15000);
   await app.keys(["Escape"]);
 }

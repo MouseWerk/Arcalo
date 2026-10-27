@@ -1,5 +1,5 @@
 // The keys that are not commands of Settings → Tastatur (fixed keys of the editor, the page tree,
-// the calendar, the start page's edit mode, focus blocks and the graph): one table, shown read-only
+// the calendar, the start page's edit mode, focus blocks, the graph and the issue view): one table, shown read-only
 // below the commands, so the help's „Tastenkürzel“ lists everything the keyboard does.
 // keyhelp.test.ts checks it against the handlers it describes.
 
@@ -48,11 +48,16 @@ export const KEY_HELP: KeyGroup[] = [
     title: "kh.group.tree",
     items: [
       { label: "kh.open", keys: ["Enter"] },
+      { label: "kh.treeMove", keys: ["ArrowDown", "ArrowUp", "Home", "End"] },
+      { label: "kh.treeFold", keys: ["ArrowRight", "ArrowLeft"] },
+      { label: "kh.typeahead", keys: ["abc"], typed: true },
       { label: "kh.rename", keys: ["F2"] },
       { label: "kh.trash", keys: ["Delete"] },
+      { label: "kh.select", keys: ["Mod Space"] },
       { label: "kh.range", keys: ["Shift ArrowUp", "Shift ArrowDown"] },
       { label: "keys.reserved.selectAll", keys: ["Mod A"] },
-      { label: "kh.menu", keys: ["Shift F10"] },
+      { label: "fl.clearSelection", keys: ["Escape"] },
+      { label: "kh.menu", keys: ["Shift F10", "ContextMenu"] },
     ],
   },
   {
@@ -99,6 +104,18 @@ export const KEY_HELP: KeyGroup[] = [
       { label: "kh.graphZoom", keys: ["+", "-"] },
       { label: "kh.graphFit", keys: ["0"] },
       { label: "kh.graphDeselect", keys: ["Escape"] },
+    ],
+  },
+  {
+    title: "kh.group.issue",
+    items: [
+      { label: "kh.issueEdit", keys: ["E"] },
+      { label: "kh.issueComment", keys: ["C"] },
+      { label: "kh.issueStatus", keys: ["T"] },
+      { label: "kh.issueSave", keys: ["Mod Enter"] },
+      { label: "kh.issueTab", keys: ["Tab", "Shift Tab"] },
+      { label: "kh.issueClose", keys: ["Escape"] },
+      { label: "kh.issueOpen", keys: ["Shift Enter"] },
     ],
   },
   {

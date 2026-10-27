@@ -203,7 +203,14 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         else setView({ zoom: 1, x: (el?.clientWidth ?? 1000) / 2 - 130, y: (el?.clientHeight ?? 700) / 3 });
       })
       .catch(() => alive && setMissing(true));
-    const unregister = registerFlusher(() => save());
+    // A save that failed (it shows its message) keeps the edits unsaved: the flush reports it.
+    const unregister = registerFlusher(
+      async () => {
+        await save();
+        if (dirty.current) throw new Error(t("canvas.saveFailed"));
+      },
+      () => dirty.current,
+    );
     return () => {
       alive = false;
       unregister();
@@ -1015,7 +1022,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
           <>
             <IconButton icon={Undo2} label={`${t("canvas.undo")} (${keys("Mod Z")})`} disabled={!history.current.canUndo} onClick={undo} />
             <IconButton icon={Redo2} label={`${t("canvas.redo")} (${keys("Mod Shift Z")})`} disabled={!history.current.canRedo} onClick={redo} />
-            <IconButton icon={MoreHorizontal} label={t("canvas.export")} onClick={(e) => exportMenu(e.currentTarget)} />
+            <IconButton icon={MoreHorizontal} label={t("canvas.export")} aria-haspopup="menu" onClick={(e) => exportMenu(e.currentTarget)} />
           </>
         }
       />
@@ -1029,6 +1036,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         role="application"
         aria-label={t("canvas.board", { title })}
         data-canvas={pageId}
+        data-native-press
         style={{ ["--cv-zoom" as string]: view.zoom }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

@@ -10,7 +10,7 @@ import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRa
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, dateLocale, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, dateLocale, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, shownWeek, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { TimerClock, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
@@ -25,9 +25,11 @@ import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 import { weekRange } from "../lib/weekreview";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { currentLang, useT, type TKey } from "../lib/i18n";
+import { openIssue } from "../lib/jiraActions";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
 import { isComposing, isKey } from "../lib/ime";
+import { copyText } from "../lib/clipboard";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone; icon: typeof Check }> = {
   running: { label: "time.status.running", tone: "info", icon: Timer },
@@ -58,8 +60,11 @@ function EntryStatus({ flag }: { flag: StatusFlag }) {
 export function TimesheetView() {
   const t = useT();
   const version = useApp((s) => s.entriesVersion);
-  const [week, setWeek] = useState(() => weekStart(new Date()));
-  const [rows, setRows] = useState<TimeEntryRow[]>([]);
+  // The week asked for, and the week shown together with its entries: the header, the totals and the
+  // list switch at once when the entries arrive, so they never show two weeks while a load is on its way.
+  const [want, setWeek] = useState(() => weekStart(new Date()));
+  const [shown, setShown] = useState<{ week: Date; rows: TimeEntryRow[] }>(() => ({ week: want, rows: [] }));
+  const { week, rows } = shown;
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<TimeEntryRow | "new" | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -93,16 +98,17 @@ export function TimesheetView() {
   const seq = useRef(0);
   const load = () => {
     const n = ++seq.current;
+    const w = want;
     api
-      .entries(week.toISOString(), addDays(week, 7).toISOString())
-      .then((r) => n === seq.current && setRows(r))
+      .entries(w.toISOString(), addDays(w, 7).toISOString())
+      .then((r) => n === seq.current && setShown({ week: w, rows: r }))
       .catch((e) => s().error(t("time.loadFailed"), e));
   };
   useEffect(() => {
     load();
     setSelected(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week, version]);
+  }, [want, version]);
   const issues = useEntryIssues(rows);
 
   const done = rows.filter((r) => r.status_flag !== "running");
@@ -133,16 +139,16 @@ export function TimesheetView() {
           <div>
             <h1>{t("ribbon.timesheet")}</h1>
             <div className="view-sub">
-              {t("time.weekNo", { n: isoWeek(week) })} · {range}
+              {t("time.weekNo", { n: shownWeek(week) })} · {range}
             </div>
           </div>
           <div className="view-actions ts-actions">
             <div className="week-nav">
-              <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(week, -7))} />
+              <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(want, -7))} />
               <Button size="sm" variant="ghost" onClick={() => setWeek(weekStart(new Date()))}>
                 {t("time.thisWeek")}
               </Button>
-              <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(week, 7))} />
+              <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(want, 7))} />
             </div>
             <IconButton icon={Printer} label={t("time.print")} onClick={() => window.print()} />
             {/* In a narrow pane the buttons show their icons only (the name stays as label and tooltip). */}
@@ -220,7 +226,8 @@ export function TimesheetView() {
       </div>
       {editing && <EntryDialog entry={editing === "new" ? null : editing} wbs={wbs} las={las} onClose={() => setEditing(null)} defaultDay={week} note={editing !== "new" && <WorklogEditNote issue={issues.get(editing.id)} />} />}
       {exporting && <ExportDialog week={week} onClose={() => setExporting(false)} />}
-      {proposing && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
+      {/* Opened from elsewhere for this week: once its entries are here. */}
+      {proposing && week === want && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
     </div>
   );
 }
@@ -447,7 +454,7 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
   const copyCats = async () => {
     const { text, ids } = catsGrid(rows, week, catsDecimalSep(s().settings?.settings.time?.cats_decimal));
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
     } catch (e) {
       return s().error(t("devlog.copyFailed"), e);
     }
@@ -601,7 +608,9 @@ function WorklogChip({ issue }: { issue: EntryIssue }) {
   return (
     <span className={`entry-jira wl-${shown}`} data-key={issue.issue_key} data-state={shown} title={title}>
       <span className="entry-jira-dot" aria-hidden />
-      <span className="mono">{issue.issue_key}</span>
+      <button type="button" className="entry-jira-key mono" title={t("iv.openWindow")} onClick={(e) => (e.stopPropagation(), void openIssue(issue.issue_key, { browser: e.ctrlKey || e.metaKey }))}>
+        {issue.issue_key}
+      </button>
       {shown !== "none" && <span className="entry-jira-state">{t(`time.wl.short.${shown}` as TKey)}</span>}
       {shown === "failed" && (
         <button type="button" className="entry-jira-retry" onClick={retry} disabled={busy} aria-label={t("time.wl.retry")} title={t("time.wl.retry")}>
@@ -1024,14 +1033,14 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
       if (target === "file") {
         const f = FORMATS.find((x) => x.value === format)!;
         const st = useApp.getState().settings?.settings;
-        const name = exportFileName(st?.time?.export_file_pattern ?? "", { from, to, format, week: isoWeek(new Date(`${from}T00:00:00`)), pernr: st?.pernr });
+        const name = exportFileName(st?.time?.export_file_pattern ?? "", { from, to, format, week: from < to ? shownWeek(new Date(`${from}T00:00:00`)) : isoWeek(new Date(`${from}T00:00:00`)), pernr: st?.pernr });
         path = await saveDialog({ defaultPath: `${name}.${f.ext}`, filters: [{ name: f.label, extensions: [f.ext] }] });
         if (!path) return;
       }
       // Clipboard: copy first, mark only once the copy succeeded.
       const res = await api.exportEntries({ format, ...range(), onlyReleased, markExported: mark && target === "file", path });
       if (target === "clipboard") {
-        await navigator.clipboard.writeText(res.content);
+        await copyText(res.content);
         if (mark && res.exported_ids.length) await api.setStatus(res.exported_ids, "exported");
       }
       s().toast({

@@ -57,8 +57,13 @@ class SecretsPlugin(private val activity: Activity) : Plugin(activity) {
     fun set(invoke: Invoke) {
         val args = invoke.parseArgs(SecretPutArgs::class.java)
         try {
-            prefs.edit().putString(args.account, encrypt(args.secret)).commit()
-            invoke.resolve(JSObject())
+            // `commit` reports whether the value reached the storage: a token that was not saved
+            // must not be reported as saved.
+            if (prefs.edit().putString(args.account, encrypt(args.secret)).commit()) {
+                invoke.resolve(JSObject())
+            } else {
+                invoke.reject("not written to the app storage")
+            }
         } catch (e: Exception) {
             invoke.reject(e.message ?: "Keystore")
         }
@@ -67,8 +72,11 @@ class SecretsPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun delete(invoke: Invoke) {
         val args = invoke.parseArgs(SecretAccountArgs::class.java)
-        prefs.edit().remove(args.account).commit()
-        invoke.resolve(JSObject())
+        if (prefs.edit().remove(args.account).commit()) {
+            invoke.resolve(JSObject())
+        } else {
+            invoke.reject("not removed from the app storage")
+        }
     }
 
     private fun key(): SecretKey {

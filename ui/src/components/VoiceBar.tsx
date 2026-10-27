@@ -4,12 +4,13 @@
 // voice folder („unfertige Aufnahme“), and it hosts the „Neu transkribieren“ dialog.
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, AudioLines, Check, FileText, Loader2, Mic, Pause, Play, Save, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AlertTriangle, AudioLines, Check, FileText, Loader2, Mic, MicOff, Pause, Play, Save, Sparkles, Square, Trash2, X } from "lucide-react";
 import { Button, Dialog, Field, IconButton } from "./ui";
 import { Select } from "./Select";
 import { useApp } from "../store/app";
 import { useT } from "../lib/i18n";
 import { dateTime } from "../lib/format";
+import { IS_LINUX, IS_MAC } from "../lib/platform";
 import {
   MODEL_LABELS,
   againModel,
@@ -31,6 +32,8 @@ import {
 } from "../lib/voice";
 
 const SEGMENTS = 14;
+/** Where the microphone access is switched on, on this system. */
+const SILENT_HINT = IS_MAC ? "voice.silent.mac" : IS_LINUX ? "voice.silent.linux" : "voice.silent.win";
 
 export function VoiceBar() {
   const t = useT();
@@ -94,6 +97,12 @@ export function VoiceBar() {
                 {t("voice.stop")}
               </Button>
             </span>
+          </div>
+        )}
+        {rec && rec.silent && !rec.paused && (
+          <div className="voice-row voice-silent" role="alert">
+            <MicOff size={14} className="voice-icon warn" aria-hidden />
+            <span className="voice-hint">{t(SILENT_HINT)}</span>
           </div>
         )}
         {status.jobs.map((job) => (

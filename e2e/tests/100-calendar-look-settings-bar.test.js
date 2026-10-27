@@ -103,7 +103,7 @@ const checkSettings = async (label) => {
 
 test("settings: the menu is whole and reachable at every window size, with and without panels", async () => {
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   const sidebarHidden = async (hide) => {
     const shown = await app.browser.execute(() => !!document.querySelector(".sidebar") && document.querySelector(".sidebar").offsetParent !== null);
     if (shown === hide) await app.keys(["Control", "\\"]);
@@ -165,7 +165,7 @@ test("settings: Windows' own title bar, the backdrop and split view keep the men
   await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 300, clientY: 20 })));
   await app.waitText(".menu-item", /Rechts daneben öffnen/);
   await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((b) => /Rechts daneben öffnen/.test(b.textContent)).click());
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelectorAll(".pane .settings").length)) === 2, { timeoutMsg: "no split" });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelectorAll(".pane > .pane-content:not([hidden]) .settings").length)) === 2, { timeoutMsg: "no split" });
   await sleep(300);
   for (const [w, h] of [
     [1600, 900],
@@ -202,7 +202,7 @@ const blocks = () =>
       const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
       return (x + 0.05) / (y + 0.05);
     };
-    return [...document.querySelectorAll(".pane.active .calv-ev")].map((el) => {
+    return [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-ev")].map((el) => {
       const cs = getComputedStyle(el);
       const bg = parse(cs.backgroundColor);
       const title = el.querySelector(".calv-ev-title");
@@ -226,9 +226,9 @@ const blocks = () =>
 test("Kalender: blocks have a fill, no bar or colored border, and readable text in three themes", async () => {
   await panel(false);
   await app.click(".ribbon-calendar-view");
-  await app.waitFor(".pane.active .calv-grid");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.textContent.trim() === "Woche")?.click());
-  await app.waitText(".pane.active .calv-ev .calv-ev-title", /^Sprint Review$/);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-grid");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button")].find((b) => b.textContent.trim() === "Woche")?.click());
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .calv-ev .calv-ev-title", /^Sprint Review$/);
   for (const [mode, light, dark] of [
     ["light", "arcalo-light", "arcalo-dark"],
     ["dark", "arcalo-light", "arcalo-dark"],
@@ -259,14 +259,14 @@ test("Kalender: blocks have a fill, no bar or colored border, and readable text 
   // A meeting opened: lifted with a stronger fill and a bolder title, no outline or colored border.
   const look = () =>
     app.browser.execute(() => {
-      const el = [...document.querySelectorAll(".pane.active .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review");
+      const el = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review");
       const cs = getComputedStyle(el);
       return { bg: cs.backgroundColor, shadow: cs.boxShadow, outline: cs.outlineStyle, border: cs.borderLeftWidth, weight: Number(getComputedStyle(el.querySelector(".calv-ev-title")).fontWeight) };
     });
   const plain = await look();
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review").click());
-  await app.waitFor(".pane.active .calv-detail");
-  await app.waitFor(".pane.active .calv-ev.selected");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review").click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-detail");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-ev.selected");
   await sleep(250);
   const picked = await look();
   assert.equal(picked.outline, "none", "no outline on the selected meeting");
@@ -283,7 +283,7 @@ test("Kalender: blocks have a fill, no bar or colored border, and readable text 
 test("Kalender: the legend is dots and names, the month shows one line per meeting", async () => {
   await panel(false);
   const legend = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .calv-legend-item")].map((b) => {
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-legend-item")].map((b) => {
       const cs = getComputedStyle(b);
       return { border: cs.borderTopWidth, radius: parseFloat(cs.borderTopLeftRadius), dot: !!b.querySelector(".calv-legend-dot") };
     }),
@@ -294,11 +294,11 @@ test("Kalender: the legend is dots and names, the month shows one line per meeti
     assert.ok(l.radius <= 6, "no pill");
     assert.ok(l.dot);
   }
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button, .pane.active .calv-view-select")].find((b) => b.textContent.trim() === "Monat")?.click());
-  await app.waitFor(".pane.active .calv-month");
-  const rows = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-mev:not(.allday)")].map((b) => Math.round(b.getBoundingClientRect().height)));
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button, .pane.active > .pane-content:not([hidden]) .calv-view-select")].find((b) => b.textContent.trim() === "Monat")?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-month");
+  const rows = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-mev:not(.allday)")].map((b) => Math.round(b.getBoundingClientRect().height)));
   assert.ok(rows.length > 3 && rows.every((h) => h === 20), `single-line chips: ${rows.join(",")}`);
-  await app.waitText(".pane.active .calv-more", /^\+\d+ weitere$/);
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.textContent.trim() === "Arbeitswoche")?.click());
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .calv-more", /^\+\d+ weitere$/);
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button")].find((b) => b.textContent.trim() === "Arbeitswoche")?.click());
   await panel(true);
 });

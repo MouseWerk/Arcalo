@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use arcalo_core::issues::jira::{self as core_jira, JiraClient};
 use arcalo_core::issues::{
-    self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, JiraSite,
-    NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
+    self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, IssueTable,
+    JiraSite, NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
 };
 use arcalo_core::model::{Page, TimeEntry};
 use arcalo_core::{Error, tr, trf};
@@ -77,17 +77,17 @@ fn client_with(state: &AppState, site: &JiraSite, token: Option<&str>, kind: Sit
     Ok(JiraClient::new(&site.id, &site.url, kind, &site.email, &token, http, timeout))
 }
 
-fn client(state: &AppState, site: &JiraSite) -> Result<JiraClient> {
+pub(crate) fn client(state: &AppState, site: &JiraSite) -> Result<JiraClient> {
     client_with(state, site, None, site.kind)
 }
 
-fn site_of(state: &AppState, id: &str) -> Result<JiraSite> {
+pub(crate) fn site_of(state: &AppState, id: &str) -> Result<JiraSite> {
     state.settings().jira.site(id).cloned().ok_or_else(|| Error::not_found("jira site", id))
 }
 
 /// The site an issue key belongs to: the cached issue's, else the site with its project, else
 /// the first active site.
-fn site_for_key(state: &AppState, key: &str) -> Result<JiraSite> {
+pub(crate) fn site_for_key(state: &AppState, key: &str) -> Result<JiraSite> {
     let settings = state.settings().jira;
     let cached = state.reader().issue_get(key)?.map(|i| i.site);
     let by_project = || {
@@ -428,6 +428,12 @@ pub fn jira_issues(state: State<AppState>, filter: Option<IssueFilter>) -> Resul
     state.reader().issues_list(&filter.unwrap_or_default())
 }
 
+/// The issues as the issue list and widget load them: rows without comments (`IssueTable`).
+#[tauri::command(async)]
+pub fn jira_issues_compact(state: State<AppState>, filter: Option<IssueFilter>) -> Result<IssueTable> {
+    Ok(state.reader().issues_list(&filter.unwrap_or_default())?.into())
+}
+
 /// What a chip shows of an issue.
 #[derive(Serialize)]
 pub struct ChipIssue {
@@ -442,6 +448,8 @@ pub struct ChipIssue {
     due_date: Option<String>,
     url: String,
     description: String,
+    /// The description is loaded (else the hover card loads it, `jira_issue_detail`).
+    detailed: bool,
 }
 
 /// The keys that become chips: the cached projects and what each issue shows.
@@ -471,6 +479,7 @@ pub fn jira_index(state: State<AppState>) -> Result<IssueIndex> {
             assignee: i.assignee,
             due_date: i.due_date,
             url: i.url,
+            detailed: i.detailed,
         })
         .collect();
     Ok(IssueIndex { projects, issues })
@@ -514,6 +523,17 @@ pub async fn jira_issue_fetch(app: AppHandle, key: String) -> Result<Issue> {
     let issue = client(&state, &site)?.get(&key).await?;
     state.db().issue_put(&site.id, &issue, Utc::now())?;
     let _ = app.emit("jira://synced", &site.id);
+    Ok(issue)
+}
+
+/// The description and comments of an issue opened (the list and the hover card), from Jira, cached
+/// (1.19: searches load the list fields only). Nothing else is reloaded.
+#[tauri::command]
+pub async fn jira_issue_detail(app: AppHandle, key: String) -> Result<Issue> {
+    let state = app.state::<AppState>();
+    let site = site_for_key(&state, &key)?;
+    let issue = client(&state, &site)?.get(&key).await?;
+    state.db().issue_put(&site.id, &issue, Utc::now())?;
     Ok(issue)
 }
 
@@ -762,7 +782,7 @@ pub fn kick_worklogs(app: AppHandle) {
 
 /// Posts the due worklogs, one runner at a time. A retry first looks for a worklog an
 /// interrupted try left on the issue; an entry is never posted twice (`worklog_claim`).
-async fn run_worklogs(app: &AppHandle) {
+pub(crate) async fn run_worklogs(app: &AppHandle) {
     let sync = app.state::<JiraSync>();
     if sync.worklogs.swap(true, Ordering::SeqCst) {
         sync.again.store(true, Ordering::SeqCst);
@@ -864,18 +884,14 @@ async fn post_worklogs(app: &AppHandle) {
 /// Whether changes of entries reach Jira on `site`: time tracking on, the site enabled and
 /// logging work (Settings → Jira).
 pub fn logs_work(state: &AppState, site: &str) -> bool {
-    let settings = state.settings();
-    settings.time_tracking() && settings.jira.site(site).is_some_and(|s| s.enabled && s.log_work)
+    issues::logs_work(&state.settings(), site)
 }
 
 /// An entry was edited: its posted worklog is updated when duration, start or comment changed.
 pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) {
-    if !issues::worklog_differs(before, after) {
-        return;
-    }
     let state = app.state::<AppState>();
-    let Ok(Some((site, _, _))) = state.reader().entry_worklog(after.id) else { return };
-    if logs_work(&state, &site) && state.db().worklog_changed(after.id).unwrap_or(false) {
+    let settings = state.settings();
+    if state.db().booking_edited(before, after, &settings).unwrap_or(false) {
         kick_worklogs(app.clone());
     }
 }
@@ -885,20 +901,8 @@ pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) 
 /// `with_chip`: the user removed the entry's chip from its note (the note stays as it is);
 /// otherwise the chip is marked „Buchung gelöscht“.
 pub fn delete_entry(state: &AppState, entry_id: i64, with_chip: bool) -> Result<bool> {
-    let db = state.db();
-    let site = db.entry_worklog(entry_id)?.map(|(site, _, _)| site);
-    let queue = site.is_some_and(|s| logs_work(state, &s));
-    db.atomic(|| {
-        let queued = queue && db.worklog_queue_delete(entry_id)?;
-        // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
-        db.issue_keep_link(entry_id, Utc::now())?;
-        if with_chip {
-            db.delete_time_entry_with_chip(entry_id)?
-        } else {
-            db.delete_time_entry(entry_id)?
-        };
-        Ok(queued)
-    })
+    let settings = state.settings();
+    state.db().delete_booking(entry_id, with_chip, &settings)
 }
 
 /// „Erneut versuchen“ on a failed worklog.

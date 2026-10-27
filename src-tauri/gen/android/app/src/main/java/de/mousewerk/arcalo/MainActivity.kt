@@ -2,6 +2,7 @@ package de.mousewerk.arcalo
 
 import android.os.Bundle
 import android.view.View
+import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -19,6 +20,13 @@ class MainActivity : TauriActivity() {
       )
       view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
       WindowInsetsCompat.CONSUMED
+    }
+  }
+
+  companion object {
+    init {
+      // Debug builds only: the WebView's DevTools socket for the emulator tests (e2e/android).
+      if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
     }
   }
 }

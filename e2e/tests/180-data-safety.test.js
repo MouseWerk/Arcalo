@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, launch, guarded } from "../lib/harness.js";
+import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -23,7 +23,7 @@ const content = async (title) => (await app.invoke("page_get", { id: await pageI
 const open = async (title) => {
   await app.invoke("search_open", { target: { kind: "page", page_id: await pageId(title), new_tab: false } });
   await app.browser.waitUntil(async () => (await app.text(".pane.active .tab.active .tab-title")) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 };
 
 test("edits whose save failed survive closing the editor and are saved once the disk has room", async () => {
@@ -47,7 +47,7 @@ test("edits whose save failed survive closing the editor and are saved once the 
   await app.browser.pause(600);
   // Back again before the disk has room: the editor shows the kept text, nothing is lost.
   await open("Architektur");
-  await app.browser.waitUntil(async () => /Nach dem vollen Datentraeger/.test(await app.text(".pane.active .ProseMirror")), {
+  await app.browser.waitUntil(async () => /Nach dem vollen Datentraeger/.test(await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")), {
     timeoutMsg: "the kept text is not shown again",
   });
   await open("Jour fixe 22.09.");
@@ -108,11 +108,7 @@ test("killing the app in the middle of saves leaves an intact database with a co
     { timeout: 20000, timeoutMsg: "bulk saves did not start" },
   );
   const acknowledged = await app.browser.execute(() => window.__bulk);
-  try {
-    execSync(`pkill -9 -f "${APP}"`);
-  } catch {
-    /* pkill also hits the shell that runs it */
-  }
+  app.kill("SIGKILL");
   await app.close();
 
   const db = path.join(dataDir, "workspace.db");

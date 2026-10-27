@@ -50,6 +50,12 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0033_task_recurrence.sql"),
     include_str!("../migrations/0034_embedding_queue.sql"),
     include_str!("../migrations/0035_page_id_floor.sql"),
+    include_str!("../migrations/0036_issue_detail.sql"),
+    include_str!("../migrations/0037_page_line_ends.sql"),
+    include_str!("../migrations/0038_move_undo_order.sql"),
+    include_str!("../migrations/0039_calendar_writes.sql"),
+    include_str!("../migrations/0040_composed_links.sql"),
+    include_str!("../migrations/0041_issue_full.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -284,6 +290,12 @@ impl Database {
     /// locked file) everything since the savepoint is rolled back and the error returned:
     /// the connection never stays inside a transaction, where later saves would look
     /// successful but never be committed.
+    ///
+    /// The outermost call on a writable connection takes the write lock first (`BEGIN
+    /// IMMEDIATE`): another process on the workspace (the `arcalo` command line while the app
+    /// runs) may commit between a read and a write of `f`, and a transaction that started as a
+    /// reader cannot become the writer then (SQLite answers `SQLITE_BUSY` at once, without
+    /// waiting). Taking the lock up front waits for the other writer instead (busy timeout).
     pub fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -293,10 +305,25 @@ impl Database {
             eprintln!("arcalo: open transaction found outside of atomic(), rolled back");
             let _ = self.conn.execute_batch("ROLLBACK");
         }
+        let immediate = outermost && !self.conn.is_readonly(rusqlite::MAIN_DB).unwrap_or(true);
+        if immediate {
+            self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        }
         let name = format!("sp{}", SEQ.fetch_add(1, Ordering::Relaxed));
-        self.conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+        if let Err(e) = self.conn.execute_batch(&format!("SAVEPOINT {name}")) {
+            if immediate {
+                let _ = self.conn.execute_batch("ROLLBACK");
+            }
+            return Err(e.into());
+        }
         self.depth.fetch_add(1, Ordering::Relaxed);
-        let res = f().and_then(|v| self.conn.execute_batch(&format!("RELEASE {name}")).map(|_| v).map_err(Into::into));
+        let res = f().and_then(|v| {
+            self.conn.execute_batch(&format!("RELEASE {name}"))?;
+            if immediate {
+                self.conn.execute_batch("COMMIT")?;
+            }
+            Ok(v)
+        });
         self.depth.fetch_sub(1, Ordering::Relaxed);
         if res.is_err() {
             // SQLite may already have rolled the whole transaction back (then the savepoint is
@@ -1147,6 +1174,46 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
+    /// Numbers that branches took and gave up before they reached main. They stay free: a
+    /// database that ran a migration of such a branch counts it by position (CLAUDE.md).
+    const MIGRATION_GAPS: [u32; 7] = [16, 21, 22, 23, 24, 25, 28];
+
+    /// Migrations are positional (CLAUDE.md): `NNNN_words.sql`, each new one takes the next number
+    /// and no gap is filled, every file is in `MIGRATIONS` in the order of its number. Two branches
+    /// that both took the next number, or a file left out of the list, fail here instead of in a
+    /// user's database.
+    #[test]
+    fn migrations_are_positional() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut names: Vec<String> =
+            std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        let mut numbers = vec![];
+        for name in &names {
+            let (number, rest) = name.split_once('_').unwrap_or((name, ""));
+            assert!(number.len() == 4 && number.chars().all(|c| c.is_ascii_digit()), "{name}: name it NNNN_words.sql");
+            assert!(
+                rest.len() > 4
+                    && rest.ends_with(".sql")
+                    && rest[..rest.len() - 4].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "{name}: name it NNNN_words.sql"
+            );
+            numbers.push(number.parse::<u32>().unwrap());
+        }
+        let last = *numbers.last().unwrap();
+        let expected: Vec<u32> = (1..=last).filter(|n| !MIGRATION_GAPS.contains(n)).collect();
+        assert_eq!(numbers, expected, "migrations take the next number; a gap stays free and no number is taken twice");
+        assert_eq!(MIGRATIONS.len(), names.len(), "every file in migrations/ is in MIGRATIONS");
+        for (i, name) in names.iter().enumerate() {
+            let text = std::fs::read_to_string(dir.join(name)).unwrap();
+            assert_eq!(
+                MIGRATIONS[i].replace("\r\n", "\n"),
+                text.replace("\r\n", "\n"),
+                "MIGRATIONS[{i}] is not {name}"
+            );
+        }
+    }
+
     pub(crate) fn seeded() -> (Database, Netzplan) {
         let db = Database::open_in_memory().unwrap();
         let p = db.create_project("PRJ-2026-X", "Arcalo Rollout").unwrap();
@@ -1182,6 +1249,94 @@ mod tests {
         assert_eq!(desc("DEV"), "Entwicklung");
     }
 
+    /// Pages as the Git sync of 1.18.0 took them over on Windows (CRLF), next to pages it did not
+    /// touch (LF) and one with a lone CR in its text.
+    const CRLF_FIXTURE: &[(i64, &str, &str)] = &[
+        (
+            1,
+            "Tagesnotiz",
+            "---\r\ndate: 2026-10-01\r\n---\r\n# Mittwoch\r\n\r\n- [ ] Bericht schreiben\r\n- [x] Zahlen holen\r\n\r\nNotiz mit [[Projekt]]\r\n",
+        ),
+        (2, "Projekt", "# Projekt\n\nSchon LF.\n"),
+        (3, "Gemischt", "Zeile eins\r\nZeile zwei\nZeile drei\r\n"),
+        (4, "Einzelnes CR", "Text mit \r einzelnem CR\n"),
+    ];
+
+    /// 1.19: the line ends of notes taken over by 1.18.0 on Windows are normalized once
+    /// (migration 0037), each changed page keeps its text before as a version, the others stay
+    /// as they are, the index follows, and nothing changes the second time.
+    #[test]
+    fn crlf_notes_of_1_18_0_get_lf_once_and_keep_their_text_as_a_version() {
+        let path = std::env::temp_dir().join(format!("arcalo-crlf-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let before = MIGRATIONS.iter().position(|m| m.contains("char(13, 10)")).expect("migration 0037");
+        {
+            let c = Connection::open(&path).unwrap();
+            for m in &MIGRATIONS[..before] {
+                c.execute_batch(m).unwrap();
+            }
+            c.pragma_update(None, "user_version", before as i64).unwrap();
+            for (id, title, content) in CRLF_FIXTURE {
+                c.execute(
+                    "INSERT INTO pages (id, title, content, updated_at) VALUES (?1, ?2, ?3, '2026-10-01T08:00:00Z')",
+                    params![id, title, content],
+                )
+                .unwrap();
+            }
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), MIGRATIONS.len());
+        let content = |id: i64| db.page_doc(id).unwrap().content;
+        assert_eq!(
+            content(1),
+            "---\ndate: 2026-10-01\n---\n# Mittwoch\n\n- [ ] Bericht schreiben\n- [x] Zahlen holen\n\nNotiz mit [[Projekt]]\n"
+        );
+        assert_eq!(content(2), CRLF_FIXTURE[1].2, "an LF page is not touched");
+        assert_eq!(content(3), "Zeile eins\nZeile zwei\nZeile drei\n");
+        assert_eq!(content(4), CRLF_FIXTURE[3].2, "a lone CR is text, not a line end");
+        // Each changed page keeps its text before as a version, to restore it; the others get none.
+        for (id, _, text) in CRLF_FIXTURE {
+            let versions = db.list_versions(*id).unwrap();
+            if text.contains("\r\n") {
+                assert_eq!(versions.len(), 1, "page {id}");
+                assert_eq!(db.version_content(versions[0].id).unwrap(), *text);
+            } else {
+                assert!(versions.is_empty(), "page {id}");
+            }
+        }
+        // The time of change stays.
+        assert_eq!(db.page(1).unwrap().updated_at, "2026-10-01T08:00:00Z");
+        // The index follows the new text: the tasks have no CR, the link is known.
+        let tasks = db.list_tasks(&Default::default()).unwrap();
+        assert_eq!(tasks.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["Bericht schreiben"]);
+        assert!(db.meta_get(NEEDS_REINDEX).unwrap().is_none());
+        // Restoring the version brings the old text back (undo).
+        let v = db.list_versions(1).unwrap()[0].id;
+        db.restore_version(1, v).unwrap();
+        assert_eq!(content(1), CRLF_FIXTURE[0].2);
+        drop(db);
+        // Idempotent: the migration's text once more changes nothing and adds no version.
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute("UPDATE pages SET content = ?1 WHERE id = 1", [content_lf(CRLF_FIXTURE[0].2)]).unwrap();
+            let versions =
+                |c: &Connection| c.query_row("SELECT COUNT(*) FROM page_versions", [], |r| r.get::<_, i64>(0)).unwrap();
+            let n = versions(&c);
+            c.execute_batch(MIGRATIONS[before]).unwrap();
+            assert_eq!(versions(&c), n);
+            let flag = c
+                .query_row("SELECT COUNT(*) FROM settings WHERE key = 'meta.needs_reindex'", [], |r| r.get::<_, i64>(0))
+                .unwrap();
+            assert_eq!(flag, 0, "nothing to index anew");
+        }
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    fn content_lf(s: &str) -> String {
+        s.replace("\r\n", "\n")
+    }
     #[test]
     fn pending_reindex_survives_a_crash() {
         let path = std::env::temp_dir().join(format!("arcalo-reindex-{}.db", std::process::id()));
@@ -1226,6 +1381,38 @@ mod tests {
         assert_eq!(e.status_flag, StatusFlag::Draft);
         assert!(db.running_timer().unwrap().is_none());
         assert!((db.booked_hours(np.id, Some("1020")).unwrap() - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_write_after_a_read_waits_for_another_process_instead_of_failing() {
+        let path = std::env::temp_dir().join(format!("arcalo-immediate-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let db = Database::open(&path).unwrap();
+        let id = db.create_page(None, "Geteilt", None).unwrap().id;
+        let (ready, go) = std::sync::mpsc::channel();
+        let res = db.atomic(|| {
+            // Read first, as a save does: the other writer comes in between.
+            assert!(db.page_doc(id)?.content.is_empty());
+            let other = path.clone();
+            let writer = std::thread::spawn(move || {
+                let db2 = Database::open(&other).unwrap();
+                ready.send(()).unwrap();
+                db2.save_page_content(id, "von außen")
+            });
+            go.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            db.save_page_content(id, "von hier")?;
+            Ok(writer)
+        });
+        let writer = res.expect("the first transaction commits");
+        writer.join().unwrap().expect("the other process waited for the lock and saved");
+        assert_eq!(db.page_doc(id).unwrap().content, "von außen");
+        drop(db);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
     }
 
     #[test]
@@ -1469,6 +1656,43 @@ mod tests {
         let tree = db.page_tree().unwrap();
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].children[0].children[0].page.title, "2026-09-23");
+        // The sidebar's rows: every field of the node in order, children nested the same way.
+        let rows: Vec<PageRow> = tree.iter().cloned().map(PageRow::from).collect();
+        let json = serde_json::to_value(&rows).unwrap();
+        let n = &tree[0].children[0];
+        assert_eq!(
+            json[0][12][0],
+            serde_json::json!([
+                n.page.id,
+                root.id,
+                "Meeting Notes",
+                null,
+                n.page.position,
+                n.page.updated_at,
+                false,
+                null,
+                null,
+                n.created_at,
+                null,
+                null,
+                [[
+                    n.children[0].page.id,
+                    child.id,
+                    "2026-09-23",
+                    null,
+                    0,
+                    n.children[0].page.updated_at,
+                    false,
+                    null,
+                    null,
+                    n.children[0].created_at,
+                    null,
+                    null,
+                    []
+                ]]
+            ])
+        );
+        assert!(serde_json::to_vec(&rows).unwrap().len() < serde_json::to_vec(&tree).unwrap().len() * 2 / 3);
     }
 
     #[test]

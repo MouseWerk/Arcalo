@@ -14,6 +14,7 @@ import { useApp } from "../../store/app";
 import { flushAllEditors } from "../../editor/saves";
 import { pinProblem, security, type CipherStatus, type LockConfig, type LockMode, type LockStatus } from "../../lib/security";
 import { Group, NumberInput, Row, SectionHead, StatusNote, type SectionProps } from "./common";
+import { copyText } from "../../lib/clipboard";
 
 export function SecuritySection({ draft, update, onOpen }: SectionProps & { onOpen: (section: string) => void }) {
   const t = useT();
@@ -295,13 +296,13 @@ function CipherWizard({ mode, status, onClose: close }: { mode: WizardMode; stat
             <Button icon={Download} disabled={!code} onClick={() => void saveFile()}>
               {t("sec.key.save")}
             </Button>
-            <Button icon={Copy} disabled={!code} onClick={() => void navigator.clipboard.writeText(code ?? "").catch(() => {})}>
+            <Button icon={Copy} disabled={!code} onClick={() => void copyText(code ?? "").catch((e) => useApp.getState().error(t("common.copyFailed"), e))}>
               {t("sec.key.copy")}
             </Button>
           </div>
           {(mode === "encrypt" || rekey) && (
             <label className="sec-confirm">
-              <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+              <input type="checkbox" className="check" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
               <span>{rekey ? t("sec.rk.confirm") : t("sec.key.confirm")}</span>
             </label>
           )}

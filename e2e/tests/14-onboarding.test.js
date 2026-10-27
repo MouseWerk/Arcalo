@@ -31,7 +31,7 @@ test("printing a page prints only the focused pane", async () => {
     window.__printed = 0;
     window.print = () => void window.__printed++;
   });
-  await app.click('.pane.active .vh-actions [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh-actions [aria-label="Weitere Aktionen"]');
   await app.click("button=Drucken / als PDF speichern");
   await app.browser.waitUntil(() => app.browser.execute(() => window.__printed === 1));
 });

@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState, ty
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions, SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { t } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { consumeKey } from "../lib/keymap";
 import { onHidden } from "../lib/keepalive";
 
@@ -91,7 +91,7 @@ export const SuggestionPopup = forwardRef<PopupHandle, PopupProps>(({ items, com
         setSel((s) => (s - 1 + items.length) % items.length);
         return true;
       }
-      if (event.key === "Enter" || event.key === "Tab") {
+      if (event.key === "Enter" || isTab(event)) {
         command(items[sel]);
         return true;
       }

@@ -7,8 +7,9 @@ import { api } from "../../lib/api";
 import { relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, PageDoc, PageNode, SearchHit } from "../../lib/types";
-import { errorText, useMobile } from "../context";
-import { pageHtml, treeRows } from "../model";
+import { onFlush } from "../../lib/flush";
+import { errorText, useBackLayer, useMobile } from "../context";
+import { mayRepeat, pageHtml, toggleTask, treeRows, withNextOccurrence } from "../model";
 import { Empty, Header, Notice, Section, Spinner } from "../ui";
 
 export function NotesScreen() {
@@ -34,10 +35,18 @@ export function NotesScreen() {
       setHits(null);
       return;
     }
+    // A reply after the query changed (or was cleared) is dropped.
+    let alive = true;
     const id = window.setTimeout(() => {
-      api.search(q, 30).then(setHits).catch(() => setHits([]));
+      api.search(q, 30).then(
+        (h) => alive && setHits(h),
+        () => alive && setHits([]),
+      );
     }, 180);
-    return () => window.clearTimeout(id);
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
   }, [query]);
 
   const rows = useMemo(() => (tree ? treeRows(tree, open) : []), [tree, open]);
@@ -58,7 +67,7 @@ export function NotesScreen() {
       <div className="m-toolbar">
         <label className="m-search">
           <Search size={18} />
-          <input type="search" value={query} placeholder={t("mob.notes.searchPlaceholder")} aria-label={t("mob.notes.search")} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
+          <input type="search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={query} placeholder={t("mob.notes.searchPlaceholder")} aria-label={t("mob.notes.search")} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
           {query && (
             <button type="button" className="m-icon-btn m-icon-btn-quiet" aria-label={t("common.clear")} onClick={() => setQuery("")}>
               <X size={18} />
@@ -190,46 +199,180 @@ export function PageScreen({ id }: { id: number }) {
           <Spinner />
         </div>
       ) : (
-        <PageBody doc={doc} editing={editing} conflict={conflict} onSaved={(content) => setDoc({ ...doc, content })} onDone={() => setEditing(false)} />
+        <PageBody doc={doc} editing={editing} conflict={conflict} onSaved={(content) => setDoc((d) => (d && d.id === doc.id ? { ...d, content } : d))} onDone={() => setEditing(false)} />
       )}
     </div>
   );
 }
 
 /** A page's text: rendered for reading, or its Markdown in a text field while editing (saved
- *  when leaving the field, after a pause in typing and with „Fertig“). */
+ *  when leaving the field, after a pause in typing and with „Fertig“). A save names the text it
+ *  started from, so a change a sync took over meanwhile is merged, never overwritten. */
+/**
+ * The task box a tap meant: the box itself, or the space around it in its row (the box is small;
+ * a tap up to the touch size around it counts, the task's text and links do not).
+ */
+function taskBoxAt(e: MouseEvent<HTMLDivElement>): HTMLInputElement | null {
+  const el = e.target as HTMLElement;
+  if (el instanceof HTMLInputElement && el.type === "checkbox") return el;
+  const li = el.closest("li");
+  const box = li?.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+  if (!box || el.closest("a") || el !== li) return null;
+  const r = box.getBoundingClientRect();
+  const reach = Math.max(0, (TOUCH - r.width) / 2);
+  return e.clientX >= r.left - reach && e.clientX <= r.right + reach ? box : null;
+}
+/** The touch size (--touch-min). */
+const TOUCH = 44;
+
 export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean; onSaved: (content: string) => void; onDone: () => void }) {
   const m = useMobile();
+  // The props and context of the latest render: a save that ends after the screen moved on (the
+  // pause in typing, the app going to the background, the screen closing) reports to them.
+  const props = useRef(p);
+  props.current = p;
+  const ctx = useRef(m);
+  ctx.current = m;
   const [text, setText] = useState(p.doc.content);
+  // The page as stored when this editor last saw it: the base of the next save.
   const saved = useRef(p.doc.content);
+  const latest = useRef(text);
+  latest.current = text;
   const timer = useRef<number | undefined>(undefined);
+  const saving = useRef<Promise<void>>(Promise.resolve());
+  // Saves started and on their way: a read of the page from before one of them is outdated.
+  const saves = useRef(0);
+  const inFlight = useRef(0);
+  const missed = useRef(false);
 
+  // The page as stored now, shown when nothing typed waits for its save (else that save merges
+  // both). Read by the editor itself: a read the screen started before a save may arrive after it.
+  const reread = () => {
+    if (inFlight.current > 0) {
+      missed.current = true;
+      return;
+    }
+    const at = saves.current;
+    api
+      .page(props.current.doc.id)
+      .then((d) => {
+        if (saves.current !== at || inFlight.current > 0) return;
+        if (d.content === saved.current || latest.current !== saved.current) return;
+        saved.current = d.content;
+        latest.current = d.content;
+        setText(d.content);
+      })
+      .catch(() => {});
+  };
+  // The page changed under the editor (a sync took the server's text over).
   useEffect(() => {
-    if (!p.editing) {
-      setText(p.doc.content);
-      saved.current = p.doc.content;
-    }
-  }, [p.doc.content, p.editing]);
+    if (p.doc.content !== saved.current) reread();
+  }, [p.doc.content]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const save = async (content: string) => {
+  // One save after the other, each from the base the one before left.
+  const save = (content: string) => {
     window.clearTimeout(timer.current);
-    if (content === saved.current) return;
-    try {
-      await api.savePage(p.doc.id, content);
-      saved.current = content;
-      p.onSaved(content);
-    } catch (e) {
-      m.toast("error", t("mob.notes.saveFailed"), errorText(e));
-    }
+    saves.current += 1;
+    inFlight.current += 1;
+    const run = saving.current.then(async () => {
+      if (content === saved.current) return;
+      const { doc, onSaved } = props.current;
+      try {
+        const res = await api.savePage(doc.id, content, saved.current);
+        const stored = res.merged ?? content;
+        if (res.merged === undefined || latest.current === content) {
+          saved.current = stored;
+          // Merged with the change made elsewhere: shown here as stored.
+          if (res.merged !== undefined) {
+            latest.current = stored;
+            setText(stored);
+          }
+        } else {
+          // Typed on meanwhile: the next save merges that with what is stored now.
+          saved.current = content;
+        }
+        onSaved(stored);
+      } catch (e) {
+        ctx.current.toast("error", t("mob.notes.saveFailed"), errorText(e));
+      }
+    });
+    saving.current = run.finally(() => {
+      inFlight.current -= 1;
+      // A change seen while the save was on its way is read again now.
+      if (inFlight.current === 0 && missed.current) {
+        missed.current = false;
+        reread();
+      }
+    });
+    return saving.current;
   };
   // Leaving editing saves.
   const wasEditing = useRef(p.editing);
   useEffect(() => {
-    if (wasEditing.current && !p.editing) void save(text).then(() => m.refresh());
+    if (wasEditing.current && !p.editing) void save(latest.current).then(() => ctx.current.refresh());
     wasEditing.current = p.editing;
   }, [p.editing]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Android's back button ends editing first (and saves), the next one leaves the page.
+  useBackLayer(p.editing, p.onDone);
+  // Typed text is never lost: saved when the app goes to the background (Android may end it
+  // there without notice) and when the screen closes before the pause in typing ran out.
+  useEffect(() => {
+    const onHidden = () => document.visibilityState === "hidden" && void save(latest.current);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      if (latest.current !== saved.current) void save(latest.current);
+    };
+  }, [p.doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stored before the app switches to the full app on a larger window (lib/uiswitch.ts). A save
+  // that failed (it only shows a message) or text typed on meanwhile keeps the phone app.
+  useEffect(
+    () =>
+      onFlush(
+        async () => {
+          await save(latest.current);
+          if (latest.current !== saved.current) throw new Error(t("ne.changesNotSaved"));
+        },
+        () => latest.current !== saved.current,
+      ),
+    [p.doc.id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // A task's box ticked in the page (A19): the line changes in the page's text, saved like a
+  // typed edit (with the text it started from, so a sync's change meanwhile is merged). A
+  // repeating task gets its next occurrence below it, as on the desktop.
+  const tick = async (index: number) => {
+    const start = latest.current;
+    let out = toggleTask(start, index);
+    const gone = () => {
+      ctx.current.toast("error", t("mob.notes.taskGone"));
+      reread();
+    };
+    if (!out) return gone();
+    let next = out.md;
+    if (out.done && mayRepeat(out.text)) {
+      const due = await api.taskNextDue(out.text).catch(() => null);
+      // The page changed while the date was asked for (a sync): ticked off on that text.
+      if (latest.current !== start) {
+        const again = toggleTask(latest.current, index);
+        if (!again || again.text !== out.text || !again.done) return gone();
+        out = again;
+      }
+      next = due ? withNextOccurrence(out.md, out.line, due) : out.md;
+    }
+    latest.current = next;
+    setText(next);
+    await save(next);
+    ctx.current.refresh();
+  };
 
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const box = taskBoxAt(e);
+    if (box) {
+      e.preventDefault();
+      void tick([...e.currentTarget.querySelectorAll('input[type="checkbox"]')].indexOf(box));
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
@@ -256,6 +399,7 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
     return (
       <div className="m-editor">
         <textarea
+          data-flush
           className="m-textarea m-editor-text"
           value={text}
           autoFocus
@@ -280,8 +424,8 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
           {t("mob.notes.conflict")}
         </Notice>
       )}
-      {p.doc.content.trim() ? (
-        <div className="m-read" onClick={onClick} dangerouslySetInnerHTML={{ __html: pageHtml(p.doc.content) }} />
+      {text.trim() ? (
+        <div className="m-read" onClick={onClick} dangerouslySetInnerHTML={{ __html: pageHtml(text) }} />
       ) : (
         <Empty text={t("mob.notes.emptyPage")} />
       )}

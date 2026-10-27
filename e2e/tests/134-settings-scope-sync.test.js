@@ -37,13 +37,13 @@ const save = async (patch) => {
   return app.invoke("settings_save", { settings: { ...s, ...patch } });
 };
 async function openSection(id) {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
-  await app.browser.execute((s) => document.querySelector(`.pane.active .settings-nav-item[data-section="${s}"]`).click(), id);
-  await app.waitFor(`.pane.active .settings-nav-item.active[data-section="${id}"]`);
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
+  await app.browser.execute((s) => document.querySelector(`.pane.active > .pane-content:not([hidden]) .settings-nav-item[data-section="${s}"]`).click(), id);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .settings-nav-item.active[data-section="${id}"]`);
 }
 const scopeButton = (label) =>
-  app.browser.execute((l) => [...document.querySelectorAll(".pane.active .settings-scope [role=radio]")].find((b) => b.textContent.trim() === l)?.getAttribute("aria-checked"), label);
+  app.browser.execute((l) => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-scope [role=radio]")].find((b) => b.textContent.trim() === l)?.getAttribute("aria-checked"), label);
 
 test("a section for all workspaces or only this one", async () => {
   await start(dirA);
@@ -59,7 +59,7 @@ test("a section for all workspaces or only this one", async () => {
   await start(dirB);
   assert.equal((await storedSettings(app)).theme, "dark");
   await openSection("appearance");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-scope [role=radio]")].find((b) => b.textContent.trim() === "Nur dieser Arbeitsbereich").click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-scope [role=radio]")].find((b) => b.textContent.trim() === "Nur dieser Arbeitsbereich").click());
   await app.waitText(".toast-title", /Gilt jetzt nur für diesen Arbeitsbereich/);
   assert.equal((await app.invoke("settings_get")).scopes.appearance, "workspace");
   await save({ theme: "light" });
@@ -74,7 +74,7 @@ test("a section for all workspaces or only this one", async () => {
   assert.equal(b.scopes.appearance, "workspace");
   // Back to „Für alle“: the shared value wins.
   await openSection("appearance");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-scope [role=radio]")].find((b) => b.textContent.trim() === "Für alle Arbeitsbereiche").click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-scope [role=radio]")].find((b) => b.textContent.trim() === "Für alle Arbeitsbereiche").click());
   await app.waitText(".toast-title", /Gilt jetzt für alle Arbeitsbereiche/);
   assert.equal((await storedSettings(app)).theme, "dark");
 });
@@ -109,10 +109,10 @@ test("settings sync between two data folders through a bare repository", async (
 
   // Settings → Sicherung shows the merge; „Abgleich rückgängig machen“ takes it back.
   await openSection("backup");
-  await app.browser.execute(() => document.querySelector(".pane.active .settings-merge-undo")?.scrollIntoView({ block: "center" }));
-  await app.waitText(".pane.active .set-row", /Letzter Abgleich der Einstellungen/);
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-merge-undo")?.scrollIntoView({ block: "center" }));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .set-row", /Letzter Abgleich der Einstellungen/);
   await app.shot("134-sync-merge");
-  await app.click(".pane.active .settings-merge-undo");
+  await app.click(".pane.active > .pane-content:not([hidden]) .settings-merge-undo");
   await app.waitText(".toast-title", /Abgleich der Einstellungen rückgängig gemacht/);
   assert.equal((await storedSettings(app)).editor.tab_size, 4, "undone");
   // The undo counts as the later change: the next sync carries it to the server.
@@ -126,13 +126,13 @@ test("English: scope switch, grouped menu, undo toast and reset in English", asy
   const en = await launchEnglish();
   app = en.app;
   await openSection("appearance");
-  const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-nav-group-label")].map((g) => g.textContent.trim()));
+  const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-nav-group-label")].map((g) => g.textContent.trim()));
   assert.deepEqual(groups, ["General", "Work", "AI & language", "Data & security", "System"]);
   assert.equal(await scopeButton("All workspaces"), "true");
   assert.equal(await scopeButton("This workspace only"), "false");
-  assert.match(await app.text(".pane.active .settings-reset"), /Reset section/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .settings-reset"), /Reset section/);
   await openSection("editor");
-  await app.click('.pane.active button[role="switch"][aria-label="Smart quotes"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) button[role="switch"][aria-label="Smart quotes"]');
   await settingsSettled(app);
   await app.waitText(".toast-title", /Setting changed/);
   assert.deepEqual(await germanLeftovers(app), []);

@@ -164,14 +164,24 @@ pub fn write_zip(path: &Path, entries: &[(String, Vec<u8>)]) -> std::io::Result<
 
 /// Writes the bundle to `path` (from the save dialog); returns the path written.
 #[tauri::command(async)]
-pub fn diagnostics_bundle(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<String> {
+pub fn diagnostics_bundle(app: AppHandle, state: State<AppState>, path: String) -> Result<String> {
+    // Android's document picker: the address it created is written as it is.
+    if crate::picked::is_content(&path) {
+        crate::picked::output(&path, |p| bundle(&app, &state, p.to_path_buf()))?;
+        return Ok(path);
+    }
+    let path = PathBuf::from(path);
     let path =
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) { path } else { path.with_extension("zip") };
+    bundle(&app, &state, path)
+}
+
+fn bundle(app: &AppHandle, state: &AppState, path: PathBuf) -> Result<String> {
     let settings = state.settings();
     let schema = state.reader().schema_version().ok();
     let info = json!({
         "app": "Arcalo",
-        "version": crate::updates::current_version(&app),
+        "version": crate::updates::current_version(app),
         "build": if cfg!(debug_assertions) { "debug" } else { "release" },
         "os": std::env::consts::OS,
         "arch": std::env::consts::ARCH,

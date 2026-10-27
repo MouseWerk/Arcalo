@@ -15,7 +15,7 @@ describe("scratchpad checkboxes", () => {
 
   it("numbers the rendered checkboxes and enables them", () => {
     const html = '<ul><li><input disabled="" type="checkbox"> a</li><li><input checked="" disabled="" type="checkbox"> b</li></ul>';
-    expect(interactiveTasks(html)).toBe('<ul><li><input type="checkbox" class="dw-scratch-check" data-task="0"> a</li><li><input type="checkbox" class="dw-scratch-check" data-task="1" checked> b</li></ul>');
+    expect(interactiveTasks(html)).toBe('<ul><li><input type="checkbox" class="check dw-scratch-check" data-task="0"> a</li><li><input type="checkbox" class="check dw-scratch-check" data-task="1" checked> b</li></ul>');
   });
 });
 

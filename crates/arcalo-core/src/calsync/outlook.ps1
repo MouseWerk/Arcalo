@@ -16,6 +16,15 @@
 #   JSON file: [{id, op: upsert|delete, entryId, subject, start, end, category}], local times):
 #   busy, no reminder, the category; one result per write ({id, ok, entryId, globalId}). Only an
 #   Outlook that already runs is used, it is never started: {"ok":false,"error":"not_running"}.
+#   Ops with kind 'entry' are appointments created, changed or deleted in Arcalo's Kalender
+#   ({id, kind, op: create|update|delete|restore, marker, entryId, deletedId, calendar: {default,
+#   entryId, storeId}, fields, seen, send}): only the fields given are written; a field changed
+#   in Outlook since Arcalo saw it (seen) answers {ok:false, error:'conflict', current}; series and
+#   received meetings are refused; an organized meeting with attendees is changed only with send
+#   (the update then goes to them) and never deleted here; a delete moves the item to Deleted
+#   Items (deletedId), a restore moves it back. Results add {modified, deletedId}.
+# -Mode show: opens the appointment -EntryId (of the store -StoreId, when given) in an Outlook
+#   window (In Outlook oeffnen).
 #
 # Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 # Private appointments keep only their time unless -Private is given; the text of an
@@ -32,7 +41,9 @@ param(
     [string]$Mode = 'read',
     [string]$Calendars = '',
     [string]$Recipients = '',
-    [string]$Ops = ''
+    [string]$Ops = '',
+    [string]$EntryId = '',
+    [string]$StoreId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,9 +101,135 @@ if ($Mode -eq 'write') {
         if (-not $marker) { return $null }
         try { return $calendar.Items.Find("[ArcaloBlock] = '" + ([string]$marker).Replace("'", "''") + "'") } catch { return $null }
     }
+    $fmt = 'yyyy-MM-ddTHH:mm:ss'
+    # The calendar of an appointment written from the Kalender: the default one or another own one.
+    function Get-EntryCalendar($c) {
+        if (-not $c -or $c.default) { return $calendar }
+        return $ns.GetFolderFromID([string]$c.entryId, [string]$c.storeId)
+    }
+    # An item by its EntryID in the store of $folder (an own calendar in a PST file or a second
+    # mailbox is not always found without it), else in the default store.
+    function Get-ItemById($id, $folder) {
+        $item = $null
+        try { $item = $ns.GetItemFromID([string]$id, [string]$folder.StoreID) } catch { $item = $null }
+        if (-not $item) { try { $item = $ns.GetItemFromID([string]$id) } catch { $item = $null } }
+        return $item
+    }
+    # The appointment by its EntryID (still in that calendar), else by its marker (ArcaloEntry).
+    function Find-Entry($folder, $o) {
+        $item = $null
+        if ($o.entryId) {
+            $item = Get-ItemById $o.entryId $folder
+            try { if ($item -and $item.Parent.EntryID -ne $folder.EntryID) { $item = $null } } catch { $item = $null }
+        }
+        if (-not $item -and $o.marker) {
+            try { $item = $folder.Items.Find("[ArcaloEntry] = '" + ([string]$o.marker).Replace("'", "''") + "'") } catch { $item = $null }
+        }
+        return $item
+    }
+    # People invited besides the organizer (recipient type 0 is the organizer).
+    function Count-Invited($item) {
+        $n = 0
+        try { foreach ($r in $item.Recipients) { if ([int]$r.Type -ne 0) { $n++ } } } catch { }
+        return $n
+    }
+    function Get-Values($item) {
+        return @{ subject = [string]$item.Subject; start = $item.Start.ToString($fmt, $inv); end = $item.End.ToString($fmt, $inv); location = [string]$item.Location }
+    }
+    # Only the fields given (a title Arcalo never had, a text it never read stay as they are). A
+    # new Start alone keeps the End (Outlook would move it along to keep the length).
+    function Set-Fields($item, $f) {
+        if ($null -eq $f) { return }
+        if ($null -ne $f.subject) { $item.Subject = [string]$f.subject }
+        $end = $null
+        if ($null -ne $f.end) { $end = [datetime]::ParseExact([string]$f.end, $fmt, $inv) }
+        elseif ($null -ne $f.start) { $end = $item.End }
+        if ($null -ne $f.start) { $item.Start = [datetime]::ParseExact([string]$f.start, $fmt, $inv) }
+        if ($null -ne $end) { $item.End = $end }
+        if ($null -ne $f.location) { $item.Location = [string]$f.location }
+    }
+    function Write-Entry($o) {
+        $res = [ordered]@{ id = [string]$o.id; ok = $true; entryId = ''; globalId = ''; modified = ''; deletedId = '' }
+        $folder = Get-EntryCalendar $o.calendar
+        $f = $o.fields
+        if ($o.op -eq 'restore') {
+            $item = Get-ItemById $o.deletedId $folder
+            if (-not $item) { $res.ok = $false; $res.error = 'not_found'; return $res }
+            # Moved back already by a try whose answer got lost (an EntryID that stays on a move).
+            $back = $false
+            try { $back = $item.Parent.EntryID -eq $folder.EntryID } catch { }
+            if (-not $back) { $item = $item.Move($folder) }
+            Set-Fields $item $f
+            $item.Save()
+        } else {
+            $item = Find-Entry $folder $o
+            if ($o.op -eq 'create') {
+                if (-not $item) {
+                    $item = $folder.Items.Add(1)
+                    $p = $item.UserProperties.Add('ArcaloEntry', 1, $true)
+                    $p.Value = [string]$o.marker
+                }
+                Set-Fields $item $f
+                $item.Save()
+            } else {
+                if (-not $item) {
+                    # Already gone: a delete is done, a change has nothing to go to.
+                    if ($o.op -ne 'delete') { $res.ok = $false; $res.error = 'not_found' }
+                    return $res
+                }
+                if ($item.IsRecurring) { $res.ok = $false; $res.error = 'series'; return $res }
+                $status = [int]$item.MeetingStatus
+                if ($status -ne 0 -and $status -ne 1) { $res.ok = $false; $res.error = 'received'; return $res }
+                # Recipients of an appointment that is no meeting (MeetingStatus 0) were never invited.
+                $invited = 0
+                if ($status -ne 0) { $invited = Count-Invited $item }
+                if ($o.op -eq 'delete') {
+                    # A meeting with attendees is cancelled in Outlook, never deleted here.
+                    if ($invited -gt 0) { $res.ok = $false; $res.error = 'needs_send'; return $res }
+                    # Deleted Items of the calendar's own store (a PST file has its own).
+                    $trash = $null
+                    try { $trash = $folder.Store.GetDefaultFolder(3) } catch { $trash = $null }
+                    if (-not $trash) { $trash = $ns.GetDefaultFolder(3) }
+                    $moved = $item.Move($trash)
+                    $res.deletedId = [string]$moved.EntryID
+                    return $res
+                }
+                if ($invited -gt 0 -and -not $o.send) { $res.ok = $false; $res.error = 'needs_send'; return $res }
+                # A field changed in Outlook since Arcalo saw it (to another value than Arcalo's) is a
+                # conflict. Arcalo reads texts trimmed, so spaces around them are no change.
+                $now = Get-Values $item
+                $current = [ordered]@{}
+                foreach ($k in @('subject', 'start', 'end', 'location')) {
+                    $seen = $null
+                    $mine = $null
+                    if ($o.seen) { $seen = $o.seen.$k }
+                    if ($f) { $mine = $f.$k }
+                    $is = ([string]$now[$k]).Trim()
+                    if ($null -ne $seen -and $is -cne ([string]$seen).Trim() -and $is -cne ([string]$mine).Trim()) { $current[$k] = $now[$k] }
+                }
+                if ($current.Count -gt 0) { $res.ok = $false; $res.error = 'conflict'; $res.current = $current; return $res }
+                Set-Fields $item $f
+                $item.Save()
+                # Only for a meeting the user organizes and only after the user confirmed it in Arcalo.
+                if ($o.send -and $status -eq 1 -and $invited -gt 0) { $item.Send() }
+            }
+        }
+        $res.entryId = [string]$item.EntryID
+        try { $res.globalId = [string]$item.GlobalAppointmentID } catch { }
+        try { $res.modified = $item.LastModificationTime.ToUniversalTime().ToString($fmt, $inv) + 'Z' } catch { }
+        return $res
+    }
     $categoryDone = $false
     $results = New-Object System.Collections.ArrayList
     foreach ($o in (Read-JsonFile $Ops)) {
+        if ($o.kind -eq 'entry') {
+            try {
+                [void]$results.Add((Write-Entry $o))
+            } catch {
+                [void]$results.Add([ordered]@{ id = [string]$o.id; ok = $false; error = 'save'; message = [string]$_.Exception.Message })
+            }
+            continue
+        }
         $res = [ordered]@{ id = [string]$o.id; ok = $true; entryId = ''; globalId = '' }
         try {
             $item = $null
@@ -143,6 +280,24 @@ if ($Mode -eq 'write') {
         [void]$results.Add($res)
     }
     Write-Json ([ordered]@{ ok = $true; results = @($results) })
+    exit 0
+}
+
+# ---------------------------------------------------------------- show
+
+if ($Mode -eq 'show') {
+    try {
+        $outlook = New-Object -ComObject Outlook.Application
+        $ns = $outlook.GetNamespace('MAPI')
+    } catch {
+        if (Get-Process -Name 'olk' -ErrorAction SilentlyContinue) { Fail 'new_outlook' '' }
+        Fail 'not_installed' $_.Exception.Message
+    }
+    $item = $null
+    if ($StoreId) { try { $item = $ns.GetItemFromID($EntryId, $StoreId) } catch { $item = $null } }
+    if (-not $item) { try { $item = $ns.GetItemFromID($EntryId) } catch { Fail 'not_found' $_.Exception.Message } }
+    $item.Display()
+    Write-Json ([ordered]@{ ok = $true })
     exit 0
 }
 
@@ -417,6 +572,8 @@ function Add-Appointment($it) {
         sensitivity    = $sensitivity
         responseStatus = [int]$it.ResponseStatus
         meetingStatus  = [int]$it.MeetingStatus
+        modified       = ''
+        recipients     = 0
         location       = ''
         organizer      = ''
         attendees      = @()
@@ -425,6 +582,9 @@ function Add-Appointment($it) {
         urls           = @()
     }
     try { $o.globalId = [string]$it.GlobalAppointmentID } catch { }
+    # For writing back: Outlook's last change (conflicts) and whether anyone is invited.
+    try { $o.modified = $it.LastModificationTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss', $inv) + 'Z' } catch { }
+    try { foreach ($r in $it.Recipients) { if ([int]$r.Type -ne 0) { $o.recipients++ } } } catch { }
     if (-not $hidden) {
         # A calendar shared with less than full details refuses some fields: keep what is allowed.
         try { $o.subject = [string]$it.Subject } catch { }

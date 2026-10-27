@@ -12,13 +12,13 @@ use arcalo_core::tagsuggest::{self, TagSuggestion};
 use arcalo_core::tr;
 use tauri::{AppHandle, State};
 
-use crate::{AppState, Result};
+use crate::{AppState, Result, background_read};
 
 // ------------------------------------------------------------------ mentions
 
-#[tauri::command(async)]
-pub fn mentions_get(state: State<AppState>, page_id: i64) -> Result<MentionReport> {
-    state.reader().unlinked_mentions(page_id)
+#[tauri::command]
+pub async fn mentions_get(app: AppHandle, page_id: i64) -> Result<MentionReport> {
+    background_read(app, move |db| db.unlinked_mentions(page_id)).await
 }
 
 /// Links the mention at byte `start` (or all mentions) of page `target` in page `source`.
@@ -34,9 +34,9 @@ pub fn mentions_ignore(state: State<AppState>, page_id: i64, term: String) -> Re
 
 // ------------------------------------------------------------------ tags
 
-#[tauri::command(async)]
-pub fn tags_suggest(state: State<AppState>, page_id: i64) -> Result<Vec<TagSuggestion>> {
-    state.reader().tag_suggestions(page_id)
+#[tauri::command]
+pub async fn tags_suggest(app: AppHandle, page_id: i64) -> Result<Vec<TagSuggestion>> {
+    background_read(app, move |db| db.tag_suggestions(page_id)).await
 }
 
 #[tauri::command(async)]
@@ -77,9 +77,9 @@ pub async fn tags_suggest_ai(app: AppHandle, state: State<'_, AppState>, page_id
 
 // ------------------------------------------------------------------ duplicates
 
-#[tauri::command(async)]
-pub fn duplicates_for(state: State<AppState>, page_id: i64) -> Result<Vec<DuplicateHint>> {
-    state.reader().duplicate_hints(page_id)
+#[tauri::command]
+pub async fn duplicates_for(app: AppHandle, page_id: i64) -> Result<Vec<DuplicateHint>> {
+    background_read(app, move |db| db.duplicate_hints(page_id)).await
 }
 
 #[tauri::command(async)]

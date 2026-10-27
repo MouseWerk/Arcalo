@@ -169,3 +169,45 @@ pub struct PageNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<crate::filing::FolderStyle>,
 }
+
+/// A [`PageNode`] as the sidebar loads the tree: a row instead of an object (id, parent, title,
+/// icon, position, updated, favorite, daily date, kind, created, filing folder, folder style,
+/// children). Live pages only, so without `deleted_at`; half the size of the objects (1.4 MB for
+/// 6,000 pages), decoded by the UI into the same objects.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PageRow(
+    pub i64,
+    pub Option<i64>,
+    pub String,
+    pub Option<String>,
+    pub i64,
+    pub String,
+    pub bool,
+    pub Option<String>,
+    pub Option<String>,
+    pub String,
+    pub Option<String>,
+    pub Option<crate::filing::FolderStyle>,
+    pub Vec<PageRow>,
+);
+
+impl From<PageNode> for PageRow {
+    fn from(n: PageNode) -> Self {
+        let p = n.page;
+        PageRow(
+            p.id,
+            p.parent_id,
+            p.title,
+            p.icon,
+            p.position,
+            p.updated_at,
+            p.favorite,
+            p.daily_date,
+            p.kind,
+            n.created_at,
+            n.system,
+            n.style,
+            n.children.into_iter().map(PageRow::from).collect(),
+        )
+    }
+}

@@ -87,7 +87,7 @@ Root cause: `next_line` slices `&date[..10]` after checking `date.len() >= 10` (
 Fix: `date.get(..10).filter(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())`. Worth a grep for
 the same pattern elsewhere (none other found in core).
 
-Guard test: `taskedit` unit test with `✅ erledigt äh` and `✅ 🎉🎉🎉`: no panic, next occurrence added,
+Guard test: `taskedit` unit test with `✅ erledigt äh` and `✅` followed by three party poppers (U+1F389): no panic, next occurrence added,
 the text after the marker kept.
 
 ## C4 (high): The start page shows the flat daily target: own weekday targets, public holidays and absences are ignored („Heute“, „Zeit diese Woche“, week proposal total) — fixed in 1.16 (fc0d995, dashboard test start_page_targets_follow_…)
@@ -361,7 +361,7 @@ S7 (low): first settings sync of a fresh computer: `theirs_wins` (settings_sync.
 server win for settings neither side ever changed (`at == 0` on both), so a second computer adopts
 language-dependent defaults of the first; documented as intended, listed for a product decision.
 
-S6 (low): `gitsync::merge_remote` takes non-note files changed on both sides "this side" (e.g. — confirmed, not fixed: attachments keep their name (only pasted images are content-hashed), so two different files of one name flip in the repository; neither computer loses its own copy (`copy_new_attachments` never overwrites). A fix needs a rename plus link rewrite on one side; proposed for 1.17
+S6 (low): `gitsync::merge_remote` takes non-note files changed on both sides "this side" (e.g. — confirmed, not fixed: attachments keep their name (only pasted images are content-hashed), so two different files of one name flip in the repository; neither computer loses its own copy (`copy_new_attachments` never overwrites). A fix needs a rename plus link rewrite on one side; proposed for 1.17 — fixed in 1.17 (gitsync `keep_both_files`/`relink_notes`: this side's file takes `<name>-<hash>.<ext>`, the notes it changed link to it; `syncmerge::apply_file_renames`; tests `two_different_files_of_one_name_are_both_kept`, `two_computers_attaching_different_files_of_one_name_keep_both`, e2e 304; the first sync of a new computer too: `adopt_clashes`, `a_new_computers_file_of_a_name_the_server_has_is_kept_beside_it`)
 `attachments/x.png` replaced on both computers): the server's file is overwritten without notice.
 Rare (attachments are content-hashed names?) — not checked.
 

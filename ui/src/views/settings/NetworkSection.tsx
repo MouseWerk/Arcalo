@@ -9,6 +9,7 @@ import { Badge, Button, Dialog, IconButton, Input, Segmented, Select, Switch, Te
 import { api, errorText } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import { resolvePac } from "../../lib/pac";
+import { caps } from "../../lib/capabilities";
 import { useApp } from "../../store/app";
 import { fmtDate } from "../../lib/format";
 import type { CaInfo, CertDetails, NetworkSettings, NetworkStatus, NetworkTest, ProxyMode, ProxyProfile, ServiceRow, Settings } from "../../lib/types";
@@ -406,7 +407,9 @@ function ProfileEditor({
     { value: "none", label: t("net.none") },
     { value: "system", label: t("net.system") },
     { value: "manual", label: t("net.manual") },
-    { value: "pac", label: t("net.pac") },
+    // A PAC script runs in a sandboxed window of the desktop; Android evaluates PAC itself
+    // (mode „System“).
+    ...(caps().pac || p.mode === "pac" ? [{ value: "pac" as ProxyMode, label: t("net.pac") }] : []),
   ];
   return (
     <Group title={t("net.profileTitle", { name: p.name })}>
@@ -542,9 +545,11 @@ function ProfileEditor({
           )
         }
       >
-        <Button icon={FileKey2} onClick={pickCa} disabled={locked}>
-          {t("net.caChoose")}
-        </Button>
+        {caps().folders && (
+          <Button icon={FileKey2} onClick={pickCa} disabled={locked}>
+            {t("net.caChoose")}
+          </Button>
+        )}
         {p.extra_ca_path && !locked && (
           <Button variant="ghost" onClick={() => set({ extra_ca_path: null })}>
             {t("common.remove")}

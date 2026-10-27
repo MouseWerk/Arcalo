@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Segmented, Select, Switch } from "../../components/ui";
-import { api } from "../../lib/api";
+import { leistungsarten, wbsTree } from "../../lib/wbsCache";
 import { systemLang, useT } from "../../lib/i18n";
 import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
@@ -17,6 +17,7 @@ import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
 import { useApp } from "../../store/app";
 import { useAi } from "../../lib/aiswitch";
+import { caps } from "../../lib/capabilities";
 
 // ------------------------------------------------------------------ notes
 
@@ -77,8 +78,8 @@ export function TimePrefGroups({ draft, update }: SectionProps) {
   const [np, setNp] = useState("");
   const [la, setLa] = useState("");
   useEffect(() => {
-    api.wbs().then((w: ProjectTree[]) => setNps(w.flatMap((p) => p.netzplaene.map((n) => n.netzplan_nr))), () => {});
-    api.leistungsarten().then(setLas, () => {});
+    wbsTree().then((w: ProjectTree[]) => setNps(w.flatMap((p) => p.netzplaene.map((n) => n.netzplan_nr))), () => {});
+    leistungsarten().then(setLas, () => {});
   }, []);
   const example = exportFileName(tp.export_file_pattern, { from: "2026-09-21", to: "2026-09-27", format: "sap_cats", week: 39, pernr: draft.pernr });
   return (
@@ -255,14 +256,16 @@ export function StartSection({ draft, update }: SectionProps) {
           />
         </Row>
       </Group>
-      <Group title={t("set.start.window")}>
-        <Row label={t("set.start.restore")} description={t("set.start.restoreDesc")}>
-          <Switch label={t("set.start.restore")} checked={st.restore_window} onChange={(v) => set({ restore_window: v })} />
-        </Row>
-        <Row label={t("set.start.minimized")} description={t("set.start.minimizedDesc")}>
-          <Switch label={t("set.start.minimized")} checked={st.minimized} onChange={(v) => set({ minimized: v })} />
-        </Row>
-      </Group>
+      {caps().windowFrame && (
+        <Group title={t("set.start.window")}>
+          <Row label={t("set.start.restore")} description={t("set.start.restoreDesc")}>
+            <Switch label={t("set.start.restore")} checked={st.restore_window} onChange={(v) => set({ restore_window: v })} />
+          </Row>
+          <Row label={t("set.start.minimized")} description={t("set.start.minimizedDesc")}>
+            <Switch label={t("set.start.minimized")} checked={st.minimized} onChange={(v) => set({ minimized: v })} />
+          </Row>
+        </Group>
+      )}
       <Group title={t("set.start.ribbon")}>
         <Row label={t("bm.title")} description={t("set.start.bookmarksDesc")}>
           <Button icon={BookmarkPlus} className="set-bookmarks-import" onClick={openBookmarkImport}>

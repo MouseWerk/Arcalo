@@ -70,9 +70,9 @@ test("transcribe again with another language replaces the transcript", async () 
   const id = Number(await app.browser.execute(() => document.querySelector(".voice-bar .voice-done")?.dataset.page));
   await app.browser.execute(() => document.querySelectorAll(".voice-bar .voice-done [aria-label='Close']").forEach((b) => b.click()));
   // The voice note is open; its audio has „Transcribe again“.
-  await app.waitFor(".pane.active .audio-embed .audio-embed-again", 10000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed .audio-embed-again", 10000);
   fs.writeFileSync(fx.env.ARCALO_TEST_TRANSCRIPT, "[00:00] Second run, better words.\n");
-  await app.click(".pane.active .audio-embed .audio-embed-again");
+  await app.click(".pane.active > .pane-content:not([hidden]) .audio-embed .audio-embed-again");
   await app.waitText(".dialog", /Transcribe again[\s\S]*replaces the current one/);
   await app.select(".dialog .voice-again-language", "de");
   await app.shot("119-voice-again-dialog");

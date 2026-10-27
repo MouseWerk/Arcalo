@@ -35,15 +35,15 @@ test("Zeiterfassung and settings fit at 900, 1100 and 1480 px, with and without 
       await new Promise((r) => setTimeout(r, 250));
       await app.click('.ribbon [aria-label="Zeiterfassung"]');
       await app.waitFor(".week-grid");
-      for (const p of real(await app.browser.execute(auditLayout, ".pane.active .view-body"))) found.push(`Zeiterfassung ${where}: ${p}`);
+      for (const p of real(await app.browser.execute(auditLayout, ".pane.active > .pane-content:not([hidden]) .view-body"))) found.push(`Zeiterfassung ${where}: ${p}`);
       if (w === 900 && panel) await app.shot("narrow-timesheet-panel");
       await app.keys(["Control", ","]);
       // Narrow panes show the section dropdown instead of the menu; the sections switch the same way.
-      await app.waitFor(".pane.active .settings");
+      await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
       for (const s of sections) {
         await app.browser.execute((id) => document.querySelector(`.settings-nav-item[data-section="${id}"]`).click(), s);
         await new Promise((r) => setTimeout(r, 150));
-        for (const p of real(await app.browser.execute(auditLayout, ".pane.active .settings"))) found.push(`Einstellungen/${s} ${where}: ${p}`);
+        for (const p of real(await app.browser.execute(auditLayout, ".pane.active > .pane-content:not([hidden]) .settings"))) found.push(`Einstellungen/${s} ${where}: ${p}`);
       }
       if (w === 900 && panel) await app.shot("narrow-settings-panel");
     }

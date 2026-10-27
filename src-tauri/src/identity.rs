@@ -6,13 +6,18 @@
 //!
 //! Skipped for a portable copy (everything lives next to the executable) and under
 //! `ARCALO_DATA_DIR` (tests).
+//!
+//! 1.17 deletes the old folders once their copy is in use, and then the credential store's
+//! entries of the old service name ([`spawn_cleanup`], see `arcalo_core::identity::cleanup`).
 
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use arcalo_core::datadir::Notice;
+use arcalo_core::identity::cleanup::{self, Reason, Step};
 use arcalo_core::identity::{self as core, Mode, Outcome};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Default)]
 struct Taken {
@@ -23,6 +28,8 @@ struct Taken {
     /// Lines for the developer log (written once it is open, see [`log`]).
     lines: Vec<(bool, String)>,
     notice: Option<Notice>,
+    /// What the migration found per pair (empty when it was skipped).
+    outcomes: Vec<Outcome>,
 }
 
 static TAKEN: OnceLock<Taken> = OnceLock::new();
@@ -66,6 +73,7 @@ pub fn migrate(app: &AppHandle) {
                 .filter_map(|o| core::describe(o).map(|l| (matches!(o.status, core::Status::Failed(_)), l)))
                 .collect(),
             notice: core::notice(&outcomes),
+            outcomes,
         }
     });
 }
@@ -109,6 +117,87 @@ pub fn log() {
             crate::devlog::info("identity", line.clone());
         }
     }
+}
+
+/// How long after the start the old folders are deleted: the start's own work (the first sync,
+/// the backup check) comes first, and the window is long up. `ARCALO_CLEANUP_DELAY_SECS` (tests).
+fn cleanup_delay() -> Duration {
+    let secs = std::env::var("ARCALO_CLEANUP_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(10);
+    Duration::from_secs(secs)
+}
+
+/// Deletes the folders of the old identifier whose copy is in use, then the credential store's
+/// entries of the old service name, once no old folder is left (an older version started on one
+/// would still need them). In the background, a while after the start; nothing of it can stop or
+/// slow the app: every failure keeps the old data and goes to the log.
+pub fn spawn_cleanup(app: &AppHandle) {
+    if crate::portable::active() {
+        crate::devlog::debug("identity", "portable copy: the old folders and credential entries are left alone");
+        return;
+    }
+    if taken().is_none_or(|t| t.outcomes.is_empty()) {
+        return;
+    }
+    let app = app.clone();
+    let spawned = std::thread::Builder::new().name("legacy-cleanup".into()).spawn(move || {
+        std::thread::sleep(cleanup_delay());
+        clean_up(&app);
+    });
+    if let Err(e) = spawned {
+        crate::devlog::warn("identity", format!("the cleanup of the old folders did not start: {e}"));
+    }
+}
+
+fn clean_up(app: &AppHandle) {
+    let (Some(t), Some(state)) = (taken(), app.try_state::<crate::AppState>()) else { return };
+    let Ok(config) = config_dir(app) else { return };
+    // Settings that could not be read (the defaults are in use) might name a folder inside.
+    let settings = state.db().load_settings_checked().ok().filter(|(_, broken)| broken.is_empty()).map(|(s, _)| s);
+    let exe = arcalo_core::datadir::exe_dir(std::env::var_os("ARCALO_EXE_DIR").map(PathBuf::from));
+    let version = crate::updates::current_version(app);
+    let ctx = cleanup::Context {
+        data_dir: &state.data_dir,
+        config_dir: Some(&config),
+        settings: settings.as_ref(),
+        exe_dir: exe.as_deref(),
+        portable: crate::portable::active(),
+        version: &version,
+    };
+    let folders = cleanup::run(&t.outcomes, &ctx);
+    for f in &folders {
+        match &f.step {
+            Step::Removed { .. } => crate::devlog::info("identity", f.describe()),
+            Step::Kept(Reason::Failed(_)) => crate::devlog::warn("identity", f.describe()),
+            Step::Kept(_) => crate::devlog::info("identity", f.describe()),
+        }
+    }
+    let before = cleanup::read_log(&config);
+    let (credentials, done) = if cleanup::legacy_left(&t.outcomes) || before.credentials_done {
+        (Vec::new(), before.credentials_done)
+    } else {
+        crate::secrets::remove_legacy_all(&state.data_dir)
+    };
+    if folders.is_empty() && credentials.is_empty() && done == before.credentials_done {
+        return;
+    }
+    match cleanup::record(&config, &folders, &credentials, done, chrono::Utc::now()) {
+        Ok(log) if log.untold.is_some() => {
+            let _ = app.emit("identity://cleaned", ());
+        }
+        Ok(_) => {}
+        Err(e) => crate::devlog::warn("identity", format!("the cleanup's record not written: {e}")),
+    }
+}
+
+/// One take at a time: the start and the event may ask together.
+static NOTICE_LOCK: Mutex<()> = Mutex::new(());
+
+/// What the cleanup removed, for a notice; once (`None` afterwards, and when nothing was removed).
+#[tauri::command]
+pub fn legacy_cleanup_notice(app: AppHandle) -> Option<String> {
+    taken().filter(|t| !t.outcomes.is_empty())?;
+    let _guard = crate::lock(&NOTICE_LOCK);
+    cleanup::take_notice(&config_dir(&app).ok()?)
 }
 
 #[cfg(test)]

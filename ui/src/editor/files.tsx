@@ -12,9 +12,11 @@ import type { MenuEntry } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { anchorPage, baseName, isFileEmbedName, isFileLinkTarget, isImageName, isPdfName } from "./fileEmbed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { pdfAnchor } from "../lib/linking";
 import { t } from "../lib/i18n";
+import { caps } from "../lib/capabilities";
+import { copyText } from "../lib/clipboard";
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 let root: Root | null = null;
@@ -37,6 +39,11 @@ export function openPdfViewer(name: string, page: number | null = null, highligh
   );
 }
 
+/** Closes the PDF viewer (on lock). */
+export function closePdfViewer() {
+  root?.render(null);
+}
+
 /** Opens a file in its default app (programs are only shown in the file manager, see the shell). */
 export function openFile(name: string) {
   api.openAttachment(baseName(name)).catch((e) => useApp.getState().error(t("file.openFailed"), e));
@@ -47,7 +54,7 @@ export function openFile(name: string) {
  * PDFs in the viewer, other files in their default app. Returns false for a page link.
  */
 export function openIfFileLink(target: string, anchor: string | null = null): boolean {
-  if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(target.trim().toLowerCase())) return false;
+  if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(linkKey(target))) return false;
   const name = baseName(target.trim());
   if (isPdfName(name)) openPdfViewer(name, anchorPage(anchor == null ? null : `#${anchor}`), pdfAnchor(anchor).highlight);
   else openFile(name);
@@ -90,12 +97,12 @@ export function fileMenu(editor: Editor, pos: number): MenuEntry[] {
   return [
     ...(isPdfName(name) ? [{ label: t("file.view"), icon: Eye, onSelect: () => openPdfViewer(name) } as MenuEntry] : []),
     { label: isPdfName(name) ? t("file.openExternal") : t("file.open"), icon: ExternalLink, onSelect: () => openFile(name) },
-    { label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) },
+    ...(caps().folders ? [{ label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) } as MenuEntry] : []),
     "separator",
     {
       label: t("file.copyEmbed"),
       icon: Copy,
-      onSelect: () => navigator.clipboard.writeText(embed).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))),
+      onSelect: () => copyText(embed).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))),
     },
     "separator",
     {

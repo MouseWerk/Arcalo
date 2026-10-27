@@ -65,6 +65,13 @@ describe("context menu keyboard", () => {
     key("Tab");
     expect(closed).toBe(2);
   });
+
+  it("closes on Shift+Tab as WebKitGTK sends it (ISO_Left_Tab: key Unidentified, code Tab)", () => {
+    let closed = 0;
+    mount(createElement(Menu, { x: 10, y: 10, preselect: true, items: [{ label: "Umbenennen", onSelect: () => {} }], onClose: () => closed++ }));
+    act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Unidentified", code: "Tab", shiftKey: true, bubbles: true, cancelable: true })));
+    expect(closed).toBe(1);
+  });
 });
 
 describe("segmented control", () => {

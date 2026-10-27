@@ -8,11 +8,10 @@
 // skipped from then on.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, startProcess } from "../lib/harness.js";
 import { startFeed, throwawayKey, writeShare } from "../lib/update-feed.js";
 
 const test = guarded(nodeTest, () => app);
@@ -97,8 +96,9 @@ test("the share is the only source; its file is verified, downloaded and install
   await app.waitText(".sb-update", /bereit/);
   // A tampered share file would be refused: the key is built in, whatever the source.
   await app.invoke("page_create", { parentId: null, title: "Vor dem Update", icon: null, content: "Bleibt" });
+  // Quits after this call has answered (see 126).
   await app.browser.execute(() => {
-    window.__TAURI_INTERNALS__.invoke("app_quit");
+    setTimeout(() => window.__TAURI_INTERNALS__.invoke("app_quit"), 50);
   });
   const note = path.join(dataDir, "updates", "fake-install.json");
   for (let i = 0; i < 100 && !fs.existsSync(note); i++) await new Promise((r) => setTimeout(r, 100));
@@ -110,7 +110,7 @@ test("the share is the only source; its file is verified, downloaded and install
 /** Starts the app without WebDriver and waits for it to end; returns the exit code. */
 function startPlain(extra) {
   return new Promise((resolve, reject) => {
-    const child = spawn(APP, [], { env: appEnv(dataDir, { env: env("1.9.0", extra) }), stdio: "ignore" });
+    const child = startProcess(APP, [], { env: appEnv(dataDir, { env: env("1.9.0", extra) }), stdio: "ignore" });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error("the start did not end"));

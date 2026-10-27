@@ -666,7 +666,7 @@ pub fn aliases(markdown: &str) -> Vec<String> {
             _ => vec![],
         };
         for v in values {
-            let v = v.trim().trim_matches(['"', '\'']).trim().to_owned();
+            let v = crate::nfc::nfc(v.trim().trim_matches(['"', '\'']).trim());
             if !v.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&v)) {
                 out.push(v);
             }

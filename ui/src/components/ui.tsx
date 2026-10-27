@@ -4,7 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, ty
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Loader2, X, type LucideIcon } from "lucide-react";
 import { t } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -228,8 +228,9 @@ export function Dialog({
       if (e.key === "Escape") {
         e.stopPropagation();
         close.current();
-      } else if (e.key === "Tab" && box) {
-        // Focus stays inside the dialog: Tab from the last control wraps to the first and back.
+      } else if (isTab(e) && box) {
+        // Focus stays inside the dialog: Tab from the last control wraps to the first and back. Shift+Tab
+        // arrives in WebKitGTK as ISO_Left_Tab, with an unidentified key: the code still says Tab.
         const all = [...box.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], summary, [tabindex]")].filter(
           (el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
         );
@@ -282,6 +283,8 @@ export interface MenuItem {
   danger?: boolean;
   checked?: boolean;
   disabled?: boolean;
+  /** Why a disabled entry does nothing (shown where the shortcut goes). */
+  hint?: string;
   onSelect?: () => void;
   submenu?: MenuItem[];
 }
@@ -382,7 +385,7 @@ export function Menu({
         e.stopPropagation();
         restoreFocus();
         (onBack ?? onClose)();
-      } else if (e.key === "Tab") {
+      } else if (isTab(e)) {
         // Leaving the menu closes it (the focus returns to where it was).
         e.preventDefault();
         restoreFocus();
@@ -443,7 +446,7 @@ export function Menu({
             >
               <span className="menu-icon">{it.checked ? <Check size={14} /> : it.icon ? <it.icon size={14} strokeWidth={1.75} /> : null}</span>
               <span className="menu-label">{it.label}</span>
-              {it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
+              {it.hint ? <span className="menu-shortcut menu-hint">{it.hint}</span> : it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
               {it.submenu && <ChevronRight size={14} className="faint" />}
             </button>
           ),

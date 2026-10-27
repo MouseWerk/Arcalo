@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   START,
+  backAction,
+  cssHex,
+  updateLine,
+  updateProgress,
   captureMarkdown,
   current,
   dueOf,
@@ -14,8 +18,14 @@ import {
   treeRows,
   weekEntries,
   zeitLine,
+  mayRepeat,
+  taskBoxes,
+  toggleTask,
+  withNextOccurrence,
 } from "./model";
 import type { PageNode, Task, TimeEntryRow } from "../lib/types";
+import type { UpdateStatus } from "./api";
+import { setLang } from "../lib/i18n";
 
 describe("navigation", () => {
   it("opens screens above the tab, once each, and closes them with back or a tab", () => {
@@ -181,5 +191,127 @@ describe("sync", () => {
     expect(syncDue(null, 1000)).toBe(true);
     expect(syncDue(0, 60_000)).toBe(false);
     expect(syncDue(0, 120_000)).toBe(true);
+  });
+});
+
+describe("back button", () => {
+  it("closes an edit mode, then the top screen, then goes to Heute, then to the background", () => {
+    const page = navigate(START, { type: "push", screen: { kind: "page", id: 4 } });
+    expect(backAction(page, 1)).toBe("layer");
+    expect(backAction(page, 0)).toBe("pop");
+    expect(backAction(navigate(START, { type: "tab", tab: "notes" }), 0)).toBe("today");
+    expect(backAction(START, 0)).toBe("background");
+  });
+});
+
+describe("updates", () => {
+  const base: UpdateStatus = {
+    configured: true,
+    current: "1.17.0",
+    phase: "idle",
+    offered: null,
+    downloaded: 0,
+    total: null,
+    metered: false,
+    error: null,
+    blocked: null,
+    last_check: null,
+    allow_mobile_data: false,
+  };
+  const offered = { version: "1.18.0", notes: "## Improved", size: 40 * 1024 * 1024, pub_date: null, page: "https://github.com/MouseWerk/Arcalo/releases/tag/v1.18.0" };
+
+  it("says what the updater does", () => {
+    setLang("de");
+    expect(updateLine(base).text).toBe("Arcalo ist aktuell");
+    expect(updateLine(base).detail).toBe("Noch nicht gesucht");
+    expect(updateLine({ ...base, phase: "checking" }).text).toBe("Suche nach Updates…");
+    const dl = { ...base, phase: "downloading" as const, offered, downloaded: 10 * 1024 * 1024, total: 40 * 1024 * 1024 };
+    expect(updateLine(dl).text).toBe("Version 1.18.0 wird geladen");
+    expect(updateLine(dl).detail).toBe("10,0 MB von 40,0 MB");
+    expect(updateProgress(dl)).toBe(0.25);
+    expect(updateProgress({ ...dl, total: null })).toBe(0);
+    expect(updateLine({ ...base, phase: "waiting", offered, metered: true }).text).toBe("Version 1.18.0 wird im WLAN geladen");
+    expect(updateLine({ ...base, phase: "waiting", offered }).text).toBe("Version 1.18.0 wird geladen, sobald du online bist");
+    expect(updateLine({ ...base, phase: "ready", offered }).text).toBe("Version 1.18.0 ist bereit");
+    expect(updateLine({ ...base, phase: "blocked", offered, blocked: "anderer Schlüssel" }).detail).toBe("anderer Schlüssel");
+    expect(updateLine({ ...base, phase: "error", error: "Keine Verbindung" })).toEqual({ text: "Update fehlgeschlagen", detail: "Keine Verbindung" });
+    setLang("en");
+    expect(updateLine({ ...base, phase: "ready", offered }).text).toBe("Version 1.18.0 is ready");
+    setLang("de");
+  });
+
+  it("turns computed colors into the hex Android takes", () => {
+    expect(cssHex("rgb(244, 244, 245)")).toBe("#f4f4f5");
+    expect(cssHex("rgba(14, 15, 17, 1)")).toBe("#0e0f11");
+    expect(cssHex("rgb(14 15 17)")).toBe("#0e0f11");
+    expect(cssHex("#ABC")).toBe("#aabbcc");
+    expect(cssHex("#0e0f11")).toBe("#0e0f11");
+    expect(cssHex("transparent")).toBeNull();
+  });
+});
+
+describe("tasks in a page (A19)", () => {
+  const page = [
+    "---",
+    "status: offen",
+    "- [ ] keine Aufgabe (Eigenschaften)",
+    "---",
+    "# Plan",
+    "",
+    "- [ ] Eins",
+    "  - [x] Unteraufgabe",
+    "1. [ ] Nummeriert",
+    "> - [ ] Zitiert",
+    "",
+    "```md",
+    "- [ ] im Code",
+    "```",
+    "",
+    "* [X] Groß",
+    "- [ ]",
+    "Text - [ ] mitten im Satz",
+  ].join("\n");
+
+  it("shows the boxes as the page has them, tappable", () => {
+    expect(taskBoxes(page)).toEqual([false, true, false, false, true]);
+    expect(pageHtml(page)).not.toMatch(/<input[^>]*disabled/);
+  });
+
+  it("ticks exactly the tapped box, and opens it again", () => {
+    const boxes = taskBoxes(page);
+    for (let i = 0; i < boxes.length; i++) {
+      const out = toggleTask(page, i)!;
+      expect(out, `box ${i}`).not.toBeNull();
+      expect(taskBoxes(out.md)).toEqual(boxes.map((b, n) => (n === i ? !b : b)));
+      expect(out.done).toBe(!boxes[i]);
+      // Only that line changed.
+      const [a, b] = [page.split("\n"), out.md.split("\n")];
+      expect(a.filter((l, n) => l !== b[n])).toHaveLength(1);
+      // Opened again as `[ ]`; a big `[X]` comes back small.
+      expect(toggleTask(out.md, i)!.md).toBe(i === 4 ? page.replace("[X]", "[x]") : page);
+    }
+    expect(toggleTask(page, 0)!.text).toBe("Eins");
+    expect(toggleTask(page, 5)).toBeNull();
+    expect(toggleTask(page, -1)).toBeNull();
+  });
+
+  it("keeps Windows line ends and finds the box in a page whose lines Markdown counts differently", () => {
+    const crlf = "- [ ] Eins\r\n- [ ] Zwei\r\n";
+    expect(toggleTask(crlf, 1)!.md).toBe("- [ ] Eins\r\n- [x] Zwei\r\n");
+    // An indented block after a paragraph is code, not a task: the box found is the real one.
+    const tricky = "Absatz\n\n    - [ ] Code\n\n- [ ] Echt\n";
+    expect(taskBoxes(tricky)).toEqual([false]);
+    expect(toggleTask(tricky, 0)!.md).toBe("Absatz\n\n    - [ ] Code\n\n- [x] Echt\n");
+  });
+
+  it("adds the next occurrence of a repeating task below it and its subtasks", () => {
+    const md = '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Danach';
+    expect(withNextOccurrence(md, 0, "2026-10-19")).toBe(
+      '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach',
+    );
+    // Without a date: one is added; Windows line ends stay.
+    expect(withNextOccurrence("- [x] Gießen wdh:täglich\r\nEnde", 0, "2026-10-13")).toBe("- [x] Gießen wdh:täglich\r\n- [ ] Gießen wdh:täglich due:2026-10-13\r\nEnde");
+    expect(mayRepeat("Bericht every:weekly")).toBe(true);
+    expect(mayRepeat("Bericht jede Woche")).toBe(false);
   });
 });

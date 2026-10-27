@@ -21,7 +21,8 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
-import { changedRanges, touchedBlocks } from "./incremental";
+import { Decoration } from "@tiptap/pm/view";
+import { blockDecorations, changedRanges, touchedBlocks, updateBlockDecorations } from "./incremental";
 
 export const lowlight = createLowlight({ bash, css, diff, ini, java, javascript, json, markdown, plaintext, python, shell, sql, typescript, xml, yaml });
 
@@ -155,6 +156,57 @@ export async function highlightCodeBlocks(root: ParentNode): Promise<number> {
     n++;
   }
   return n;
+}
+
+type HastText = { text: string; classes: string[] };
+
+function hastRuns(nodes: Hast[], classes: string[] = []): HastText[] {
+  return nodes.flatMap((n) => {
+    const own = [...classes, ...(n.properties?.className ?? [])];
+    return n.children ? hastRuns(n.children, own) : [{ text: n.value ?? "", classes: own }];
+  });
+}
+
+/** The highlighting of the code blocks in `node` (at `pos`), as Tiptap's lowlight plugin decorates them. */
+function codeDecorations(node: PMNode, pos: number): Decoration[] {
+  const out: Decoration[] = [];
+  const visit = (n: PMNode, at: number) => {
+    if (n.type.name !== "codeBlock") return true;
+    const language: string | null = n.attrs.language || null;
+    const known = !!language && (lowlight.listLanguages().includes(language) || lowlight.registered(language));
+    const tree = (known ? lowlight.highlight(language!, n.textContent) : lowlight.highlightAuto(n.textContent)) as unknown as Hast;
+    let from = at + 1;
+    for (const run of hastRuns(tree.children ?? [])) {
+      const to = from + run.text.length;
+      if (run.classes.length) out.push(Decoration.inline(from, to, { class: run.classes.join(" ") }));
+      from = to;
+    }
+    return false;
+  };
+  if (visit(node, pos)) node.descendants((n, p) => visit(n, pos + 1 + p));
+  return out;
+}
+
+/**
+ * Code highlighting that follows an edit: Tiptap's lowlight plugin looks for every code block of the note
+ * twice per transaction and highlights all of them again when one changes; here only the blocks an edit
+ * touched are highlighted again (the same decorations, see languages.test.ts).
+ */
+export const highlightKey = new PluginKey("codeHighlight");
+
+export function codeHighlightPlugin(): Plugin {
+  return new Plugin({
+    key: highlightKey,
+    state: {
+      init: (_, { doc }) => blockDecorations(doc, codeDecorations),
+      apply: (tr, old) => updateBlockDecorations(old, tr, codeDecorations),
+    },
+    props: {
+      decorations(state) {
+        return this.getState(state);
+      },
+    },
+  });
 }
 
 const key = new PluginKey<Set<string>>("lazyHighlight");

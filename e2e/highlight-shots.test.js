@@ -2,18 +2,19 @@
 // demo data: run by hand when a release's highlights change (not part of the e2e suite).
 //   ARCALO_APP=… node --test e2e/highlight-shots.test.js
 // Each picture is a 336 × 210 crop of the window at 125 % UI scale.
-import { test, after } from "node:test";
+import { test as nodeTest, after } from "node:test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { launch } from "./lib/harness.js";
+import { launch, guarded } from "./lib/harness.js";
 import { launchEnglish } from "./lib/english.js";
 
 const OUT = path.resolve(import.meta.dirname, "../docs/releases/highlights/img");
 const W = 336;
 const H = 210;
 let app;
+const test = guarded(nodeTest, () => app);
 after(async () => app?.close());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -87,7 +88,7 @@ async function shoot(lang) {
   const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
   const ev = (await app.invoke("calendar_events", { from, to })).find((e) => (e.event?.title ?? e.title) === tx.meeting);
   await app.invoke("calendar_meeting_note", { key: ev.key });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await sleep(500);
   const meetings = lang === "de" ? "Besprechungen" : "Meetings";
@@ -113,14 +114,14 @@ async function shoot(lang) {
 
   // A diagram in a note.
   const page = await app.invoke("page_create", { title: tx.page, parentId: null, content: "```mermaid\n" + tx.diagram + "\n```\n" });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.browser.waitUntil(async () => !!(await rowRect(tx.page)), { timeout: 8000, timeoutMsg: `no row ${page.title}` });
   await app.browser.execute((t) => {
     const r = [...document.querySelectorAll(".sidebar .tree-row")].find((x) => x.querySelector(".tree-label")?.textContent === t);
     r?.click();
   }, tx.page);
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .ProseMirror :is(.rich-mermaid, .mmd-view) svg")), { timeout: 15000, timeoutMsg: "no diagram" });
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror :is(.rich-mermaid, .mmd-view) svg")), { timeout: 15000, timeoutMsg: "no diagram" });
   // Out of the editor: the diagram shows without its source.
   await app.browser.execute(() => {
     document.activeElement?.blur();
@@ -128,7 +129,7 @@ async function shoot(lang) {
   });
   await sleep(800);
   const svg = await app.browser.execute(() => {
-    const b = document.querySelector(".pane.active .ProseMirror :is(.rich-mermaid, .mmd-view) svg").getBoundingClientRect();
+    const b = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror :is(.rich-mermaid, .mmd-view) svg").getBoundingClientRect();
     // The whole diagram with a margin, in the picture's proportions.
     const w = Math.max(b.width + 32, (b.height + 32) * 1.6);
     return { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - w / 3.2, w, h: w / 1.6 };

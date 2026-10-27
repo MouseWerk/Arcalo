@@ -212,6 +212,27 @@ await app.browser.waitUntil(async () => (await app.browser.execute(() => window.
 await sleep(1500);
 const saves = await app.browser.execute(() => window.__perf.calls.filter((c) => c.cmd === "page_save").map((c) => c.ms));
 out.saveLarge = { calls: saves.length, ms: saves.map(r1), typedForMs: Date.now() - typeStart };
+// The large page to the Markdown source view and back (1.17), twice.
+const toggleSource = (to) =>
+  app.browser.executeAsync((to, done) => {
+    const t0 = performance.now();
+    window.dispatchEvent(new CustomEvent("arcalo:page-command", { detail: "source" }));
+    const check = () => {
+      const shown = ".pane.active .pane-content:not([hidden])";
+      const ok = to === "source" ? (document.querySelector(`${shown} .source-text`)?.value.length ?? 0) > 50000 : (document.querySelector(`${shown} .ProseMirror`)?.editor?.state.doc.content.size ?? 0) > 50000;
+      if (ok) requestAnimationFrame(() => setTimeout(() => done(performance.now() - t0), 0));
+      else if (performance.now() - t0 > 60000) done(-1);
+      else requestAnimationFrame(check);
+    };
+    check();
+  }, to);
+out.sourceLarge = { toSource: [], toRich: [] };
+for (let i = 0; i < 2; i++) {
+  out.sourceLarge.toSource.push(r1(await toggleSource("source")));
+  await sleep(1000);
+  out.sourceLarge.toRich.push(r1(await toggleSource("rich")));
+  await sleep(1000);
+}
 
 // ---------------------------------------------------------------- page switching
 out.switchPage = [];

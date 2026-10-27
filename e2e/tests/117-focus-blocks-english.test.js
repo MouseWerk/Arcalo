@@ -92,7 +92,7 @@ test("planned next to booked in the day header; time tracking off keeps the plan
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 6);
   await app.invoke("block_create", { block: { title: "Deep work", start: start.toISOString(), end: new Date(start.getTime() + 90 * 60e3).toISOString() } });
   await app.invoke("log_time", { line: "/time NP-8801/1020 2h 'Booked in the test'", pageId: null });
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
   await app.click(".ribbon-calendar-view");
@@ -119,7 +119,7 @@ test("a task of the dashboard is dragged into the week; a deleted block comes ba
     dashboard: { version: 2, active: "plan", notes: {}, boards: [{ id: "plan", name: "Plan", widgets: [{ id: "tasks", kind: "tasks", x: 0, y: 0, w: 6, h: 8, config: {} }] }] },
   });
   await app.keys(["Control", "t"]);
-  const task = ".pane.active .dw-task";
+  const task = ".pane.active > .pane-content:not([hidden]) .dw-task";
   await app.browser.waitUntil(() => app.browser.execute((s) => [...document.querySelectorAll(s)].some((li) => /Write the report/.test(li.textContent)), task), { timeout: 15000, timeoutMsg: "task widget" });
   const payload = await app.browser.execute((s) => {
     const li = [...document.querySelectorAll(s)].find((x) => /Write the report/.test(x.textContent));

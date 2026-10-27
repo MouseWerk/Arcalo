@@ -16,7 +16,7 @@
 //   continuation lines indented by four spaces.
 
 import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
@@ -35,13 +35,15 @@ const isBlank = (c: number) => c === 32 || c === 9;
 
 /**
  * Start of the first line that is `marker` with only spaces or tabs behind it (and before it
- * when `lead`), or -1: the same as `/^[ \t]*marker[ \t]*$/m.exec(src)?.index`.
+ * when `lead`), or -1: the same as `/^[ \t]*marker[ \t]*$/m.exec(src)?.index`. `first`: whether
+ * index 0 starts a line; marked hands a block's start() the rest after the first character of a
+ * paragraph line, where it does not (`x[TOC]` is no table of contents).
  */
-export function markerLine(src: string, marker: string, lead: boolean): number {
+export function markerLine(src: string, marker: string, lead: boolean, first = true): number {
   for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + 1)) {
     let s = i;
     if (lead) while (s > 0 && isBlank(src.charCodeAt(s - 1))) s--;
-    if (s > 0 && !isLineBreak(src.charCodeAt(s - 1))) continue;
+    if (s > 0 ? !isLineBreak(src.charCodeAt(s - 1)) : !first) continue;
     let e = i + marker.length;
     while (e < src.length && isBlank(src.charCodeAt(e))) e++;
     if (e === src.length || isLineBreak(src.charCodeAt(e))) return s;
@@ -127,7 +129,7 @@ export const Columns = Node.create({
     name: "columns",
     level: "block",
     start: (src: string) => {
-      const [de, en] = [markerLine(src, COLUMNS_OPEN, true), markerLine(src, COLUMN_MARKERS.en[0], true)];
+      const [de, en] = [markerLine(src, COLUMNS_OPEN, true, false), markerLine(src, COLUMN_MARKERS.en[0], true, false)];
       return de < 0 ? en : en < 0 ? de : Math.min(de, en);
     },
     tokenize(src, _tokens, lexer) {
@@ -174,6 +176,8 @@ export interface TocEntry {
   text: string;
   pos: number;
 }
+
+const isHeading = (node: PMNode) => node.type.name === "heading";
 
 /** The page's headings in order (also inside columns and callouts). */
 export function headingsOf(doc: PMNode): TocEntry[] {
@@ -225,7 +229,7 @@ export const TableOfContents = Node.create({
   markdownTokenizer: {
     name: "tableOfContents",
     level: "block",
-    start: (src: string) => markerLine(src, TOC_MARKER, false),
+    start: (src: string) => markerLine(src, TOC_MARKER, false, false),
     tokenize(src) {
       const m = /^\[TOC\][ \t]*(?:\n|$)/.exec(src);
       return m ? { type: "tableOfContents", raw: m[0] } : undefined;
@@ -277,7 +281,8 @@ export const TableOfContents = Node.create({
         };
         body.append(list(tocTree(entries)));
       };
-      const onTr = ({ transaction }: { transaction: { docChanged: boolean } }) => transaction.docChanged && render();
+      // Only edits of headings change it: other keys do not walk the whole note.
+      const onTr = ({ transaction }: { transaction: Transaction }) => transaction.docChanged && touchesNodes(transaction, isHeading) && render();
       editor.on("transaction", onTr);
       render();
       dom.addEventListener("mousedown", (e) => {
@@ -381,9 +386,10 @@ export const FootnoteDefinition = Node.create({
     name: "footnoteDefinition",
     level: "block",
     start: (src: string) => {
-      // As `/^\[\^[^\]\s^]+\]:/m`, without running a regex over every line of the rest.
+      // As `/^\[\^[^\]\s^]+\]:/m`, without running a regex over every line of the rest (whose
+      // index 0 is no line start, see `markerLine`).
       for (let i = src.indexOf("[^"); i >= 0; i = src.indexOf("[^", i + 1)) {
-        if (i > 0 && !isLineBreak(src.charCodeAt(i - 1))) continue;
+        if (i === 0 || !isLineBreak(src.charCodeAt(i - 1))) continue;
         DEF_AT.lastIndex = i;
         if (DEF_AT.test(src)) return i;
       }

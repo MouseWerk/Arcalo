@@ -1,7 +1,7 @@
 // The Kalender view's logic: visible ranges, the overlap layout of the time grid, month cells,
 // booking prefill and whether an appointment is already booked.
 
-import { addDays, dateLocale, dayOfMonth, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
+import { addDays, dateLocale, dayOfMonth, formatPrefs, isoDay, isoWeek, shownWeek, weekStart } from "./format";
 import { addMonths, monthGrid } from "./calendar";
 import type { CalendarEvent, CalendarSettings, FocusBlock, OutlookCalendar, TimeEntryRow, WbsHint } from "./types";
 import { t } from "./i18n";
@@ -86,7 +86,7 @@ export function rangeTitle(view: CalView, range: Range, anchor: Date): string {
 
 /** „KW 39“ (or „KW 39–40“ when the range spans two weeks); „Week 39“ in English. */
 export function weekLabel(range: Range): string {
-  const a = isoWeek(range.days[0]);
+  const a = range.days.length > 1 ? shownWeek(range.days[0]) : isoWeek(range.days[0]);
   const b = isoWeek(range.days[range.days.length - 1]);
   return t("time.weekNo", { n: a === b ? String(a) : `${a}–${b}` });
 }

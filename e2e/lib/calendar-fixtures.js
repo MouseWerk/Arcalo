@@ -22,9 +22,10 @@ export function week(offsetWeeks = 0) {
   return { monday, at };
 }
 
-const { at } = week();
-/** Tuesday: six short meetings (month overflow) and two overlapping ones. */
-export const TUESDAY = at(1, 0);
+/** A day of the current week at a time (computed on each call: no date is fixed on import). */
+const at = (day, h, m = 0) => week().at(day, h, m);
+/** Tuesday of this week: six short meetings (month overflow) and two overlapping ones. */
+export const tuesday = () => at(1, 0);
 
 /** The ICS file „Projektplan“: a review on Wednesday, an all-day release on Thursday (folded, with umlauts). */
 export function icsFile() {

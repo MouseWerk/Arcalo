@@ -91,6 +91,52 @@ pub fn pending_line(token: &str) -> String {
     trf!("*Transkription läuft … ({token})*", "*Transcribing … ({token})*")
 }
 
+/// [`pending_line`] in both languages (a page keeps the one it was written in): before and after
+/// the token.
+const PENDING: [(&str, &str); 2] = [("*Transkription läuft … (", ")*"), ("*Transcribing … (", ")*")];
+
+/// What replaces the status line of a transcription a crash or a quit cut off; the audio stays
+/// and „Neu transkribieren“ starts it again.
+pub fn interrupted_line() -> String {
+    tr!(
+        "*Transkription unterbrochen. „Neu transkribieren“ am Audio startet sie noch einmal.*",
+        "*Transcription interrupted. “Transcribe again” on the audio starts it once more.*"
+    )
+    .to_owned()
+}
+
+/// The tokens of the status lines in `content` (in either language), in order.
+pub fn pending_tokens(content: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        for (before, after) in PENDING {
+            if let Some(token) = line.strip_prefix(before).and_then(|rest| rest.strip_suffix(after))
+                && !token.is_empty()
+                && !out.iter().any(|t| t == token)
+            {
+                out.push(token.to_owned());
+            }
+        }
+    }
+    out
+}
+
+/// Where the status line of `token` is in `content` (in either language): its byte range.
+fn find_pending(content: &str, token: &str) -> Option<std::ops::Range<usize>> {
+    PENDING.iter().find_map(|(before, after)| {
+        let line = format!("{before}{token}{after}");
+        content.find(&line).map(|at| at..at + line.len())
+    })
+}
+
+/// The audio embedded in the block of the status line of `token` (the `![[…]]` line above it).
+pub fn pending_audio(content: &str, token: &str) -> Option<String> {
+    let at = find_pending(content, token)?.start;
+    let line = content[..at].lines().rev().map(str::trim).find(|l| !l.is_empty())?;
+    line.strip_prefix("![[").and_then(|l| l.strip_suffix("]]")).map(str::to_owned)
+}
+
 /// The block added to a page when a recording stops: heading with the time, the audio embed
 /// (none when the audio is not kept) and the status line.
 pub fn pending_block(local: chrono::NaiveDateTime, audio: Option<&str>, token: &str) -> String {
@@ -329,6 +375,33 @@ impl Database {
         self.save_page_content(page_id, &next)
     }
 
+    /// A transcription that was cut off (a crash, a quit): the status line of `token` on `page_id`
+    /// (in either language) becomes `replacement`. False when the line is no longer there.
+    pub fn voice_interrupted(&self, page_id: i64, token: &str, replacement: &str) -> Result<bool> {
+        let content = self.page_doc(page_id)?.content;
+        let Some(range) = find_pending(&content, token) else { return Ok(false) };
+        let mut next = String::with_capacity(content.len() + replacement.len());
+        next.push_str(&content[..range.start]);
+        next.push_str(replacement.trim_end());
+        next.push_str(&content[range.end..]);
+        self.save_page_content(page_id, &next)?;
+        Ok(true)
+    }
+
+    /// Pages with status lines of transcriptions: (page, token), oldest page first.
+    pub fn voice_pending(&self) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT id, content FROM pages WHERE deleted_at IS NULL AND (content LIKE '%Transkription läuft … (%' OR content LIKE '%Transcribing … (%') ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, content) = row?;
+            out.extend(pending_tokens(&content).into_iter().map(|t| (id, t)));
+        }
+        Ok(out)
+    }
+
     /// „Neu transkribieren“: puts the status line of `token` where the transcript of the voice
     /// note with the audio `name` is on `page_id`. Returns the page and the transcript replaced.
     pub fn voice_again(&self, page_id: i64, name: &str, token: &str) -> Result<(Page, String)> {
@@ -392,6 +465,37 @@ mod tests {
             assert_eq!(remove_embed(&done, "Sprachnotiz.flac").matches("flac").count(), 0);
             assert!(remove_embed(&done, "Sprachnotiz.flac").contains("## Sprachnotiz 14:30\n\n> [!quote]-"));
         }
+    }
+
+    #[test]
+    fn interrupted_transcriptions_are_found_and_marked() {
+        // The status line in both languages is recognized.
+        assert!(PENDING.iter().any(|(b, a)| pending_line("x1") == format!("{b}x1{a}")));
+        let page = "## Sprachnotiz 14:30\n\n![[a.flac]]\n\n*Transkription läuft … (t1)*\n\n## Voice note 15:00\n\n![[b.flac]]\n\n*Transcribing … (t2)*\n\n*Transkription läuft … ()*\n";
+        assert_eq!(pending_tokens(page), ["t1", "t2"]);
+        assert_eq!(pending_audio(page, "t1").as_deref(), Some("a.flac"));
+        assert_eq!(pending_audio(page, "t2").as_deref(), Some("b.flac"));
+        assert_eq!(pending_audio("Text\n\n*Transcribing … (t3)*", "t3"), None);
+        assert_eq!(pending_audio(page, "t9"), None);
+
+        let db = Database::open_in_memory().unwrap();
+        let note = db.voice_begin(None, at(), Some("a.flac"), "t1").unwrap();
+        let other = db.create_page(None, "Jour fixe", None).unwrap();
+        db.save_page_content(other.id, "# Agenda\n\n*Transcribing … (t2)*\n\nEnde\n").unwrap();
+        assert_eq!(db.voice_pending().unwrap(), [(note.id, "t1".to_owned()), (other.id, "t2".to_owned())]);
+        assert!(db.voice_interrupted(note.id, "t1", &interrupted_line()).unwrap());
+        let content = db.page_doc(note.id).unwrap().content;
+        assert!(
+            content.ends_with(
+                "![[a.flac]]\n\n*Transkription unterbrochen. „Neu transkribieren“ am Audio startet sie noch einmal.*\n"
+            ),
+            "{content}"
+        );
+        assert!(db.voice_interrupted(other.id, "t2", "> [!note]- Transkript\n> alt\n").unwrap());
+        assert_eq!(db.page_doc(other.id).unwrap().content, "# Agenda\n\n> [!note]- Transkript\n> alt\n\nEnde\n");
+        // Gone (edited away, or done already): nothing is written.
+        assert!(!db.voice_interrupted(note.id, "t1", "x").unwrap());
+        assert!(db.voice_pending().unwrap().is_empty());
     }
 
     #[test]

@@ -84,7 +84,7 @@ test("a note changed here and on the server becomes a conflict; the rest is take
   await app.waitFor(`.tree-row[data-id="${await pageId("Architektur")}"] .tree-conflict`);
   await app.dismissToasts();
   await openByPalette("Architektur");
-  await app.waitText(".pane.active .cf-banner", /Konflikt/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .cf-banner", /Konflikt/);
   await app.shot("sync-conflict-banner");
 
   // A second sync before merging leaves the server's version alone.
@@ -94,7 +94,7 @@ test("a note changed here and on the server becomes a conflict; the rest is take
 });
 
 test("the conflict view shows both versions by block; „Übernehmen“ saves and syncs the result", async () => {
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .cf-banner button")].find((b) => b.textContent.includes("Zusammenführen")).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .cf-banner button")].find((b) => b.textContent.includes("Zusammenführen")).click());
   await app.waitFor(".cf-view .cf-conflict", 10000);
   await app.waitText(".tab.active .tab-title", /Konflikt: Architektur/);
   assert.equal((await app.$$(".cf-conflict")).length, 1, "one conflicting block");
@@ -126,8 +126,8 @@ test("the conflict view shows both versions by block; „Übernehmen“ saves an
   assert.ok((await Promise.all(versions.map((v) => app.invoke("page_version_content", { versionId: v.id })))).some((c) => c.includes("hier geändert")));
   // The tab shows the page again, without banner or mark.
   await app.waitText(".tab.active .tab-title", /^Architektur$/);
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .cf-banner")).length === 0 && (await app.$$(".tree-conflict")).length === 0, { timeoutMsg: "conflict marks remain" });
-  await app.waitText(".pane.active .ProseMirror", /zusammengeführt/);
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .cf-banner")).length === 0 && (await app.$$(".tree-conflict")).length === 0, { timeoutMsg: "conflict marks remain" });
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /zusammengeführt/);
 
   // The other computer pulls the merge cleanly.
   git(other, "pull", "-q", "--no-rebase", "origin", "main");

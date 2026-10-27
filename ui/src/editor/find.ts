@@ -16,15 +16,12 @@ interface FindState {
 function search(doc: PMNode, query: string) {
   const matches: { from: number; to: number }[] = [];
   if (!query) return matches;
-  const q = query.toLowerCase();
+  // Case-insensitive on the text itself: lowercasing first shifted every offset after a character
+  // whose lowercase form has another length (`İ` becomes two).
+  const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), "giu");
   doc.descendants((node, pos) => {
     if (!node.isText) return;
-    const text = node.text!.toLowerCase();
-    let i = text.indexOf(q);
-    while (i >= 0) {
-      matches.push({ from: pos + i, to: pos + i + q.length });
-      i = text.indexOf(q, i + q.length);
-    }
+    for (const m of node.text!.matchAll(re)) matches.push({ from: pos + m.index, to: pos + m.index + m[0].length });
   });
   return matches;
 }

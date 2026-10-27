@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The only files the app hands to another app: a verified update APK for Android's package
+     installer (UpdatePlugin.kt), in the cache's update folder, and a copy of an attachment opened
+     with the app Android has for its type (ShellPlugin.kt, openFile; the full app, 1.20). -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-  <external-path name="my_images" path="." />
-  <cache-path name="my_cache_images" path="." />
+  <cache-path name="updates" path="updates/" />
+  <cache-path name="open" path="open/" />
 </paths>

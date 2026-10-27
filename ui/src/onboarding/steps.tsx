@@ -30,6 +30,7 @@ import { applyLanguage, osLanguage } from "./lang";
 import { finishFirstRun, pauseForSettings, useFirstRun } from "./state";
 import { writeSettings } from "./write";
 import { isComposing, isKey } from "../lib/ime";
+import { caps } from "../lib/capabilities";
 
 type Write = typeof writeSettings;
 
@@ -550,7 +551,7 @@ export function WorkspaceStep({ view }: { view: SettingsView }) {
       <ChoiceGroup label={t("fr.step.workspace")} className="three">
         <Choice name="samples" on={picked === "samples"} icon={LayoutDashboard} title={t("fr.ws.samples")} text={t(projects ? "fr.ws.samplesHas" : "fr.ws.samplesText")} disabled={busy || !!projects} onPick={() => run("samples")} />
         <Choice name="empty" on={picked === "empty"} icon={FilePlus2} title={t(hasData ? "fr.ws.keep" : "fr.ws.empty")} text={t(hasData ? "fr.ws.keepText" : "fr.ws.emptyText")} disabled={busy} onPick={() => run("empty")} />
-        <Choice name="import" on={picked === "import"} icon={FolderInput} title={t("fr.ws.import")} text={t("fr.ws.importText")} disabled={busy} onPick={() => run("import")} />
+        {caps().folders && <Choice name="import" on={picked === "import"} icon={FolderInput} title={t("fr.ws.import")} text={t("fr.ws.importText")} disabled={busy} onPick={() => run("import")} />}
       </ChoiceGroup>
       <div className="fr-panel">
         <div className="fr-panel-head">
@@ -611,7 +612,7 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
               {t("fr.later")}
             </div>
             <div className="fr-later-grid">
-              {LATER.map((l) => {
+              {LATER.filter((l) => (l.label !== "fr.later.backup" || caps().backups) && (l.label !== "fr.later.security" || caps().security) && (l.label !== "fr.later.desktop" || caps().windowFrame)).map((l) => {
                 const Icon = LATER_ICONS[l.label];
                 return (
                   <button key={l.label} type="button" className="fr-later-item" data-later={l.label.slice(9)} onClick={() => void later(l.section)}>

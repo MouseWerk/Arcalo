@@ -8,6 +8,15 @@ html.mobile body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* A phone scrolls with overlay bars: the desktop's 10 px scrollbars (base.css) would narrow every
+   screen and show a gutter, and no area stretches or glows at its ends. */
+html.mobile ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+html.mobile * {
+  overscroll-behavior: contain;
+}
 html.mobile body {
   font-size: var(--fs-lg);
   background: var(--bg-app);
@@ -30,9 +39,13 @@ html.mobile body {
   display: grid;
   place-items: center;
 }
+/* On a tablet or a phone held sideways the screens keep a readable column in the middle. */
 .m-main {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: var(--m-content-max);
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
 }
@@ -451,19 +464,125 @@ html.mobile body {
   font-size: var(--fs-lg);
   user-select: text;
 }
-.m-input:focus,
-.m-textarea:focus {
+.m-input:focus-visible,
+.m-textarea:focus-visible {
   outline: none;
   border-color: var(--border-focus);
   box-shadow: var(--focus-halo);
 }
-select.m-input {
-  appearance: none;
-  padding-right: var(--sp-6);
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%), linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
-  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
+.m-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: left;
+  color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.m-choice > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.m-choice-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The references that match what is typed, below the field. */
+.m-suggest {
+  display: grid;
+  margin-top: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.m-suggest-opt {
+  display: grid;
+  gap: 2px;
+  min-height: var(--touch-min);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.m-suggest-opt:active {
+  background: var(--bg-active);
+}
+.m-suggest-opt + .m-suggest-opt {
+  border-top: 1px solid var(--border);
+}
+.m-suggest-main {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.m-suggest-sub {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The sheet of a choice: from the bottom, above the tab bar, over a dimmed screen. */
+.m-choice-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: flex-end;
+  /* Black dims in every theme, like the desktop's dialogs. */
+  background: rgb(0 0 0 / 0.45);
+}
+.m-choice-sheet {
+  width: 100%;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-3) 0 calc(var(--sp-3) + env(safe-area-inset-bottom));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-lg);
+}
+.m-choice-title {
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+.m-choice-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.m-choice-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-lg);
+  text-align: left;
+  user-select: none;
+  cursor: pointer;
+}
+.m-choice-opt:active {
+  background: var(--bg-active);
+}
+.m-choice-opt.on {
+  background: var(--bg-selected);
+  font-weight: var(--fw-semibold);
+}
+.m-choice-opt > svg {
+  flex: none;
+  color: var(--text-2);
 }
 .m-textarea {
   resize: none;
@@ -486,9 +605,10 @@ select.m-input {
 .m-form-actions {
   flex-wrap: wrap;
 }
+/* A button takes a line of its own before its label wraps (only with large system fonts). */
 .m-form-actions .m-btn {
   flex: 1 1 auto;
-  white-space: nowrap;
+  text-align: center;
 }
 .m-sheet .m-form > .m-textarea {
   margin-top: var(--sp-2);
@@ -528,6 +648,7 @@ select.m-input {
   padding: var(--sp-1) 0;
   min-height: var(--touch-min);
 }
+.m-switch-row .m-row-title,
 .m-switch-row .m-row-sub {
   white-space: normal;
 }
@@ -608,8 +729,11 @@ select.m-input {
   gap: 2px;
   overflow-wrap: anywhere;
 }
-.m-notice .m-btn {
-  flex: none;
+.m-notice-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
 }
 .m-empty {
   display: flex;
@@ -653,17 +777,24 @@ select.m-input {
   flex-direction: column;
   gap: var(--sp-3);
 }
+/* With large system fonts the week's total moves below the day's instead of squeezing it. */
 .m-stat-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--sp-3);
+  gap: var(--sp-1) var(--sp-3);
 }
 .m-stat {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--sp-2);
+  gap: 0 var(--sp-2);
   margin-top: 2px;
+}
+.m-stat .num,
+.m-stat-of {
+  white-space: nowrap;
 }
 .m-stat .num {
   font-size: var(--fs-hero);
@@ -700,6 +831,12 @@ select.m-input {
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
 }
+.m-timer-row .num {
+  white-space: nowrap;
+}
+.m-timer-row .m-row-title {
+  white-space: normal;
+}
 .m-timer-dot {
   flex: none;
   width: 10px;
@@ -722,6 +859,13 @@ select.m-input {
   width: 92px;
   font-size: var(--fs-md);
   color: var(--text-2);
+}
+/* A meeting's title is what tells it apart: two lines before it is cut. */
+.m-event .m-row-title {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .m-event-place {
   display: inline-flex;
@@ -977,6 +1121,14 @@ select.m-input {
 .m-read a {
   color: var(--accent-text);
 }
+/* A link to another page: like in the desktop's editor, without its stylesheet (the phone loads
+   only this one, A18). */
+.m-read .wikilink {
+  text-decoration: none;
+  border-radius: var(--r-xs);
+  padding: 0 1px;
+  background: linear-gradient(transparent 62%, var(--accent-soft) 62%);
+}
 .m-read blockquote {
   margin: 0 0 var(--sp-3);
   padding: var(--sp-1) var(--sp-3);
@@ -1066,6 +1218,49 @@ select.m-input {
   color: var(--text-3);
 }
 
+/* ---- updates */
+.m-upd-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.m-upd-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.m-upd-icon {
+  color: var(--accent-text);
+}
+.m-upd-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.m-upd-notes {
+  margin: 0 calc(var(--sp-4) * -1);
+  border-top: 1px solid var(--border);
+}
+/* The notes are the card's last row and run to its lower edge. */
+.m-upd-notes:last-child {
+  margin-bottom: calc(var(--sp-4) * -1);
+}
+.m-upd-notes-toggle {
+  min-height: var(--touch-min);
+}
+.m-upd-notes-text {
+  padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--fs-md);
+}
+.m-upd-notes-text h2 {
+  font-size: var(--fs-lg);
+  margin-top: var(--sp-3);
+}
+.m-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ---- settings */
 .m-about {
   display: flex;
@@ -1091,12 +1286,13 @@ select.m-input {
 }
 .m-conflict-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-2);
   padding: 0 var(--sp-4);
 }
 .m-conflict-actions .m-btn {
-  white-space: nowrap;
+  padding: var(--sp-1) var(--sp-2);
+  text-align: center;
 }
 .m-conflict-actions .m-btn:only-child,
 .m-conflict-actions .m-btn-quiet {
@@ -1116,9 +1312,34 @@ select.m-input {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   min-height: var(--m-tabbar-h);
-  padding: var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));
+  padding: var(--sp-1) max(var(--sp-1), calc((100% - var(--m-content-max)) / 2)) calc(var(--sp-1) + env(safe-area-inset-bottom));
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border);
+}
+/* A phone held sideways has little height: a lower header and tab bar (icon beside the label). */
+@media (max-height: 480px) {
+  .m-head {
+    min-height: 48px;
+    padding-top: var(--sp-1);
+  }
+  .m-title {
+    font-size: var(--fs-xl);
+  }
+  .m-tabbar {
+    min-height: 0;
+  }
+  .m-tabbar .m-tab {
+    min-height: var(--touch-min);
+    flex-direction: row;
+    gap: var(--sp-2);
+  }
+  .m-tabbar .m-tab-icon {
+    width: 40px;
+    height: 28px;
+  }
+  .m-app .m-toasts {
+    bottom: calc(var(--touch-min) + var(--sp-4) + env(safe-area-inset-bottom));
+  }
 }
 .m-tab {
   min-height: 56px;
@@ -1215,4 +1436,94 @@ select.m-input {
     opacity: 0;
     transform: translateY(8px);
   }
+}
+
+/* ---- guided setup of the sync (1.20): the picked provider or repository as a neutral tint */
+.m-gs .m-title {
+  font-size: var(--fs-xl);
+}
+.m-gs-mark {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+.m-gs-provider.on,
+.m-gs-repo.on {
+  background: var(--bg-current);
+}
+.m-gs-provider.on .m-row-title,
+.m-gs-repo.on .m-row-title {
+  font-weight: var(--fw-semibold);
+}
+.m-gs-provider.on .m-gs-mark {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.m-gs-check {
+  flex: none;
+  color: var(--text-2);
+}
+.m-gs-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.m-gs-search .m-input {
+  flex: 1;
+  min-width: 0;
+}
+.m-gs-repos {
+  margin: 0 calc(var(--sp-4) * -1);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.m-gs-checks {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-gs-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 36px;
+  font-size: var(--fs-md);
+  color: var(--text-2);
+}
+.m-gs-step svg,
+.m-gs-step .m-spinner {
+  flex: none;
+}
+.m-gs-step .m-gs-fail {
+  color: var(--danger);
+}
+.m-gs-detail summary {
+  display: list-item;
+  min-height: var(--touch-min);
+  line-height: var(--touch-min);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.m-gs-detail code {
+  display: block;
+  font-family: var(--font-mono); font-variant-ligatures: none;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.m-gs-done {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-2);
+}
+.m-gs-done .m-row-title {
+  margin: 0;
+  white-space: normal;
+}
+.m-gs-blocked {
+  margin-top: var(--sp-2);
+  text-align: center;
 }

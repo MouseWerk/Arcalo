@@ -37,6 +37,15 @@ jobs:
       # The update installer (AppImage replacement against a file in a temp folder).
       - run: cargo test -p arcalo --lib installer
       - run: npm ci --prefix ui && npm run --prefix ui typecheck && npm test --prefix ui
+      # The owner as author, no trailers (CLAUDE.md), on the commits of each push.
+      - name: Commit rules
+        if: github.event_name == 'push'
+        env:
+          COMMITS: ${{ toJSON(github.event.commits) }}
+        run: node scripts/commit-rules.mjs
+      # The automatic release's choice of version (auto-release.yml), the APK signer of the Android
+      # feed, the e2e conventions, the release notes' shape and the commit rules.
+      - run: node --test scripts/release-pick.test.mjs scripts/apk-signer.test.mjs scripts/e2e-conventions.test.mjs scripts/release-notes.test.mjs scripts/commit-rules.test.mjs
       - run: cargo install tauri-driver --locked
       - name: End-to-end tests against the desktop app
         run: npm ci --prefix e2e && e2e/run.sh
@@ -62,12 +71,29 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --prefix ui
-      # File handling differs on Windows (sharing, flush rights): the backup and encryption tests run here too.
-      - name: Core tests on Windows (backups, encryption)
-        run: cargo test -p arcalo-core -- backup cipher
+      # File handling and line ends differ on Windows (sharing, flush rights, Git for Windows' autocrlf): the backup,
+      # encryption and Git sync tests run here too.
+      # The Outlook and packaging scripts cannot run on Linux: Windows PowerShell 5.1 (what the app
+      # starts) parses every one of them, and a syntax error fails here instead of at a user.
+      - name: PowerShell scripts parse (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 -Path crates, packaging, scripts | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) { Write-Host "$($_.FullName):$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+      - name: Core tests on Windows (backups, encryption, Git sync)
+        run: cargo test -p arcalo-core -- backup cipher gitsync
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri
+      # Starts on a Windows without the Visual C++ Redistributable (static C runtime).
+      - name: No Visual C++ runtime DLLs (installer build)
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       # The update install compiled like the release (the updater plugin refused it only in
       # release builds, 1.12 to 1.14.0): writes the setup into a temp folder and builds the
       # installer's command line, starts nothing. The release exe itself cannot be pointed at a
@@ -89,6 +115,9 @@ jobs:
       # (the Store signs real submissions itself), installed, started and checked, then removed.
       - name: Store build
         run: cargo build --release -p arcalo --features custom-protocol,store
+      - name: No Visual C++ runtime DLLs (Store build)
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       - name: Pack the MSIX (test identity, self-signed)
         id: msix
         shell: pwsh
@@ -213,3 +242,73 @@ jobs:
         with:
           name: arcalo-macos
           path: Arcalo-macos.zip
+
+  # The iPhone and iPad app (docs/ios.md): the iOS code linted, a simulator build checked on an
+  # iPhone and two iPads; signed and exported for App Store Connect when the Apple secrets exist.
+  ios:
+    name: iOS
+    uses: ./.github/workflows/ios.yml
+    secrets: inherit
+
+  # The Android app (docs/android.md): the APK as the release builds it, and the debug APK of the
+  # emulator tests.
+  android:
+    name: Android
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  # The Android app on an emulator (e2e/android): the debug APK of the Android job, measured at
+  # 360x800 and 412x915 dp over the WebView's DevTools socket (android/phone.test.js), and a
+  # screenshot tour of every screen, menu and sheet in light and dark (android/tour.test.js) with
+  # the stock Android UI found on them. The screenshots and the findings are kept.
+  android-e2e:
+    name: Android emulator (phone screens)
+    needs: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The emulator needs hardware acceleration: KVM for the runner's user.
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: npm ci --prefix e2e
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcalo-android-debug
+          path: apk
+      - name: Phone tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
+          # The device's whole log for the run (uploaded when a test failed), from a reader that
+          # starts again when logd lets it go (the tests clear the log before each start) and ends
+          # with the emulator.
+          script: |
+            sh -c 'while adb get-state >/dev/null 2>&1; do adb logcat -v threadtime; sleep 1; done' > "$GITHUB_WORKSPACE/e2e/logcat.txt" 2>&1 < /dev/null &
+            cd e2e && ARCALO_APK="$GITHUB_WORKSPACE/apk/arcalo-debug.apk" timeout 4800 node --test --test-concurrency=1 --test-force-exit --test-reporter=spec android/phone.test.js android/tour.test.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-screenshots
+          path: |
+            e2e/screenshots/android
+            e2e/screenshots/FAIL-*
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-logcat
+          path: e2e/logcat.txt
+          if-no-files-found: warn

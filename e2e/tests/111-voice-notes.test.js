@@ -82,12 +82,22 @@ test("ribbon → voice bar → note with audio and transcript → summary with t
   // Short sentences close together form one paragraph with its start time.
   assert.match(doc.content, /> \[!note\]- Transkript · 00:0\d · Deutsch\n> \*\*00:00\*\* Guten Morgen, wir besprechen das Angebot für Kunde X\. Anna schickt das Angebot bis Montag\.\n/);
   assert.ok(!doc.content.includes("läuft"), "status line replaced");
-  // The audio player gets the stored FLAC (a server without sound output shows the hint instead).
-  await app.waitFor(".pane.active .audio-embed", 10000);
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .audio-embed .file-embed-size")?.textContent), { timeout: 8000, timeoutMsg: "audio file missing" });
-  const src = await app.browser.execute(() => document.querySelector(".pane.active .audio-embed audio").getAttribute("src"));
-  assert.match(src, /arcalo-asset/);
-  assert.match(src, /\.flac$/);
+  // The audio player gets the stored FLAC and reads its length (no sound output needed for that).
+  // WebKitGTK's GStreamer refuses the app's arcalo-asset: scheme, so on Linux it plays a blob of
+  // the file's bytes.
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed", 10000);
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed .file-embed-size")?.textContent), { timeout: 8000, timeoutMsg: "audio file missing" });
+  assert.match(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed").dataset.file), /\.flac$/);
+  let audio = null;
+  const probe = () =>
+    app.browser.execute(() => {
+      const a = document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed audio");
+      // NaN does not cross WebDriver.
+      return { src: a.getAttribute("src") ?? "", ready: a.readyState, duration: Number.isFinite(a.duration) ? a.duration : -1, unplayable: !!a.closest(".is-unplayable") };
+    });
+  await app.browser.waitUntil(async () => ((audio = await probe()).ready >= 1 && audio.duration > 0) || audio.unplayable, { timeout: 15000 }).catch(() => {});
+  assert.match(audio.src, process.platform === "linux" ? /^blob:/ : /arcalo-asset/);
+  assert.ok(!audio.unplayable && audio.ready >= 1 && audio.duration > 0, `FLAC not loaded: ${JSON.stringify(audio)}`);
   await app.shot("111-voice-note");
 
   // Summary with the (mock) AI: summary, decisions, tasks with assignee and due date.
@@ -109,8 +119,8 @@ test("ribbon → voice bar → note with audio and transcript → summary with t
 test("/sprache in a #privat note: transcript into the page, summary only from the local model", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Personalgespräch", icon: null, content: "Gehalt besprechen #privat\n" });
   await app.invoke("capture_open", { pageId: page.id });
-  await app.waitText(".pane.active .page-title, .pane.active h1", /Personalgespräch/, 8000).catch(() => {});
-  await app.click(".pane.active .ProseMirror");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .page-title, .pane.active > .pane-content:not([hidden]) h1", /Personalgespräch/, 8000).catch(() => {});
+  await app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Enter"]);
   await app.type("/sprache");

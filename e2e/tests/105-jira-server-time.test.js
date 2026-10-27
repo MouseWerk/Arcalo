@@ -28,7 +28,7 @@ after(async () => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 };
@@ -67,7 +67,7 @@ test("/time with an issue key books on the mapped WBS", async () => {
   await app.type("/time NP-8801/1020 30m PROJ-123 analysis");
   await app.keys(["Escape"]);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .ProseMirror .time-chip", 10000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip", 10000);
   assert.ok(page.id);
   // Now the key alone books there.
   const out = await app.invoke("log_time", { line: "/time 1h PROJ-123 fix login", pageId: null });
@@ -114,8 +114,8 @@ test("no Agile: the Sprint widget says so quietly", async () => {
   await app.invoke("dashboard_save", { dashboard: { ...d, version: 2, boards: [{ id: "j", name: "Jira", widgets: [W("jira_sprint", "jira_sprint", 0, 0, 5, 8), W("jira", "jira", 5, 0, 7, 8)] }], active: "j" } });
   await reload();
   await app.keys(["Control", "t"]);
-  await app.waitText('.pane.active .dw[data-widget="jira_sprint"]', /No sprint board for PROJ \(Jira Agile is not available\)/, 15000);
-  await app.waitText('.pane.active .dw[data-widget="jira"]', /PROJ-123/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"]', /No sprint board for PROJ \(Jira Agile is not available\)/, 15000);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"]', /PROJ-123/);
 });
 
 test("the assistant's Jira tools: read, and comment only when allowed and confirmed", async () => {
@@ -132,8 +132,16 @@ test("the assistant's Jira tools: read, and comment only when allowed and confir
   const plan = await app.invoke("ai_plan_tool", { name: "jira_comment", arguments: JSON.stringify({ key: "PROJ-123", body: "Fixed in build 42" }) });
   assert.equal(plan.risk, "requires_approval");
   assert.match(plan.summary, /Comment on PROJ-123:\nFixed in build 42/);
-  assert.match(await app.invoke("ai_run_system_tool", { call: plan.call }), /Comment on PROJ-123 saved/);
+  // Without the plan's one-time token, or with it for another call: not run.
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: "", call: plan.call }), /not approved/);
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: plan.token, call: { ...plan.call, body: "Something else" } }), /not approved/);
+  const again = await app.invoke("ai_plan_tool", { name: "jira_comment", arguments: JSON.stringify({ key: "PROJ-123", body: "Fixed in build 42" }) });
+  assert.match(await app.invoke("ai_run_system_tool", { token: again.token, call: again.call }), /Comment on PROJ-123 saved/);
   assert.equal(jira.issues.find((i) => i.key === "PROJ-123").comments.at(-1).body, "Fixed in build 42");
+  // Approved once, run once.
+  const comments = jira.issues.find((i) => i.key === "PROJ-123").comments.length;
+  await assert.rejects(app.invoke("ai_run_system_tool", { token: again.token, call: again.call }), /not approved/);
+  assert.equal(jira.issues.find((i) => i.key === "PROJ-123").comments.length, comments);
 });
 
 test("the Issues page in English; time tracking off refuses bookings", async () => {

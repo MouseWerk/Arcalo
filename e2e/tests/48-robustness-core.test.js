@@ -27,12 +27,12 @@ test("a title with link characters is shown with the replacement and keeps its l
   const target = { id: await pageId("Architektur") };
   const source = await app.invoke("page_create", { title: "Linkquelle", parentId: null, icon: null, content: "Siehe [[Architektur]]\n\n`[[Architektur]]` im Code" });
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === "Architektur") await r.click();
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Architektur", { timeoutMsg: "Architektur not open" });
-  const title = await app.waitFor(".pane.active .page-title");
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === "Architektur", { timeoutMsg: "Architektur not open" });
+  const title = await app.waitFor(".pane.active > .pane-content:not([hidden]) .page-title");
   await title.click();
   await app.keys(["End"]);
   await app.type(" C# [Teil|1]");
-  await app.waitText(".pane.active .page-title-hint", /\[ \] \| # \^ gehören zur Link-Schreibweise/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .page-title-hint", /\[ \] \| # \^ gehören zur Link-Schreibweise/);
   assert.equal(await title.getValue(), "Architektur C＃ (Teil｜1)");
   await app.shot("48-title-rule");
   await app.keys(["Enter"]);

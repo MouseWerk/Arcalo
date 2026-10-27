@@ -1,0 +1,13 @@
+{
+  "remotelinks": [
+    { "id": 10000, "self": "x", "globalId": "system=https://github.com/acme/shop/pull/812", "application": { "type": "com.github", "name": "GitHub" }, "relationship": "mentioned in", "object": { "url": "https://github.com/acme/shop/pull/812", "title": "Fix EU 3DS flow", "summary": "PR #812", "icon": { "url16x16": "https://github.com/favicon.ico", "title": "GitHub" }, "status": { "resolved": false } } },
+    { "id": 10001, "self": "x", "object": { "url": "", "title": "broken" } }
+  ],
+  "mypermissions": { "permissions": {
+    "ADD_COMMENTS": { "id": "15", "key": "ADD_COMMENTS", "havePermission": true },
+    "EDIT_OWN_COMMENTS": { "havePermission": true }, "EDIT_ALL_COMMENTS": { "havePermission": false },
+    "DELETE_OWN_COMMENTS": { "havePermission": true }, "DELETE_ALL_COMMENTS": { "havePermission": false },
+    "WORK_ON_ISSUES": { "havePermission": true }, "ASSIGN_ISSUES": { "havePermission": true },
+    "ASSIGNABLE_USER": { "havePermission": true }, "TRANSITION_ISSUES": { "havePermission": true } } },
+  "myself": { "self": "x", "accountId": "acc-mia", "accountType": "atlassian", "emailAddress": "mia@acme.de", "displayName": "Mia Meyer", "active": true, "timeZone": "Europe/Berlin", "locale": "de_DE" }
+}

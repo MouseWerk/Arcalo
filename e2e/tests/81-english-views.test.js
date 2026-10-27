@@ -46,7 +46,7 @@ test("the settings say English and the shell is English", async () => {
 
 test("the main views are English", async () => {
   await ribbon("Today's daily note");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await check("daily");
   await ribbon("Calendar: meetings");
   await check("calendar");
@@ -66,10 +66,10 @@ test("a page, its menus, the palette, the focus dialog, the assistant and the tr
   // A demo page from the sidebar, with its property and backlink areas.
   await app.dismissToasts();
   await app.click('.tree[role="tree"] .tree-row');
-  await app.waitFor(".pane.active .page-title");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .page-title");
   await check("page");
   // The page's "More actions" menu.
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await app.waitFor(".menu");
   await check("page-menu");
   await escape();

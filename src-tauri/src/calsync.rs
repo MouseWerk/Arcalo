@@ -86,6 +86,10 @@ pub struct OutlookRow {
 pub struct CalendarStatus {
     /// Outlook Classic can be read here (Windows, or the test fixture).
     outlook_available: bool,
+    /// Appointments can be written to Outlook Classic here (Windows, or the test fixture).
+    entries_available: bool,
+    /// Changes of appointments waiting for Outlook (`pending`) or for the user (`conflict`).
+    entries_waiting: std::collections::HashMap<String, i64>,
     sources: Vec<SourceInfo>,
     /// Where subscription addresses are stored.
     secret_storage: &'static str,
@@ -163,6 +167,8 @@ fn status_of(app: &AppHandle) -> Result<CalendarStatus> {
     }
     Ok(CalendarStatus {
         outlook_available: available,
+        entries_available: arcalo_core::calsync::outlookwrite::available(),
+        entries_waiting: state.reader().entry_outbox_counts()?,
         sources,
         secret_storage: state.secrets.backend(),
         outlook_calendars,
@@ -178,8 +184,12 @@ pub fn calendar_status(app: AppHandle) -> Result<CalendarStatus> {
 /// Events of the active sources overlapping `from..to`.
 #[tauri::command(async)]
 pub fn calendar_events(state: State<AppState>, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<CalendarEvent>> {
-    let active = state.settings().calendar.active_sources(outlook::available());
-    state.reader().calendar_events(from, to, &active)
+    let cal = state.settings().calendar;
+    let active = cal.active_sources(outlook::available());
+    let mut events = state.reader().calendar_events(from, to, &active)?;
+    // Whether each can be changed here, or why not.
+    crate::calwrite::annotate(&mut events, &cal);
+    Ok(events)
 }
 
 /// Saves only the calendar sources (the rest of the settings stays as it is).
@@ -188,7 +198,7 @@ fn save_sources(app: &AppHandle, f: impl FnOnce(&mut Vec<IcsSource>) -> Result<(
 }
 
 /// Saves only the calendar settings, changed by `f` (the rest stays as it is).
-fn save_calendar(app: &AppHandle, f: impl FnOnce(&mut core::CalendarSettings) -> Result<()>) -> Result<()> {
+pub(crate) fn save_calendar(app: &AppHandle, f: impl FnOnce(&mut core::CalendarSettings) -> Result<()>) -> Result<()> {
     let state = app.state::<AppState>();
     let mut settings = state.settings();
     f(&mut settings.calendar)?;
@@ -566,8 +576,9 @@ async fn sync_source(app: &AppHandle, id: &str) -> Result<usize> {
 /// calendar that cannot be read does not fail the others).
 #[tracing::instrument(name = "calendar_sync_outlook", skip_all, fields(source = "calendar", calendars = ids.len()))]
 async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<usize>)> {
-    // Focus blocks waiting for Outlook first: their appointments then come back as the blocks.
+    // Focus blocks and appointments waiting for Outlook first: they then come back as written.
     let _ = crate::timeblocks::flush(app, false).await;
+    let _ = crate::calwrite::flush(app, false).await;
     let state = app.state::<AppState>();
     let settings = state.settings().calendar;
     let mut out = vec![];
@@ -582,43 +593,48 @@ async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<us
     if cals.is_empty() {
         return out;
     }
-    let window = window(app);
-    let zone = Zone::Local;
-    let privacy = Privacy::from(&settings);
-    let req = outlook::Request { from: zone.to_wall(window.0), to: zone.to_wall(window.1), privacy };
-    let dir = state.data_dir.join("scripts");
-    let list = cals.clone();
-    let reads = if outlook::available() {
-        tauri::async_runtime::spawn_blocking(move || outlook::read_calendars(&dir, req, &list, &Zone::Local))
-            .await
-            .map_err(|e| Error::State(e.to_string()))
-            .and_then(|r| r)
-    } else {
-        Err(Error::State(
-            tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
-                .into(),
-        ))
-    };
-    match reads {
-        Ok(reads) => {
-            for r in reads {
-                if r.free_busy {
-                    devlog::debug("calendar", format!("{}: free/busy only", r.id));
+    // A flush that another run started may still be writing: the read waits for it, and the
+    // writes of new changes wait until what it read is stored.
+    crate::calwrite::after_writes(async move {
+        let window = window(app);
+        let zone = Zone::Local;
+        let privacy = Privacy::from(&settings);
+        let req = outlook::Request { from: zone.to_wall(window.0), to: zone.to_wall(window.1), privacy };
+        let dir = state.data_dir.join("scripts");
+        let list = cals.clone();
+        let reads = if outlook::available() {
+            tauri::async_runtime::spawn_blocking(move || outlook::read_calendars(&dir, req, &list, &Zone::Local))
+                .await
+                .map_err(|e| Error::State(e.to_string()))
+                .and_then(|r| r)
+        } else {
+            Err(Error::State(
+                tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
+                    .into(),
+            ))
+        };
+        match reads {
+            Ok(reads) => {
+                for r in reads {
+                    if r.free_busy {
+                        devlog::debug("calendar", format!("{}: free/busy only", r.id));
+                    }
+                    let outcome = finish(app, &r.id, window, r.events);
+                    out.push((r.id, outcome));
                 }
-                let outcome = finish(app, &r.id, window, r.events);
-                out.push((r.id, outcome));
+            }
+            Err(e) => {
+                // Outlook itself failed: every calendar of the run reports it.
+                let msg = e.to_string();
+                for c in &cals {
+                    let outcome = finish(app, &c.id, window, Err(Error::State(msg.clone())));
+                    out.push((c.id.clone(), outcome));
+                }
             }
         }
-        Err(e) => {
-            // Outlook itself failed: every calendar of the run reports it.
-            let msg = e.to_string();
-            for c in &cals {
-                let outcome = finish(app, &c.id, window, Err(Error::State(msg.clone())));
-                out.push((c.id.clone(), outcome));
-            }
-        }
-    }
-    out
+        out
+    })
+    .await
 }
 
 type Window = (DateTime<Utc>, DateTime<Utc>);

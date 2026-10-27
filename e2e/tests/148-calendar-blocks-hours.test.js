@@ -18,7 +18,7 @@ async function patchSettings(f) {
 }
 async function openCalendar(view) {
   await app.browser.execute((v) => localStorage.setItem("arcalo.calendar.view", v), view);
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
   await app.click(".ribbon-calendar-view");
 }

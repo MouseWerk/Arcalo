@@ -47,6 +47,8 @@ export interface SavedPage {
   updated_at: string;
   tags: string[];
   unresolved_links: string[];
+  /** Stored instead of the text sent: the page had changed since the editor's base, both changes merged. */
+  merged?: string;
 }
 export interface CollectionRow extends Page {
   /** The frontmatter block with its `---` lines (the views derive the cells from it). */
@@ -482,6 +484,8 @@ export interface AppearancePrefs {
   window_opacity: number;
   custom_titlebar: boolean;
   startup_animation: boolean;
+  /** Android: the phone app, the full app, or chosen from the window and the device (1.20). */
+  android_interface?: "auto" | "phone" | "full";
 }
 export interface EditorPrefs {
   spellcheck: "de" | "en" | "de-en" | "off";
@@ -687,6 +691,8 @@ export interface GitTest {
   latency_ms: number;
   branches: string[];
   error: string | null;
+  /** Tested without the stored token (it belongs to the saved repository's server), and why. */
+  note?: string | null;
 }
 /** A widget of the start page before 1.6 (one list, three widths). */
 export interface LegacyWidget {
@@ -739,6 +745,22 @@ export interface DesktopInfo {
   portable?: boolean;
   /** The Microsoft Store build: autostart is the package's startup task. */
   store?: boolean;
+}
+/** The command `arcalo` in a terminal (`cmdpath.rs`, Settings → Desktop). */
+export interface CliPathInfo {
+  platform: "windows" | "macos" | "linux";
+  /** The program a terminal command starts. */
+  program: string;
+  /** What goes on the PATH: the program folder (Windows) or the link (macOS). */
+  entry?: string | null;
+  /** `elsewhere`: the macOS link names another program; `managed`: the Store alias. */
+  state: "on" | "off" | "elsewhere" | "managed";
+  /** Where the link of another program points. */
+  other?: string | null;
+  /** The switch can change it. */
+  changeable: boolean;
+  /** Why it cannot, in the UI language. */
+  note?: string | null;
 }
 export interface CaptureOutcome {
   appended: { page_id: number; tasks: number; notes: number; title: string; created: boolean } | null;
@@ -1008,7 +1030,8 @@ export type StreamEvent =
   | { type: "waiting"; seconds: number; model: string };
 export type ToolPlan =
   | { risk: "workspace" }
-  | { risk: "requires_approval"; call: unknown; summary: string };
+  /** `token`: the one-time approval the shell needs to run exactly this call. */
+  | { risk: "requires_approval"; call: unknown; summary: string; token: string };
 export interface ImportReport {
   pages: number;
   folders: number;
@@ -1144,6 +1167,8 @@ export interface UpdateStatus {
   package?: boolean;
   /** The Microsoft Store build: the Store updates it (`enabled` is false, no rollback). */
   store?: boolean;
+  /** This copy cannot replace its own program files: new versions come from the release page. */
+  blocked?: UpdateBlocked | null;
   /** Reported once after a start that followed an update: the version, and whether it runs now. */
   restarted?: { version: string; installed: boolean; from?: string } | null;
   /** What applies: the organization's policy over the settings (`managed` lists the locked fields). */
@@ -1162,8 +1187,24 @@ export interface UpdateStatus {
   rollback?: { from: string; to: string; created: string } | null;
   /** Reported once after a rollback. */
   rolled_back?: { from: string; to: string; database: boolean } | null;
+  /** The install waits for running terminal commands (`arcalo pages list`) until `until`; then it installs (`then_install`) or waits for the next quit (Windows). */
+  waiting?: UpdateWaiting | null;
+  /** The waiting update was postponed at several quits by terminal commands that still ran. */
+  postponed?: UpdatePostponed | null;
+}
+export interface UpdatePostponed {
+  version: string;
+  times: number;
+  commands: string[];
+}
+export interface UpdateWaiting {
+  commands: string[];
+  until: string;
+  then_install: boolean;
 }
 export type UpdateMode = "auto" | "notify" | "off";
+/** Why a copy cannot update itself: macOS started it from a temporary read-only place, it is on a read-only drive, the AppImage's folder is not writable, or it was not started as an AppImage. */
+export type UpdateBlocked = "translocated" | "read_only" | "not_writable" | "no_appimage";
 export type UpdateManagedField = "mode" | "source" | "github" | "pinned" | "window" | "interval";
 export interface UpdatePolicy {
   mode: UpdateMode;
@@ -1373,6 +1414,19 @@ export interface GitPulled {
   restored?: number[];
 }
 
+/** What another process (the `arcalo` command line) changed in the workspace (`data://external`). */
+export interface ExternalChange {
+  pages: number[];
+  /** Pages created, renamed, moved, trashed, restored or purged. */
+  tree: boolean;
+  entries: boolean;
+  wbs: boolean;
+  absences: boolean;
+  settings: boolean;
+  /** Too much to name: everything reloads. */
+  all: boolean;
+}
+
 // ---- calendar sync (Kalender)
 
 export interface IcsSource {
@@ -1476,6 +1530,12 @@ export interface CalendarSettings {
   blocks_outlook?: boolean;
   /** Length of a block dropped into the Kalender (minutes). */
   block_minutes?: number;
+  /** Create, change, move and delete appointments in the Kalender, written to Outlook (1.21). */
+  entries_outlook?: boolean;
+  /** The calendar new appointments go to (`outlook` or another own Outlook calendar). */
+  entry_target?: string;
+  /** Length of a new appointment made with a double click or N (minutes). */
+  entry_minutes?: number;
 }
 export type Busy = "free" | "tentative" | "busy" | "oof" | "elsewhere";
 export interface CalendarEvent {
@@ -1505,6 +1565,34 @@ export interface CalendarEvent {
   entry_id: number | null;
   /** Other selected calendars with the same meeting (shown once). */
   also_in?: string[];
+  /** Outlook's EntryID (Outlook appointments). */
+  outlook_id?: string | null;
+  /** Outlook's MeetingStatus: 0 appointment, 1 organized by the user, 3 received. */
+  meeting?: number;
+  /** Attendees besides the organizer. */
+  has_attendees?: boolean;
+  /** A change made here that Outlook does not have yet, or that conflicts with one made there. */
+  write?: EntryWrite;
+  /** Whether it can be changed here, or why not. */
+  editable?: Editability;
+}
+export type Editability = "yes" | "confirm" | "off" | "ics" | "unavailable" | "shared" | "free_busy" | "received" | "series" | "unknown";
+/** The fields written to Outlook (only those changed). */
+export interface EntryFields {
+  title?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+}
+export interface EntryWrite {
+  op: "create" | "update" | "delete" | "restore";
+  /** `refused`: Outlook refused it (a series now, gone, not saved); it waits for the user. */
+  state: "pending" | "conflict" | "refused";
+  error: string | null;
+  /** A conflict: Outlook's values and the user's of the fields changed on both sides. */
+  outlook: EntryFields | null;
+  mine: EntryFields | null;
+  send: boolean;
 }
 export interface CalendarSyncStatus {
   source: string;
@@ -1536,6 +1624,10 @@ export interface CalendarSourceInfo {
 }
 export interface CalendarStatus {
   outlook_available: boolean;
+  /** Appointments can be written to Outlook Classic here. */
+  entries_available?: boolean;
+  /** Changes of appointments waiting for Outlook (`pending`) or for the user (`conflict`). */
+  entries_waiting?: Record<string, number>;
   sources: CalendarSourceInfo[];
   secret_storage: string;
   /** „Kalender auswählen“. */

@@ -48,6 +48,7 @@ import { flushAllEditors } from "../editor/saves";
 import { reloadEditors } from "../editor/NoteEditor";
 import { aiEnabled, useAi } from "../lib/aiswitch";
 import { SHOWN_PLACE } from "../lib/keepalive";
+import { copyHtml as writeHtml, copyText as writeClipboard } from "../lib/clipboard";
 
 const s = () => useApp.getState();
 
@@ -208,11 +209,7 @@ export function MeetingWorkHost() {
 
 async function copyHtml(html: string, text: string) {
   try {
-    if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
-      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
-    } else {
-      await navigator.clipboard.writeText(html);
-    }
+    await writeHtml(html, text);
     s().toast({ tone: "success", title: t("mw.fu.copiedHtml") });
   } catch (e) {
     s().error(t("mw.fu.copyFailed"), e);
@@ -221,7 +218,7 @@ async function copyHtml(html: string, text: string) {
 
 async function copyText(text: string) {
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboard(text);
     s().toast({ tone: "success", title: t("mw.fu.copiedText") });
   } catch (e) {
     s().error(t("mw.fu.copyFailed"), e);

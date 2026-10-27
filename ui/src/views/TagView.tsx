@@ -12,7 +12,15 @@ export function TagView({ tag }: { tag: string }) {
   const pages = useApp((s) => s.pages);
   const [list, setList] = useState<Page[] | null>(null);
   useEffect(() => {
-    api.tagPages(tag).then(setList).catch(() => setList([]));
+    // Another tag shown meanwhile (a tab switched quickly): its reply is not replaced by this one.
+    let alive = true;
+    api.tagPages(tag).then(
+      (l) => alive && setList(l),
+      () => alive && setList([]),
+    );
+    return () => {
+      alive = false;
+    };
   }, [tag, pages]);
   const s = useApp.getState;
   return (

@@ -218,10 +218,18 @@ pub fn restore_from(db_file: &Path, backup: &Path, keep_as: &str, now: DateTime<
         }
     }
     let tmp = db_file.with_extension("restore-part");
-    if let Err(e) = fs::copy(backup, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file) {
+    let copied = fs::copy(backup, &tmp)
+        // On the disk before the rename: after a power loss the database is the backup, never a
+        // truncated file (Windows flushes only handles opened for writing).
+        .and_then(|_| fs::OpenOptions::new().write(true).open(&tmp)?.sync_all())
+        .and_then(|()| fs::rename(&tmp, db_file));
+    if let Err(e) = copied.at(db_file) {
         let _ = fs::remove_file(&tmp);
         let _ = aside.undo();
         return Err(e);
+    }
+    if let Some(dir) = db_file.parent() {
+        crate::cipher::fsync_dir(dir);
     }
     Ok(aside)
 }

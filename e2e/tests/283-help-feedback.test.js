@@ -176,7 +176,7 @@ test("German: settings sections link to their documentation page, Über has help
   await openSettingsSection("network");
   const before = app.opened().length;
   await app.click(".settings-head .doc-link");
-  assert.equal(await nextOpened(before), `${SITE}/de/docs/data/network/`);
+  assert.equal(await nextOpened(before), `${SITE}/de/docs/admin/network/`);
   assert.equal(await app.text(".settings-head .doc-link"), "Mehr in der Doku");
 
   for (const [section, topic] of [["ai", "aiProviders"], ["backup", "backups"], ["security", "encryption"], ["calendar", "calendars"], ["keyboard", "shortcuts"]]) {

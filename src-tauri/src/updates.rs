@@ -15,23 +15,29 @@
 //! The Microsoft Store build (`store.rs`) has none of this: the Store updates the package, so
 //! there is no key, no check, no download, no install on quit and no rollback.
 //!
+//! Before installing, the update waits for running terminal commands (`arcalo pages list`,
+//! `arcalo_core::cmdlock`) up to a time limit, with a hint in the window; it never ends them.
+//! The window stays usable meanwhile, so the UI stores its editors again before the install
+//! goes on, and another quit during the wait is ignored. An update postponed by the same
+//! commands at several quits (Windows) names them at the next start.
+//!
 //! Debug builds take a test feed, key and version from `ARCALO_UPDATE_ENDPOINT`,
-//! `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_CURRENT` (end-to-end tests with a local server);
-//! release builds ignore them.
+//! `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_CURRENT` (end-to-end tests with a local server), and
+//! the wait limit from `ARCALO_UPDATE_WAIT_SECS`; release builds ignore them.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::installer::{self, InstallError};
 use crate::{Result, lock, rollback};
-use arcalo_core::Error;
 use arcalo_core::network::Service;
 use arcalo_core::update::{self as core, AfterUpdate};
 use arcalo_core::update_feed::{self as feed, FeedError, Location, Source};
 use arcalo_core::update_policy::{Effective, UpdateMode};
 use arcalo_core::update_state::{self as st, RollbackRecord, UpdateState, Verdict};
+use arcalo_core::{Error, cmdlock};
 use arcalo_core::{tr, trf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -77,6 +83,32 @@ fn packaged() -> bool {
         return matches!(bundle.as_str(), "deb" | "rpm");
     }
     matches!(tauri::utils::platform::bundle_type(), Some(BundleType::Deb | BundleType::Rpm))
+}
+
+/// Why this copy cannot replace its own program files (translocated or on a read-only volume
+/// on macOS, an AppImage in a folder without write permission or no AppImage at all on Linux),
+/// found once per start. Debug builds are not installed: they answer `ARCALO_UPDATE_BLOCKED`
+/// (tests) and are otherwise never blocked.
+fn blocked(app: &AppHandle) -> Option<core::Blocked> {
+    static BLOCKED: OnceLock<Option<core::Blocked>> = OnceLock::new();
+    *BLOCKED.get_or_init(|| {
+        if cfg!(debug_assertions) {
+            return test_var("ARCALO_UPDATE_BLOCKED").and_then(|b| core::Blocked::parse(&b));
+        }
+        let found = installer::blocked(app);
+        if let Some(b) = found {
+            crate::devlog::info("update", format!("updates are not installed by this copy: {b:?}"));
+        }
+        found
+    })
+}
+
+/// Why this copy does not install updates itself: a portable copy, a package, or program files
+/// it cannot replace (`None`: it installs them). Such a copy offers the release page.
+fn manual_reason(app: &AppHandle) -> Option<String> {
+    core::manual_update_reason(crate::portable::active(), packaged())
+        .or_else(|| blocked(app).map(core::Blocked::message))
+        .map(str::to_string)
 }
 
 /// The keys of `latest.json` this copy takes (`windows-x86_64-nsis`, `windows-x86_64`).
@@ -145,6 +177,22 @@ pub struct Updates {
     after: Mutex<Option<AfterUpdate>>,
     /// This start follows a rollback (reported once).
     rolled_back: Mutex<Option<rollback::Notice>>,
+    /// The install waits for running terminal commands.
+    waiting: Mutex<Option<Waiting>>,
+    /// The UI's answer to „store the editors“ before an install that waited ([`update_flushed`]).
+    flushed: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
+}
+
+/// Terminal commands the install waits for (the window shows them).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Waiting {
+    /// `arcalo pages list`, one per running command.
+    commands: Vec<String>,
+    /// When the wait ends.
+    until: DateTime<Utc>,
+    /// Then the update installs beside the commands (macOS, Linux); `false`: it waits for the
+    /// next quit instead (Windows, where the setup would end them).
+    then_install: bool,
 }
 
 impl Updates {
@@ -197,6 +245,8 @@ pub struct UpdateStatus {
     package: bool,
     /// The Microsoft Store build: the Store updates it (`enabled` is false).
     store: bool,
+    /// The program files cannot be replaced by this copy: the release page instead.
+    blocked: Option<core::Blocked>,
     /// The first call after a start that followed an update: which version, and whether it runs now.
     restarted: Option<AfterUpdate>,
     /// What applies (the policy's values over the settings), and which fields are managed.
@@ -216,6 +266,10 @@ pub struct UpdateStatus {
     rollback: Option<RollbackInfo>,
     /// Reported once after a rollback.
     rolled_back: Option<rollback::Notice>,
+    /// The install waits for running terminal commands.
+    waiting: Option<Waiting>,
+    /// The waiting update was postponed at several quits by terminal commands that still ran.
+    postponed: Option<st::Postponed>,
 }
 
 #[derive(Serialize, Clone)]
@@ -336,6 +390,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
     let state = UpdateState::load(&data_dir(&app));
     let current = current_version(&app);
     let staged = lock(&updates.staged).clone();
+    let postponed = staged.as_ref().and_then(|s| state.postponed_notice(&s.version).cloned());
     let offer = lock(&updates.offer).clone();
     let ready =
         staged.as_ref().filter(|s| offer.as_ref().is_some_and(|o| o.version == s.version)).map(|s| s.version.clone());
@@ -349,6 +404,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         portable: crate::portable::active(),
         package: packaged(),
         store: crate::store::active(),
+        blocked: if crate::portable::active() || packaged() || pubkey().is_none() { None } else { blocked(&app) },
         restarted: lock(&updates.after).take(),
         install_now: install_window_open(&eff),
         policy: eff,
@@ -361,6 +417,8 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         ready,
         rollback,
         rolled_back: lock(&updates.rolled_back).take(),
+        waiting: lock(&updates.waiting).clone(),
+        postponed,
     }
 }
 
@@ -425,7 +483,7 @@ pub async fn update_check(
         notes: m.notes.clone().filter(|n| !n.trim().is_empty()),
         date: m.pub_date.as_deref().and_then(|d| d.get(..10)).map(str::to_string),
         signature: entry.signature.clone(),
-        location: feed::locate(&found.source, &entry.url),
+        location: feed::locate(&found.source, &entry.url).map_err(|e| feed_failed(what, &e))?,
         source: if found.source.is_github() { "GitHub".into() } else { found.source.label() },
     };
     let info = UpdateInfo::of(&offer);
@@ -437,7 +495,7 @@ pub async fn update_check(
         *lock(&updates.download) =
             DownloadState { phase: if ready { Phase::Ready } else { Phase::Idle }, ..Default::default() };
     }
-    let can_install = core::manual_update_reason(crate::portable::active(), packaged()).is_none();
+    let can_install = manual_reason(&app).is_none();
     if eff.mode == UpdateMode::Auto && can_install {
         start_download(&app);
     }
@@ -454,8 +512,17 @@ fn start_download(app: &AppHandle) {
     updates.pause.store(false, Ordering::SeqCst);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let res = ensure_staged(&app).await;
         let updates = app.state::<Updates>();
+        let res = loop {
+            let res = ensure_staged(&app).await;
+            // A check found a newer version while this one was downloading: that one follows
+            // (otherwise it would wait for the next check, hours later).
+            let newer =
+                matches!(&res, Ok(Some(s)) if lock(&updates.offer).as_ref().is_some_and(|o| o.version != s.version));
+            if !newer || updates.pause.load(Ordering::SeqCst) {
+                break res;
+            }
+        };
         updates.downloading.store(false, Ordering::SeqCst);
         match res {
             Ok(Some(s)) => {
@@ -479,8 +546,8 @@ pub fn update_download(app: AppHandle, updates: State<Updates>) -> Result<()> {
     if lock(&updates.offer).is_none() {
         return Err(Error::State(tr!("Kein Update gefunden", "No update found").into()));
     }
-    if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
-        return Err(Error::State(why.into()));
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
     }
     start_download(&app);
     Ok(())
@@ -571,8 +638,8 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
         return Err(not_configured());
     }
     // A portable copy would be installed into the user profile instead of updating its folder.
-    if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
-        return Err(Error::State(why.into()));
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
     }
     if lock(&updates.offer).is_none() {
         return Err(Error::State(tr!("Kein Update gefunden", "No update found").into()));
@@ -632,9 +699,21 @@ fn outside_window(eff: &Effective) -> String {
 /// „Jetzt neu starten“ on the hint of a downloaded update.
 #[tauri::command(async)]
 pub async fn update_restart_now(app: AppHandle, updates: State<'_, Updates>) -> Result<()> {
-    let staged = lock(&updates.staged).clone().ok_or_else(|| {
-        Error::State(tr!("Das Update ist noch nicht geladen", "The update has not been downloaded yet").into())
-    })?;
+    if let Some(why) = manual_reason(&app) {
+        return Err(Error::State(why));
+    }
+    let not_loaded =
+        || Error::State(tr!("Das Update ist noch nicht geladen", "The update has not been downloaded yet").into());
+    let staged = lock(&updates.staged).clone().ok_or_else(not_loaded)?;
+    // The file went meanwhile (cleaned up by hand, another copy on the same data folder): it is
+    // downloaded again instead of failing at every try.
+    if !staged.path.is_file() {
+        discard_staged(&app, None);
+        if lock(&updates.offer).is_some() {
+            start_download(&app);
+        }
+        return Err(not_loaded());
+    }
     if !install_window_open(&effective(&app)) {
         return Err(Error::State(outside_window(&effective(&app))));
     }
@@ -657,59 +736,217 @@ pub async fn update_restart_now(app: AppHandle, updates: State<'_, Updates>) -> 
     crate::restart(&app)
 }
 
-/// The quit installs a waiting update (mode „automatisch“, inside the install window, not
-/// snoozed or skipped). Returns whether one was installed.
-fn install_on_quit(app: &AppHandle) -> bool {
-    let Some(updates) = app.try_state::<Updates>() else { return false };
+/// The update the quit installs (mode „automatisch“, inside the install window, not snoozed or
+/// skipped), marked as being installed; `None`: the quit installs nothing.
+fn quit_staged(app: &AppHandle) -> Option<Staged> {
+    let updates = app.try_state::<Updates>()?;
     if updates.quit_handled.swap(true, Ordering::SeqCst) || pubkey().is_none() {
-        return false;
+        return None;
     }
-    let Some(staged) = lock(&updates.staged).clone().filter(|s| s.path.is_file()) else { return false };
+    let staged = lock(&updates.staged).clone().filter(|s| s.path.is_file())?;
     let eff = effective(app);
-    if eff.mode != UpdateMode::Auto || core::manual_update_reason(crate::portable::active(), packaged()).is_some() {
-        return false;
+    if eff.mode != UpdateMode::Auto || manual_reason(app).is_some() {
+        return None;
     }
     if !install_window_open(&eff) {
         crate::devlog::info("update", format!("{} waits for the install window", staged.version));
-        return false;
+        return None;
     }
     let state = UpdateState::load(&data_dir(app));
     let current = current_version(app);
     let verdict = st::verdict(&current, &staged.version, eff.pinned_version.as_deref(), &state, Utc::now());
     if verdict != Verdict::Offer {
         crate::devlog::info("update", format!("{} not installed on quit: {verdict:?}", staged.version));
-        return false;
+        return None;
     }
     if updates.installing.swap(true, Ordering::SeqCst) {
-        return false;
+        return None;
     }
+    Some(staged)
+}
+
+/// Installs the update of [`quit_staged`] (after the running terminal commands).
+fn install_on_quit(app: &AppHandle, staged: &Staged) {
     crate::devlog::info("update", format!("installing {} on quit", staged.version));
-    let res = tauri::async_runtime::block_on(install(app, &staged, false));
-    updates.installing.store(false, Ordering::SeqCst);
-    match res {
-        Ok(()) => true,
-        Err(e) => {
-            crate::devlog::error("update", format!("install on quit failed: {e}"));
-            false
-        }
+    let res = tauri::async_runtime::block_on(install(app, staged, false));
+    app.state::<Updates>().installing.store(false, Ordering::SeqCst);
+    if let Err(e) = res {
+        crate::devlog::error("update", format!("install on quit failed: {e}"));
     }
 }
 
+/// The quit installs nothing now: the update stays ready for the next one.
+fn postpone_on_quit(app: &AppHandle, staged: &Staged) {
+    crate::devlog::info("update", format!("{} waits for the next quit: terminal commands run", staged.version));
+    let running = commands_dir(app).map(|d| cmdlock::running(&d)).unwrap_or_default();
+    note_postponed(app, &staged.version, running.iter().map(command_line).collect());
+    app.state::<Updates>().installing.store(false, Ordering::SeqCst);
+}
+
+/// One more quit that did not install `version` because `commands` ran (see [`st::Postponed`]).
+fn note_postponed(app: &AppHandle, version: &str, commands: Vec<String>) {
+    let dir = data_dir(app);
+    let mut state = UpdateState::load(&dir);
+    let times = state.note_postponed(version, commands);
+    if let Err(e) = state.save(&dir) {
+        crate::devlog::warn("update", format!("postponement not noted: {e}"));
+    }
+    if times >= st::POSTPONED_BEFORE_NOTICE {
+        crate::devlog::warn("update", format!("{version} postponed {times} times by terminal commands"));
+    }
+}
+
+fn command_line(r: &cmdlock::Running) -> String {
+    format!("arcalo {}", r.command).trim_end().to_string()
+}
+
 /// „Beenden“ (tray, ⌘Q, the menu) after the UI stored its editors: installs a waiting update,
-/// then ends the app. On Windows the installer ends this process itself.
-pub fn quit(app: &AppHandle) {
-    install_on_quit(app);
+/// then ends the app. On Windows the installer ends this process itself. While terminal commands
+/// run, the wait happens off the main thread so the window shows its hint. `window`: the main
+/// window is still there to show it; when it was closed, the update waits for the next quit
+/// instead of a wait nobody sees.
+pub fn quit(app: &AppHandle, window: bool) {
+    // An update is being installed (it may wait for terminal commands, with its hint in the
+    // window): this quit is ignored, the install ends the app itself.
+    if app.try_state::<Updates>().is_some_and(|u| u.installing.load(Ordering::SeqCst)) {
+        crate::devlog::info("update", "quit ignored: the update is being installed");
+        if window {
+            crate::desktop::show_main(app);
+        }
+        return;
+    }
+    let Some(staged) = quit_staged(app) else {
+        app.exit(0);
+        return;
+    };
+    if commands_running(app) {
+        if !window {
+            postpone_on_quit(app, &staged);
+            app.exit(0);
+            return;
+        }
+        crate::desktop::show_main(app);
+        let app = app.clone();
+        std::thread::spawn(move || {
+            install_on_quit(&app, &staged);
+            app.exit(0);
+        });
+        return;
+    }
+    install_on_quit(app, &staged);
     app.exit(0);
 }
 
 /// The process ends without the UI's quit (macOS: Dock „Beenden“, logging out). Replacing the
 /// bundle or the AppImage takes a moment and is done here; the Windows installer is not
-/// started during a shutdown (the update stays ready for the next quit).
+/// started during a shutdown (the update stays ready for the next quit), and nothing is
+/// installed while terminal commands run (no window could show the wait).
 pub fn on_exit(app: &AppHandle) {
     if cfg!(windows) {
         return;
     }
-    install_on_quit(app);
+    let Some(staged) = quit_staged(app) else { return };
+    if commands_running(app) {
+        postpone_on_quit(app, &staged);
+        return;
+    }
+    install_on_quit(app, &staged);
+}
+
+/// The folder of the running terminal commands' lock files: the app's local data folder, where
+/// the command line puts them too (`arcalo_core::cmdlock`).
+pub fn commands_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_local_data_dir().ok().map(|d| d.join(cmdlock::DIR))
+}
+
+fn commands_running(app: &AppHandle) -> bool {
+    commands_dir(app).is_some_and(|d| !cmdlock::running(&d).is_empty())
+}
+
+fn wait_limit() -> Duration {
+    test_var("ARCALO_UPDATE_WAIT_SECS")
+        .and_then(|s| s.parse().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(cmdlock::WAIT_LIMIT)
+}
+
+/// What the wait for terminal commands came to.
+enum Waited {
+    /// No command ran: nothing changed in the window meanwhile.
+    No,
+    /// It waited (the window was usable meanwhile); the update goes on.
+    Yes,
+    /// These commands still run and the update must not go on (Windows after the limit).
+    Blocked(Vec<String>),
+}
+
+/// Waits until no terminal command runs, at most [`wait_limit`], while the window shows which
+/// ones. Never ends a command.
+async fn wait_for_commands(app: &AppHandle) -> Waited {
+    let Some(dir) = commands_dir(app) else { return Waited::No };
+    let updates = app.state::<Updates>();
+    let limit = wait_limit();
+    let start = Instant::now();
+    let then_install = cmdlock::install_after_limit(std::env::consts::OS);
+    let until = Utc::now() + chrono::Duration::from_std(limit).unwrap_or_default();
+    let mut shown = false;
+    let blocked = loop {
+        let running = cmdlock::running(&dir);
+        if running.is_empty() {
+            break if shown { Waited::Yes } else { Waited::No };
+        }
+        let commands: Vec<String> = running.iter().map(command_line).collect();
+        if start.elapsed() >= limit {
+            let list = commands.join(", ");
+            crate::devlog::warn("update", format!("terminal commands still run after {}s: {list}", limit.as_secs()));
+            break if then_install { Waited::Yes } else { Waited::Blocked(commands) };
+        }
+        let waiting = Waiting { commands, until, then_install };
+        if lock(&updates.waiting).as_ref() != Some(&waiting) {
+            if !shown {
+                crate::devlog::info(
+                    "update",
+                    format!("waiting for terminal commands: {}", waiting.commands.join(", ")),
+                );
+            }
+            *lock(&updates.waiting) = Some(waiting);
+            shown = true;
+            state_changed(app);
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
+    if shown {
+        *lock(&updates.waiting) = None;
+        state_changed(app);
+    }
+    blocked
+}
+
+/// How long the UI may take to store its editors before an install that waited (it may ask
+/// whether to go on without them).
+const FLUSH_LIMIT: Duration = Duration::from_secs(120);
+
+/// Asks the window to store its editors (`update://flush`) and waits for its answer; `false`:
+/// no answer, or the user chose to keep editing.
+async fn flush_editors(app: &AppHandle) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *lock(&app.state::<Updates>().flushed) = Some(tx);
+    if app.emit_to(crate::desktop::MAIN, "update://flush", ()).is_err() {
+        return false;
+    }
+    let ok = matches!(tokio::time::timeout(FLUSH_LIMIT, rx).await, Ok(Ok(true)));
+    if !ok {
+        crate::devlog::warn("update", "the editors were not stored after the wait: not installed");
+    }
+    ok
+}
+
+/// The UI's answer to `update://flush`: the editors are stored (`ok`), or the user stays.
+#[tauri::command]
+pub fn update_flushed(updates: State<Updates>, ok: bool) {
+    if let Some(tx) = lock(&updates.flushed).take() {
+        let _ = tx.send(ok);
+    }
 }
 
 /// Backs up the database, keeps the running version, notes the restart, then installs the
@@ -719,9 +956,37 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
     let what = tr!("Installation fehlgeschlagen", "Installation failed");
     let key = pubkey().ok_or_else(not_configured)?;
     let bytes = std::fs::read(&staged.path)?;
-    // Checked again: the file waited in the data folder since its download.
-    feed::verify(&bytes, &staged.signature, key, &staged.version).map_err(|e| feed_failed(what, &e))?;
+    // Checked again: the file waited in the data folder since its download. A file that no
+    // longer matches goes, so the next check downloads it again instead of every quit failing.
+    if let Err(e) = feed::verify(&bytes, &staged.signature, key, &staged.version) {
+        discard_staged(app, Some(e.message()));
+        return Err(feed_failed(what, &e));
+    }
+    // Running terminal commands first: their writes go into the backup, and none is ended.
+    match wait_for_commands(app).await {
+        Waited::Blocked(commands) => {
+            let list = commands.join(", ");
+            note_postponed(app, &staged.version, commands);
+            return Err(Error::State(trf!(
+                "{what}: {} läuft noch – das Update wird beim nächsten Beenden installiert, damit der Befehl nicht abgebrochen wird",
+                "{what}: {} is still running – the update installs the next time you quit, so the command is not cut off",
+                list
+            )));
+        }
+        // The window was usable during the wait: what was typed meanwhile is stored first.
+        Waited::Yes if !flush_editors(app).await => {
+            return Err(Error::State(trf!(
+                "{what}: Die Änderungen der letzten Minuten konnten nicht gespeichert werden – das Update wird beim nächsten Beenden installiert",
+                "{what}: The changes of the last minutes could not be saved – the update installs the next time you quit"
+            )));
+        }
+        _ => {}
+    }
     let dir = data_dir(app);
+    let mut state = UpdateState::load(&dir);
+    if state.postponed.take().is_some() {
+        let _ = state.save(&dir);
+    }
     let from = current_version(app);
     let backup = pre_update_backup(app, &from, &staged.version);
     rollback::keep_previous(&dir, &from, &staged.version, backup);
@@ -751,6 +1016,19 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
         crate::resume_after_failed_exit(app);
         install_failed(what, &e)
     })
+}
+
+/// Forgets the downloaded update (its file and the stage record). `error`: why, shown as a failed
+/// download (with „Erneut versuchen“); `None`: as if nothing was downloaded yet.
+fn discard_staged(app: &AppHandle, error: Option<String>) {
+    let updates = app.state::<Updates>();
+    if let Some(s) = lock(&updates.staged).take() {
+        let _ = std::fs::remove_file(&s.path);
+    }
+    let _ = std::fs::remove_file(updates_dir(app).join(STAGED_FILE));
+    let phase = if error.is_some() { Phase::Failed } else { Phase::Idle };
+    *lock(&updates.download) = DownloadState { phase, error, ..Default::default() };
+    state_changed(app);
 }
 
 /// `arcalo-pre-update-<from>-<to>.db` in the backup folder (not counted by the rotation).

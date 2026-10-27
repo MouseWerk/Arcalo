@@ -86,7 +86,7 @@
 }
 .input::placeholder { color: var(--text-3); }
 .input:hover { border-color: color-mix(in srgb, var(--border-strong) 50%, var(--text-3)); }
-.input:focus { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
+.input:focus-visible { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
 .input:disabled { opacity: 0.55; }
 .input[aria-invalid="true"], .input[data-invalid] { border-color: color-mix(in srgb, var(--danger) 60%, transparent); }
 /* Number fields: no spinner buttons (the arrow keys still step); the value stays readable. */
@@ -284,6 +284,8 @@
 .menu-item.danger .menu-icon { color: var(--danger); }
 .menu-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-shortcut { color: var(--text-3); font-size: var(--fs-xs); }
+/* Why a disabled entry does nothing („Sortiert: Name“). */
+.menu-hint { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-sep { height: 1px; margin: 5px 4px; background: var(--border); }
 
 /* ----------------------------------------------------------------- toasts */
@@ -308,6 +310,7 @@
 .toast-detail { color: var(--text-2); font-size: var(--fs-sm); margin-top: 2px; overflow-wrap: anywhere; }
 .toast-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .update-toast .progress { margin-top: 8px; }
+.update-waiting-commands { font-family: var(--font-mono); font-variant-ligatures: none; color: var(--text); }
 .update-notes { max-height: min(50vh, 420px); overflow-y: auto; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 

@@ -182,3 +182,30 @@ fn view_state_is_stored_per_workspace() {
     assert_eq!(db.graph_state("layout").unwrap(), Some(v));
     assert!(db.set_graph_state("app", &serde_json::json!(1)).is_err());
 }
+
+/// The compact table of the graph view holds the same graph: each folder path once, links as pairs.
+#[test]
+fn the_table_holds_the_same_graph_in_less_space() {
+    let w = workspace();
+    let d = w.db.graph_data(&GraphFilter { attachments: true, ..Default::default() }).unwrap();
+    let t = GraphTable::from(d.clone());
+    assert_eq!(t.nodes.len(), d.nodes.len());
+    for (row, n) in t.nodes.iter().zip(&d.nodes) {
+        assert_eq!((row.0, &row.1, &row.2, row.3), (n.id, &n.title, &n.icon, n.parent_id));
+        assert_eq!(t.folders[row.4 as usize], n.folder);
+        assert_eq!((&row.5, &row.6, &row.7), (&n.tags, &n.netzplan, &n.jira));
+        assert_eq!((row.8, row.9, row.10), (n.daily, n.links_in, n.links_out));
+    }
+    let mut folders = t.folders.clone();
+    folders.sort();
+    folders.dedup();
+    assert_eq!(folders.len(), t.folders.len(), "each folder once");
+    let pairs: Vec<(i64, i64)> = t.links.chunks(2).map(|c| (c[0], c[1])).collect();
+    assert_eq!(pairs, d.links.iter().map(|l| (l.from, l.to)).collect::<Vec<_>>());
+    assert_eq!(t.unresolved, d.unresolved.iter().map(|g| (g.from, g.key.clone(), g.title.clone())).collect::<Vec<_>>());
+    assert_eq!(t.files, d.files.iter().map(|f| (f.from, f.name.clone())).collect::<Vec<_>>());
+    assert!(!t.files.is_empty() && !t.unresolved.is_empty());
+    let json = serde_json::to_value(&t).unwrap();
+    assert_eq!(json["links"][0], serde_json::json!(t.links[0]));
+    assert!(serde_json::to_vec(&t).unwrap().len() < serde_json::to_vec(&d).unwrap().len() / 2);
+}

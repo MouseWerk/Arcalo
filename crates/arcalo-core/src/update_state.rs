@@ -25,6 +25,10 @@ const RECORD_FILE: &str = "rollback.json";
 /// Failed starts in a row before the rollback is offered.
 pub const FAILURES_BEFORE_ROLLBACK: u32 = 2;
 
+/// Quits that postponed the same update for running terminal commands before the window names
+/// the commands, so the user can end them (the update never does).
+pub const POSTPONED_BEFORE_NOTICE: u32 = 3;
+
 fn parse(v: &str) -> Option<semver::Version> {
     semver::Version::parse(v.trim().trim_start_matches('v')).ok()
 }
@@ -53,6 +57,18 @@ pub struct UpdateState {
     pub bad_versions: Vec<String>,
     /// The version whose „Neu in …“ was shown after its update.
     pub whats_new_seen: Option<String>,
+    /// The waiting update was not installed on quit because terminal commands ran.
+    pub postponed: Option<Postponed>,
+}
+
+/// An update postponed by running terminal commands: how often, and by which commands last.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Postponed {
+    pub version: String,
+    pub times: u32,
+    /// `arcalo pages list`, one per command that still ran.
+    pub commands: Vec<String>,
 }
 
 impl UpdateState {
@@ -69,6 +85,20 @@ impl UpdateState {
 
     pub fn save(&self, data_dir: &Path) -> std::io::Result<()> {
         write_atomic(&Self::path(data_dir), &serde_json::to_string_pretty(self).unwrap_or_default())
+    }
+
+    /// Notes one more quit that did not install `version` because `commands` ran; another version
+    /// starts counting anew. Returns how often it was postponed.
+    pub fn note_postponed(&mut self, version: &str, commands: Vec<String>) -> u32 {
+        let times = self.postponed.as_ref().filter(|p| same(&p.version, version)).map_or(0, |p| p.times) + 1;
+        self.postponed =
+            Some(Postponed { version: version.trim().trim_start_matches('v').to_string(), times, commands });
+        times
+    }
+
+    /// The postponement of `version` once it is worth a notice ([`POSTPONED_BEFORE_NOTICE`]).
+    pub fn postponed_notice(&self, version: &str) -> Option<&Postponed> {
+        self.postponed.as_ref().filter(|p| same(&p.version, version) && p.times >= POSTPONED_BEFORE_NOTICE)
     }
 
     /// Records a version that did not start (after a rollback).
@@ -293,6 +323,26 @@ mod tests {
         assert_eq!(s.bad_versions, ["1.9.1"]);
         assert_eq!(verdict("1.9.0", "1.9.1", None, &s, now), Verdict::Bad);
         assert_eq!(verdict("1.9.0", "1.9.2", None, &s, now), Verdict::Offer);
+    }
+
+    /// Windows: a command that never ends would postpone the update at every quit; from the
+    /// third time on the window names it. A newer version counts anew.
+    #[test]
+    fn an_update_postponed_three_times_names_the_command() {
+        let mut s = UpdateState::default();
+        let cmds = || vec!["arcalo serve".to_string()];
+        assert_eq!(s.note_postponed("1.19.0", cmds()), 1);
+        assert_eq!(s.note_postponed("v1.19.0", cmds()), 2);
+        assert!(s.postponed_notice("1.19.0").is_none());
+        assert_eq!(s.note_postponed("1.19.0", vec!["arcalo pages list".into()]), 3);
+        let p = s.postponed_notice("1.19.0").unwrap();
+        assert_eq!((p.times, p.commands.as_slice()), (3, ["arcalo pages list".to_string()].as_slice()));
+        assert!(s.postponed_notice("1.19.1").is_none());
+        assert_eq!(s.note_postponed("1.19.1", cmds()), 1, "another version counts anew");
+        let dir = tmp("postponed");
+        s.save(&dir).unwrap();
+        assert_eq!(UpdateState::load(&dir).postponed, s.postponed);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

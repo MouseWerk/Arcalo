@@ -5,12 +5,12 @@
 // ARCALO_SCALE (default 2) is the device scale factor (GDK_SCALE); at 2 the X display must be at
 // least 2960x1840. ARCALO_SCENES=week,calendar,… takes only some scenes. The week is the current
 // one, so the pictures tell their story best on a Friday (the day review shows Thursday).
-import { test, before, after } from "node:test";
+import { test as nodeTest, before, after } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { launch } from "./lib/harness.js";
+import { launch, guarded } from "./lib/harness.js";
 import { week } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { startFakeLiteLLM } from "./lib/fake-litellm.js";
@@ -29,6 +29,7 @@ const prev2 = week(-2);
 const at = cur.at;
 
 let app, llm, dir;
+const test = guarded(nodeTest, () => app);
 
 // ---------------------------------------------------------------- fixtures
 
@@ -167,7 +168,7 @@ const sidebar = (open) =>
 const setTheme = async (theme) => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await sleep(800);
 };
@@ -298,7 +299,7 @@ async function seed() {
   focus.run(a, "1020", "NP-8801/1020", "Delta-Load Fehlerfälle", utc(at(3, 9)), utc(at(3, 9, 50)));
   db.close();
 
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 }
 
@@ -308,8 +309,8 @@ async function weekProposal(theme) {
   await closeTabs();
   await panel(false);
   await app.click(".ribbon .icon-btn[aria-label='Zeiterfassung']");
-  await app.waitFor(".pane.active .wp-open");
-  await app.click(".pane.active .wp-open");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wp-open");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitFor(".dialog .wp-days");
   await sleep(400);
   // Wednesday's Architektur-Runde has no Vorgang yet: choose one (shown as „Gewählt“).
@@ -333,13 +334,13 @@ async function calendarWeek(theme) {
   await panel(false);
   await sidebar(false);
   await app.click(".ribbon .ribbon-calendar-view");
-  await app.waitFor(".pane.active .calv-head");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.innerText.trim() === "Arbeitswoche")?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-head");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button")].find((b) => b.innerText.trim() === "Arbeitswoche")?.click());
   await sleep(600);
   // Start of the day at the top.
   await app.browser.execute(() => {
-    const s = document.querySelector(".pane.active .calv-scroll, .pane.active .calv-body, .pane.active .calv-grid");
-    const row = [...document.querySelectorAll(".pane.active .calv-hour, .pane.active .calv-time")].find((e) => e.innerText.trim() === "08:00");
+    const s = document.querySelector(".pane.active > .pane-content:not([hidden]) .calv-scroll, .pane.active > .pane-content:not([hidden]) .calv-body, .pane.active > .pane-content:not([hidden]) .calv-grid");
+    const row = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-hour, .pane.active > .pane-content:not([hidden]) .calv-time")].find((e) => e.innerText.trim() === "08:00");
     if (s && row) s.scrollTop = row.offsetTop - 8;
   });
   await settle();
@@ -351,9 +352,9 @@ async function dayReview(theme) {
   await closeTabs();
   await panel(false);
   await app.click(".ribbon .ribbon-review");
-  await app.waitFor(".pane.active .rv-view .rv-stats");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view .rv-stats");
   await app.browser.execute(() => document.activeElement?.blur());
-  await app.browser.execute(() => document.querySelector(".pane.active .rv-view")?.focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .rv-view")?.focus());
   await app.keys(["ArrowLeft"]);
   await app.waitText(".rv-date", /Gestern|Donnerstag/);
   await sleep(600);
@@ -365,7 +366,7 @@ async function mail(theme) {
   await closeTabs();
   await panel(false);
   await openTree("Testkonzept Integrationstest");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await palette("Aktuelle E-Mail", /Aktuelle E-Mail übernehmen/);
   await app.waitFor(".dialog .mailx-card");
   await sleep(400);
@@ -387,7 +388,7 @@ async function linkGroup(theme) {
   await closeTabs();
   await panel(false);
   await openTree("Konzept Auftragsportal");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await settle();
   await app.click(".ribbon .quick-group");
   await app.waitFor(".link-pop");
@@ -403,7 +404,7 @@ async function zeit(theme) {
   const page = await app.invoke("page_resolve", { title: "Jour fixe 22.09.", create: false });
   const original = (await app.invoke("page_get", { id: page.id })).content;
   await openTree("Jour fixe 22.09.");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Enter"]);
   await app.type("/zeit NP-88");
@@ -428,10 +429,10 @@ async function linkPreview(theme) {
   await closeTabs();
   await panel(false);
   await openTree("PRJ-2026-X Rollout");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await settle();
   await app.browser.execute(() => {
-    const el = [...document.querySelectorAll(".pane.active .ProseMirror a, .pane.active .ProseMirror .wikilink, .pane.active .ProseMirror [data-wikilink]")].find((a) => a.innerText.trim() === "Architektur");
+    const el = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror a, .pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink, .pane.active > .pane-content:not([hidden]) .ProseMirror [data-wikilink]")].find((a) => a.innerText.trim() === "Architektur");
     if (el) el.dataset.e2e = "arch";
   });
   await (await app.$('[data-e2e="arch"]')).moveTo();
@@ -444,7 +445,7 @@ async function note(theme) {
   await closeTabs();
   await panel(false);
   await openTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await settle();
   await app.shot(`note-${theme}`);
 }
@@ -456,7 +457,7 @@ async function narrow(theme) {
   await app.browser.setWindowSize(900, 920);
   await sleep(800);
   await openTree("PRJ-2026-X Rollout");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   // „Rechts daneben öffnen“ from the tree's context menu.
   await app.browser.execute(() => {
     const r = [...document.querySelectorAll(".sidebar .tree-row")].find((x) => x.innerText.trim() === "Architektur");
@@ -513,7 +514,7 @@ test("quick capture", { skip: !want("capture") }, async () => {
   for (const theme of ["light", "dark"]) {
     await setTheme(theme);
     const w = await openCapture(app);
-    await app.browser.refresh();
+    await app.reload();
     await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 10000 });
     await app.type(">konz");
     await app.waitText(".capture-picker .sugg-item.sel", /Konzept Auftragsportal/);

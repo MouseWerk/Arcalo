@@ -1,6 +1,6 @@
 // A note: title, icon, properties, editor and backlinks.
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Sunset, Table2, Trash2, Reply, FileDown } from "lucide-react";
 import { openFollowUp, reportMarkdown } from "../components/MeetingWork";
 import { startPresentation } from "../components/Presentation";
@@ -42,7 +42,8 @@ import { withSaved } from "../lib/pagesave";
 import { openDayReview } from "../lib/reviewnav";
 import { t as tr, useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
-import { SHOWN_PLACE } from "../lib/keepalive";
+import { SHOWN_PLACE, selectShownTitle } from "../lib/keepalive";
+import { copyText } from "../lib/clipboard";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   useT();
@@ -98,11 +99,15 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
 
   // Full width and Markdown source mode, per page. Switching the mode saves every editor
   // first; the other editor then starts from the page as stored after that, fetched before
-  // it is shown (never from the content this view loaded earlier).
+  // it is shown (never from the content this view loaded earlier). The visual editor, once
+  // shown, stays alive behind the source view (1.19): back from it, it takes over only what
+  // changed there, and keeps its undo history, selection and scroll position.
   const full = usePageMode("full", pageId);
   const wantSource = usePageMode("source", pageId);
   const [source, setSource] = useState(wantSource);
   const switching = source !== wantSource;
+  const [richShown, setRichShown] = useState(!wantSource);
+  if (!source && !switching && !richShown) setRichShown(true);
   useEffect(() => {
     if (!switching) return;
     let alive = true;
@@ -113,6 +118,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         if (!alive) return;
         setDoc(d);
         setFm(splitFrontmatter(d.content).frontmatter);
+        if (!wantSource) handle.current?.takeOver(d.content);
         setSource(wantSource);
       })
       .catch(() => alive && setMissing(true));
@@ -124,6 +130,26 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   // Frontmatter changes from the table/board or a property menu go through this page's editor.
   // Only once the page is loaded: before that, the frontmatter here is not the page's yet.
   const sourceMode = source || switching;
+  // The scroll position of the visual editor, put back when it shows again after the source view.
+  const richScroll = useRef(0);
+  useEffect(() => {
+    const box = root.current?.querySelector<HTMLElement>(".page-scroll");
+    if (!box || sourceMode) return;
+    const track = () => (richScroll.current = box.scrollTop);
+    box.addEventListener("scroll", track, { passive: true });
+    return () => box.removeEventListener("scroll", track);
+  }, [sourceMode, doc?.id]);
+  const wasSource = useRef(sourceMode);
+  useLayoutEffect(() => {
+    if (wasSource.current && !sourceMode) {
+      const box = root.current?.querySelector<HTMLElement>(".page-scroll");
+      if (box) box.scrollTop = richScroll.current;
+      const ed = handle.current?.editor;
+      if (active && ed && !ed.isDestroyed) ed.view.focus();
+      if (box) box.scrollTop = richScroll.current;
+    }
+    wasSource.current = sourceMode;
+  }, [sourceMode, active]);
   const loaded = doc?.id === pageId;
   useEffect(() => {
     if (sourceMode || !loaded) return;
@@ -302,10 +328,11 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         />}
         {!source && <TagSuggestions pageId={doc.id} tags={doc.tags} fm={fm} onFm={changeFm} />}
         {reference && timeOn && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
-        {switching ? (
+        {switching && (
           // Between the two editors while the page is fetched: typing here would be lost.
           <div className="editor-switching" aria-busy="true" />
-        ) : source ? (
+        )}
+        {source && !switching && (
           <SourceEditor
             key={`source-${doc.id}`}
             active={active}
@@ -315,11 +342,13 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
               setFm(splitFrontmatter(d.content).frontmatter);
             }}
           />
-        ) : (
+        )}
+        {richShown && (
         <NoteEditor
           onFrontmatter={setFm}
           key={doc.id}
-          active={active}
+          active={active && !sourceMode}
+          parked={sourceMode}
           doc={doc}
           onSaved={onOwnSave}
           onOpenLink={openLink}
@@ -480,7 +509,7 @@ function PageHeader({
             { label: tr("att.renameButton"), icon: PencilLine, onSelect: () => titleInput.current?.select() },
             { label: tr("sb.changeIcon"), icon: SmilePlus, onSelect: () => setIconOpen(true) },
             { label: tr("sb.openRight"), icon: Columns2, onSelect: () => s().splitTab(tab.id) },
-            { label: tr("pv.copyLink"), icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
+            { label: tr("pv.copyLink"), icon: Link2, onSelect: () => void copyText(`[[${doc.title}]]`).catch((e) => s().error(tr("common.copyFailed"), e)) },
             { label: tr("cmd.present"), icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
             { label: tr("pv.print"), icon: Printer, onSelect: () => printActivePane() },
             { label: tr("mw.pv.markdown"), icon: FileDown, onSelect: () => void reportMarkdown(doc) },
@@ -706,15 +735,17 @@ async function newPageParent(): Promise<number | null> {
   return null;
 }
 
-export async function createSubpage(parentId: number | null, title = tr("page.untitled")) {
+/** A new page below `parentId`; `null`: where Settings → Editor puts new pages, or the top level with `top`. */
+export async function createSubpage(parentId: number | null, title = tr("page.untitled"), opts: { top?: boolean } = {}) {
   const s = useApp.getState();
+  const focus = document.activeElement;
   try {
-    const parent = parentId ?? (await newPageParent());
+    const parent = parentId ?? (opts.top ? null : await newPageParent());
     const icon = s.settings?.settings.editor?.default_icon ?? "file-text";
     const p = await api.createPage(title, parent, icon);
     await s.refreshTree();
     s.openPage(p.id);
-    setTimeout(() => document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select(), 120);
+    selectShownTitle(focus);
   } catch (e) {
     s.error(tr("page.createFailed"), e);
   }

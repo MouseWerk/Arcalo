@@ -1,0 +1,181 @@
+{
+  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+  "id": "10042",
+  "self": "https://acme.atlassian.net/rest/api/3/issue/10042",
+  "key": "PROJ-42",
+  "fields": {
+    "summary": "Checkout fails for EU cards",
+    "issuetype": { "self": "https://acme.atlassian.net/rest/api/3/issuetype/10004", "id": "10004", "description": "A problem.", "iconUrl": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium", "name": "Bug", "subtask": false, "avatarId": 10303, "hierarchyLevel": 0 },
+    "status": { "self": "https://acme.atlassian.net/rest/api/3/status/3", "description": "", "iconUrl": "https://acme.atlassian.net/", "name": "In Progress", "id": "3", "statusCategory": { "self": "https://acme.atlassian.net/rest/api/3/statuscategory/4", "id": 4, "key": "indeterminate", "colorName": "yellow", "name": "In Progress" } },
+    "resolution": null,
+    "project": { "self": "https://acme.atlassian.net/rest/api/3/project/10000", "id": "10000", "key": "PROJ", "name": "Portal", "projectTypeKey": "software", "simplified": false },
+    "parent": { "id": "10010", "key": "PROJ-10", "self": "https://acme.atlassian.net/rest/api/3/issue/10010", "fields": { "summary": "Payments 2.0", "status": { "name": "In Progress", "id": "3", "statusCategory": { "id": 4, "key": "indeterminate" } }, "priority": { "name": "Medium", "id": "3" }, "issuetype": { "id": "10000", "name": "Epic", "subtask": false, "hierarchyLevel": 1 } } },
+    "description": {
+      "type": "doc", "version": 1,
+      "content": [
+        { "type": "heading", "attrs": { "level": 2 }, "content": [{ "type": "text", "text": "Steps" }] },
+        { "type": "paragraph", "content": [
+          { "type": "text", "text": "Open " }, { "type": "text", "text": "checkout", "marks": [{ "type": "strong" }] },
+          { "type": "text", "text": " with a " }, { "type": "text", "text": "Visa", "marks": [{ "type": "em" }, { "type": "textColor", "attrs": { "color": "#ff5630" } }] },
+          { "type": "text", "text": " card, see " }, { "type": "text", "text": "the runbook", "marks": [{ "type": "link", "attrs": { "href": "https://wiki.acme.de/runbook" } }] },
+          { "type": "hardBreak" }, { "type": "text", "text": "Ping " }, { "type": "mention", "attrs": { "id": "acc-tom", "text": "@Tom Berger", "accessLevel": "" } },
+          { "type": "text", "text": " " }, { "type": "emoji", "attrs": { "shortName": ":warning:", "id": "26a0", "text": "\u26a0\ufe0f" } },
+          { "type": "text", "text": " status " }, { "type": "status", "attrs": { "text": "BLOCKED", "color": "red", "localId": "s1" } }
+        ] },
+        { "type": "bulletList", "content": [
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "EU cards" }] }] },
+          { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "3-D Secure" }] },
+            { "type": "orderedList", "attrs": { "order": 3 }, "content": [{ "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "challenge" }] }] }] }] }
+        ] },
+        { "type": "codeBlock", "attrs": { "language": "json" }, "content": [{ "type": "text", "text": "{\"code\": \"PSP_TIMEOUT\"}" }] },
+        { "type": "panel", "attrs": { "panelType": "warning" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Affects all EU shops." }] }] },
+        { "type": "blockquote", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Customer quote" }] }] },
+        { "type": "table", "attrs": { "isNumberColumnEnabled": false, "layout": "default" }, "content": [
+          { "type": "tableRow", "content": [
+            { "type": "tableHeader", "attrs": {}, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Card" }] }] },
+            { "type": "tableHeader", "attrs": {}, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Result" }] }] }] },
+          { "type": "tableRow", "content": [
+            { "type": "tableCell", "attrs": {}, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Visa" }] }] },
+            { "type": "tableCell", "attrs": { "background": "#ffebe6" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "fails" }] }] }] }
+        ] },
+        { "type": "mediaSingle", "attrs": { "layout": "center" }, "content": [{ "type": "media", "attrs": { "type": "file", "id": "4d2c8f6a-1f1e-4f7b-9a8e-0c0d1e2f3a4b", "collection": "", "alt": "screenshot.png", "width": 800, "height": 600 } }] },
+        { "type": "rule" },
+        { "type": "expand", "attrs": { "title": "Logs" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "PSP answered 504" }] }] }
+      ]
+    },
+    "environment": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Chrome 130, macOS" }] }] },
+    "assignee": { "self": "https://acme.atlassian.net/rest/api/3/user?accountId=acc-mia", "accountId": "acc-mia", "emailAddress": "mia@acme.de", "avatarUrls": { "48x48": "https://secure.gravatar.com/avatar/mia?d=48", "24x24": "https://secure.gravatar.com/avatar/mia?d=24", "16x16": "https://secure.gravatar.com/avatar/mia?d=16", "32x32": "https://secure.gravatar.com/avatar/mia?d=32" }, "displayName": "Mia Meyer", "active": true, "timeZone": "Europe/Berlin", "accountType": "atlassian" },
+    "reporter": { "accountId": "acc-tom", "avatarUrls": { "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/acc-tom/48.png" }, "displayName": "Tom Berger", "active": true, "accountType": "atlassian" },
+    "creator": { "accountId": "acc-tom", "avatarUrls": { "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/acc-tom/48.png" }, "displayName": "Tom Berger", "active": true },
+    "priority": { "self": "https://acme.atlassian.net/rest/api/3/priority/2", "iconUrl": "https://acme.atlassian.net/images/icons/priorities/high.svg", "name": "High", "id": "2" },
+    "labels": ["checkout", "eu"],
+    "components": [{ "self": "https://acme.atlassian.net/rest/api/3/component/10100", "id": "10100", "name": "Payments" }],
+    "fixVersions": [{ "self": "https://acme.atlassian.net/rest/api/3/version/10200", "id": "10200", "name": "2026.11", "archived": false, "released": false }],
+    "versions": [{ "id": "10199", "name": "2026.10", "archived": false, "released": true }],
+    "customfield_10020": [{ "id": 7, "name": "Sprint 7", "state": "active", "boardId": 1, "goal": "EU checkout", "startDate": "2026-10-13T08:00:00.000Z", "endDate": "2026-10-27T08:00:00.000Z" }, { "id": 6, "name": "Sprint 6", "state": "closed", "boardId": 1 }],
+    "customfield_10016": 5.0,
+    "customfield_10019": "0|i0003b:",
+    "customfield_10000": "{}",
+    "customfield_10050": { "self": "https://acme.atlassian.net/rest/api/3/customFieldOption/10300", "value": "Production", "id": "10300" },
+    "customfield_10051": [{ "self": "x", "value": "iOS", "id": "10310" }, { "self": "x", "value": "Android", "id": "10311" }],
+    "customfield_10052": { "accountId": "acc-qa", "displayName": "Quinn Adams", "avatarUrls": { "48x48": "https://secure.gravatar.com/avatar/qa?d=48" }, "active": true },
+    "customfield_10053": "2026-11-15",
+    "customfield_10054": "https://status.example.com/incidents/42",
+    "customfield_10055": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Timeout at the " }, { "type": "text", "text": "PSP", "marks": [{ "type": "strong" }] }, { "type": "text", "text": "." }] }] },
+    "customfield_10056": { "self": "x", "value": "Europe", "id": "10400", "child": { "self": "x", "value": "Germany", "id": "10401" } },
+    "customfield_10057": [{ "id": "10200", "name": "2026.11", "archived": false, "released": false }],
+    "customfield_10058": 1200.5,
+    "customfield_10059": "2026-10-20T09:30:00.000+0200",
+    "customfield_10060": null,
+    "customfield_10061": "ACME-7781",
+    "customfield_10062": [],
+    "duedate": "2026-11-01",
+    "timetracking": { "originalEstimate": "2d", "remainingEstimate": "1d 4h", "timeSpent": "4h", "originalEstimateSeconds": 57600, "remainingEstimateSeconds": 43200, "timeSpentSeconds": 14400 },
+    "timeoriginalestimate": 57600,
+    "timeestimate": 43200,
+    "timespent": 14400,
+    "aggregatetimespent": 14400,
+    "workratio": 25,
+    "created": "2026-10-01T09:00:00.000+0200",
+    "updated": "2026-10-20T11:22:33.123+0200",
+    "resolutiondate": null,
+    "lastViewed": "2026-10-21T08:00:00.000+0200",
+    "statuscategorychangedate": "2026-10-02T10:00:00.000+0200",
+    "security": null,
+    "attachment": [
+      { "self": "https://acme.atlassian.net/rest/api/3/attachment/10500", "id": "10500", "filename": "screenshot.png", "author": { "accountId": "acc-tom", "displayName": "Tom Berger", "active": true }, "created": "2026-10-01T09:05:00.000+0200", "size": 48213, "mimeType": "image/png", "content": "https://acme.atlassian.net/rest/api/3/attachment/content/10500", "thumbnail": "https://acme.atlassian.net/rest/api/3/attachment/thumbnail/10500" },
+      { "self": "https://acme.atlassian.net/rest/api/3/attachment/10501", "id": "10501", "filename": "trace.log", "author": { "accountId": "acc-mia", "displayName": "Mia Meyer", "active": true }, "created": "2026-10-02T09:05:00.000+0200", "size": 1024, "mimeType": "text/plain", "content": "https://acme.atlassian.net/rest/api/3/attachment/content/10501" }
+    ],
+    "issuelinks": [
+      { "id": "20001", "self": "x", "type": { "id": "10000", "name": "Blocks", "inward": "is blocked by", "outward": "blocks" }, "outwardIssue": { "id": "10050", "key": "PROJ-50", "fields": { "summary": "Release 2026.11", "status": { "name": "To Do", "statusCategory": { "key": "new" } }, "priority": { "name": "High" }, "issuetype": { "name": "Task", "subtask": false } } } },
+      { "id": "20002", "self": "x", "type": { "id": "10000", "name": "Blocks", "inward": "is blocked by", "outward": "blocks" }, "inwardIssue": { "id": "10003", "key": "OPS-3", "fields": { "summary": "PSP certificate renewal", "status": { "name": "Done", "statusCategory": { "key": "done" } }, "priority": { "name": "Highest" }, "issuetype": { "name": "Task" } } } },
+      { "id": "20003", "self": "x", "type": { "id": "10003", "name": "Relates", "inward": "relates to", "outward": "relates to" }, "outwardIssue": { "id": "10051", "key": "PROJ-51", "fields": { "summary": "Card form redesign", "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } }, "priority": { "name": "Medium" }, "issuetype": { "name": "Story" } } } },
+      { "id": "20004", "self": "x", "type": { "id": "10000", "name": "Blocks", "inward": "is blocked by", "outward": "blocks" }, "outwardIssue": { "id": "10052", "key": "PROJ-52", "fields": { "summary": "Partner rollout", "status": { "name": "To Do", "statusCategory": { "key": "new" } }, "issuetype": { "name": "Task" } } } }
+    ],
+    "subtasks": [
+      { "id": "10043", "key": "PROJ-43", "self": "x", "fields": { "summary": "Add 3DS fallback", "status": { "name": "Done", "id": "10002", "statusCategory": { "key": "done" } }, "priority": { "name": "Medium" }, "issuetype": { "name": "Sub-task", "subtask": true } } },
+      { "id": "10044", "key": "PROJ-44", "self": "x", "fields": { "summary": "Log PSP answers", "status": { "name": "To Do", "id": "10000", "statusCategory": { "key": "new" } }, "priority": { "name": "Low" }, "issuetype": { "name": "Sub-task", "subtask": true } } }
+    ],
+    "watches": { "self": "x", "watchCount": 4, "isWatching": true },
+    "votes": { "self": "x", "votes": 2, "hasVoted": false },
+    "worklog": { "startAt": 0, "maxResults": 20, "total": 1, "worklogs": [{ "id": "40001", "author": { "accountId": "acc-mia", "displayName": "Mia Meyer", "active": true }, "comment": { "type": "doc", "version": 1, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Analysis" }] }] }, "created": "2026-10-02T17:00:00.000+0200", "updated": "2026-10-02T17:00:00.000+0200", "started": "2026-10-02T13:00:00.000+0200", "timeSpent": "4h", "timeSpentSeconds": 14400, "id": "40001", "issueId": "10042" }] }
+  },
+  "renderedFields": {
+    "description": "<h2><a name=\"Steps\"></a>Steps</h2><p>Open <b>checkout</b> with a <em><font color=\"#ff5630\">Visa</font></em> card, see <a href=\"https://wiki.acme.de/runbook\" class=\"external-link\" rel=\"nofollow noreferrer\">the runbook</a><br/>Ping <a href=\"/secure/ViewProfile.jspa?accountId=acc-tom\" class=\"user-hover\" rel=\"acc-tom\">Tom Berger</a> <img class=\"emoticon\" src=\"/images/icons/emoticons/warning.png\" alt=\":warning:\"/></p><ul><li>EU cards</li><li>3-D Secure<ol><li>challenge</li></ol></li></ul><div class=\"code panel\" style=\"border-width: 1px;\"><div class=\"codeContent panelContent\"><pre class=\"code-json\">{&quot;code&quot;: &quot;PSP_TIMEOUT&quot;}</pre></div></div><div class=\"panel\" style=\"background-color: #fffae6;border-width: 1px;\"><div class=\"panelContent\" style=\"background-color: #fffae6;\"><p>Affects all EU shops.</p></div></div><blockquote><p>Customer quote</p></blockquote><div class=\"table-wrap\"><table class=\"confluenceTable\"><tbody><tr><th class=\"confluenceTh\">Card</th><th class=\"confluenceTh\">Result</th></tr><tr><td class=\"confluenceTd\">Visa</td><td class=\"confluenceTd\">fails</td></tr></tbody></table></div><p><span class=\"image-wrap\" style=\"\"><img src=\"/rest/api/3/attachment/content/10500\" alt=\"screenshot.png\" height=\"600\" width=\"800\" style=\"border: 0px solid black\" /></span></p><hr/><p>Logs<br/>PSP answered 504</p>",
+    "environment": "<p>Chrome 130, macOS</p>",
+    "customfield_10055": "<p>Timeout at the <b>PSP</b>.</p>",
+    "created": "01/Oct/26 9:00 AM",
+    "updated": "20/Oct/26 11:22 AM",
+    "duedate": "01/Nov/26"
+  },
+  "names": {
+    "summary": "Summary", "issuetype": "Issue Type", "status": "Status", "resolution": "Resolution", "project": "Project", "parent": "Parent",
+    "description": "Description", "environment": "Environment", "assignee": "Assignee", "reporter": "Reporter", "creator": "Creator", "priority": "Priority",
+    "labels": "Labels", "components": "Components", "fixVersions": "Fix versions", "versions": "Affects versions",
+    "customfield_10020": "Sprint", "customfield_10016": "Story point estimate", "customfield_10019": "Rank", "customfield_10000": "Development",
+    "customfield_10050": "Environment type", "customfield_10051": "Platforms", "customfield_10052": "QA owner", "customfield_10053": "Go-live",
+    "customfield_10054": "Incident", "customfield_10055": "Root cause", "customfield_10056": "Region", "customfield_10057": "Planned in",
+    "customfield_10058": "Revenue at risk", "customfield_10059": "Detected at", "customfield_10060": "Empty field", "customfield_10061": "Customer ref",
+    "customfield_10062": "Approvers", "duedate": "Due date", "timetracking": "Time tracking", "created": "Created", "updated": "Updated",
+    "resolutiondate": "Resolved", "attachment": "Attachment", "issuelinks": "Linked Issues", "subtasks": "Sub-tasks", "watches": "Watchers",
+    "votes": "Votes", "worklog": "Log Work", "security": "Security Level", "workratio": "Work Ratio", "lastViewed": "Last Viewed"
+  },
+  "schema": {
+    "summary": { "type": "string", "system": "summary" },
+    "description": { "type": "string", "system": "description" },
+    "environment": { "type": "string", "system": "environment" },
+    "labels": { "type": "array", "items": "string", "system": "labels" },
+    "customfield_10020": { "type": "array", "items": "json", "custom": "com.pyxis.greenhopper.jira:gh-sprint", "customId": 10020 },
+    "customfield_10016": { "type": "number", "custom": "com.pyxis.greenhopper.jira:jsw-story-points", "customId": 10016 },
+    "customfield_10019": { "type": "any", "custom": "com.pyxis.greenhopper.jira:gh-lexo-rank", "customId": 10019 },
+    "customfield_10000": { "type": "any", "custom": "com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf", "customId": 10000 },
+    "customfield_10050": { "type": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select", "customId": 10050 },
+    "customfield_10051": { "type": "array", "items": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiselect", "customId": 10051 },
+    "customfield_10052": { "type": "user", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:userpicker", "customId": 10052 },
+    "customfield_10053": { "type": "date", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker", "customId": 10053 },
+    "customfield_10054": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:url", "customId": 10054 },
+    "customfield_10055": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea", "customId": 10055 },
+    "customfield_10056": { "type": "option-with-child", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:cascadingselect", "customId": 10056 },
+    "customfield_10057": { "type": "array", "items": "version", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiversion", "customId": 10057 },
+    "customfield_10058": { "type": "number", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:float", "customId": 10058 },
+    "customfield_10059": { "type": "datetime", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datetime", "customId": 10059 },
+    "customfield_10060": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textfield", "customId": 10060 },
+    "customfield_10061": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textfield", "customId": 10061 },
+    "customfield_10062": { "type": "array", "items": "user", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiuserpicker", "customId": 10062 },
+    "security": { "type": "securitylevel", "system": "security" }
+  },
+  "editmeta": {
+    "fields": {
+      "summary": { "required": true, "schema": { "type": "string", "system": "summary" }, "name": "Summary", "key": "summary", "operations": ["set"] },
+      "description": { "required": false, "schema": { "type": "string", "system": "description" }, "name": "Description", "key": "description", "operations": ["set"] },
+      "labels": { "required": false, "schema": { "type": "array", "items": "string", "system": "labels" }, "name": "Labels", "key": "labels", "autoCompleteUrl": "https://acme.atlassian.net/rest/api/1.0/labels/suggest?query=", "operations": ["add", "set", "remove"] },
+      "priority": { "required": false, "schema": { "type": "priority", "system": "priority" }, "name": "Priority", "key": "priority", "operations": ["set"], "allowedValues": [{ "self": "x", "iconUrl": "https://acme.atlassian.net/images/icons/priorities/highest.svg", "name": "Highest", "id": "1" }, { "self": "x", "name": "High", "id": "2" }, { "self": "x", "name": "Medium", "id": "3" }, { "self": "x", "name": "Low", "id": "4" }] },
+      "assignee": { "required": false, "schema": { "type": "user", "system": "assignee" }, "name": "Assignee", "key": "assignee", "autoCompleteUrl": "https://acme.atlassian.net/rest/api/3/user/assignable/search?issueKey=PROJ-42&query=", "operations": ["set"] },
+      "duedate": { "required": false, "schema": { "type": "date", "system": "duedate" }, "name": "Due date", "key": "duedate", "operations": ["set"] },
+      "components": { "required": false, "schema": { "type": "array", "items": "component", "system": "components" }, "name": "Components", "key": "components", "operations": ["add", "set", "remove"], "allowedValues": [{ "id": "10100", "name": "Payments" }, { "id": "10101", "name": "Accounts" }] },
+      "customfield_10016": { "required": false, "schema": { "type": "number", "custom": "com.pyxis.greenhopper.jira:jsw-story-points", "customId": 10016 }, "name": "Story point estimate", "key": "customfield_10016", "operations": ["set"] },
+      "customfield_10020": { "required": false, "schema": { "type": "array", "items": "json", "custom": "com.pyxis.greenhopper.jira:gh-sprint", "customId": 10020 }, "name": "Sprint", "key": "customfield_10020", "operations": ["set"] },
+      "customfield_10050": { "required": false, "schema": { "type": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select", "customId": 10050 }, "name": "Environment type", "key": "customfield_10050", "operations": ["set"], "allowedValues": [{ "self": "x", "value": "Production", "id": "10300" }, { "self": "x", "value": "Staging", "id": "10301" }] },
+      "customfield_10051": { "required": false, "schema": { "type": "array", "items": "option", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:multiselect", "customId": 10051 }, "name": "Platforms", "key": "customfield_10051", "operations": ["add", "set", "remove"], "allowedValues": [{ "value": "iOS", "id": "10310" }, { "value": "Android", "id": "10311" }, { "value": "Web", "id": "10312" }] },
+      "customfield_10052": { "required": false, "schema": { "type": "user", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:userpicker", "customId": 10052 }, "name": "QA owner", "key": "customfield_10052", "operations": ["set"] },
+      "customfield_10055": { "required": false, "schema": { "type": "string", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea", "customId": 10055 }, "name": "Root cause", "key": "customfield_10055", "operations": ["set"] },
+      "customfield_10056": { "required": false, "schema": { "type": "option-with-child", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:cascadingselect", "customId": 10056 }, "name": "Region", "key": "customfield_10056", "operations": ["set"], "allowedValues": [{ "value": "Europe", "id": "10400", "children": [{ "value": "Germany", "id": "10401" }, { "value": "France", "id": "10402" }] }, { "value": "America", "id": "10410", "children": [{ "value": "USA", "id": "10411" }] }] },
+      "customfield_10059": { "required": false, "schema": { "type": "datetime", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datetime", "customId": 10059 }, "name": "Detected at", "key": "customfield_10059", "operations": ["set"] },
+      "comment": { "required": false, "schema": { "type": "comments-page", "system": "comment" }, "name": "Comment", "key": "comment", "operations": ["add", "edit", "remove"] },
+      "timetracking": { "required": false, "schema": { "type": "timetracking", "system": "timetracking" }, "name": "Time tracking", "key": "timetracking", "operations": ["set", "edit"] }
+    }
+  },
+  "transitions": [
+    { "id": "21", "name": "Start review", "to": { "self": "x", "description": "", "iconUrl": "x", "name": "In Review", "id": "10001", "statusCategory": { "id": 4, "key": "indeterminate", "name": "In Progress" } }, "hasScreen": false, "isGlobal": false, "isInitial": false, "isAvailable": true, "isConditional": false, "fields": {} },
+    { "id": "31", "name": "Done", "to": { "self": "x", "name": "Done", "id": "10002", "statusCategory": { "id": 3, "key": "done", "name": "Done" } }, "hasScreen": true, "isGlobal": true, "isInitial": false, "isAvailable": true, "isConditional": false,
+      "fields": { "resolution": { "required": true, "schema": { "type": "resolution", "system": "resolution" }, "name": "Resolution", "key": "resolution", "operations": ["set"], "allowedValues": [{ "self": "x", "name": "Done", "id": "10000" }, { "self": "x", "name": "Won't Do", "id": "10001" }] },
+                  "comment": { "required": false, "schema": { "type": "comments-page", "system": "comment" }, "name": "Comment", "key": "comment", "operations": ["add"] } } }
+  ],
+  "changelog": {
+    "startAt": 0, "maxResults": 2, "total": 2,
+    "histories": [
+      { "id": "30001", "author": { "accountId": "acc-tom", "displayName": "Tom Berger", "active": true }, "created": "2026-10-02T10:00:00.000+0200", "items": [{ "field": "status", "fieldtype": "jira", "fieldId": "status", "from": "10000", "fromString": "To Do", "to": "3", "toString": "In Progress" }] },
+      { "id": "30002", "author": { "accountId": "acc-mia", "displayName": "Mia Meyer", "active": true }, "created": "2026-10-03T08:00:00.000+0200", "items": [{ "field": "assignee", "fieldtype": "jira", "from": null, "fromString": null, "to": "acc-mia", "toString": "Mia Meyer" }, { "field": "labels", "fieldtype": "jira", "from": null, "fromString": "", "to": null, "toString": "checkout eu" }] }
+    ]
+  }
+}

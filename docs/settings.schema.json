@@ -158,12 +158,29 @@
       },
       "type": "object"
     },
+    "AndroidInterface": {
+      "enum": [
+        "auto",
+        "phone",
+        "full"
+      ],
+      "type": "string"
+    },
     "AppearancePrefs": {
       "properties": {
         "accent": {
           "default": "theme",
           "description": "`theme` (the color theme's own accent), a preset name (`indigo`, `blue`, …) or `#rrggbb`.",
           "type": "string"
+        },
+        "android_interface": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AndroidInterface"
+            }
+          ],
+          "default": "auto",
+          "description": "Android: the phone app or the full app (1.20). Belongs to the device, never synced."
         },
         "code_font": {
           "allOf": [
@@ -466,6 +483,23 @@
           "default": false,
           "description": "Write focus blocks to the default Outlook calendar („Fokusblöcke in Outlook eintragen“).",
           "type": "boolean"
+        },
+        "entries_outlook": {
+          "default": false,
+          "description": "Create, change, move and delete appointments in the Kalender and write them to Outlook („Termine in Outlook eintragen“, 1.21; off until the user switches it on).",
+          "type": "boolean"
+        },
+        "entry_minutes": {
+          "default": 30,
+          "description": "Length of a new appointment made with a double click or `N` (minutes, 15–240).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "entry_target": {
+          "default": "outlook",
+          "description": "The calendar new appointments go to: `outlook` (the default calendar) or another own Outlook calendar (`outlook:<hash>`).",
+          "type": "string"
         },
         "future_days": {
           "default": 90,
@@ -2524,6 +2558,7 @@
       ],
       "default": {
         "accent": "theme",
+        "android_interface": "auto",
         "code_font": "jetbrains",
         "custom_themes": [],
         "custom_titlebar": true,
@@ -2628,6 +2663,9 @@
       "default": {
         "block_minutes": 60,
         "blocks_outlook": false,
+        "entries_outlook": false,
+        "entry_minutes": 30,
+        "entry_target": "outlook",
         "future_days": 90,
         "include_body": false,
         "meeting_links": true,
@@ -3247,7 +3285,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 17,
+      "default": 19,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

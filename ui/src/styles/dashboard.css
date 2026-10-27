@@ -86,7 +86,8 @@
 .dw-strong { font-weight: var(--fw-semibold); color: var(--text); }
 .dw-big { font-size: var(--fs-xl); font-weight: var(--fw-heading); letter-spacing: -0.02em; color: var(--text); line-height: 1.1; }
 .dw-sub { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: var(--ls-eyebrow); display: flex; align-items: center; gap: 6px; }
-.dw-link { border: 0; background: transparent; padding: 0; color: var(--accent-text); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+/* min-height: the hit area stays at the audit's 18px also in the small (fs-xs) variants. */
+.dw-link { min-height: 18px; border: 0; background: transparent; padding: 0; color: var(--accent-text); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
 .dw-link:hover { text-decoration: underline; }
 .dw-quiet { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); padding: 4px 0; }
 .dw-empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center; color: var(--text-3); font-size: var(--fs-sm); padding: 10px 6px; }
@@ -124,12 +125,18 @@
 @container dw (max-width: 380px) {
   .dw-task-page { display: none; }
 }
+/* The button is the hit area (22px, the audit's minimum is 18); the box it draws stays 15px and
+   sits where it always did. The negative margins keep the row's layout unchanged. */
 .dw-check {
-  position: relative; flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-input); padding: 0; cursor: pointer;
+  position: relative; flex: none; width: 22px; height: 22px; margin: 0 -2px 0 -5px; border: 0; border-radius: var(--r-xs); background: transparent; padding: 0; cursor: pointer;
+}
+.dw-check::before {
+  content: ""; position: absolute; left: 5px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); box-sizing: border-box;
+  border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-input);
   transition: border-color var(--dur-fast), background var(--dur-fast);
 }
-.dw-check:hover { border-color: var(--text-3); background: var(--bg-hover); }
-.dw-check[aria-checked="true"] { border-color: var(--accent-strong); background: var(--accent-strong); }
+.dw-check:hover::before { border-color: var(--text-3); background: var(--bg-hover); }
+.dw-check[aria-checked="true"]::before { border-color: var(--accent-strong); background: var(--accent-strong); }
 .dw-add { height: 30px; font-size: var(--fs-sm); margin-top: 6px; flex: none; }
 /* All-day meetings on the timeline: compact bars like the Kalender's (fill and bar, lib/eventlook.ts). */
 .dw-chip {
@@ -243,9 +250,11 @@
 
 /* Zeit diese Woche */
 .dw-week { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
-.dw-week-sum { display: flex; align-items: baseline; gap: 6px; padding: 2px 4px; margin: 0 -4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* A narrow card: „von 40,00 h“ stays whole and the badge moves to a line of its own. */
+.dw-week-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 2px 4px; margin: 0 -4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .dw-week-sum:hover { background: var(--bg-hover); }
 .dw-week-sum .badge { align-self: center; }
+.dw-week-sum > .num { white-space: nowrap; }
 .dw-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; flex: 1; min-height: 70px; }
 .dw-bar-item { display: flex; min-width: 0; }
 .dw-bar-item > .dw-bar-col { flex: 1; }
@@ -497,7 +506,6 @@
 .dws-control > .input, .dws-control > .select, .dws-control > .dws-picker, .dws-control > .dws-checks, .dws-control > .dws-pinned { width: 100%; }
 .dws-checks { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
 .dws-check { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); cursor: pointer; }
-.dws-check input { accent-color: var(--accent); margin: 0; }
 .dws-picker, .dws-pinned { display: grid; gap: 6px; }
 .dws-chosen { display: flex; align-items: center; gap: 8px; min-width: 0; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-hover); font-size: var(--fs-sm); }
 .dws-hits { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-overlay); box-shadow: var(--shadow-md); }
@@ -588,7 +596,7 @@
 .dw-scratch:hover .dw-scratch-tools, .dw-scratch-tools:focus-within { opacity: 1; }
 .dw-scratch .dw-md ul:has(> li > .dw-scratch-check) { list-style: none; padding-left: 2px; }
 .dw-scratch .dw-md li:has(> .dw-scratch-check) { display: flex; align-items: baseline; gap: 8px; }
-.dw-scratch-check { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--accent-strong); cursor: pointer; transform: translateY(2px); }
+.dw-scratch-check { transform: translateY(2px); }
 .dw-scratch li:has(> .dw-scratch-check:checked) { color: var(--text-3); text-decoration: line-through; }
 
 /* Posteingang */
@@ -612,7 +620,7 @@
 .dw-random-head .dw-sub { margin: 0; }
 .dw-random-card {
   display: grid; gap: 4px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
+  background: var(--bg-raised); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .dw-random-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 .dw-random-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); min-width: 0; }

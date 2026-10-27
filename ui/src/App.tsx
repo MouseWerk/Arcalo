@@ -6,9 +6,10 @@ import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { AI_SHORTCUTS, aiEnabled } from "./lib/aiswitch";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
-import { Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
+import { REVEAL_EVENT, Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
+import { caps, onAndroid } from "./lib/capabilities";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
 import { openChatView } from "./store/chat";
@@ -18,7 +19,9 @@ import { Resizer, readSize } from "./components/Resizer";
 import { LinkPreview } from "./components/LinkPreview";
 import { IssuePreview } from "./components/IssuePreview";
 import { CreateIssueHost } from "./components/CreateIssueDialog";
-import { openIssueNote } from "./lib/jiraActions";
+import { openIssueView } from "./lib/issueFull";
+import { IssueModal } from "./components/issue/IssueModal";
+import { IssueOpenDialog } from "./components/issue/IssueOpenDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { CalendarPopover, openCalendar } from "./components/CalendarPopover";
 import { RightPanel } from "./panels/RightPanel";
@@ -26,14 +29,14 @@ import { WindowControls } from "./components/WindowControls";
 import { createSubpage } from "./views/PageView";
 import { requestAddProperty } from "./views/PageProperties";
 import { flushAllEditors, reloadEditors } from "./editor/NoteEditor";
-import type { ActivityTick, GitPulled, SearchTarget } from "./lib/types";
+import type { ActivityTick, ExternalChange, GitPulled, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
-import { sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
+import { showSidebar, sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { cycleRegion } from "./lib/regions";
-import { startUpdateChecks } from "./components/Updates";
+import { showAndroidWhatsNew, startUpdateChecks } from "./components/Updates";
 import { takeUpdateSession } from "./lib/updatesession";
 import { commandAllowed, commandFor, currentKeymap, keyConsumed, learnKeyboardLayout, modalLayer } from "./lib/keymap";
 import { usesPac, withPacResults } from "./views/settings/NetworkSection";
@@ -53,6 +56,7 @@ import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
 import { refreshI18n, t, useT } from "./lib/i18n";
 import { isComposing } from "./lib/ime";
+import { copyText } from "./lib/clipboard";
 
 export function App() {
   useT();
@@ -90,7 +94,7 @@ export function App() {
       void checkFirstRun();
       void s.refreshConflicts();
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
-      void refreshPac(view);
+      if (caps().pac) void refreshPac(view);
     })().catch((e) => s.error(t("onb.failed"), e));
     // Shortcut hints name the keys of the actual keyboard where the engine tells its layout.
     void learnKeyboardLayout().then(refreshI18n);
@@ -106,15 +110,29 @@ export function App() {
         if (d.synced) s.toast({ tone: "warning", persistent: true, title: t("app.syncedDb"), detail: t("app.syncedDbDetail", { dir: d.data_dir }) });
       })
       .catch(() => {});
+    // 1.17 deletes the folders of the old app identifier in the background: what went, once.
+    const showCleaned = () =>
+      caps().windowFrame &&
+      void api
+        .legacyCleanupNotice()
+        .then((text) => text && useApp.getState().toast({ tone: "info", title: t("app.legacyCleaned"), detail: text, timeout: 12000 }))
+        .catch(() => {});
+    showCleaned();
 
     // Only builds with an update key look for new releases; installing always needs a click.
-    const stopUpdates = startUpdateChecks();
+    // Android updates through its own installer (Einstellungen → Über Arcalo).
+    const stopUpdates = caps().desktopUpdater ? startUpdateChecks() : () => {};
+    // The full app on Android: „Neu in Arcalo“ after an update of the app.
+    if (onAndroid()) void showAndroidWhatsNew();
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onMedia = () => applyTheme(useApp.getState().settings?.settings.theme ?? "system");
     media.addEventListener("change", onMedia);
     const unlisten = [
       on("data://entries", () => useApp.getState().bumpEntries()),
+      on("identity://cleaned", showCleaned),
+      // Projects, Netzpläne, Vorgänge or Leistungsarten changed: the shared WBS cache reads them again.
+      on("data://wbs", () => useApp.getState().bumpWbs()),
       on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: t("app.backupFailed"), detail: msg })),
       on<Parameters<typeof warnDestination>[0]>("backup://destination-failed", (w) => notify("backup_failed") && warnDestination(w)),
       // Git sync: only failures are shown (successes appear in the settings' status line).
@@ -135,8 +153,16 @@ export function App() {
       // Git sync took over notes from the server; notes changed on both sides are conflicts.
       on<GitPulled>("gitsync://pulled", (p) => void onPulled(p)),
       on("gitsync://conflicts", () => void useApp.getState().refreshConflicts()),
-      // Pages rewritten elsewhere (an attachment renamed): open editors reload them.
-      on<number[]>("data://pages", (ids) => reloadEditors(ids)),
+      // Pages rewritten elsewhere (an attachment renamed, the command line): open editors reload
+      // them (`null`: all), merging unsaved typing.
+      on<number[] | null>("data://pages", (ids) => reloadEditors(ids ?? undefined)),
+      // The command line (another process) changed the workspace: the tree, the task list and the
+      // timer follow (editors, bookings and the WBS reload through their own events).
+      on<ExternalChange>("data://external", (c) => {
+        const st = useApp.getState();
+        if (c.tree || c.all || c.pages.length) void st.refreshTree().catch(() => {});
+        if (c.entries || c.all) void st.refreshTimer().catch(() => {});
+      }),
       // Saved elsewhere (another window, a test, an import): take over the new settings.
       on("settings://changed", async () => {
         const asked = useApp.getState().settings;
@@ -223,7 +249,7 @@ export function App() {
         } else if (t.kind === "timesheet") st.openTab({ kind: "timesheet" });
         else if (t.kind === "issues") st.openTab({ kind: "issues" });
         else if (t.kind === "graph") st.openTab({ kind: "graph" });
-        else if (t.kind === "issue") void openIssueNote(t.key);
+        else if (t.kind === "issue") openIssueView(t.key);
         else if (t.kind === "timer_stop" && timeTrackingEnabled()) {
           await st.refreshTimer();
           stopTimer();
@@ -245,7 +271,7 @@ export function App() {
           persistent: true,
           title: t("app.captureFailed"),
           detail: `${msg}\n\n${text}`,
-          action: { label: t("app.copyText"), run: () => void navigator.clipboard?.writeText(text).catch(() => {}) },
+          action: { label: t("app.copyText"), run: () => void copyText(text).catch((e) => useApp.getState().error(t("common.copyFailed"), e)) },
         }),
       ),
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.
@@ -256,7 +282,7 @@ export function App() {
       }),
     ];
     // Started from a taskbar jump-list entry: the shell sends it once everything listens.
-    void Promise.all(unlisten).then(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("jump_take")));
+    if (caps().windowFrame) void Promise.all(unlisten).then(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("jump_take")));
     return () => {
       stopUpdates();
       media.removeEventListener("change", onMedia);
@@ -314,6 +340,7 @@ export function App() {
 
   // Settings → Start: remember the window's size and position (saved shortly after moving/resizing).
   useEffect(() => {
+    if (!caps().windowFrame) return;
     const win = getCurrentWindow();
     let timer = 0;
     const later = () => {
@@ -327,8 +354,10 @@ export function App() {
     };
   }, []);
 
-  // Store pending edits before the window closes.
+  // Store pending edits before the window closes (Android ends an app on its own; the editors
+  // store their text when it goes to the background).
   useEffect(() => {
+    if (!caps().windowFrame) return;
     const win = getCurrentWindow();
     let closing = false;
     const unlisten = win
@@ -439,11 +468,13 @@ export function App() {
       <CommandPalette />
       <LinkPreview />
       <IssuePreview />
+      <IssueModal />
+      <IssueOpenDialog />
       <CreateIssueHost />
       <CalendarPopover />
       <WindowControls />
       <Toasts />
-      <VoiceBar />
+      {caps().voice && <VoiceBar />}
       <FocusDialogHost />
       <PlanPickerHost />
       <PresentationHost />
@@ -562,6 +593,10 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
       savePref("arcalo.sidebar", true);
     }
     setTimeout(() => window.dispatchEvent(new Event("arcalo:sidebar-search")), 0);
+  },
+  reveal_in_tree: () => {
+    showSidebar();
+    setTimeout(() => window.dispatchEvent(new Event(REVEAL_EVENT)), 0);
   },
   new_tab: () => useApp.getState().openTab({ kind: "home" }, { newTab: true }),
   close_tab: () => {

@@ -7,12 +7,12 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowRight, CalendarClock, Download, ExternalLink, MoreHorizontal, Pause, Play, RefreshCw, RotateCcw, SkipForward, Sparkles, X } from "lucide-react";
+import { ArrowRight, CalendarClock, Download, ExternalLink, MoreHorizontal, Pause, Play, RefreshCw, RotateCcw, SkipForward, Sparkles, SquareTerminal, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
-import { fmtDate } from "../lib/format";
-import { autoCheckAllowed, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
+import { fmtDate, time } from "../lib/format";
+import { autoCheckAllowed, blockedText, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
 import { bundledNotes, HIGHLIGHTS, highlightsBetween, imageOf, imageUrl, textOf, type Highlight, type VersionHighlights } from "../lib/highlights";
 import { saveUpdateSession } from "../lib/updatesession";
 import { openSettingsSection } from "../lib/calnav";
@@ -20,6 +20,7 @@ import type { UpdateInfo, UpdateProgress, UpdateStatus } from "../lib/types";
 import { useApp } from "../store/app";
 import { Button, Dialog, IconButton, Progress, Spinner, useMenu } from "./ui";
 import { currentLang, t, useT } from "../lib/i18n";
+import { onAndroid } from "../lib/capabilities";
 
 /** `preparing`: the editors are being stored before the download (a second click waits for it). */
 type Phase = "idle" | "checking" | "preparing" | "downloading" | "installing";
@@ -92,6 +93,17 @@ export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
     if (fresh) useUpdates.setState({ whatsNew: { versions, seen: r.version } });
   } else if (r) toast({ tone: "warning", persistent: true, title: t("upd.notInstalled", { version: r.version }), detail: t("upd.notInstalledDetail", { current: status.current_version }) });
   if (back) toast({ tone: "warning", persistent: true, title: t("upd.rolledBack", { version: back.from }), detail: t("upd.rolledBackDetail", { version: back.to }) });
+  // Windows: terminal commands kept the update from installing at several quits; they are named
+  // so the user can end them (the update never does).
+  const late = status.postponed;
+  if (late)
+    toast({
+      tone: "warning",
+      persistent: true,
+      key: "update-postponed",
+      title: t("upd.postponedTitle", { version: late.version, n: late.times }),
+      detail: t("upd.postponedDetail", { n: late.commands.length, commands: late.commands.join(", ") }),
+    });
   return status;
 }
 
@@ -149,17 +161,36 @@ export async function installUpdate() {
   }
   saveSessionIfWanted();
   useUpdates.setState({ phase: "downloading" });
-  const unlisten = on<UpdateProgress>("update://progress", (progress) => useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" }));
+  installCancelled = false;
+  // A progress event that arrives after the call ended (failed, cancelled) changes nothing.
+  let active = true;
+  const unlisten = on<UpdateProgress>("update://progress", (progress) => {
+    if (active) useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" });
+  });
   try {
     // On Windows the installer ends this process and starts the new version.
     await api.updateInstall();
     useUpdates.setState({ phase: "installing" });
   } catch (e) {
+    active = false;
     useUpdates.setState({ phase: "idle", progress: null });
-    useApp.getState().error(t("upd.failed"), e);
+    // „Abbrechen“: the download stopped as asked (its part stays for the next try).
+    if (!installCancelled) useApp.getState().error(t("upd.failed"), e);
   } finally {
+    active = false;
+    installCancelled = false;
     unlisten.then((f) => f());
   }
+}
+
+/** „Abbrechen“ was clicked while „Installieren“ downloads. */
+let installCancelled = false;
+
+/** „Abbrechen“ while „Installieren“ downloads: the download stops after its current chunk and nothing is installed; the next „Installieren“ continues where it stopped. */
+export async function cancelInstall() {
+  if (useUpdates.getState().phase !== "downloading") return;
+  installCancelled = true;
+  await api.updatePause().catch((e) => useApp.getState().error(t("common.actionFailed"), e));
 }
 
 /** Settings → Über „Sitzung nach dem Neustart wiederherstellen“: the open tabs come back as they are. */
@@ -245,7 +276,7 @@ export function UpdateAction({ size }: { size?: "sm" | "md" }) {
   if (manual)
     return (
       <Button size={size} variant="primary" icon={Download} onClick={() => void downloadPortable()}>
-        {manual === "package" ? t("upd.packageAction") : t("upd.download")}
+        {manual === "portable" ? t("upd.download") : t("upd.packageAction")}
       </Button>
     );
   return (
@@ -285,6 +316,13 @@ export function startUpdateChecks(): () => void {
     useUpdates.setState({ progress });
     refresh();
   });
+  // The install waited for terminal commands while the window was usable: what was typed
+  // meanwhile is stored before it goes on (no answer, or „stay“: it is not installed now).
+  const offFlush = on("update://flush", async () => {
+    const ok = await flushBeforeExit(t("upd.anyway"));
+    if (ok) saveSessionIfWanted();
+    await api.updateFlushed(ok).catch(() => {});
+  });
   // A changed interval (Settings) applies from now on.
   const offSettings = useApp.subscribe((s, prev) => {
     if (s.settings?.settings.updates !== prev.settings?.settings.updates) void refreshUpdateStatus().then(schedule);
@@ -295,6 +333,7 @@ export function startUpdateChecks(): () => void {
     clearTimeout(pending);
     offState.then((f) => f());
     offProgress.then((f) => f());
+    offFlush.then((f) => f());
     offSettings();
   };
 }
@@ -320,12 +359,21 @@ export function UpdateToast() {
           <>
             <div className="toast-title">{phase === "installing" ? t("upd.installing", { version: available.version }) : t("upd.downloading", { version: available.version })}</div>
             <div className="toast-detail">{phase === "installing" ? t("upd.restartSoon") : phase === "preparing" ? t("upd.preparing") : progressLabel(progress)}</div>
-            {phase === "downloading" && <Progress value={progressValue(progress)} />}
+            {phase === "downloading" && (
+              <>
+                <Progress value={progressValue(progress)} />
+                <div className="toast-actions">
+                  <Button size="sm" variant="ghost" onClick={() => void cancelInstall()}>
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
             <div className="toast-title">{t("upd.availableShort", { version: available.version })}</div>
-            <div className="toast-detail">{manual === "portable" ? t("upd.portableHint") : manual === "package" ? t("upd.package") : t("upd.savedFirst")}</div>
+            <div className="toast-detail">{manual === "portable" ? t("upd.portableHint") : manual === "package" ? t("upd.package") : manual === "blocked" ? blockedText(status) : t("upd.savedFirst")}</div>
             <div className="toast-actions">
               <UpdateAction size="sm" />
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
@@ -385,7 +433,8 @@ export function UpdateStatusItem() {
         <span>{hint.version}</span>
       </button>
     );
-  const busy = phase !== "idle";
+  // Also while the install waits for a terminal command (the quit started it).
+  const busy = phase !== "idle" || !!status?.waiting;
   return (
     <span className="sb-item sb-static sb-update sb-update-ready" data-state="ready" role="status">
       <Sparkles size={12} />
@@ -441,7 +490,24 @@ function ReleaseNotes() {
 function closeWhatsNew() {
   const seen = useUpdates.getState().whatsNew?.seen;
   useUpdates.setState({ whatsNew: null });
-  if (seen) void api.updateWhatsNewSeen(seen).catch(() => {});
+  if (seen) void (onAndroid() ? api.androidWhatsNewSeen() : api.updateWhatsNewSeen(seen)).catch(() => {});
+}
+
+/**
+ * The full app on Android: „Neu in Arcalo“ after an update of the app, as on the desktop after its
+ * first start. The app's own updater knows the version it came from (the phone app does not show
+ * it; its next start in the full app does). A version without highlights is marked shown at once.
+ */
+export async function showAndroidWhatsNew(): Promise<void> {
+  try {
+    const st = await api.androidUpdateStatus();
+    if (!st.updated_from) return;
+    const versions = highlightsBetween(HIGHLIGHTS, st.updated_from, st.current);
+    if (versions.length) useUpdates.setState({ whatsNew: { versions, seen: st.current } });
+    else await api.androidWhatsNewSeen();
+  } catch {
+    // An older shell without the field: nothing to show.
+  }
 }
 
 /** Opens the action of a highlight (a view, a settings section, a command of the keymap). */
@@ -542,10 +608,28 @@ function ReleaseNotesDialog() {
   );
 }
 
-/** Everything of the updater that floats: the toast, „Neu in Arcalo“ and the release notes. */
+/** The install waits for running terminal commands (`arcalo pages list`): which ones, and what happens at the time limit. */
+export function UpdateWaitingToast() {
+  const t = useT();
+  const waiting = useUpdates((s) => s.status?.waiting ?? null);
+  if (!waiting) return null;
+  return (
+    <div className="toast toast-info update-waiting" role="status">
+      <SquareTerminal size={16} className="toast-icon" />
+      <div className="toast-body">
+        <div className="toast-title">{t("upd.waitingTitle", { n: waiting.commands.length })}</div>
+        <div className="toast-detail update-waiting-commands">{waiting.commands.join(", ")}</div>
+        <div className="toast-detail">{t(waiting.then_install ? "upd.waitingThenInstall" : "upd.waitingThenLater", { time: time(waiting.until) })}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Everything of the updater that floats: the toasts, „Neu in Arcalo“ and the release notes. */
 export function UpdateLayer() {
   return (
     <>
+      <UpdateWaitingToast />
       <UpdateToast />
       <WhatsNewDialog />
       <ReleaseNotesDialog />

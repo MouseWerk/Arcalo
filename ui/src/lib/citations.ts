@@ -54,7 +54,7 @@ export function plainInline(md: string): string {
     .replace(/(\*\*|__|~~|==|`)/g, "")
     .replace(/(^|[\s(])[*_](?=\S)/g, "$1")
     .replace(/(\S)[*_](?=$|[\s).,;:!?])/g, "$1")
-    .replace(/\\([\\`*_[\]~=#<>!|().+-])/g, "$1")
+    .replace(/\\([!-/:-@[-`{-~])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }

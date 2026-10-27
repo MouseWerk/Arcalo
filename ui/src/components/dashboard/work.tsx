@@ -4,6 +4,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { openIssue } from "../../lib/jiraActions";
 import { BarChart3, CalendarClock, CalendarOff, Clock3, Flag, Grid3x3, Hourglass, KanbanSquare, Mail as MailIcon, NotebookPen, Palmtree, Plus, Users, Video, type LucideIcon } from "lucide-react";
 import { PrepActions } from "../MeetingWork";
 import type { ComponentType } from "react";
@@ -388,7 +389,9 @@ export function DeadlinesWidget({ widget }: WidgetProps) {
             <ul className="dw-list wd-list">
               {items.map((d) => {
                 const c = countdown(d.date, todayIso);
-                const open = () => (d.url ? void openUrl(d.url) : d.page_id != null ? s().openPage(d.page_id) : undefined);
+                // A Jira due date opens the issue view (Ctrl/Cmd+click: the browser).
+                const issueKey = d.source === "jira" && d.key.startsWith("jira:") ? d.key.slice(5) : null;
+                const open = (e: React.MouseEvent) => (issueKey ? void openIssue(issueKey, { browser: e.ctrlKey || e.metaKey }) : d.url ? void openUrl(d.url) : d.page_id != null ? s().openPage(d.page_id) : undefined);
                 return (
                   <li key={`${d.source}|${d.key}`}>
                     <button type="button" className={`dw-row wd-row tone-${c.tone}`} onClick={open} title={`${fmtDate(`${d.date}T12:00:00`)} · ${d.detail}`}>

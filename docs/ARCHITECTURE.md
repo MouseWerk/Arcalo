@@ -24,6 +24,30 @@ desktop-only modules and crates, `src-tauri/src/mobile/` holds the entry point, 
 the desktop modules and the Android Keystore for secrets; the UI is `ui/src/mobile/`; the Git sync runs on
 libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`SyncRequest::companion`,
 `companion.rs`: bookings as chips in the daily note, the WBS and meetings from the desktop's database copy).
+It updates itself from the release's `android-latest.json` (`mobile/apkupdate.rs`, `update_android.rs`):
+an APK checked with the desktop's update key and handed to Android's installer.
+
+On a large screen (a tablet, desktop mode, an external display, Android on a PC) the Android app shows the
+full desktop UI instead (1.20, docs/android.md → „Phone app or full app“): `ui/src/lib/uimode.ts` decides from
+the window and the device (`ShellPlugin.display`), `uiswitch.ts` goes between `mobile.html` and `index.html`
+after storing the editors' text. Both builds register one command list (`commands()` in `src-tauri/src/lib.rs`;
+the desktop-only commands are `#[cfg(desktop)]`, `platform::DESKTOP_ONLY`), and the UI hides the desktop-only
+parts after `app_capabilities` (`ui/src/lib/capabilities.ts`). On Android the commands run on one worker
+thread (Kotlin answers on the main thread); files of Android's document picker go through copies
+(`picked.rs`). `ARCALO_SIMULATE_ANDROID=1` (debug builds) gives the desktop Android's capabilities for tests.
+
+The same shell and the same mobile code build the **iOS app** for iPhone and iPad (docs/ios.md):
+`#[cfg(target_os = "ios")]` marks where iOS differs from Android. `mobile/ios.rs` calls UIKit, BackgroundTasks,
+UserNotifications and CFNetwork through the Objective-C runtime (`objc2`) where Android asks its Kotlin plugins:
+the device (`ipad` in `android_display`), the WebView in the window's safe area (its margins in the page's
+colors), security-scoped `file://` addresses of the document picker (`picked.rs`), the share sheet for „Öffnen“,
+text and Markdown files shared to the app (`RunEvent::Opened`), notifications with buttons, the background sync
+(`BGAppRefreshTask`) and the Wi-Fi's proxy. Secrets are in the iOS Keychain (`mobile/keychain.rs`), git uses
+libgit2 with the system's TLS, and there is no updater (`Capabilities::ios()`: Android's without the APK updates;
+the `apk_update_*` commands are Android's only). The iPhone shows the phone app, the iPad the full app unless its
+window is narrow (`uimode.ts`, by width); both sync as a companion with a database of their own. The Xcode project
+(`src-tauri/gen/apple`) is generated in CI (`.github/workflows/ios.yml`, `scripts/ios-project.py`), which also
+checks a simulator build on an iPhone and two iPads (`scripts/ios-smoke.sh`).
 
 ## Data model (`crates/arcalo-core/migrations/0001_init.sql`)
 
@@ -52,7 +76,8 @@ libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`S
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
 | `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `arcalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 | `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
-| `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text), the last comments (JSON) and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
+| `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text) and the last comments (JSON), loaded when the issue is opened (1.19, `detail_at`, cleared when a sync finds the issue changed; searches ask for the list fields only; so the offline search of cached issues and the assistant's `jira_search` fallback without a connection match the description only of issues opened once, the others by summary, key and the list fields), and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
+| `issue_full` | The issue view's last copy of an issue opened in full (v41): `IssueFull` as JSON per site and key with `fetched_at`; shown read only while Jira cannot be reached, removed with its site and after 90 days unopened |
 | `issue_wbs_map`, `time_entry_issues` | Which Netzplan/Vorgang an issue or project books on (`learned` from the first booking) (v14); the issue key of a time entry (cascade with the entry) and its Jira worklog: `worklog_state` (`none`, `pending`, `posting`, `posted`, `failed`), `worklog_id` once posted (never posted twice), attempts and the next try |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
@@ -60,7 +85,7 @@ the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables; v41 adds `issue_full`.
 Migration v19 adds the filing (`filing.rs`): `pages.file_type`/`file_date`/`file_group` (kind, date and series or Jira
 project of a page the app created; daily and meeting notes are marked by the migration), `pages.system_folder`/`system_key`
 (folders the filing created or adopted and their place: `root`, `y2026`, `m2026-10`, `w2026-40`, `g:<group>`),
@@ -74,7 +99,9 @@ text cards, no tasks. Rewrites (page or attachment renamed, import) replace sing
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`. Migration v30 adds `idx_pages_meta` (the page metadata without the content, id
 first) and `idx_tasks_open (done, due, page_id)` for large workspaces (see `docs/performance.md`).
-Read commands use three read-only connections (WAL), each with a 16 MB page cache.
+Read commands use three read-only connections (WAL), each with a 16 MB page cache, and a fourth one for slow
+reads nobody waits for (`background_read`: tag suggestions, duplicate hints and unlinked mentions of the opened
+page, on a blocking thread).
 
 ## Data safety
 
@@ -145,12 +172,78 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   `blocked_deletions` and Settings → Sicherung offers „Löschungen übertragen“ (`git_sync_now` with `allowDeletions`, after a
   confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
   (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
-  before a sync (`remove_stale_locks`, logged). A rejected push
+  before a sync (`remove_stale_locks`, logged; with the built-in git every lock found then, `Git::stale_lock_age`: it runs in
+  the app's process). A merge left unfinished (`MERGE_HEAD`) is dropped first (`abort_merge`). A pull the pages have not
+  taken over yet (the app ended after it, the push after a merge failed, taking over failed) is not committed away: before a
+  pull moves HEAD (the reset of an adoption, a merge commit, a fast-forward) the sync records it in
+  `.git/arcalo-pull-pending.json` (fsynced): the HEAD it started from and what it returns (the changes with their conflict
+  flags, the renamed files, the attachments only the server changed with this side's content id at the pull). The file is
+  written only on a change, through a synced temporary file and a rename. The shell removes it after `take_over_pulled`
+  (`gitsync::taken_over`; a failed rename or file copy keeps it); a sync with nothing to return removes it too. A later sync
+  returns the recorded pulls again, folded into one record, once HEAD moved on from their start (`waiting_pulls`; changes the
+  mirror already holds are left out), keeps the files of those notes, of the renamed files and of the server's attachments
+  as HEAD has them. An attachment changed here after the pull is kept beside the server's (`keep_both_since`, this side's
+  under `clash_name`, both on the kept list below); the rename is recorded and returned like the others. A pull whose HEAD
+  never moved, or on other history, is dropped. An adoption that never got past its reset is done again from a clean working
+  tree at the server's commit (reset, untracked files removed). Where the pulls started is also written on its own
+  (`.git/arcalo-pull-start`, before the record): a record that cannot be read is rebuilt from it (the server's notes changed
+  since the start, or after adopting the server's notes; this computer's own edits since are in the mirror and stay its
+  own; a note this computer had changed against the merge base and the merge kept at the server's text is a conflict again,
+  base: the merge base of the start and the server's side of the newest merge on HEAD's first-parent chain since the start,
+  `merge_base_since`, so later commits and merges on top change nothing), and without it nothing counts as pulled. Deciding a conflict
+  (`git_conflict_resolve`) removes that note from the record (`gitsync::decided`), so the decision is uploaded. Attachments
+  only the server changed (`SyncOutcome.pulled_files`) replace this side's copy only while it is the one recorded at the pull
+  (`syncmerge::take_over_files`); one changed here between the sync and the take-over is kept beside it the same way
+  (renamed here, put into the working tree and on the kept list). Links are never followed: the working tree has `core.symlinks=false` (a link from the
+  server is a plain file with the link's text), a link found in it is removed before anything is written there, and files
+  are copied only when they are plain files on both sides. The working tree holds the stored bytes whatever the system or
+  user configuration says (Git for Windows sets `core.autocrlf=true`, and `text=auto` would check notes out with CRLF):
+  every command runs with `core.autocrlf=false` and `core.eol=lf`, the working tree's own configuration has both (for
+  libgit2), and a working tree checked out with CRLF before 1.18.1 gets the stored text back where only the line ends
+  differ (`restore_line_ends`). The core's tests run git under a system configuration with `autocrlf=true` and
+  `eol=crlf` (`test_system_config`), so this shows on every system. The attachments are the user's files and are stored
+  byte for byte (`attachments/** -text`; `* text=auto` stored a CSV or text file with CRLF as LF before 1.22): in the
+  `.gitattributes` of a new repository, and in every working tree's `.git/info/attributes` (`raw_attachments`), because a
+  repository with the file of 1.21 and earlier keeps it (`OLD_ATTRIBUTES`; computers on different versions would otherwise
+  rewrite it back and forth). When the rule is added there, the attachments leave the index once, so the next `add -A`
+  stores a file normalized before with its own bytes again; notes are not touched. Adopting treats an attachment that
+  differs from the server's only because its CRLF was stored as LF as the same file (`same_but_line_ends`, no second
+  copy). On a case-sensitive file system adopting compares paths exactly: a note whose name differs from the server's only
+  by case is one note under this computer's name with the server's text (a conflict when the texts differ), never dropped.
+  A companion's first sync fetches the newest commit only (`--depth 1`; the history holds every database copy). Only a push
+  refused because the branch moved on (`! [rejected] … (fetch first)` or `(non-fast-forward)`, `diverged`) is merged; a
+  refusal by the server itself (`! [remote rejected]`: a hook, push protection, a protected branch, a file too large)
+  stops the sync with the reason and the server's `remote:` lines (`refusal`; libgit2: the push status and the side-band
+  messages), and so does a fetch that shows the server did not move on (merge base = the server's tip). A diverged push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
-  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
+  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>` (`gitsync::device_name`; a phone, which
+  sees no host name, is `android-<model>-<id>` with an id made once and kept in `<data dir>/device-id`). Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
   repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and a deletion there keep
-  this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Moves and renames are pulled
+  this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Two different files of one name
+  in `attachments/`, changed on both sides (1.17, `keep_both_files`): the server's keeps the name, this side's takes
+  `<name>-<8 hex of its SHA-256>.<ext>` (a drawing with its preview), and the notes this side changed link to it
+  (`relink_notes`: in the repository, in a pulled change that brings this side's text, and in a conflict's `mine`); the
+  shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
+  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
+  The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
+  server's. The Markdown copy takes only the files a note links along (the explicit vault export shares that code and
+  should not carry unused files), so a version kept twice that no note links (a drawing saved again on both computers, a
+  file only a canvas shows) would be deleted with the next sync, on the server and then never reach the other computer.
+  Every file kept twice (`adopt_clashes`, `keep_both_files`, `keep_both_since`, and in the shell a file changed during the
+  take-over, `take_over_files`, `apply_file_renames`) therefore goes, both versions with a drawing's previews, on the kept
+  list `.arcalo-kept-files` in the repository: every computer's tree sync keeps those files, linked or not, and the take-over
+  copies them in like other new files. The list is JSON (`kept`, and `removed`: what the user moved to the file trash,
+  `gitsync::forget_kept`; restoring it from the trash keeps it again, `restored_kept`, and the shell puts the file back into
+  the working tree), so any file name is stored as it is. A pull merges it name by name (`merge_kept_files`): a missing list
+  or a name missing from one is no decision (a computer on 1.18.0 knows no list and deletes it with every unlinked file), so
+  the merge keeps the base's state and puts each kept file the pull dropped back from this computer's last commit, also
+  after a fast-forward (then committed as „Abgleich mit dem Server“); only `removed` takes a file off. Accepted: as long as
+  a computer still runs 1.18.0, each of its syncs drops such a file and the next sync of a 1.18.1 computer puts it back
+  (two commits per round, nothing lost); this ends once every computer runs 1.18.1. Renaming a kept file in the attachment
+  manager moves its entry (`renamed_kept`: the new name kept, the old one removed). The sync changes no
+  note for it; `FileRename` tells the user about the second version.
+  Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
   at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
@@ -173,9 +266,40 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   „Übernehmen“ (`git_conflict_resolve`) snapshots, saves, closes the conflict and syncs; `gitsync://pulled` tells the UI
   which editors to reload.
   The system `git` runs without a shell (`CREATE_NO_WINDOW` on Windows), with `GIT_TERMINAL_PROMPT=0` and a 120 s
-  timeout. The HTTPS token comes from the credential store (account `git-token`) and is passed as
-  `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`), only to HTTP(S) remotes;
-  git's stderr and every recorded error are redacted. Runs after `run_backup` (mode `with_backup`) or in the scheduler
+  timeout. The commands that talk to the server (fetch, push, clone, ls-remote) stop when the transfer stalls instead
+  (`http.lowSpeedLimit=1000` for `http.lowSpeedTime` = the timeout; libgit2: its per-read server timeout), with a total
+  limit of one hour (`NETWORK_LIMIT`): a first fetch of a long history or a push of a large database copy over a slow line
+  finishes. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other variables that point git at another repository
+  (`REPOSITORY_VARS`) are removed, and `core.hooksPath` is the program's own file (no folder, so no hook runs: neither the
+  user's global hooks nor any in the working tree). The HTTPS token comes from the credential store (account `git-token`) and is passed as
+  `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`; `x-token-auth` for
+  bitbucket.org, whose access tokens want that name, `gitsync::token_user`), only to HTTP(S) remotes;
+  git's stderr and every recorded error are redacted.
+  **Guided setup** (1.20, `gitsetup.rs`, shell `gitsetup.rs`, UI `lib/gitsetup.ts` + `lib/useGitSetup.ts`, desktop
+  dialog `views/settings/GitSetupWizard.tsx`, phone screen `mobile/screens/GitSetup.tsx`): provider (GitHub, GitLab,
+  Gitea/Forgejo, Bitbucket Cloud, another server), token (the provider's token page with the scopes in the address
+  where it takes them), repository (the token's list from the REST API, paged, or a new private one, or an address;
+  the address parser takes repository pages, `.git` or not, SSH addresses with the HTTPS one offered), check, save.
+  The API base is `api.github.com` or `<web>/api/v3` (Enterprise), `<web>/api/v4`, `<web>/api/v1`,
+  `api.bitbucket.org/2.0`; requests use the Git sync's client (`client_for(Service::GitSync)`: its proxy profile,
+  certificates and timeout, 10–60 s per request), the token in a header only, pagination links only on the API's
+  own address. The check (`gitsetup::check`) stops at the first failure: server, token (`/user`), repository and
+  write right (GitHub `permissions.push` and a classic token's `X-OAuth-Scopes`, GitLab's access level ≥ 30 and
+  the token's scopes from `personal_access_tokens/self`, Gitea `permissions.push`; Bitbucket and another server:
+  the first upload proves it), `git ls-remote` through the sync's own git and network, then the branch and what
+  the repository holds: empty, notes of Arcalo (the `.gitattributes` marker, looked for on the saved branch when
+  the setup runs again for the saved repository, then the default branch, then an existing `arcalo` branch: the
+  first one with it is synced, the sync adopts and merges), other files (left alone: the branch becomes `arcalo`
+  when there is none of that name, else the sync's fallback branch), or unknown (another server: the saved branch
+  while it exists, else the default one). Every failure is a `ProblemKind` the UI words with its fix
+  (`gitsetup.problem.*`, `gitsetup.fix.*`). The stored token is only used when the provider's address and the
+  repository are on the server of the saved repository (`pick_token` in the shell, `storedTokenFits` in the UI);
+  elsewhere the setup asks for a new one. The token typed into the setup is passed to the commands and stored
+  (`git_token_set`) only when the setup saves, after the settings (the address, the branch and `enabled`; when
+  the token cannot be stored they are taken back). Bitbucket takes access tokens of a repository, project or
+  workspace (Bearer for the API, `x-token-auth` for git); they stand for no user, so the setup offers no new
+  repository there, and personal Atlassian API tokens (Basic with the e-mail address) are not supported. The
+  form stays as „Manuell einrichten“. Runs after `run_backup` (mode `with_backup`) or in the scheduler
   thread (mode `hourly`, mirror refreshed first); outcomes are kept in `gitsync.*` meta rows and emitted as
   `gitsync://done` / `gitsync://failed`.
 - **Versions** (`versions.rs`): a save stores the page's previous content as a snapshot when the newest
@@ -215,7 +339,10 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
 - **Transactions** (`Database::atomic`): savepoints that nest; when the outermost release (the commit) fails (disk full,
   I/O error, locked file), everything since the savepoint is rolled back and the error returned, so the connection never
   stays inside a transaction where later saves would look successful without being committed. An open transaction found at
-  the start of an outermost `atomic` is rolled back.
+  the start of an outermost `atomic` is rolled back. The outermost one on a writable connection starts with
+  `BEGIN IMMEDIATE`: another process (the command line) may write while the app runs, and a transaction that read first
+  could not become the writer after that process committed (`SQLITE_BUSY` without waiting); taking the lock first waits
+  for the other writer (busy timeout: 5 s in the app, 15 s on the command line).
 - **Start-up failures** (shell `recovery.rs`): a data folder that cannot be created, a database that cannot be opened
   (damaged, not a database, locked, read-only storage: `Error::is_storage`) or one of a newer schema (`db::NEWER_SCHEMA`)
   show a native dialog instead of a panic without a window: „Letzte Sicherung wiederherstellen“ (only for a damaged
@@ -412,6 +539,59 @@ defineWidget({
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
 
+## Command line (`crates/arcalo-cli`, `external.rs` in core and shell, docs/cli.md)
+
+- **One program**: `arcalo` (`src-tauri/src/main.rs` → `command_line()`) runs as the command line when its first argument
+  is one of the CLI's commands or options (`arcalo_cli::is_command_line`: never none, `--minimized`, a jump-list or
+  notification address); otherwise the app starts. So every install (NSIS, Store alias, portable ZIP, deb, AppImage,
+  macOS bundle) has the command line of its own version, and a portable copy finds its `data` folder. A Windows release
+  build has no console of its own: with its output redirected (scripts, agents) it has the handles; typed in a console
+  it attaches to that console (`AttachConsole`). The crate also builds a standalone binary, `arcalo-cli` (and the old
+  name `annalo`): not `arcalo`, which would overwrite the app's program in `target/<profile>` (a test run of the crate
+  replaced the app there and hung the e2e runs).
+- **On the PATH** (`src-tauri/src/cmdpath.rs`): the NSIS hooks start the installed program with `--internal-path
+  add|remove` (handled in `command_line()` before the CLI), which changes the user's `Path` (`HKCU\Environment`) raw
+  through the registry: the value's type and every other entry stay byte for byte, the folder is matched in any
+  spelling, `WM_SETTINGCHANGE` is broadcast; a switch-off in the settings is remembered for updates
+  (`HKCU\Software\MouseWerk\Arcalo`, `CommandLinePath` = 0). Settings → Desktop → „Befehlszeile“ (`cli_path_info`,
+  `cli_path_set`) shows the state; on macOS it creates `/usr/local/bin/arcalo` (directly when writable, else through
+  `osascript … with administrator privileges`), on Linux it only shows the program (the packages install
+  `/usr/bin/arcalo`), in the Store package it reports the alias.
+- **Workspace**: `workspace::locate` finds the app's data folder as the app does without moving it
+  (`datadir::locate`: `--data-dir`/`ARCALO_DATA_DIR`, portable, `location.json` when it holds a workspace, the
+  identifier's folder; a pending move stays for the app's start); `--db` names a file as before 1.18. An encrypted
+  database is opened with the key from the credential store (`keystore.rs`, read only: service `Arcalo`, the
+  `@namespace` entries of a portable copy, `secrets.json` on Linux without a Secret Service, the old service until an
+  entry was taken over), `ARCALO_RECOVERY_KEY` or `ARCALO_DB_PASSWORD` with the wrapped key file.
+- **Same functions**: every command calls what the app's commands call (`create_page` + `unique_title`,
+  `rename_page_linked`, `trash_page`/`purge_page`, `set_task_done`, `edit_tasks` with `TaskEdit::Text`,
+  `capture::insert_in_notes`, `daily_note`, `delete_booking` with its Jira worklog, `Settings::for_save` +
+  `finish_save`, …); no SQL of its own. Pages are named `id:N`, by exact title or by path (`model::Pages::resolve`;
+  several matches fail with the list). Page edits keep the text before them as a version (unless one is younger than a
+  minute), so the app's „Versionen“ undo them.
+- **Writes and the running app**: `Workspace::commit` runs a command's change in one `atomic` (write lock first) and
+  records it there with `record_external_change`: a numbered entry in the meta row `external.changes` (the last 64:
+  pages, tree, entries, WBS, absences, settings; a reader further behind reloads everything). The shell's watcher
+  (`external.rs`) checks `PRAGMA data_version` on a read-only connection of its own once a second (it changes only for
+  other connections' commits) and reads the entries after the last one it handled: `data://pages` reloads open editors
+  (unsaved typing merged as for another pane), `data://entries`, `data://wbs`, `data://absences` the views,
+  `data://external` the tree, the task view and the timer, and changed settings are applied through `settings_save`.
+  The watcher lets go of its connection while the app prepares to exit.
+- **Editor saves merge**: the editors send the text they started from (`page_save` with `base`); when the stored page
+  changed since (the command line, a task ticked off in the task view, a chip rewritten), `save_page_from` stores the
+  three-way merge of base, editor text and stored text (`merge::merge3`, both versions of a block changed on both sides,
+  the editor's first) and returns it; the editor takes it over with what was typed meanwhile. Without a base (a closed
+  editor's retry, other callers) a save stores the text as sent.
+- **Output**: `--json` prints one JSON value per command (`model.rs`: pages with `path`, tasks with `ordinal`, times
+  with the local offset); errors go to stderr as `{"error": {"code", "message", "exit_code", "matches"?}}`, exit codes
+  1 usage/ambiguous, 2 not found, 3 conflict/locked, 4 other (`output::Failure` from `arcalo_core::Error`). Messages
+  are `tr!`/`trf!` pairs in the workspace's language (system language until the settings are read). SQLCipher's own
+  stderr lines are switched off (`cipher::quiet_log`).
+- Tests: `crates/arcalo-cli/tests/cli.rs` (the binary on temporary workspaces: every command, JSON shapes, exit
+  codes, ambiguous titles, trash and purge, rename with links, an encrypted workspace, a write waiting for another
+  connection's transaction, the change journal), e2e `373-cli-live` (the built app and its program as the command line
+  on the same workspace).
+
 ## First run (`onboarding.rs` in core, `ui/src/onboarding/`)
 
 - Decision: at start, before anything is saved, `onboarding_classify` records once in the meta row `onboarding.first_seen`
@@ -468,6 +648,17 @@ defineWidget({
 - Right before installing, `.arcalo-update` (target version) is written into the data folder; the next start
   reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
   version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Running terminal commands (`arcalo pages list`, also of the standalone CLI) are waited for before anything is
+  installed (`core::cmdlock`): each command holds `<pid> <command words>.lock` in `commands/` of the app's local data
+  folder (`%LOCALAPPDATA%\de.mousewerk.arcalo`, `~/Library/Application Support/…`, `$XDG_DATA_HOME/…`, the same for
+  both sides whatever workspace a command names; a portable copy marks nothing), locked with the OS file lock
+  (`File::try_lock`), so a crashed command's file is unlocked and removed by the next scan (a file system without
+  locks: after 12 h). `install` waits up to 2 minutes (`ARCALO_UPDATE_WAIT_SECS` in debug builds) before the backup;
+  `update_status.waiting` names the commands and the UI shows „Das Update wartet auf einen Terminal-Befehl“. The quit
+  waits on a thread of its own so the window can show it (the main window was closed, or the process ends without the
+  UI's quit: the update waits for the next quit). After the limit macOS and Linux install beside the command; Windows
+  waits for the next quit, because the NSIS setup (`CheckIfAppIsRunning`) would end every running `arcalo.exe` of the
+  user. No command is ever ended by the app (`e2e/tests/376-update-waits-for-commands.test.js`).
 - Debug builds only: `ARCALO_UPDATE_ENDPOINT`, `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_BUNDLE=deb` point the
   updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
@@ -484,8 +675,11 @@ defineWidget({
   settings save, API-key or proxy-password change; the updater gets it through `configure_client` for check and
   download; the connection test builds one from unsaved settings and reports the proxy the plan chose.
 - Git: `git_network` turns the plan for the remote URL into `http_proxy`/`https_proxy`/`no_proxy` (or removes the proxy
-  variables and sets `NO_PROXY=*` for a direct remote), `http.sslCAInfo` (a bundle of the extra CA and the system CAs,
-  not on Windows where Git uses schannel) and `http.sslVerify=false` when invalid certificates are accepted, all via
+  variables and sets `NO_PROXY=*` for a direct remote), `http.sslCAInfo` (a bundle of the extra CA and the system's
+  roots, `write_git_ca_bundle`: the bundle file, the certificate store, and Mozilla's roots on Windows, whose store fetches
+  roots only on demand, or where nothing else is found; Windows also gets `http.sslBackend=openssl`, as Secure Channel
+  ignores the file; the phone's libgit2 adds the file's certificates to its own bundle, `gitlib::set_profile_certificates`)
+  and `http.sslVerify=false` when invalid certificates are accepted, all via
   `GIT_CONFIG_*`; the proxy password is redacted from git's output.
 - PAC: the UI evaluates the script (`ui/src/lib/pac.ts`, standard helpers without DNS) in an iframe served by the
   `arcalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
@@ -550,6 +744,37 @@ defineWidget({
   (priority between meetings and page edits; WBS from the block, the issue mapping or the task's page, high when linked).
   Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
   describe the default calendar alone.
+- Appointments written from the Kalender (`calsync/writes.rs`, shell `calwrite.rs`, `views/CalendarEntries.tsx`, 1.21):
+  migration 39 gives `calendar_events` the EntryID, Outlook's `LastModificationTime`, the MeetingStatus and
+  `has_attendees` (the read counts the recipients that are not the organizer, before privacy drops names) and adds
+  `calendar_outbox`, one waiting row per appointment: `create` (a random marker, stamped on the item as the user
+  property `ArcaloEntry`, so a write whose answer got lost is found again instead of added twice), `update` (a patch of
+  the changed fields title/start/end/location with the values Arcalo last saw of them), `delete` (moved to Deleted
+  Items; the row stays a day as `done` with the item's id there, so „Rückgängig“ queues a `restore`). A change merges
+  into the waiting row (the first seen value stays, a field changed back drops out, an update without fields is
+  removed), `seq` keeps a change made during a write, `sent` marks a row handed to Outlook (a new appointment deleted
+  before that never reaches Outlook; after it, also without an answer, it is deleted there by its marker; a restore
+  whose item is no longer in Deleted Items is dropped and the next sync shows the result). `calendar_events` and `calendar_event` show the queue on top of
+  the stored rows (`calendar_overlay`): new appointments under `<source>|<marker>|` until written (marks then move to
+  the real key), changed ones as changed, deleted ones hidden. `editability` (set by the shell on every event) allows
+  own appointments without attendees and meetings the user organizes (`confirm`: saved only with `send`, which makes
+  the script call `.Send()`; never deleted here) in own Outlook calendars (`writable_calendar`: own or file, not
+  free/busy); received meetings, series, ICS, others' calendars, events read before 1.21 (`unknown`) and everything
+  without Outlook Classic are read-only, `off` while „Termine in Outlook eintragen“ (`calendar.entries_outlook`,
+  settings step 19, off) is off. `outlook.ps1 -Mode write` handles ops with `kind: entry` in the default or a chosen
+  own calendar (`entry_target`): it attaches to a running Outlook only, finds the item by EntryID (still in that
+  folder) or marker, refuses series (`series`), received meetings (`received`) and organized meetings with attendees
+  without `send` (`needs_send`; recipients of a MeetingStatus 0 item count as none), compares the seen values with
+  Outlook's (`conflict` with `current`, only the fields changed on both sides, texts trimmed; stand-in titles and the
+  dropped place of a private appointment are never sent as seen values), keeps the End when only the Start is given and returns EntryID, global id and `modified`; `-Mode show` opens an item („In Outlook
+  öffnen“, the one mode besides read that may start Outlook). The shell runs the writes like the focus blocks' (due
+  rows, the script in `spawn_blocking` without the database lock, back-off 1–30 minutes, a scheduler every minute,
+  before each Outlook sync) under one lock for every Outlook write (`calwrite::OUTLOOK_WRITES`), removes a leftover
+  ops file at start and emits `calendar://entries`. A conflict waits for the user: „Outlook-Version übernehmen“ drops
+  the conflicting fields and shows Outlook's values, „Meine Änderung behalten“ takes them as seen and writes again.
+  With `ARCALO_OUTLOOK_WRITE_LOG` the stateful fixture (`calsync/outlookfixture.rs`) appends the writes as
+  `"kind":"entry"` lines and replays them over every read of `ARCALO_OUTLOOK_FIXTURE`, so a new appointment comes back
+  with the next sync once; a test line `"op":"outlook"` stands for a change made in Outlook.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
   TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
   Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed
@@ -688,6 +913,62 @@ defineWidget({
   shortcut is the fifth slot of `apply_shortcuts` (`mail.shortcut`, off by default; after capture, palette, search and „Auswahl übernehmen“) and emits `mail://capture`.
 - Privacy: no assistant tool reads mails. „Aufgabe vorschlagen“ (`mail_suggest`) is only offered when the local tier's
   provider is marked local, and is sent as a private route, so availability fallbacks stay on local providers.
+
+## Issue-Ansicht (`issues/view.rs`, `issues/richtext.rs` in core, shell `issueview.rs`, `ui/src/components/issue/`)
+
+One Jira issue as Jira's own page shows it, in a modal over the app (`IssueModal`, mounted once in `App.tsx`; a stack of
+keys in `useIssueModal`, so an issue opened from a link or subtask goes on top and „Zurück“ returns). Below 640 px (the
+full app on a phone) it is a full-screen sheet; below 860 px the details go under the main column.
+
+- Entry points: a click on an issue chip in a note (Ctrl/Cmd+click: the browser; the note is in the view and in the
+  hover card with Shift), the Issues list (row action and menu „Als Fenster öffnen“, double click, Shift+Enter, „Vollansicht“
+  in the opened row), the Jira widgets and Jira due dates of the start page (click; their menu has the note), the briefing,
+  the plan blocks of the calendar, the issue key of a booking in Zeiterfassung, the canvas, the quick search, and the
+  palette (a typed key or Jira address, and „Issue öffnen…“, `IssueOpenDialog`). `jiraActions.openIssue` is the one
+  click rule; `issueOpenMenu` the shared context menu.
+- Reading (`JiraClient::full`): `GET issue/{key}?expand=renderedFields,names,schema,editmeta,transitions,transitions.fields,changelog&fields=*all,-comment`
+  with `mypermissions`, `remotelink` and `myself` in parallel, then the newest 50 comments (`comment?orderBy=-created&expand=renderedBody`;
+  a Server that ignores the order is asked for the last page instead), the newest worklogs (Cloud pages, Server sends
+  all) and, on Cloud, the newest history page (`changelog`). `parse_full` reads both flavors into `IssueFull`: Cloud users
+  by `accountId`, Server by name; sprints as objects or the old `Sprint@…[…]` strings; the epic from the parent or the
+  Epic Link field; story points by `jsw-story-points` or the field's name; every other non-empty custom field under its
+  `names` entry, shown by its schema type (`Shown`: text, rendered HTML, number, date, date-time, options, users, link,
+  issue, sprints, cascade). The rank, the development panel and an epic's color are left out, as on Jira's page.
+- Showing: Jira's `renderedFields` HTML (description, environment, text fields, comments) is sanitized in the UI
+  (`sanitizeJiraHtml`: DOMPurify and an allowlist pass, Jira's class names prefixed with `j-`, emoticons as their short
+  names, relative links made absolute, `/browse/KEY` links open that issue in the view). Where Jira sent no HTML, ADF is
+  drawn by `richtext::adf_to_html`. Images, thumbnails and avatars load through `jira_image` (the site's client, the login
+  only on the site's own origin, never in an address; SVG refused; data URLs, cached for the session) when they come into
+  view, four at a time; attachments open from a copy in `<data>/jira-files/<site>/` (removed after a week) or are saved where the user picks.
+- Editing follows `editmeta` (`EditField` with `EditKind` and the current value as `FieldInput`); fields without it are
+  read only, someone else's issue shows only what `mypermissions` allows („Mir zuweisen“ uses `PUT issue/{key}/assignee`).
+  `write_value` writes per flavor (options by id, users by `accountId` or `name`, dates, labels without spaces, cascades).
+  Rich text is edited in TipTap (`RichEditor`) whose JSON maps node for node onto ADF (`adf_to_doc`/`doc_to_adf`) and is
+  parsed from and written to wiki markup on Server (`wiki_to_doc`/`doc_to_wiki`). What the editor cannot edit (an expand,
+  a status lozenge, a smart link, a wiki macro, an image) is a `preserved` or `jiraMedia` node holding the original and is
+  written back unchanged; marks it cannot show (text color) are named before saving (`lossy`).
+- Every save is checked (`update_checked`): the field and `updated` are read first; when `updated` differs from the copy
+  the view shows, nothing is written and the view shows the value in Jira now and who changed it, with „Neuen Stand
+  zeigen“ and „Meine Änderung trotzdem speichern“. A save returns the value before as `undo` (the toast's „Rückgängig“,
+  checked the same way); a transition offers its way back when Jira has one without a screen; a comment and a worklog
+  posted from the view are deleted by their undo. Transitions with a screen show its fields (required ones block the
+  button) and an optional comment.
+- Worklogs: „Arbeit protokollieren“ posts `timeSpentSeconds`; with „Auch in der Zeiterfassung buchen“ it books
+  `/zeit <m>m KEY …` on the issue's WBS (its mapping, or a clear error), and when the site posts worklogs of bookings the
+  booking's worklog is the one (posted at once, never twice); otherwise the worklog is posted and its id stored with the
+  booking.
+- Offline: every read is stored in `issue_full` (v41, JSON per site and key, dropped with the site and after 90 days
+  unopened) and refreshes the issue's row in `issues`. `jira_full_cached` shows the copy at once, `jira_full` replaces it;
+  when Jira cannot be reached the copy stays, read only, with „Stand von …“ and the error. A skeleton shows while there
+  is no copy.
+- Large issues: 50 comments, worklogs and history entries per page („Ältere laden“), 24 attachments before „Alle zeigen“,
+  thumbnails only in view.
+- Keyboard: Esc cancels an edit or closes, Tab stays in the view, `e` edits the summary, `c` writes a comment, `t`
+  changes the status, Mod+Enter saves rich text; the focus returns to the value after an edit and to where it was when the
+  view closes (`kh.group.issue` in the shortcut help). Enter and Escape are IME-safe (`lib/ime.ts`).
+- Tests: `issues/view_tests.rs` (Cloud and Server fixtures in `issues/fixtures/`, every field type, rendered HTML,
+  editmeta, transitions, writes and undo for ADF and wiki, conflicts, paging, the login only on the site), `issueFull.test.ts`,
+  e2e `146-issue-view-cloud`, `147-issue-view-server` (English), `153-issue-view-phone` with the fake Jira of `e2e/lib/fake-jira.js`.
 
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 
@@ -918,9 +1199,17 @@ quelle: "[[Konzept]]"
 - `page_tree` groups the rows by parent in one `HashMap` pass and moves them into their nodes: O(n)
   instead of a filter per parent (O(n²) with a clone per node). A core test builds 5,000 pages in well
   under 200 ms in a debug build.
-- The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
-  re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
-  collapsed (`arcalo.collapsed` in localStorage).
+- The sidebar's tree (`components/PageTree.tsx`) renders the visible rows flat (`aria-level`,
+  `aria-setsize`, `aria-posinset`), each a memoized component that compares what it shows (a refresh brings
+  new page objects; handlers take the page by id), so switching tabs re-renders only the old and the new
+  active row. The open folders are stored as `arcalo.expanded` (1.19; the list of collapsed folders of
+  1.18, `arcalo.collapsed`, is turned into it once): folders that come later start collapsed, pages that are
+  gone leave the list, and revealing the open page opens its ancestors only until another page is revealed
+  (`useTreeOpen`). The filter (`lib/filing.ts` `filterIds`, `matchRanges`) matches words, paths
+  („Kunde/Angebot“) and, when nothing contains the words, similar titles. Every move goes through
+  `pages_move` (with a position for reorders) and its undo; drops are planned by `planDrop` (a sorted
+  folder refuses a place between its pages). A dragged row carries `application/x-arcalo-page(s)`:
+  `NoteEditor` turns it into `[[links]]`, a pane opens it (`Workspace.tsx`).
 - Database commands are `#[tauri::command(async)]` (or `spawn_blocking`): they run off the main thread,
   which handles the window (`set_title`, drag, focus) and never waits for the database. Pure reads
   (`page_get`, `workspace_tree`, lists, search, budgets) use a second, read-only connection
@@ -931,6 +1220,12 @@ quelle: "[[Konzept]]"
   in one read transaction (`MirrorSnapshot`, `VaultSnapshot`), then write the files without any
   database lock. The scheduler's first backup check runs 3 minutes after the start
   (`ARCALO_BACKUP_DELAY_SECS` for tests).
+- The largest answers come as rows, decoded by the UI into the same objects (`lib/tasks.ts`, `lib/tree.ts`,
+  `lib/graph.ts`, `lib/jira.ts`): `tasks_compact`, `workspace_tree_compact`, `graph_compact` (without the
+  dates) and `jira_issues_compact` (without the comments, which the opened issue reads with
+  `jira_issue_view`). The object commands stay for scripts and tests.
+- The WBS and the Leistungsarten are read once and shared (`lib/wbsCache.ts`) until `wbsVersion` changes;
+  the backend emits `data://wbs` after every change of them.
 - `page_save` returns `SavedPage` (tags, unresolved links, `updated_at`), not the page: the editor has
   the content and a save does not change backlinks. A save writes only what changed: chunk rows whose
   text is still on the page keep their row, search entry and embedding; links and tags are diffed.
@@ -1082,17 +1377,31 @@ quelle: "[[Konzept]]"
   recording and the jobs. The tray menu gets „Aufnahme beenden“ first while recording.
 - **Stopping** adds the block `## Sprachnotiz HH:MM`, `![[… .flac]]` and a status line with the recording's id
   to the target page (`Database::voice_begin`: a new page below „Sprachnotizen“, the meeting note, or the page of
-  `/voice`). A job thread encodes the FLAC attachment (`audio::encode_flac`, flacenc, streamed from the WAV),
-  runs whisper.cpp (whisper-rs; one run at a time, progress and abort callbacks) and replaces the status line
-  with the transcript callout (`voice_finish`). The UI summarizes through `ai_transform` with the meeting-summary
+  `/voice`). A job thread encodes the FLAC attachment (`audio::encode_flac`, flacenc, frames written to a temp
+  file as they are encoded), reads the audio as 16 kHz 16-bit (`audio::read_16k_pcm`), runs whisper.cpp
+  (whisper-rs; one run at a time) on pieces of about 10 minutes cut at a quiet spot (`audio::windows`; the text
+  of one piece is the context of the next) and replaces the status line with the transcript callout
+  (`voice_finish`). The abort and progress callbacks are set up in `voice.rs` with the raw API: whisper-rs 0.16's
+  `set_abort_callback_safe` reads past its flag (random „Error code: -6“, no cancel). whisper.cpp's log goes
+  to the dev log (source `whisper`), a failed transcription is logged by `voice` (never its text).
+- **Interrupted jobs**: a job notes itself in `<data>/voice/jobs/<id>.json` while it runs. After a crash or a
+  forced quit, `voice_unfinished` (asked once after the start) replaces the leftover status line with
+  „Transkription unterbrochen …“ (or puts back the transcript a „Neu transkribieren“ replaced), stores the
+  recording's WAV as the FLAC of the block when that is missing, and removes the WAV, so it is not offered as an
+  unfinished recording (that would make a second note). Status lines from older versions are handled the same
+  when `voice/rec-<token>.wav` is still there. A normal quit (`RunEvent::Exit`) calls `voice::shutdown` like a
+  restart: the WAV is closed and kept, running jobs are cancelled and write „unterbrochen“ (up to 5 s). The UI summarizes through `ai_transform` with the meeting-summary
   prompt (privacy routing as for every page) and `voice_summary_apply` appends it, every action item a task line.
 - **Models** (`voice::models`): base, small, large-v3-turbo q5 with fixed size and SHA-256, in
   `<data>/models/whisper/` (not in backups, the Markdown mirror or Git sync). `download::fetch` tries the admin
   source (`settings.voice.source_url`: URL or folder), the GitHub release `whisper-models-v1`, then Hugging Face;
   writes `<file>.part`, resumes with HTTP ranges, verifies and renames. The client uses Einstellungen → Netzwerk
-  (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline).
+  (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline):
+  `voice::missing_cpu_features` compares what ggml was built with (`ggml_cpu_has_*`) with the processor before a
+  model is loaded and refuses with a message instead of crashing on an illegal instruction.
 - **Test hooks** (debug builds): `ARCALO_TEST_AUDIO_FILE`, `ARCALO_TEST_TRANSCRIPT`, `ARCALO_TEST_MODEL_BASES`
-  (see docs/testing/voice-notes.md).
+  (see docs/testing/voice-notes.md). `ARCALO_TEST_WHISPER_MODEL` (a model file, e.g. ggml-tiny.bin) lets the unit
+  tests of `voice.rs` run real whisper.cpp; without it that test is skipped.
 
 ## How the concept spec maps to this implementation
 
@@ -1104,7 +1413,7 @@ quelle: "[[Konzept]]"
 | < 5 ms cold start | The core opens the DB, runs queries and exits in ~6 ms (release CLI, Linux) | The desktop app's cold start is dominated by WebView2 initialisation, typically around a few hundred ms. That has not been measured here |
 | Win32 hooks for idle and active window | `GetLastInputInfo` and `GetForegroundWindow` sampled every 5 s | No global keyboard/mouse hooks: same result, far less invasive |
 | Export SAP PS (CATS), Jira, JSON, CSV | `export.rs` | CATS as an upload file (CATSDB field names). Jira as payloads for `POST /rest/api/3/issue/{key}/worklog`. Nothing is uploaded automatically |
-| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval and runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
+| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval: `ai_plan_tool` issues a one-time token for exactly the call it shows (`tools::Approvals`), `ai_run_system_tool` runs only with it, once. Runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands (`branch` only lists; no `--no-index`) with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes, editor `true`; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
 | Database views | Timesheet (week grid + entries), Projects (tables with budget, ETC, critical path) | Graphical network diagrams and graph views were dropped in favour of tables |
 
 ## Names kept from Annalo
@@ -1133,7 +1442,22 @@ The 1.15 migration (`crates/arcalo-core/src/identity.rs`, `src-tauri/src/identit
   PIN, AI provider keys, Git token, proxy passwords, calendar addresses, Jira tokens, also the
   namespaced accounts of portable copies) is written under `Arcalo`, read back and compared;
   `credentials-moved.json` in the data folder notes the accounts done. Until then the old entry is
-  read as a fallback. The old entries are not deleted in 1.15 (a later release may).
+  read as a fallback. The old entries are not deleted in 1.15 and 1.16.
+- 1.17 deletes the old folders (`identity/cleanup.rs`, run by `src-tauri/src/identity.rs` in the
+  background 10 s after the start): only a folder of a copied pair whose new folder's marker names
+  it, at a start whose migration found the pair done, with the workspace in the new folder. Kept
+  (with the reason in the log) for a portable copy, unreadable settings, an unfinished copy, a
+  changed old database, a possible return to 1.14 (rollback record), anything pointing into it
+  (data and config folder in use, `location.json` `data_dir` and `pending_move`, backup folder,
+  Markdown copy, backup destinations and the backup registry, a network profile's root
+  certificate, the rollback's backup and copy, the program folder; by spelling and through links),
+  a move or a running older version (its lock) in it, a symbolic link in it, or a file newer than
+  the copy. A folder is renamed to `app.annalo.desktop.removing` and then deleted (a cut-off
+  deletion is finished at the next start). Once no old folder is left, the `Annalo` entry of every
+  account in `credentials-moved.json` whose `Arcalo` entry exists is deleted
+  (`secrets::remove_legacy`). The outcome is kept in `legacy-cleanup.json` in the config folder; what
+  was removed is told once (`legacy_cleanup_notice`, toast „Alte Daten aufgeräumt“ with the freed
+  size).
 - localStorage keys `annalo.*` are copied to `arcalo.*` once at UI start (`ui/src/lib/legacy.ts`).
 - Settings step 16 „theme-ids“ maps `annalo-light`/`annalo-dark`; the ids are read as the new
   ones wherever they come from (synced settings, exported files).
@@ -1154,6 +1478,12 @@ Read under the old name, written under the new one:
   when the `ARCALO_*` name is not set; test-only variables were renamed outright. `ARCALO_LOG`
   directives naming `annalo`, `annalo_core` or `annalo_lib` mean the new crates.
 - Older markers: mirrors and README titles of 1.6, `annalo-portable` markers, `annalo-…db` backups.
+
+WebView2: the NSIS setup carries Microsoft's WebView2 bootstrapper (`bundle.windows.webviewInstallMode`
+`embedBootstrapper`, silent, about 2 MB) and runs it only when the runtime is missing; the bootstrapper downloads the
+runtime with Windows' own network settings (proxy included). The setup itself downloads nothing (up to 1.18 it fetched
+the bootstrapper with NSIS' own HTTP client, which may not get through a proxy). Offline without WebView2 the full
+runtime installer is still needed. The Store package and the portable ZIP do not use this setting.
 
 Program file: `arcalo.exe` / `arcalo`. The NSIS hooks (`src-tauri/installer/hooks.nsh`) close a
 running `annalo.exe`, remove it, point the autostart Run value and the Start menu, desktop and

@@ -133,7 +133,7 @@ export function PropertyEditor({
             const Icon = KIND_ICON[def.kind];
             return (
               <div key={`schema:${def.key}`} className={`prop-row prop-typed prop-kind-${def.kind}`} data-prop-key={def.key} data-kind={def.kind}>
-                <button type="button" className="prop-icon prop-icon-btn" aria-label={tr("props.menuOf", { key: def.key })} data-tooltip={tr("props.folderProp", { kind: kindLabel(def.kind), folder: folder!.parentTitle })} onClick={(e) => rowMenu(def.key, e.currentTarget, i >= 0 ? () => commit(props.filter((_, j) => j !== i)) : null)}>
+                <button type="button" className="prop-icon prop-icon-btn" aria-haspopup="menu" aria-label={tr("props.menuOf", { key: def.key })} data-tooltip={tr("props.folderProp", { kind: kindLabel(def.kind), folder: folder!.parentTitle })} onClick={(e) => rowMenu(def.key, e.currentTarget, i >= 0 ? () => commit(props.filter((_, j) => j !== i)) : null)}>
                   <Icon size={14} />
                 </button>
                 <span className="prop-key prop-key-static">{def.key}</span>
@@ -221,7 +221,7 @@ function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Pro
   return (
     <div className={`prop-row prop-type-${prop.type}${isWbsKey(prop.key) ? " is-wbs" : ""}`} data-prop-key={prop.key}>
       {onMenu ? (
-        <button type="button" className="prop-icon prop-icon-btn" aria-label={tr("props.menuOf", { key: prop.key })} data-tooltip={tr("props.menuTip")} onClick={(e) => onMenu(e.currentTarget)}>
+        <button type="button" className="prop-icon prop-icon-btn" aria-haspopup="menu" aria-label={tr("props.menuOf", { key: prop.key })} data-tooltip={tr("props.menuTip")} onClick={(e) => onMenu(e.currentTarget)}>
           <Icon size={14} />
         </button>
       ) : (

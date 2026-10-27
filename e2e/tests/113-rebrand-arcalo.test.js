@@ -77,7 +77,7 @@ test("the data folder of 1.6 opens unchanged, with its credentials and the name 
   assert.doesNotMatch(log(), /Annalo [\d.]+ started/);
 
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="about"]').click());
   await app.waitText(".settings-head h1", /^Arcalo$/);
   await app.shot("113-about");

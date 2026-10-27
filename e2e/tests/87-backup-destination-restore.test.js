@@ -5,11 +5,10 @@
 // recovery of a broken database also finds the destination when the local backups are gone.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APP, appEnv, launch, guarded } from "../lib/harness.js";
+import { APP, appEnv, launch, guarded, stopStarted, startProcess } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
@@ -20,13 +19,6 @@ fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(path.dirname(share), { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const killApp = () => {
-  try {
-    execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-  } catch {
-    /* none running */
-  }
-};
 const log = () => {
   try {
     return fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8");
@@ -47,7 +39,7 @@ const start = () => launch({ demo: false, dataDir, env: { ARCALO_BACKUP_DELAY_SE
 
 after(async () => {
   await app?.close();
-  killApp();
+  stopStarted();
   fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
@@ -55,7 +47,7 @@ let remoteFile;
 
 test("a backup in the destination is restored from the settings after a checksum check", async () => {
   // An app of the previous test file that is still ending would take the single-instance lock.
-  killApp();
+  stopStarted();
   await sleep(1000);
   app = await start();
   await app.invoke("page_create", { parentId: null, title: "Stand auf dem NAS", icon: null, content: "gesichert" });
@@ -106,7 +98,7 @@ test("a backup in the destination is restored from the settings after a checksum
   await sleep(1500);
   await app.close().catch(() => {});
   app = null;
-  killApp();
+  stopStarted();
   await sleep(500);
 
   const kept = fs.readdirSync(dataDir).filter((f) => /^workspace\.db\.before-restore-\d{8}-\d{6}$/.test(f));
@@ -121,11 +113,11 @@ test("a backup in the destination is restored from the settings after a checksum
 });
 
 test("the start-up recovery restores from the destination when the local backups are gone", async () => {
-  killApp();
+  stopStarted();
   fs.rmSync(path.join(dataDir, "backups"), { recursive: true, force: true });
   for (const f of ["workspace.db-wal", "workspace.db-shm"]) fs.rmSync(path.join(dataDir, f), { force: true });
   fs.writeFileSync(path.join(dataDir, "workspace.db"), Buffer.from("kein SQLite\n".repeat(200)));
-  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
+  const child = startProcess(APP, [], { env: appEnv(dataDir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 40000);
     child.on("exit", (c) => {
@@ -137,7 +129,7 @@ test("the start-up recovery restores from the destination when the local backups
   await until("recovery logged", () => /database restored from backup arcalo-/.test(log()));
   assert.match(log(), /neueste von 1 Sicherungen \(davon 1 in weiteren Sicherungszielen\)/);
   await sleep(1500);
-  killApp();
+  stopStarted();
   await sleep(500);
   app = await start();
   assert.ok((await titles()).includes("Stand auf dem NAS"));

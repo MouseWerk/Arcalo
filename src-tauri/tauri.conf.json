@@ -14,12 +14,16 @@
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: arcalo-asset: http://arcalo-asset.localhost; font-src 'self' data:; media-src 'self' arcalo-asset: http://arcalo-asset.localhost; frame-src arcalo-pac: http://arcalo-pac.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src tauri://localhost/pdfjs/pdf.worker.js http://tauri.localhost/pdfjs/pdf.worker.js tauri://localhost/workers/ http://tauri.localhost/workers/"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: arcalo-asset: http://arcalo-asset.localhost; font-src 'self' data:; media-src 'self' blob: arcalo-asset: http://arcalo-asset.localhost; frame-src arcalo-pac: http://arcalo-pac.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src tauri://localhost/pdfjs/pdf.worker.js http://tauri.localhost/pdfjs/pdf.worker.js tauri://localhost/workers/ http://tauri.localhost/workers/"
     }
   },
   "bundle": {
     "active": true,
     "publisher": "MouseWerk",
+    "homepage": "https://arcalo.mousewerk.de/",
+    "category": "Productivity",
+    "shortDescription": "Local-first notes, tasks and time tracking",
+    "longDescription": "Markdown notes that link to each other, tasks, daily notes and time tracking with SAP and Jira booking, calendar and optional AI. All data stays on your computer.",
     "targets": [
       "nsis",
       "deb",
@@ -37,6 +41,7 @@
     ],
     "linux": {
       "deb": {
+        "depends": ["libasound2"],
         "conflicts": ["annalo"],
         "replaces": ["annalo"],
         "postInstallScript": "installer/deb-postinst.sh",
@@ -54,7 +59,7 @@
     },
     "windows": {
       "webviewInstallMode": {
-        "type": "downloadBootstrapper",
+        "type": "embedBootstrapper",
         "silent": true
       },
       "nsis": {

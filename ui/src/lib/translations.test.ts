@@ -2,9 +2,10 @@
 // English pairs of the backend (`tr!` / `trf!` in crates/ and src-tauri/) and the release
 // highlights (docs/releases/highlights). It fails on missing or empty texts, placeholders and
 // format arguments that differ between the languages, German typography, the wrong form of
-// address, terms the glossary (`locales/glossary.json`) forbids, English words left in German
-// texts and German ones in English texts, and common German spelling slips. German texts much
-// longer than their English button or menu label are only reported (console warning).
+// address, terms the glossary (`locales/glossary.json`) forbids, "take … over" for „übernehmen“,
+// English words left in German texts and German ones in English texts, and common German
+// spelling slips. German texts much longer than their English button or menu label are only
+// reported (console warning).
 // True exceptions are listed in ALLOWED with the reason.
 
 import { describe, expect, it } from "vitest";
@@ -308,7 +309,16 @@ function errorTitle(t: Text): Finding[] {
   return bad.test(t.text.trim()) ? [at(t, "error-title", "name what failed: „<Ding> nicht <Partizip>“ / \"<Thing> not <participle>\"")] : [];
 }
 
-const RULES = [quotes, typography, address, glossary, leftovers, spelling, errorTitle];
+/** „übernehmen“ is not "take over", also not split around its object ("Take all over", "takes
+ *  them over"): e-mails and files are imported, settings and changes applied, data kept. The
+ *  glossary only finds the words next to each other. */
+function takeOver(t: Text): Finding[] {
+  if (t.lang !== "en") return [];
+  const m = prose(t.text).match(/(?<![\p{L}])(take|takes|taking|took|taken)(\s+[\p{L}\p{N}’']+){0,3}\s+over(?![\p{L}])/iu);
+  return m ? [at(t, "take-over", `„${m[0]}“ – use „import“, „apply“ or „keep“`)] : [];
+}
+
+const RULES = [quotes, typography, address, glossary, leftovers, spelling, errorTitle, takeOver];
 
 /** Whether the exception `a` covers the finding `f` (a key covers its plural forms, a file all
  *  its lines). */
@@ -445,6 +455,11 @@ describe("translation rules", () => {
     expect(rules(de1("Enter speichert"))).toContain("glossary");
     expect(rules(de1("Auf diesem Rechner"))).toContain("glossary");
     expect(rules(en1("Nothing was taken over"))).toContain("glossary");
+    expect(rules(en1("Nothing was taken over"))).toContain("take-over");
+    expect(rules(en1("Take all over"))).toContain("take-over");
+    expect(rules(en1("Take {n} over"))).toContain("take-over");
+    expect(rules(en1("“Book again” on the chip takes them over."))).toContain("take-over");
+    expect(rules(en1("Apply all · Apply {n} · Import e-mail"))).toEqual([]);
     expect(rules(en1("Open the timesheet"))).toContain("glossary");
     expect(rules({ where: "x.saveFailed", lang: "de", text: "Nicht gespeichert" })).toContain("error-title");
     expect(rules({ where: "x.saveFailed", lang: "en", text: "Could not save" })).toContain("error-title");

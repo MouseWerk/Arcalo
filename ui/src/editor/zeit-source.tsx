@@ -3,6 +3,7 @@
 
 import { Tag, Timer, History } from "lucide-react";
 import { api } from "../lib/api";
+import { leistungsarten, resetWbsCache, wbsTree } from "../lib/wbsCache";
 import { h2 } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useApp } from "../store/app";
@@ -27,8 +28,8 @@ function load(): Promise<ZeitData> {
   const data = (async () => {
     const since = new Date(Date.now() - RECENT_DAYS * 86400000).toISOString();
     const [wbs, las, entries, budgets] = await Promise.all([
-      api.wbs(),
-      api.leistungsarten().catch(() => []),
+      wbsTree(),
+      leistungsarten().catch(() => [] as [string, string][]),
       api.entries(since).catch(() => []),
       api.budgetsAll().catch(() => []),
     ]);
@@ -45,6 +46,7 @@ function load(): Promise<ZeitData> {
 /** Drops the cached data, e.g. when the quick-capture window (with its own store) is shown again. */
 export function resetZeitCache() {
   cache = null;
+  resetWbsCache();
 }
 
 const icon = (C: typeof Timer) => <C size={15} strokeWidth={1.75} />;

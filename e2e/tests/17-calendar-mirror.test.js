@@ -64,7 +64,7 @@ test("clicking yesterday opens (and creates) yesterday's daily note", async () =
 });
 
 test("the daily note header opens the calendar; keyboard moves and opens a day", async () => {
-  await app.click('.pane.active [aria-label^="Kalender"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label^="Kalender"]');
   await app.waitFor(".calendar");
   // Opened on the note's day (yesterday); → moves to today, Enter opens it.
   await app.browser.waitUntil(async () => (await (await app.$(".cal-day.focus")).getAttribute("data-date")) === iso(yesterday));

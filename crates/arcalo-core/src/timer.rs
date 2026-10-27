@@ -123,9 +123,15 @@ impl Database {
 
     /// Worked minutes of the running timer up to `now` (pauses left out).
     pub fn timer_worked_minutes(&self, e: &TimeEntry, now: DateTime<Utc>) -> Result<i64> {
-        let p = self.pause_state(e.id)?;
-        let until = p.paused_since.unwrap_or(now).max(e.start_time);
-        Ok(((until - e.start_time).num_seconds() - p.paused_seconds).max(0) / 60)
+        self.timer_worked_since(e.id, e.start_time, now)
+    }
+
+    /// [`Database::timer_worked_minutes`] of the timer `entry_id` started at `start` (every
+    /// total that counts a running timer uses this, so they all match the timer).
+    pub fn timer_worked_since(&self, entry_id: i64, start: DateTime<Utc>, now: DateTime<Utc>) -> Result<i64> {
+        let p = self.pause_state(entry_id)?;
+        let until = p.paused_since.unwrap_or(now).max(start);
+        Ok(((until - start).num_seconds() - p.paused_seconds).max(0) / 60)
     }
 
     fn running_or_err(&self) -> Result<TimeEntry> {

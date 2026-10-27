@@ -12,6 +12,7 @@ import { errorText, useMobile } from "../context";
 import { hours, progress } from "../model";
 import { Header, Notice, Section, Spinner } from "../ui";
 import { TaskRow } from "./Tasks";
+import { UpdateBanner } from "../update";
 
 const MAX_TASKS = 5;
 
@@ -69,6 +70,7 @@ export function TodayScreen() {
           </div>
         ) : (
           <>
+            <UpdateBanner />
             {status?.last_error && (
               <Notice tone="error" icon={<TriangleAlert size={18} />}>
                 <strong>{t("mob.today.syncFailed")}</strong>
@@ -170,10 +172,13 @@ function TimeCard({ today, now }: { today: Today; now: Date }) {
           <div className="m-timer-row">
             <span className={timer.paused_since ? "m-timer-dot paused" : "m-timer-dot"} aria-hidden="true" />
             <span className="m-row-main">
-              <span className="m-row-title">{timer.paused_since ? t("mob.today.timerPaused") : t("mob.today.timerRunning")}</span>
+              {/* The time with the title: the reference and description below may be cut on a narrow phone. */}
+              <span className="m-row-title">
+                {timer.paused_since ? t("mob.today.timerPaused") : t("mob.today.timerRunning")} · <span className="num">{hours(timer.worked_minutes + extra)}</span>
+              </span>
               <span className="m-row-sub">
                 {timer.reference}
-                {timer.entry.description ? ` · ${timer.entry.description}` : ""} · <span className="num">{hours(timer.worked_minutes + extra)}</span>
+                {timer.entry.description ? ` · ${timer.entry.description}` : ""}
               </span>
             </span>
             <button type="button" className="m-icon-btn m-icon-btn-soft" aria-label={timer.paused_since ? t("mob.time.resume") : t("mob.time.pause")} onClick={act(() => api.timerPause(!timer.paused_since))}>

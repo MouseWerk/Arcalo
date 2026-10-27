@@ -25,6 +25,9 @@ name: Release
 # the Microsoft Store Developer CLI (a draft unless STORE_SUBMIT_COMMIT is "true"). Without the
 # variables the job does nothing.
 
+# iOS (docs/release/ios.md): with the Apple secrets the iPhone and iPad app of the tag is
+# uploaded to TestFlight (ios.yml); without them it is only built for the simulator and checked.
+
 # winget (docs/release/winget.md): with the secret WINGET_TOKEN every release opens a pull request
 # for MouseWerk.Arcalo in microsoft/winget-pkgs. Without it the job does nothing.
 
@@ -32,6 +35,10 @@ name: Release
 # annotated tag v<version> on the selected branch itself, with docs/releases/v<version>.md as
 # its message, and builds that. If the tag exists already, it is built again (to re-run a
 # failed release with a fixed workflow).
+
+# Automatic release (docs/release/automatic.md): auto-release.yml calls this workflow with the
+# version of the newest docs/releases/v<version>.md and the commit CI tested on main. The tag is
+# created on that commit; an existing tag is never built again from there.
 
 on:
   push:
@@ -41,9 +48,25 @@ on:
       version:
         description: "Version without v, e.g. 1.2.0"
         required: true
+  workflow_call:
+    inputs:
+      version:
+        description: "Version without v, e.g. 1.2.0"
+        required: true
+        type: string
+      ref:
+        description: "The commit to tag (the one CI tested)"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+# One run per version: a manual run and the automatic one never build the same release at once
+# (the second waits; a pushed tag v1.2.3 and the version 1.2.3 are the same group).
+concurrency:
+  group: release-${{ inputs.version == '' && github.ref_name || (startsWith(inputs.version, 'v') && inputs.version || format('v{0}', inputs.version)) }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,14 +80,19 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
+      # A version is given by „Run workflow“ and by the automatic release (with the commit to tag);
+      # a pushed tag has none.
       - uses: actions/checkout@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.version != ''
+        with:
+          ref: ${{ inputs.ref || '' }}
       - id: tag
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+          if [ -z "$INPUT_VERSION" ]; then
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -75,6 +103,10 @@ jobs:
           fi
           TAG="v$VERSION"
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            if [ -n "$INPUT_REF" ]; then
+              echo "::error::Tag $TAG exists: the automatic release never releases a version twice."
+              exit 1
+            fi
             # Re-run of a release: build the existing tag (the workflow itself comes from the branch).
             echo "::notice::Tag $TAG exists, building it again."
             echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -229,6 +261,13 @@ jobs:
           fi
           cargo tauri build "${ARGS[@]}"
 
+      # The installer and the portable ZIP start on a Windows without the Visual C++
+      # Redistributable (static C runtime, .cargo/config.toml).
+      - name: No Visual C++ runtime DLLs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
+
       - name: Collect files
         shell: bash
         run: |
@@ -349,6 +388,10 @@ jobs:
           cargo fetch
           npm --prefix ui run build
           cargo build --release -p arcalo --features custom-protocol,store
+      - name: No Visual C++ runtime DLLs
+        if: steps.identity.outputs.set == 'true'
+        shell: pwsh
+        run: ./scripts/check-windows-runtime.ps1 target/release/arcalo.exe
       - name: Pack the MSIX
         id: msix
         if: steps.identity.outputs.set == 'true'
@@ -411,6 +454,16 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
     secrets: inherit
 
+  # The iPhone and iPad app (docs/ios.md): to TestFlight when the Apple secrets exist
+  # (docs/release/ios.md); it is not attached to the release (the App Store distributes it).
+  ios:
+    name: iOS
+    needs: tag
+    uses: ./.github/workflows/ios.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
+
   publish:
     name: Publish release
     needs: [tag, build, store, android]
@@ -426,10 +479,18 @@ jobs:
           fetch-depth: 0
       # The checkout may leave the tag lightweight; fetch the annotated tag object for its message.
       - run: git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+      # Only the release files: the iOS check's simulator reports and Xcode project stay CI artifacts.
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: release-*
           merge-multiple: true
+      # A failed APK does not hold up the release.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: arcalo-android-apk
+          path: dist
 
       - name: Release notes and update feed
         shell: bash
@@ -462,6 +523,65 @@ jobs:
               console.log("latest.json:", Object.keys(platforms).join(", "));
             }
           ' "$VERSION"
+          # The Android app's own feed (docs/release/android.md → Updates of the app): a file of
+          # its own, so latest.json keeps only the desktop platforms. Package, version code and
+          # signing certificate are read from the APK itself. A debug-signed APK (no ANDROID_* secrets)
+          # gets no feed: phones with the release-signed app could not install it.
+          APK="dist/Arcalo_${VERSION}_android.apk"
+          if [ -f "$APK" ] && [ -f "$APK.sig" ]; then
+            BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1 || true)"
+            echo "Android build tools: ${BT:-none}"
+            BADGING="$("$BT/aapt2" dump badging "$APK" 2>&1 | head -n 1 || true)"
+            export APK_PACKAGE="$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+            export APK_CODE="$(echo "$BADGING" | sed -n "s/.* versionCode='\([0-9]*\)'.*/\1/p")"
+            [ -n "$APK_PACKAGE" ] || echo "aapt2: $BADGING"
+            # The signing certificate from the APK Signing Block (scripts/apk-signer.mjs, no Java
+            # needed). apksigner is asked too, its output and errors shown: build-tools 37 prints
+            # „V2 Signer: certificate SHA-256 digest“ where older ones print „Signer #1 certificate
+            # SHA-256 digest“, which lost the signer of 1.18.1. Two different answers: no feed.
+            BLOCK_SIGNER="$(node scripts/apk-signer.mjs "$APK" 2>&1)" || { echo "apk-signer: $BLOCK_SIGNER"; BLOCK_SIGNER=""; }
+            CHECK="$("$BT/apksigner" verify --print-certs "$APK" 2>&1 || true)"
+            echo "apksigner:"
+            echo "$CHECK" | grep -v '^WARNING' | head -n 20 || true
+            TOOL_SIGNER="$(echo "$CHECK" | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer:) certificate SHA-256 digest: ([0-9a-fA-F]+)$/\2/p' | head -n 1)"
+            if [ -n "$BLOCK_SIGNER" ] && [ -n "$TOOL_SIGNER" ] && [ "${BLOCK_SIGNER,,}" != "${TOOL_SIGNER,,}" ]; then
+              echo "::warning::Signing certificate: apk-signer says $BLOCK_SIGNER, apksigner $TOOL_SIGNER."
+              export APK_SIGNER=""
+            else
+              export APK_SIGNER="${BLOCK_SIGNER:-$TOOL_SIGNER}"
+            fi
+            SUBJECT="$(node scripts/apk-signer.mjs --subject "$APK" 2>&1)" || { echo "apk-signer --subject: $SUBJECT"; SUBJECT=""; }
+            DEBUG_KEY=""
+            if node -e 'import("./scripts/apk-signer.mjs").then((m) => process.exit(m.isDebugSubject(process.argv[1]) ? 0 : 1))' "$SUBJECT" \
+              || echo "$CHECK" | grep -q 'CN=Android Debug'; then
+              DEBUG_KEY=1
+            fi
+            echo "APK: $APK_PACKAGE $APK_CODE, signer $APK_SIGNER (${SUBJECT//$'\n'/, })"
+            if [ -n "$DEBUG_KEY" ]; then
+              echo "::warning::The APK is signed with a debug key (CN=Android Debug, no ANDROID_* secrets): no android-latest.json, phones with the release-signed app could not install it."
+            elif [ -n "$APK_PACKAGE" ] && [ -n "$APK_CODE" ] && [ -n "$APK_SIGNER" ]; then
+              BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" node -e '
+                const fs = require("fs");
+                const version = process.argv[1];
+                const apk = `Arcalo_${version}_android.apk`;
+                const feed = {
+                  version,
+                  version_code: Number(process.env.APK_CODE),
+                  notes: fs.readFileSync("notes.md", "utf8"),
+                  pub_date: new Date().toISOString(),
+                  package: process.env.APK_PACKAGE,
+                  url: `${process.env.BASE}/${apk}`,
+                  signature: fs.readFileSync(`dist/${apk}.sig`, "utf8").trim(),
+                  size: fs.statSync(`dist/${apk}`).size,
+                  signer: process.env.APK_SIGNER,
+                };
+                fs.writeFileSync("dist/android-latest.json", JSON.stringify(feed, null, 2));
+                console.log("android-latest.json:", feed.version_code);
+              ' "$VERSION"
+            else
+              echo "::warning::The APK could not be read (package and version code: aapt2; signer: scripts/apk-signer.mjs, apksigner): no android-latest.json."
+            fi
+          fi
           ls -la dist
 
       - uses: softprops/action-gh-release@v2

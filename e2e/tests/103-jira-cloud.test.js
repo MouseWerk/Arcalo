@@ -1,8 +1,8 @@
 // Jira Cloud (1.7): connecting a site in Settings → Jira (wrong token, „Verbindung testen“ with
 // the account's name, tokens only in the credential store), the background sync (paged search,
 // a 429 answered after Retry-After), a saved JQL search, the Issues page with its groups,
-// filters, search and the opened issue, and the three Jira widgets of the start page. Light and
-// dark screenshots of the page and the widgets.
+// filters, search and the opened issue, and the three Jira widgets of the start page (a row opens
+// the issue view, its menu the note). Light and dark screenshots of the page and the widgets.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -51,7 +51,7 @@ async function fill(sel, value) {
   await app.type(value);
 }
 const reload = async () => {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 };
@@ -105,8 +105,31 @@ test("a saved JQL search syncs its issues", async () => {
 });
 
 test("the Issues page: groups, search, filters and an opened issue", async () => {
+  // The list loads compact rows without the comments (1.17); the opened issue shows them from its view.
+  await app.browser.execute(() => {
+    window.__issueLoads = [];
+    const orig = window.fetch.bind(window);
+    window.fetch = (url, init) =>
+      orig(url, init).then((r) => {
+        const cmd = decodeURIComponent(String(url).replace(/^.*localhost\//, "").split("?")[0]);
+        if (cmd.startsWith("jira_issues")) r.clone().text().then((body) => window.__issueLoads.push({ cmd, body }));
+        return r;
+      });
+  });
   await app.click(".ribbon-issues");
   await app.waitFor("[data-issue-row]");
+  const loads = await app.browser.execute(() => window.__issueLoads);
+  assert.ok(loads.length > 0 && loads.every((l) => l.cmd === "jira_issues_compact"), loads.map((l) => l.cmd).join(", "));
+  // 1.19: the syncs load summaries only; descriptions and comments come when an issue is opened.
+  assert.ok(loads.every((l) => !l.body.includes("First look at") && !l.body.includes("The token has expired")), "comments or descriptions in the list");
+  const searches = jira.requests.filter((r) => /\/search(\/jql)?$/.test(r.path) || r.path.endsWith("/sprint/4/issue"));
+  assert.ok(searches.length > 0, "no searches");
+  for (const r of searches) {
+    const asked = (r.query.fields ?? "").split(",");
+    assert.ok(asked.includes("summary") && !asked.includes("description") && !asked.includes("comment"), `${r.path}: fields=${r.query.fields}`);
+  }
+  const detailGets = () => jira.requests.filter((r) => r.method === "GET" && r.path.endsWith("/issue/PROJ-123"));
+  assert.equal(detailGets().length, 0, "an issue was loaded before it was opened");
   assert.deepEqual((await texts(".issues-group-title span:first-child")).filter(Boolean), ["OPS · Operations", "PROJ · Portal"]);
   assert.equal(await count("[data-issue-row]"), 4, "my four open issues");
   assert.match(await app.text('[data-issue-row="PROJ-123"]'), /Login fails on SSO[\s\S]*In Progress/i);
@@ -124,18 +147,24 @@ test("the Issues page: groups, search, filters and an opened issue", async () =>
   await app.browser.waitUntil(async () => (await count("[data-issue-row]")) === 1, { timeoutMsg: "priority filter" });
   await clickText(".issues-toolbar button", /Filter zurücksetzen/);
   await app.select('.view-actions [aria-label="Gruppieren nach"]', "project");
-  // Open an issue: description, comments, actions.
+  // Open an issue: description and comments loaded now, actions.
   await app.click('[data-issue-row="PROJ-123"] .issue-row-main');
   await app.waitText('[data-issue-row="PROJ-123"] .issue-detail', /The token has expired[\s\S]*First look at PROJ-123/);
   await app.waitText('[data-issue-row="PROJ-123"] .issue-detail-side', /Notiz für PROJ-123 anlegen/);
+  assert.equal(detailGets().length, 1, "the opened issue is loaded once");
+  const asked = detailGets()[0].query.fields.split(",");
+  assert.ok(asked.includes("description") && asked.includes("comment"), detailGets()[0].query.fields);
+  assert.match((await app.invoke("jira_issue_view", { key: "PROJ-123" })).issue.description, /The token has expired/, "cached");
   await app.dismissToasts();
   await app.shot("103-issues-light");
   await setTheme("dark");
   await app.click(".ribbon-issues");
   await app.waitFor("[data-issue-row]");
   await app.click('[data-issue-row="PROJ-123"] .issue-row-main');
-  await app.waitFor('[data-issue-row="PROJ-123"] .issue-detail');
+  await app.waitText('[data-issue-row="PROJ-123"] .issue-detail', /The token has expired/);
   await app.shot("103-issues-dark");
+  // Opened again: from the cache.
+  assert.equal(detailGets().length, 1, "loaded again although cached");
   await setTheme("light");
 });
 
@@ -153,19 +182,25 @@ test("the Jira widgets on the start page", async () => {
   await reload();
   // A new tab shows the start page.
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-widget="jira"] .dwj-row', 15000);
-  assert.equal(await count('.pane.active .dw[data-widget="jira"] .dwj-row'), 4);
-  assert.match(await app.text('.pane.active .dw[data-widget="jira_query"]'), /OPS-8[\s\S]*Rotate certificates[\s\S]*Tom/);
-  await app.waitText('.pane.active .dw[data-widget="jira_sprint"]', /Sprint 4[\s\S]*0 von 3 erledigt/, 15000);
-  assert.ok(await (await app.$('.pane.active .dw[data-widget="jira_sprint"] path.dwj-actual')).isExisting(), "burndown drawn");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] .dwj-row', 15000);
+  assert.equal(await count('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] .dwj-row'), 4);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_query"]'), /OPS-8[\s\S]*Rotate certificates[\s\S]*Tom/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"]', /Sprint 4[\s\S]*0 von 3 erledigt/, 15000);
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"] path.dwj-actual')).isExisting(), "burndown drawn");
   await app.dismissToasts();
   await app.shot("103-widgets-light");
   await setTheme("dark");
-  await app.waitFor('.pane.active .dw[data-widget="jira_sprint"] path.dwj-actual', 15000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"] path.dwj-actual', 15000);
   await sleep(300);
   await app.shot("103-widgets-dark");
   await setTheme("light");
-  // A click on a row opens the issue's note.
-  await app.click('.pane.active .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  // A click on a row opens the issue view; its context menu has the issue's note.
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  await app.waitFor('[data-issue-view="OPS-7"] .iv-summary', 15000);
+  await app.keys(["Escape"]);
+  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".iv")), { timeoutMsg: "issue view not closed" });
+  const row = await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  await row.click({ button: "right" });
+  await clickText(".menu .menu-item", /^Notiz öffnen$/);
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.textContent ?? "")).includes("OPS-7 Nightly backup job"), { timeout: 10000, timeoutMsg: "note not opened" });
 });

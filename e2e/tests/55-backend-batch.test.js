@@ -23,7 +23,7 @@ test("a save returns tags, unresolved links and the time; the panel follows typi
   assert.equal(saved.updated_at, doc.updated_at);
 
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: true } });
-  await app.waitText(".pane.active .ProseMirror", /Nirgendwo55/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Nirgendwo55/);
   await app.click(".panel-tab:nth-child(3)");
   await app.waitText(".links-panel .link-row.unresolved", /Nirgendwo55/);
   await app.caretToEnd();

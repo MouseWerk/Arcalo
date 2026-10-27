@@ -2,12 +2,13 @@
 // capture stores, the `/zeit` line of the booking form, progress, the week's bookings and the
 // note tree. Kept free of React so it can be tested.
 
-import { addDays, fmtDate, fmtMinutes, isoDay, parseDurationInput, weekStart } from "../lib/format";
+import { addDays, fileSize, fmtDate, fmtMinutes, isoDay, parseDurationInput, relative, weekStart } from "../lib/format";
 import { parseDue } from "../lib/capture";
 import { renderMarkdown } from "../lib/markdown";
 import { t } from "../lib/i18n";
 import { taskGroup, type TaskGroup } from "../lib/tasks";
 import type { GitSyncStatus, PageNode, Task, TimeEntryRow } from "../lib/types";
+import type { UpdateStatus } from "./api";
 
 // ------------------------------------------------------------------ navigation
 
@@ -18,7 +19,7 @@ export type CaptureMode = "note" | "task" | "booking";
 
 /** A screen opened above the tabs (the back button closes it). */
 export type Screen =
-  | { kind: "capture"; mode: CaptureMode }
+  | { kind: "capture"; mode: CaptureMode; /** Text to start with (shared from another app). */ text?: string }
   | { kind: "daily"; date: string }
   | { kind: "page"; id: number }
   | { kind: "settings" };
@@ -54,6 +55,15 @@ export function navigate(r: Route, a: NavAction): Route {
 
 /** The screen shown: the top of the stack, else the tab. */
 export const current = (r: Route): Screen | Tab => r.stack[r.stack.length - 1] ?? r.tab;
+
+/** What Android's back button does: first close what is open in a screen (an edit mode), then
+ *  the top screen, then go to „Heute“, and on „Heute“ send the app to the background (it keeps
+ *  its state, as Android apps do since Android 12). It never quits the app. */
+export function backAction(r: Route, openLayers: number): "layer" | "pop" | "today" | "background" {
+  if (openLayers > 0) return "layer";
+  if (r.stack.length) return "pop";
+  return r.tab === "today" ? "background" : "today";
+}
 
 // --------------------------------------------------------------------- capture
 
@@ -224,7 +234,112 @@ export function pageHtml(md: string): string {
     const name = target.split("|")[0].split("#")[0].trim();
     return `\n\n<p class="m-embed">${escapeHtml(t("mob.notes.embed", { name }))}</p>\n\n`;
   });
-  return renderMarkdown(withEmbeds);
+  // Task boxes can be ticked (A19): enabled, with the page as their label.
+  return renderMarkdown(withEmbeds).replace(/<input\b([^>]*)>/g, (tag, attrs: string) => (/type="checkbox"/.test(attrs) ? `<input${attrs.replace(/\s+disabled(="[^"]*")?/, "")}>` : tag));
+}
+
+// ------------------------------------------------------------------ tasks in a page (A19)
+
+/** The ticked state of every task box {@link pageHtml} shows, in their order. */
+export function taskBoxes(md: string): boolean[] {
+  return [...pageHtml(md).matchAll(/<input\b[^>]*type="checkbox"[^>]*>/g)].map((m) => /\schecked\b/.test(m[0]));
+}
+
+/** A task line: list marker (also quoted or numbered), the box and its state, the text (with a
+ *  Windows line end's `\r`, which `.` would not take). */
+const TASK_LINE = /^((?:[ \t]*>[ \t]?)*([ \t]*)(?:[-*+]|\d{1,9}[.)])[ \t]+\[)([ xX])(\](?:[ \t]+|\r?$))([^\n]*)$/;
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+
+/** Index of each task line of the page's text (front matter and code blocks left out). */
+function taskLineIndexes(lines: string[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  if (/^---\r?$/.test(lines[0] ?? "")) {
+    const end = lines.findIndex((l, n) => n > 0 && /^---[ \t]*\r?$/.test(l));
+    if (end > 0) i = end + 1;
+  }
+  let fence: string | null = null;
+  for (; i < lines.length; i++) {
+    const f = FENCE.exec(lines[i]);
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (f) fence = f[1];
+    else if (TASK_LINE.test(lines[i])) out.push(i);
+  }
+  return out;
+}
+
+export interface TaskToggle {
+  md: string;
+  /** Line of the task in `md`. */
+  line: number;
+  done: boolean;
+  /** The task's text as the core reads it (no chips): the next date of a repeating one. */
+  text: string;
+}
+
+/**
+ * Ticks off (or opens again) the task of the `index`-th box of the page. The line is found by
+ * the boxes the rendering shows: exactly that box changes, or nothing (`null`) when the text no
+ * longer has it.
+ */
+export function toggleTask(md: string, index: number): TaskToggle | null {
+  const before = taskBoxes(md);
+  if (index < 0 || index >= before.length) return null;
+  const lines = md.split("\n");
+  const candidates = taskLineIndexes(lines);
+  // The line of the same position first; another one only when Markdown counted differently.
+  const order = [candidates[index], ...candidates.filter((_, n) => n !== index)].filter((n) => n !== undefined);
+  for (const line of order) {
+    const m = TASK_LINE.exec(lines[line])!;
+    const done = m[3] === " ";
+    const next = [...lines];
+    next[line] = lines[line].replace(TASK_LINE, (_all, head: string, _indent: string, _state: string, tail: string, rest: string) => `${head}${done ? "x" : " "}${tail}${rest}`);
+    const md2 = next.join("\n");
+    const after = taskBoxes(md2);
+    if (after.length === before.length && after.every((v, n) => (n === index ? v === done && v !== before[n] : v === before[n]))) {
+      return { md: md2, line, done, text: taskText(m[5]) };
+    }
+  }
+  return null;
+}
+
+/** A task's text without its `/zeit` chips and line end. */
+const taskText = (rest: string) => rest.replace(/<time-entry\b[^>]*>[^<]*<\/time-entry>/g, "").replace(/\r$/, "").replace(/ {2,}/g, " ").trim();
+
+/** Only tasks that may have a repeat rule ask the core (as in the desktop's editor, recurTasks.ts). */
+export const mayRepeat = (text: string) => /(?:^|\s)(?:every|wdh):|\u{1F501}/iu.test(text);
+
+const DUE_DATE_RE = /((?:due|fällig):|\u{1F4C5}\s?)(\d{4}-\d{2}-\d{2})/iu;
+
+/**
+ * Adds the next occurrence of the repeating task on `line` (ticked off) below it and its
+ * subtasks, as the desktop's editor does: open, with the date `due` in place of the old one (or
+ * added), without its bookings, its block id and an Obsidian done date.
+ */
+export function withNextOccurrence(md: string, line: number, due: string): string {
+  const lines = md.split("\n");
+  const m = TASK_LINE.exec(lines[line] ?? "");
+  if (!m) return md;
+  const cr = lines[line].endsWith("\r") ? "\r" : "";
+  let text = m[5].replace(/\r$/, "").replace(/<time-entry\b[^>]*>[^<]*<\/time-entry>/g, "");
+  const dated = DUE_DATE_RE.test(text);
+  text = text.replace(DUE_DATE_RE, (_all, prefix: string) => `${prefix}${due}`);
+  text = text.replace(/\s*\u{2705}\s?\d{4}-\d{2}-\d{2}/gu, "").replace(/\s+\^[A-Za-z0-9-]+\s*$/, "").replace(/ {2,}/g, " ").trimEnd();
+  if (!dated) text = `${text} due:${due}`;
+  const item = `${m[1]} ]${text.trim() ? ` ${text.trim()}` : ""}${cr}`;
+  // Below its subtasks: the lines indented deeper (blank lines between them included).
+  const width = (l: string) => /^[ \t]*/.exec(l)![0].replace(/\t/g, "    ").length;
+  const own = width(lines[line]);
+  let at = line + 1;
+  for (let n = line + 1; n < lines.length; n++) {
+    if (!lines[n].trim()) continue;
+    if (width(lines[n]) <= own) break;
+    at = n + 1;
+  }
+  return [...lines.slice(0, at), item, ...lines.slice(at)].join("\n");
 }
 
 // ----------------------------------------------------------------------- sync
@@ -241,6 +356,47 @@ export function syncState(enabled: boolean, remote: string, status: GitSyncStatu
 /** Whether the app syncs again when it comes back to the front (at most every two minutes). */
 export function syncDue(lastAt: number | null, now: number, minGapMs = 120_000): boolean {
   return lastAt === null || now - lastAt >= minGapMs;
+}
+
+// --------------------------------------------------------------------- updates
+
+/** The line under „Updates“ and in the banner: what the app's updater is doing. */
+export function updateLine(s: UpdateStatus): { text: string; detail: string | null } {
+  const v = s.offered?.version ?? "";
+  const checked = s.last_check ? t("mob.upd.lastCheck", { when: relative(s.last_check) }) : t("mob.upd.never");
+  switch (s.phase) {
+    case "checking":
+      return { text: t("mob.upd.checking"), detail: null };
+    case "downloading":
+      return { text: t("mob.upd.downloading", { version: v }), detail: s.total ? t("mob.upd.progress", { done: fileSize(s.downloaded), total: fileSize(s.total) }) : fileSize(s.downloaded) };
+    case "waiting":
+      return { text: s.metered ? t("mob.upd.waitingWifi", { version: v }) : t("mob.upd.waitingOffline", { version: v }), detail: s.offered?.size ? fileSize(s.offered.size) : null };
+    case "ready":
+      return { text: t("mob.upd.ready", { version: v }), detail: t("mob.upd.readyHint") };
+    case "blocked":
+      return { text: t("mob.upd.blocked", { version: v }), detail: s.blocked };
+    case "error":
+      return { text: t("mob.upd.failed"), detail: s.error };
+    default:
+      return s.offered ? { text: t("mob.upd.available", { version: v }), detail: checked } : { text: t("mob.upd.upToDate"), detail: checked };
+  }
+}
+
+/** Share of the download, 0–1 (0 while the size is unknown). */
+export const updateProgress = (s: UpdateStatus) => (s.total ? Math.max(0, Math.min(1, s.downloaded / s.total)) : 0);
+
+/** A computed CSS color (`rgb(…)`, `rgba(…)`, `#rgb`, `#rrggbb`) as `#rrggbb` for Android's
+ *  window; null for anything else. */
+export function cssHex(color: string): string | null {
+  const c = color.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(c);
+  if (hex) return hex[1].length === 3 ? `#${[...hex[1]].map((x) => x + x).join("")}` : c;
+  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)/.exec(c);
+  if (!rgb) return null;
+  return `#${rgb
+    .slice(1, 4)
+    .map((n) => Math.max(0, Math.min(255, Math.round(Number(n)))).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /** Days for the booking form's day choice: today and yesterday. */

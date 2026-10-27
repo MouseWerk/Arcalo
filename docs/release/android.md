@@ -62,28 +62,127 @@ apksigner verify --print-certs Arcalo_<commit>_android.apk
 
 The SHA-256 of the signer must be the fingerprint above.
 
-## Releases (once the APK is verified on devices)
+**Until the four secrets exist, no installed APK can be updated.** Each CI run makes a new debug key, and
+Android installs a newer APK over the app only with the same key. The release APKs so far were debug-signed
+(1.16 and 1.17 for certain; from 1.18 on the release run warns „Debug-signed release APK“). The app recognizes
+such an update before the
+download and explains it (synchronize, uninstall, install the new version from the release page). Once the
+release key is in place, the first release-signed APK has to be installed that way one last time; from then
+on the app updates itself.
 
-The APK is not part of `release.yml` yet. To attach it to a release, the Android job moves into the release
-workflow (or `release.yml` calls `android.yml` with `workflow_call`) and:
+## Releases
 
-1. builds with the release version: `cargo tauri android build --apk … --config '{"version":"<version>"}'`
-   (the version code follows the version: 1.15.0 → 1015000);
-2. requires the four secrets (a release is never debug-signed);
-3. uploads `Arcalo_<version>_android.apk` and its `.sha256` to the release next to the desktop installers;
-4. the website links the APK under „Android (Begleit-App)“ with the signer's fingerprint.
+`release.yml` calls `android.yml` with the tag: the APK is built with the release version (the version code
+follows it: 1.18.0 → 1018000) and attached to the release as `Arcalo_<version>_android.apk`. The APK is not
+advertised on the website or in the README (owner decision); the release page and the app's own update
+carry it.
 
-The desktop's update feed (`latest.json`) stays without the APK: Android updates come from the release page
-(later from a store), the app never updates itself.
+## Updates of the app
 
-## Checklist for a new Android build (manual)
+The app checks for a new version itself (src-tauri/src/mobile/apkupdate.rs, docs/android.md → Updates):
 
-- Install the APK on a phone (Android 8 or newer): opens without errors, the tab bar sits above the
-  navigation bar, the keyboard does not cover the capture field.
+1. **Signature.** With the secret `TAURI_SIGNING_PRIVATE_KEY` (the desktop's update key, the same secret and
+   password the desktop builds use), `android.yml` compiles the public key `src-tauri/updater.pub` into a
+   release APK (`ARCALO_UPDATER_PUBKEY`, as the desktop) and signs the APK with
+   `cargo tauri signer sign --app-version <version>`: `Arcalo_<version>_android.apk.sig`, a minisign
+   signature whose signed comment names the version. Builds without the key (pushes to `main`) never check
+   for updates.
+2. **Feed.** The publish job of `release.yml` writes `android-latest.json` next to `latest.json`:
+   version, version code, package and signing certificate (package and version code read with `aapt2`; the
+   certificate's SHA-256 from the APK Signing Block, v3 before v2, by `scripts/apk-signer.mjs`, compared with
+   `apksigner`, whose output and errors the log shows; 1.18.1 had no feed because build-tools 37's
+   `apksigner` prints „V2 Signer: certificate SHA-256 digest“ instead of „Signer #1 …“), the APK's address and
+   size, its signature and the release notes. A debug-signed APK (no `ANDROID_*` secrets; its certificate's
+   subject is `CN=Android Debug`, read by `scripts/apk-signer.mjs --subject`) gets no feed, with a warning
+   (1.19): phones with the release-signed app could not install it. When the certificate or the package cannot
+   be read, a warning says so and there is no Android feed. A file of its own rather than an
+   `android` entry in `latest.json`: the desktop's feed is read by Tauri's updater and by the app's own
+   updater (`update_feed.rs`, which requires `url` and `signature` in every platform entry), and both stay
+   untouched by fields only Android needs; a release whose APK failed has no Android feed and the phones
+   simply see nothing new.
+3. **On the phone.** The app asks
+   `https://github.com/MouseWerk/Arcalo/releases/latest/download/android-latest.json`, compares the version
+   and version code with the installed app and the signing certificate with its own, downloads on Wi-Fi
+   (an interrupted download continues), checks the minisign signature with the compiled-in key and the
+   signed version, lets Android read package, version code and certificate from the file, and only then
+   offers „Update installieren“. A file that fails a check is deleted. The installer is Android's own
+   (`ACTION_VIEW` on a FileProvider address in the app's cache); Android asks the user to confirm, and once
+   for the permission „Unbekannte Apps installieren“ for Arcalo.
+
+## Checklist for Android (manual)
+
+Before or after a release, on a phone with Android 8 or newer (and, if at hand, Android 14/15):
+
+- Install the APK: opens without errors, the tab bar sits above the navigation bar, status and navigation bar
+  have the app's colors in light, dark and with „Hoher Kontrast“, also when the app's theme differs from
+  Android's; switching Android's dark mode while „Wie das System“ is chosen changes the app.
+- The keyboard does not cover the capture field, the page editor or the token field.
+- Back button and back gesture: in the page editor back ends editing (the text is kept), then closes the page,
+  on another tab goes to Heute, on Heute sends the app to the background; reopening shows the same state.
+- A link `[[…]]` in a note opens that page.
+- Share text or a link from the browser to Arcalo: the capture opens with it.
+- Zeit → „Verwerfen“ asks before it discards the running timer.
+- Android's font size at the largest step: nothing is cut off or wider than the screen; landscape and a tablet.
 - Einstellungen → Synchronisierung: remote URL, token, „Verbindung testen“, „Jetzt synchronisieren“: the
   desktop's notes appear; with „Datenbank mitsichern“ on the desktop, Netzpläne under Zeit and meetings under
-  Heute.
+  Heute. An SSH address is refused with the message that the phone needs HTTPS.
 - Book `/zeit` on the phone, sync, sync the desktop: the chip is in the daily note, „Erneut buchen“ books it.
 - Edit the same note on both sides, sync both: the conflict shows on the phone and can be decided.
 - Close and reopen the app: the token is still set (Android Keystore).
-- Light, dark and system theme; German and English.
+- German and English.
+
+The full app on large screens (1.20, docs/android.md → „Phone app or full app“). On a tablet (Android 12+,
+ideally 15 with desktop windowing), on a phone with desktop mode on an external display (e.g. Samsung DeX or
+Android 15/16 „Desktop-Modus“ with a USB-C monitor, mouse and keyboard), and on an Android PC when one is at
+hand:
+
+- Tablet upright and sideways: the full app opens (sidebar, tabs, start page), not the phone app; no console
+  error page, nothing wider than the screen; the system bars keep the app's colors.
+- Split screen: a half of a landscape tablet keeps the full app; a third (phone-sized) switches to the phone
+  app, back to a half switches again; typed text in an open note survives each switch (type, then resize at
+  once).
+- A freely sized window (desktop windowing): shrinking it to phone size switches to the phone app, growing it
+  switches back; dragging the edge slowly does not flicker between the two.
+- Einstellungen → Darstellung → „Oberfläche auf Android“: „Telefon“ switches to the phone app at once and
+  stays there on the tablet; the phone app's Einstellungen → „Oberfläche auf Android“ → „Vollständig“ goes
+  back; „Automatisch“ follows the window again. Also on a phone: „Vollständig“ shows the full app.
+- Phone in desktop mode on an external display: the window on the monitor shows the full app; moving the app
+  back to the phone's screen shows the phone app; plugging a mouse and keyboard into a tablet keeps the full
+  app (and with a small window, switches to it).
+- Mouse and trackpad: hover tints rows and buttons, right click opens the tree's, tab's, editor's and table's
+  menus, the wheel and two-finger scroll the panes; touch: a tap leaves no tinted row, a long press on a tree
+  row, a tab or a task opens its menu (in the editor a long press selects a word with Android's text tools),
+  a finger drags the pane divider and the sidebar's edge.
+- Keyboard: Ctrl+K opens the palette, Ctrl+N a page, Ctrl+, the settings, Tab and the arrows move the focus
+  (the focus ring shows only when moving with keys); Android's own shortcuts (Meta, Alt+Tab) still work.
+- Drag and drop with a mouse: pages in the tree, tabs between panes, tasks on the start page; with a finger
+  where Android's WebView offers it (a long press starts the drag on newer WebViews).
+- Notes, tasks, the calendar, time tracking (timer, `/zeit`, Zeiterfassung), the assistant with a provider
+  key (the key is kept after a restart), the Git sync („Jetzt synchronisieren“ in Einstellungen → Sicherung;
+  an SSH address is refused), split panes, the file sidebar.
+- Files: „Datei einfügen“ opens Android's document picker and the file lands in the note; „Öffnen“ on an
+  attachment opens it in the app Android has for its type (a PDF viewer, an office app); exporting the time
+  tracking as CSV, a page as HTML, a diagram as SVG/PNG, the settings or a theme saves through Android's
+  „Speichern unter“ to the chosen place; the diagnostics package as well.
+- Not offered on Android, and nowhere broken: voice notes, the encryption and the app lock, tray, autostart,
+  global shortcuts, the command line, the desktop's updater (Über Arcalo shows Android's updates), the
+  quick-capture and quick-search windows, choosing local folders (data folder, backups, Markdown copy,
+  Obsidian vaults, calendar files), programs as quick links, PAC scripts.
+- Back button in the full app: closes a dialog or menu first, then sends the app to the background (it does
+  not quit); reopening shows the same tabs.
+- Android PC (when available): the full app at any window size, keyboard shortcuts, external displays.
+
+Updates (needs two release-signed versions, e.g. a test tag; see „Signing“):
+
+- Install version N. Einstellungen → Updates shows „Arcalo ist aktuell“ and the time of the last check.
+- Publish N+1. On Wi-Fi the app downloads it within a minute of its start (or with „Nach Updates suchen“);
+  the notification „Arcalo N+1 ist bereit“ appears (Android 13+: allow notifications when asked) and Heute
+  shows „Update installieren“ with „Was ist neu“.
+- On mobile data only: „Version N+1 wird im WLAN geladen“; „Jetzt über mobile Daten laden“ downloads it;
+  with „Updates auch über mobile Daten laden“ it downloads by itself.
+- Airplane mode during the download, then back: the download continues where it stopped.
+- „Update installieren“ the first time: the notice „Arcalo darf noch keine Apps installieren“, „Einstellung
+  öffnen“ leads to „Unbekannte Apps installieren“; after allowing it and coming back the installer opens.
+  Confirm: the app restarts as N+1 with its data, token and settings.
+- A debug-signed APK as N+1 (or N): the app explains the other signing key instead of offering the update.
+

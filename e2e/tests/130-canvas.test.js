@@ -17,7 +17,7 @@ let app, canvasId, out;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function reload() {
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }
@@ -60,7 +60,10 @@ after(async () => {
 });
 
 test("Neue Canvas in der Seitenleiste legt sie im Ordner „Canvas“ an", async () => {
-  await app.click("[data-new-canvas]");
+  // „Neu“ in the sidebar's toolbar (1.19: every kind there).
+  await app.click(".side-toolbar [data-new-menu]");
+  await app.waitFor(".menu");
+  await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.textContent.trim() === "Canvas")?.click());
   await app.waitFor(".cv-board");
   canvasId = Number(await app.browser.execute(() => document.querySelector(".cv-board").dataset.canvas));
   const page = await app.invoke("page_get", { id: canvasId });
@@ -93,7 +96,13 @@ test("Textkarte per Doppelklick, Notizkarte aus der Auswahl, verbinden durch Zie
   const text = await rect(".cv-card[data-kind=text]");
   await drag({ x: head.cx - 60, y: head.cy }, { x: text.x + text.w + 260, y: text.y + 10 });
 
-  let doc = await waitStored((d) => d.nodes.length === 2, "two cards stored");
+  // Autosave runs 600 ms after the last change: on a slow machine the added card is stored
+  // before the drag starts, so two stored cards alone do not mean the move is stored yet.
+  const moved = (d) => {
+    const [t, n] = ["text", "file"].map((type) => d.nodes.find((x) => x.type === type));
+    return d.nodes.length === 2 && !!t && !!n && n.x > t.x + t.width;
+  };
+  let doc = await waitStored(moved, "two cards stored, the note moved");
   const t = doc.nodes.find((n) => n.type === "text");
   const note = doc.nodes.find((n) => n.type === "file");
   assert.equal(t.text, "# Phase 1\nKickoff mit [[Architektur]]");
@@ -268,7 +277,16 @@ test("Eine Obsidian-Canvas aus einem Vault öffnet mit Karten, Gruppe, Link und 
   const page = flat.find((n) => n.title === "Board");
   assert.equal(page.kind, "canvas");
   assert.equal((await app.invoke("page_get", { id: page.id })).content, text, "stored byte for byte");
-  // Open it from the tree, as a user would.
+  // Open it from the tree, as a user would: the imported folders start collapsed (1.19), open them.
+  const line = [];
+  for (let p = flat.find((n) => n.id === page.parent_id); p; p = flat.find((n) => n.id === p.parent_id)) line.unshift(p);
+  for (const parent of line) {
+    await app.browser.waitUntil(() => app.browser.execute((id) => !!document.querySelector(`.tree-row[data-id="${id}"]`), parent.id));
+    await app.browser.execute((id) => {
+      const row = document.querySelector(`.tree-row[data-id="${id}"]`);
+      if (row?.getAttribute("aria-expanded") === "false") row.querySelector(".tree-twisty").click();
+    }, parent.id);
+  }
   await app.browser.waitUntil(() => app.browser.execute((id) => document.querySelector(`.tree-row[data-id="${id}"]`) != null, page.id), { timeoutMsg: "imported canvas in the tree" });
   await app.click(`.tree-row[data-id="${page.id}"]`);
   await app.browser.waitUntil(() => app.browser.execute((id) => document.querySelector(`.cv-board[data-canvas="${id}"]`) != null, page.id), { timeout: 10000, timeoutMsg: "imported canvas opened" });

@@ -129,7 +129,7 @@ test("pinned tabs are reachable by keyboard and unpin from the menu opened with 
 test("a shortcut set in Settings → Tastatur pins the active tab", async () => {
   const v = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...v.settings, keymap: { ...v.settings.keymap, pin_tab: "Ctrl+Shift+N" } } });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await sleep(600);
   // The reload kept the pins (the layout is read back).

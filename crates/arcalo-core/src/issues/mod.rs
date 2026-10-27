@@ -16,8 +16,12 @@
 //! * **Tasks**: a task whose text names an issue is ticked when the issue is done in Jira.
 
 pub mod jira;
+pub mod richtext;
 #[cfg(test)]
 mod tests;
+pub mod view;
+#[cfg(test)]
+mod view_tests;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -337,11 +341,87 @@ pub struct Issue {
     /// Searches that found it in the last sync (`mine`, saved query ids).
     #[serde(default)]
     pub matches: Vec<String>,
+    /// `description` and `comments` were loaded with the issue (opened, 1.19) and it did not change
+    /// in Jira since. Searches and syncs load the list fields only and keep what was loaded.
+    #[serde(default)]
+    pub detailed: bool,
 }
 
 impl Issue {
     pub fn done(&self) -> bool {
         self.status_category == "done"
+    }
+}
+
+/// One issue of [`IssueTable`]: the fields of [`Issue`] in their order, the project (key and
+/// name) as an index into `projects`, without the comments.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IssueRow(
+    pub String,
+    pub String,
+    pub String,
+    pub String,
+    pub String,
+    pub String,
+    pub String,
+    pub u8,
+    pub String,
+    pub String,
+    pub String,
+    pub u32,
+    pub String,
+    pub String,
+    pub Option<String>,
+    pub Option<String>,
+    pub Option<String>,
+    pub String,
+    pub String,
+    pub Vec<String>,
+);
+
+/// [`Issue`]s as the issue list loads them: rows instead of objects, each project's key and name
+/// once, and no comments (the issue opened in the list reads them with its view). A third of the
+/// size of the objects (1.9 MB for 2,000 issues), decoded by the UI into the same objects.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct IssueTable {
+    /// Project key and name.
+    pub projects: Vec<(String, String)>,
+    pub rows: Vec<IssueRow>,
+}
+
+impl From<Vec<Issue>> for IssueTable {
+    fn from(list: Vec<Issue>) -> Self {
+        let mut out = IssueTable::default();
+        let mut index: HashMap<(String, String), u32> = HashMap::new();
+        for i in list {
+            let project = *index.entry((i.project_key, i.project_name)).or_insert_with_key(|k| {
+                out.projects.push(k.clone());
+                (out.projects.len() - 1) as u32
+            });
+            out.rows.push(IssueRow(
+                i.site,
+                i.key,
+                i.remote_id,
+                i.summary,
+                i.status,
+                i.status_category,
+                i.priority,
+                i.priority_level,
+                i.assignee,
+                i.reporter,
+                i.issue_type,
+                project,
+                i.sprint,
+                i.sprint_state,
+                i.due_date,
+                i.updated,
+                i.resolved,
+                i.url,
+                i.description,
+                i.matches,
+            ));
+        }
+        out
     }
 }
 
@@ -419,9 +499,10 @@ pub trait IssueProvider {
     fn site(&self) -> &str;
     /// The account the token belongs to.
     async fn whoami(&self) -> Result<Account>;
-    /// Issues of a query in the tracker's language (JQL), at most `limit`.
+    /// Issues of a query in the tracker's language (JQL), at most `limit`; without description and
+    /// comments.
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>>;
-    /// One issue with its comments.
+    /// One issue with its description and comments (`detailed`).
     async fn get(&self, key: &str) -> Result<Issue>;
     /// Projects the user can create issues in.
     async fn projects(&self) -> Result<Vec<RemoteProject>>;
@@ -562,6 +643,12 @@ pub struct WorklogDelete {
     pub site: String,
     pub issue_key: String,
     pub worklog_id: String,
+}
+
+/// Whether bookings on the Jira site `site` are posted as worklogs (time tracking on, the site
+/// switched on and „Arbeitszeit protokollieren“ set).
+pub fn logs_work(settings: &crate::settings::Settings, site: &str) -> bool {
+    settings.time_tracking() && settings.jira.site(site).is_some_and(|s| s.enabled && s.log_work)
 }
 
 /// Whether a change of an entry reaches its Jira worklog: its duration (as Jira gets it), its
@@ -800,10 +887,15 @@ pub struct IssueBacklink {
 
 const ISSUE_COLS: &str = "site, key, remote_id, summary, status, status_category, priority, assignee, reporter, issue_type, \
      project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches, priority_level";
+/// What [`map_issue`] reads: the columns and whether the description is loaded.
+const ISSUE_SELECT: &str = "site, key, remote_id, summary, status, status_category, priority, assignee, reporter, issue_type, \
+     project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches, priority_level, \
+     detail_at IS NOT NULL";
 
 fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
     let comments: String = r.get(19)?;
     let matches: String = r.get(20)?;
+    let detailed: bool = r.get(22)?;
     Ok(Issue {
         site: r.get(0)?,
         key: r.get(1)?,
@@ -828,6 +920,7 @@ fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
         matches: serde_json::from_str(&matches).unwrap_or_default(),
         priority_level: r.get(21)?,
         priority_id: String::new(),
+        detailed,
     })
 }
 
@@ -896,14 +989,21 @@ impl Database {
         })
     }
 
-    /// Writes one issue (keeps nothing of an older row but its place).
+    /// Writes one issue (keeps nothing of an older row but its place). An issue of a search (not
+    /// `detailed`) keeps the description and comments loaded before; they count as loaded until the
+    /// issue changes in Jira (its `updated`), and are shown meanwhile.
     pub fn issue_put(&self, site: &str, i: &Issue, now: DateTime<Utc>) -> Result<()> {
         self.conn().execute(
             &format!(
-                "INSERT INTO issues ({ISSUE_COLS}, seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?23, ?22)
+                "INSERT INTO issues ({ISSUE_COLS}, seen_at, detail_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?23, ?22,
+                   CASE WHEN ?24 THEN ?22 END)
                  ON CONFLICT (site, key) DO UPDATE SET remote_id = ?3, summary = ?4, status = ?5, status_category = ?6, priority = ?7,
                    assignee = ?8, reporter = ?9, issue_type = ?10, project_key = ?11, project_name = ?12, sprint = ?13, sprint_state = ?14,
-                   due_date = ?15, updated = ?16, resolved = ?17, url = ?18, description = ?19, comments = ?20,
+                   due_date = ?15,
+                   detail_at = CASE WHEN ?24 THEN ?22 WHEN updated IS ?16 THEN detail_at END,
+                   updated = ?16, resolved = ?17, url = ?18,
+                   description = CASE WHEN ?24 THEN ?19 ELSE description END,
+                   comments = CASE WHEN ?24 THEN ?20 ELSE comments END,
                    matches = CASE WHEN ?21 = '[]' THEN matches ELSE ?21 END, seen_at = ?22, priority_level = ?23"
             ),
             params![
@@ -930,6 +1030,7 @@ impl Database {
                 serde_json::to_string(&i.matches)?,
                 ts(now),
                 i.priority_level,
+                i.detailed,
             ],
         )?;
         if !i.project_key.is_empty() {
@@ -943,7 +1044,7 @@ impl Database {
 
     /// Cached issues, newest change first.
     pub fn issues_list(&self, f: &IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = format!("SELECT {ISSUE_COLS} FROM issues WHERE (?1 = '' OR site = ?1)");
+        let mut sql = format!("SELECT {ISSUE_SELECT} FROM issues WHERE (?1 = '' OR site = ?1)");
         if !f.all {
             sql.push_str(" AND matches <> '[]'");
         }
@@ -963,7 +1064,7 @@ impl Database {
         Ok(self
             .conn()
             .query_row(
-                &format!("SELECT {ISSUE_COLS} FROM issues WHERE key = ?1 ORDER BY site LIMIT 1"),
+                &format!("SELECT {ISSUE_SELECT} FROM issues WHERE key = ?1 ORDER BY site LIMIT 1"),
                 [key],
                 map_issue,
             )
@@ -992,7 +1093,7 @@ impl Database {
     /// Removes the cache of a site (it was removed from the settings).
     pub fn issues_remove_site(&self, site: &str) -> Result<()> {
         self.atomic(|| {
-            for t in ["issues", "issue_projects", "issue_sync"] {
+            for t in ["issues", "issue_projects", "issue_sync", "issue_full"] {
                 self.conn().execute(&format!("DELETE FROM {t} WHERE site = ?1"), [site])?;
             }
             Ok(())
@@ -1341,6 +1442,43 @@ impl Database {
             [entry_id],
         )?;
         Ok(n == 1)
+    }
+
+    /// Deletes a booking; its posted worklog is queued for deletion in Jira in the same
+    /// transaction when the site logs work (`settings`), and its issue link is kept for a
+    /// booking that comes back. `with_chip`: the user removed the entry's chip from its note (the
+    /// note stays as it is); otherwise the chip is marked „Buchung gelöscht“. Returns whether a
+    /// worklog deletion was queued.
+    pub fn delete_booking(&self, entry_id: i64, with_chip: bool, settings: &crate::settings::Settings) -> Result<bool> {
+        let site = self.entry_worklog(entry_id)?.map(|(site, _, _)| site);
+        let queue = site.is_some_and(|s| logs_work(settings, &s));
+        self.atomic(|| {
+            let queued = queue && self.worklog_queue_delete(entry_id)?;
+            // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
+            self.issue_keep_link(entry_id, Utc::now())?;
+            if with_chip {
+                self.delete_time_entry_with_chip(entry_id)?
+            } else {
+                self.delete_time_entry(entry_id)?
+            };
+            Ok(queued)
+        })
+    }
+
+    /// A booking was edited from `before` to `after`: its posted worklog is updated at the next
+    /// run when duration, start or comment changed and the site logs work. Returns whether one
+    /// is due now.
+    pub fn booking_edited(
+        &self,
+        before: &TimeEntry,
+        after: &TimeEntry,
+        settings: &crate::settings::Settings,
+    ) -> Result<bool> {
+        if !worklog_differs(before, after) {
+            return Ok(false);
+        }
+        let Some((site, _, _)) = self.entry_worklog(after.id)? else { return Ok(false) };
+        Ok(logs_work(settings, &site) && self.worklog_changed(after.id)?)
     }
 
     /// The entry is being deleted: its posted worklog is queued for deletion in Jira.

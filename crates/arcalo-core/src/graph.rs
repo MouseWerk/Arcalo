@@ -115,6 +115,68 @@ pub struct GraphData {
     pub removed: Vec<i64>,
 }
 
+/// One node of [`GraphTable`]: id, title, icon, parent, index into `folders`, tags, Netzpläne, Jira
+/// key, daily note, links in, links out (the view does not show the dates; the date range is
+/// part of the filter).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GraphRow(
+    pub i64,
+    pub String,
+    pub Option<String>,
+    pub Option<i64>,
+    pub u32,
+    pub Vec<String>,
+    pub Vec<String>,
+    pub Option<String>,
+    pub bool,
+    pub u32,
+    pub u32,
+);
+
+/// [`GraphData`] as the graph view loads it: nodes as rows with their folder path once in
+/// `folders` and without the dates, links as one flat list of `from, to` pairs. A third of the
+/// size of the objects (2.3 MB for 6,000 pages and 21,000 links), decoded by the UI into the same
+/// objects but the dates.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct GraphTable {
+    pub folders: Vec<String>,
+    pub nodes: Vec<GraphRow>,
+    pub links: Vec<i64>,
+    pub unresolved: Vec<(i64, String, String)>,
+    pub files: Vec<(i64, String)>,
+    pub removed: Vec<i64>,
+}
+
+impl From<GraphData> for GraphTable {
+    fn from(d: GraphData) -> Self {
+        let mut out = GraphTable { removed: d.removed, ..Default::default() };
+        let mut folders: HashMap<String, u32> = HashMap::new();
+        for n in d.nodes {
+            let folder = *folders.entry(n.folder).or_insert_with_key(|f| {
+                out.folders.push(f.clone());
+                (out.folders.len() - 1) as u32
+            });
+            out.nodes.push(GraphRow(
+                n.id,
+                n.title,
+                n.icon,
+                n.parent_id,
+                folder,
+                n.tags,
+                n.netzplan,
+                n.jira,
+                n.daily,
+                n.links_in,
+                n.links_out,
+            ));
+        }
+        out.links = d.links.into_iter().flat_map(|l| [l.from, l.to]).collect();
+        out.unresolved = d.unresolved.into_iter().map(|g| (g.from, g.key, g.title)).collect();
+        out.files = d.files.into_iter().map(|f| (f.from, f.name)).collect();
+        out
+    }
+}
+
 /// Which pages a query covers: all that match, or the matching ones among some.
 enum Scope<'a> {
     All,

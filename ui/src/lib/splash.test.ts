@@ -31,12 +31,34 @@ describe("splash colors", () => {
   });
 });
 
-describe("index.html", () => {
+// The desktop's page and the Android app's own (1.19, mobile.html).
+describe.each(["index.html", "mobile.html"])("%s", (page) => {
   // Tauri adds hashes of inline styles/scripts in index.html to the CSP; browsers then ignore
   // 'unsafe-inline' and block every style the app sets at runtime (accent color, popups).
   it("has no inline <style> or <script> blocks", () => {
-    const html = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
+    const html = readFileSync(resolve(__dirname, "../..", page), "utf8");
     expect(html).not.toMatch(/<style[\s>]/i);
     expect(html.match(/<script(?![^>]*\bsrc=)[^>]*>/gi) ?? []).toEqual([]);
+  });
+});
+
+describe("mobile.html", () => {
+  // The phone loads its own entry, never the desktop bundle (q118 A18).
+  const read = (f: string) => readFileSync(resolve(__dirname, "../..", f), "utf8");
+  it("loads the mobile entry only, with the same start-up animation as index.html", () => {
+    const scripts = (html: string) => [...html.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
+    expect(scripts(read("mobile.html"))).toEqual(["/src/mobile/main.tsx"]);
+    expect(read("mobile.html").replace("/src/mobile/main.tsx", "/src/main.tsx")).toBe(read("index.html"));
+  });
+  it("is the Android window's page, and its entry imports nothing of the desktop app", () => {
+    const entry = read("src/mobile/main.tsx");
+    expect(entry).not.toMatch(/from "\.\.\/App"|styles\/(app|editor|components|settings|dashboard|prefs|firstrun|workwidgets)\.css/);
+    const conf = JSON.parse(read("../src-tauri/tauri.android.conf.json"));
+    expect(conf.app.windows[0].url).toBe("mobile.html");
+  });
+  it("lets the splash go once the phone app is ready, not after its 8 s limit", () => {
+    // The splash waits for body.ready (lib/splash.ts); the phone app marks it when its settings
+    // are loaded (on Android every start showed the splash for the full 8 s).
+    expect(read("src/mobile/MobileApp.tsx")).toMatch(/document\.body\.classList\.add\("ready"\)/);
   });
 });

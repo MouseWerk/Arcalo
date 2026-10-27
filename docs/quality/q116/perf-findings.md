@@ -111,7 +111,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: core test „a save that adds 3,000 tasks“ with a budget (< 1 s in a debug build) and a check that the
   activity feed holds at most one aggregated row for it.
 
-### P3 – High – Large pages degrade linearly per keystroke and superlinearly on open/source switch — partly fixed in 1.16 (10cd08c, e2e 340): source view paces word count, chip scan and height fit; bubble menus no longer relayout per key. Not fixed: content-visibility/contain on the blocks measured 7–9× slower per key in WebKitGTK 2.52 (1.0–1.1 s vs 116 ms at 200 KB, with and without compositing), so it was dropped; chunked large pastes need an undo/smart-paste design (owner decision); the remaining per-key cost is WebKit editing + layout of the contenteditable
+### P3 – High – Large pages degrade linearly per keystroke and superlinearly on open/source switch — partly fixed in 1.16 (10cd08c, e2e 340): source view paces word count, chip scan and height fit; bubble menus no longer relayout per key. Fixed in 1.17 (05baf03, e2e 340): the note is drawn once when it opens (Tiptap's React binding drew it twice) and not again when the editor goes (source view, closed tab); no plugin walks through the whole note per key any more (code highlighting, chat times, diagram blocks and previews, time chips, table of contents); 200 KB: open 1.3–1.4 → 1.1–1.25 s, to source 0.33–0.45 → 0.13–0.2 s, typing 42–47 → 29–35 ms; 1 MB: open 5.2 → 4.9 s, to source 1.5–2.1 → 0.55 s, typing 157 → 101 ms (docs/performance.md, 1.17). Left as is: content-visibility/contain on the blocks measured 7–9× slower per key in WebKitGTK 2.52 (1.0–1.1 s vs 116 ms at 200 KB, with and without compositing), so it was dropped; chunked large pastes need an undo/smart-paste design (owner decision); the way back from the source view parses and lays out the note anew (linear, 0.9 s at 200 KB); per key what remains is WebKit's editing and layout of the contenteditable
 
 - Measurement: see the scaling rows. 1 MB: open 35 s, 882 ms per key, rich → source 104 s, 686 ms per key in the
   source view, back 34 s; a 500 KB paste blocks the UI 16.7 s. `probe.mjs` on 200 KB: one `insertText` costs
@@ -175,7 +175,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: a shell test like the `client_for` check: commands whose names end in `_list/_get/_status/_schema/_states`
   must not call `state.db()` (allow-list for the few that write).
 
-### P7 – Medium – Trivial reads queue behind slow ones during a page switch — partly fixed in 1.16 (the slow and queued reads of P5/P6 are gone); not fixed: a shared WBS/Leistungsarten cache (changes outside the UI do not bump the WBS version, e2e 152 caught it) and a low-priority read queue
+### P7 – Medium – Trivial reads queue behind slow ones during a page switch — partly fixed in 1.16 (the slow and queued reads of P5/P6 are gone); fixed in 1.17 (1677655, 0bf4089, e2e 340): a shared WBS/Leistungsarten cache keyed by `wbsVersion`, which the backend now bumps on every change (`data://wbs`, also for changes outside the views); tag suggestions, duplicate hints and unlinked mentions run on a blocking thread with a read connection of their own (`background_read`), so they hold neither a runtime worker nor a reader of the next switch
 
 - Measurement: `blocks_list` on an empty table 74 ms avg, `leistungsarten_list` 82 ms, `wbs_tree` 86 ms,
   `plugin:window|set_title` 106 ms avg (n = 44) while `tags_suggest`, `duplicates_for` (86 ms), `page_get` and
@@ -190,7 +190,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   Expected: page switch 245–344 → ~200 ms debug.
 - Guard: the bench's IPC summary as a CI budget: no IPC on a page switch slower than 150 ms in debug.
 
-### P8 – Medium – Large JSON over IPC — partly fixed in 1.16 (fc78911: tasks_compact for the task view, day review capped at 60 pages with pages_total); not fixed: graph_data, jira_issues, workspace_tree keep their shape (scripts and many e2e tests read them; sizes are moderate on real workspaces)
+### P8 – Medium – Large JSON over IPC — partly fixed in 1.16 (fc78911: tasks_compact for the task view, day review capped at 60 pages with pages_total); fixed in 1.17 (dc3e3f0, e2e 340, e2e 103): the UI loads `workspace_tree_compact` (1.38 → 0.72 MB), `graph_compact` (2.30 → 0.81 MB, without the dates the view does not use) and `jira_issues_compact` (1.91 → 1.08 MB, without comments; the opened issue shows them from its view) and decodes them into the same objects; `graph_data`, `jira_issues` and `workspace_tree` stay for scripts and tests. The issue list keeps the descriptions its text search reads (560 KB of the 1.08 MB here)
 
 - Measurement: `tasks_list` 5.2–6.1 MB (625–1,402 ms; tasks view 1.15 s), `graph_data` 2.3 MB (graph 1.1 s),
   `jira_issues` 1.9 MB, `workspace_tree` 1.38 MB (start and every tree refresh), `day_review` 1.39 MB.

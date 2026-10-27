@@ -122,11 +122,14 @@ describe("one notation (q116 R8)", () => {
     expect(keyChips("⇧⌘ Leertaste")).toEqual(["⇧⌘ Leertaste"]);
     expect(keyChips("Bild↑")).toEqual(["Bild↑"]);
   });
-  it("has no key combination written with spaces in the catalogs", () => {
+  it("has no key combination written with spaces (also around the +) in the catalogs", () => {
     for (const lang of ["de", "en"]) {
       const src = fs.readFileSync(path.resolve(__dirname, `../locales/${lang}.ts`), "utf8");
       const spaced = src.match(/\b(Strg|Ctrl|Umschalt|Shift) (Strg|Ctrl|Umschalt|Shift|Alt|Eingabe|Enter|[A-Z0-9])\b/g) ?? [];
-      expect(spaced, lang).toEqual([]);
+      // „Strg + K“: the + without spaces too.
+      const KEY = "Strg|Ctrl|Umschalt|Shift|Alt|Option|Cmd|Eingabe|Enter|Entf|Del|Tab|Esc";
+      const padded = src.match(new RegExp(`\\b(${KEY}) \\+ ?(${KEY}|[A-Z0-9,.])(?![\\w])`, "g")) ?? [];
+      expect([...spaced, ...padded], lang).toEqual([]);
     }
   });
 });

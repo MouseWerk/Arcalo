@@ -1,10 +1,13 @@
-// Screenshots for the README (not part of the test suite): realistic sample content, no test
-// leftovers. Run after building the app, with the output folder of your choice:
-//   ARCALO_SHOTS=../docs/screenshots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
-import { test, before, after } from "node:test";
-import { launch } from "./lib/harness.js";
+// German screenshots of boards, blocks, the presentation and themes (not part of the test suite):
+// realistic sample content, no test leftovers. The README's pictures come from
+// readme-shots-16.test.js; these are for other uses. Run after building the app, with the output
+// folder of your choice:
+//   ARCALO_SHOTS=/tmp/shots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
+import { test as nodeTest, before, after } from "node:test";
+import { launch, guarded } from "./lib/harness.js";
 
 let app;
+const test = guarded(nodeTest, () => app);
 before(async () => (app = await launch()));
 after(async () => app?.close());
 
@@ -21,7 +24,7 @@ const panel = (open) =>
 const menuClick = (label) =>
   app.browser.execute((l) => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes(l))?.click(), label);
 /** A text cursor in the last heading instead of a selected first block. */
-const placeCursor = () => app.click(".pane.active .ProseMirror h2:last-of-type");
+const placeCursor = () => app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror h2:last-of-type");
 /** Shows a page without the cursor blinking in it and without hover states. */
 const settle = async () => {
   await app.browser.execute(() => {
@@ -140,31 +143,31 @@ test("README screenshots", async () => {
   await app.browser.execute((id) => localStorage.setItem("arcalo.page-full", JSON.stringify([id])), sprint.id);
   await app.invoke("page_create", { parentId: null, title: "Statusbericht KW 39", icon: "flag", content: DECK });
   await app.invoke("page_create", { parentId: null, title: "Konzept Auftragsportal", icon: "book-open", content: BLOCKS });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
 
   // Board and table, without the side panel so the columns have room.
   await panel(false);
   await openTree("Sprint Go-Live");
-  await app.waitFor(".pane.active .coll .board-col");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll .board-col");
   await settle();
   await app.shot("board-view");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll button")].find((b) => b.innerText.trim() === "Tabelle")?.click());
-  await app.waitFor(".pane.active .coll-table");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Tabelle")?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-table");
   await settle();
   await app.shot("table-view");
 
   // Editor blocks: table of contents, columns, callouts, footnotes.
   await openTree("Konzept Auftragsportal");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await placeCursor();
   await settle();
   await app.shot("editor-blocks");
 
   // Presentation.
   await openTree("Statusbericht KW 39");
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await menuClick("Präsentieren");
   await app.waitFor(".presentation .present-slide");
   await app.keys(["ArrowRight"]);
@@ -189,10 +192,10 @@ test("README screenshots", async () => {
   await app.shot("theme-picker");
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme: "dark", appearance: { ...view.settings.appearance, theme_dark: "tokyo-night" } } });
-  await app.browser.refresh();
+  await app.reload();
   await ready();
   await openTree("Konzept Auftragsportal");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await placeCursor();
   await settle();
   await app.shot("theme-tokyo-night");

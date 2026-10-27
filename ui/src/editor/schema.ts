@@ -25,7 +25,8 @@ import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
 import { CHUNK_LINES, chunkedLex } from "./chunkedLex";
-import { LazyHighlight, lowlight } from "./languages";
+import { LazyHighlight, codeHighlightPlugin, lowlight } from "./languages";
+import { StableNodeViews } from "./stableViews";
 import { PageEmbed, type PageEmbedOptions } from "./pageEmbed";
 import { RichBlocks, type RichBlocksOptions } from "./richBlocks";
 import { mailLinkId } from "../lib/legacy";
@@ -61,7 +62,8 @@ export { lowlight };
  */
 export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean } = {}): string {
   let s = t
-    .replace(/\\(?=[\\`*_[\]~=#<>!|.)+-])/g, "\\\\")
+    // A backslash before any ASCII punctuation is an escape in CommonMark: doubled to stay one.
+    .replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\")
     .replace(/`/g, "\\`")
     .replace(/\[\[/g, "\\[\\[")
     .replace(/\[\^/g, "\\[^")
@@ -100,8 +102,11 @@ function flanking(prev: string | undefined, next: string | undefined): boolean {
   return opens || closes;
 }
 
-/** Escapes what would turn a line into a block (heading, list, quote, setext underline). */
+/** Escapes what would turn a line into a block (heading, list, quote, setext underline, indented code). */
 function escapeLineStart(line: string): string {
+  // Four columns of indentation (a tab reaches the next stop) make indented code, and a paragraph
+  // drops its leading blanks: the first one is written as its entity, the rest stays as typed.
+  if (/^(?: {0,3}\t| {4})/.test(line)) return (line[0] === "\t" ? "&#9;" : "&#32;") + line.slice(1);
   if (/^\s{0,3}(?:-+|=+)\s*$/.test(line)) return line.replace(/^(\s*)/, "$1\\");
   return line.replace(/^(\s{0,3})(#{1,6}(?=\s|$)|[-+*](?=\s|$)|>)/, "$1\\$2").replace(/^(\s{0,3}\d+)([.)])(?=\s|$)/, "$1\\$2");
 }
@@ -427,7 +432,9 @@ const MarkdownFidelity = Extension.create({
       spec.renderMarkdown = (node, ...rest) => {
         const [h, ctx] = rest as [ListHelpers, ListContext];
         const prefix = listMarker(ctx);
-        return renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
+        const out = renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
+        // Text that starts with a box (`[ ] `) would make the item a task when read again.
+        return /^\[[ xX]\](?=\s|$)/.test(out.slice(prefix.length)) ? `${prefix}\\${out.slice(prefix.length)}` : out;
       };
     }
     // An empty task keeps the space after its box, which makes it a task when read again.
@@ -447,7 +454,9 @@ const MarkdownFidelity = Extension.create({
         const text = (rest[0] as ListHelpers).renderChildren(node.content);
         const setext = node.attrs?.setext;
         if (typeof setext === "string" && setext[0] === (level === 1 ? "=" : level === 2 ? "-" : "") && text.trim() && !text.includes("\n")) return `${text}\n${setext}`;
-        return `${"#".repeat(level)} ${text}${typeof node.attrs?.close === "string" ? node.attrs.close : ""}`;
+        if (typeof node.attrs?.close === "string") return `${"#".repeat(level)} ${text}${node.attrs.close}`;
+        // Hashes after a space at the end would be read as the closing sequence and dropped.
+        return `${"#".repeat(level)} ${text.replace(/(^|[ \t])#(#*[ \t]*)$/, "$1\\#$2")}`;
       };
     }
     for (const spec of manager.nodeTypeRegistry.get("horizontalRule") ?? []) {
@@ -516,7 +525,7 @@ const MarkdownFidelity = Extension.create({
 });
 
 /** Unescapes what `escapeText` added, to compare link text with its href. */
-const unescapeText = (t: string) => t.replace(/\\([\\`*_[\]~=#<>!|().+-])/g, "$1").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+const unescapeText = (t: string) => t.replace(/\\([!-/:-@[-`{-~])/g, "$1").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
 
 // Marks are serialized as opening/closing strings without seeing their text,
 // so links are bracketed with sentinels and resolved in `cleanMarkdown`.
@@ -578,6 +587,29 @@ const MarkdownLink = Link.extend({
   },
 });
 
+/**
+ * A link label with the brackets escaped that would end it early or stay open; balanced pairs stay
+ * as typed. Escaped characters and inline code (still between its sentinels) do not count.
+ */
+export function labelBrackets(label: string): string {
+  const open: number[] = [];
+  const lone = new Set<number>();
+  let code = false;
+  for (let i = 0; i < label.length; i++) {
+    const c = label[i];
+    if (c === CODE_OPEN || c === CODE_CLOSE) code = c === CODE_OPEN;
+    else if (code) continue;
+    else if (c === "\\") i++;
+    else if (c === "[") open.push(i);
+    else if (c === "]" && open.pop() === undefined) lone.add(i);
+  }
+  for (const i of open) lone.add(i);
+  if (!lone.size) return label;
+  let out = "";
+  for (let i = 0; i < label.length; i++) out += (lone.has(i) ? "\\" : "") + label[i];
+  return out;
+}
+
 const LINK_RE = new RegExp(
   `${LINK_OPEN}(${FORM_INLINE}|${FORM_ANGLE}|${FORM_REF}[fcs][^${FORM_REF_END}]*${FORM_REF_END})?\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()<>]|\\([^\\s()<>]*\\))*|<[^<>\\n]*>)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`,
   "g",
@@ -614,6 +646,8 @@ export interface SchemaOptions {
   onZeitLost?: (res: ZeitResult) => void;
   /** URL of an attachment name. */
   attachmentUrl?: (name: string) => string;
+  /** Address of an audio attachment for a player (`type`: its media type), released when the player goes. */
+  attachmentMedia?: (name: string, type: string) => Promise<{ src: string; release: () => void }>;
   /** Stores a pasted/dropped image, returns the attachment name. */
   uploadImage?: (file: File) => Promise<string | null>;
   /** Stores any other pasted/dropped file under its name, returns the attachment name. */
@@ -669,6 +703,14 @@ const ImageParagraph = Paragraph.extend({
   },
 });
 
+/** Code blocks highlighted by `codeHighlightPlugin` instead of Tiptap's lowlight plugin (which works on the whole note per key). */
+const CodeBlockHighlight = CodeBlockLowlight.extend({
+  addProseMirrorPlugins() {
+    const own = (this.parent?.() ?? []).filter((p) => !(p as unknown as { key: string }).key.startsWith("lowlight$"));
+    return [...own, codeHighlightPlugin()];
+  },
+});
+
 /** Task lists with tab-indented nesting and their items' source (sourceStyle.ts). */
 const SourceTaskList = TaskList.extend({
   markdownTokenizer: TaskList.config.markdownTokenizer && {
@@ -696,7 +738,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       // 1.14 and earlier too) are kept.
       isAllowedUri: (url, ctx) => mailLinkId(url) !== null || ctx.defaultValidate(url),
     }),
-    CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
+    CodeBlockHighlight.configure({ lowlight, defaultLanguage: null }),
     LazyHighlight,
     SourceTaskList,
     TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
@@ -725,7 +767,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       size: o.attachmentSize ?? (async () => null),
       onOpen: o.onOpenFile ?? (() => {}),
       onOpenPdf: o.onOpenPdf ?? (() => {}),
-      audioUrl: o.attachmentUrl ?? null,
+      audioSource: o.attachmentMedia ?? (o.attachmentUrl ? async (n: string) => ({ src: o.attachmentUrl!(n), release: () => {} }) : null),
       renderPdfPreview: o.renderPdfPreview ?? null,
     }),
     PageEmbed.configure({ mount: o.embedPage ?? null }),
@@ -754,6 +796,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     Footnotes,
     CiteFlash,
     TypingAids.configure({ prefs: o.typing ?? (() => TYPING_DEFAULTS) }),
+    StableNodeViews,
   ];
 }
 
@@ -826,6 +869,11 @@ export function collapseBlankLines(md: string): string {
 export function cleanMarkdown(md: string, raws: string[] = []): string {
   return (
     resolveUnderscores(collapseBlankLines(md
+      // Link labels first, while inline code in them is still between its sentinels.
+      .replace(LINK_RE, (m, meta: string | undefined, text: string) => {
+        const at = 2 + (meta?.length ?? 0);
+        return m.slice(0, at) + labelBrackets(text) + m.slice(at + text.length);
+      })
       .replace(CODE_RE, (_m, text: string) => codeSpan(text))
       .replace(LINK_RE, (m, meta: string | undefined, text: string, href: string, title: string | undefined, at: number, all: string) => {
         const out = writeLink(meta, text, href, title);

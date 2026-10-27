@@ -23,8 +23,11 @@ use super::{
 use crate::error::{Error, Result};
 use crate::{tr, trf};
 
-/// Fields asked for in searches (the sprint field is added once known).
-pub const FIELDS: &str =
+/// Fields asked for in searches and sprints (the sprint field is added once known): no description
+/// and no comments, which an issue loads when it is opened ([`DETAIL_FIELDS`], 1.19).
+pub const FIELDS: &str = "summary,status,priority,assignee,reporter,issuetype,project,duedate,updated,resolutiondate";
+/// Fields of one issue opened (`GET issue/{key}`): the list's and its description and comments.
+pub const DETAIL_FIELDS: &str =
     "summary,status,priority,assignee,reporter,issuetype,project,duedate,updated,resolutiondate,description,comment";
 /// Issues per page of a search.
 const PAGE: usize = 100;
@@ -443,6 +446,7 @@ pub fn parse_issue(v: &Value, site: &str, base: &str, sprint_field: Option<&str>
         description,
         comments,
         matches: vec![],
+        detailed: false,
         key,
     })
 }
@@ -650,6 +654,55 @@ impl JiraClient {
         self.kind
     }
 
+    /// The site's address (without a trailing slash).
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// A request with the site's login; errors worded for the user (the issue view's calls).
+    pub(crate) async fn send_json(&self, method: Method, url: &str, body: Option<&Value>) -> Result<Value> {
+        self.send(method, url, body).await
+    }
+
+    /// The bytes of an image or file (`auth`: with the site's login), at most `limit` of them.
+    pub(crate) async fn fetch_bytes(&self, url: &str, auth: bool, limit: usize) -> Result<(String, Vec<u8>)> {
+        use futures_util::StreamExt;
+        let mut req = self.http.get(url).header("X-Atlassian-Token", "no-check").timeout(self.timeout);
+        if auth {
+            req = req.header(reqwest::header::AUTHORIZATION, &self.auth);
+        }
+        let resp = req.send().await.map_err(|e| network_error(&e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(status_error(self.kind, status.as_u16(), None, &text));
+        }
+        let mime = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_owned();
+        let mut out = vec![];
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| network_error(&e))?;
+            if out.len() + chunk.len() > limit {
+                return Err(Error::State(trf!(
+                    "Die Datei ist größer als {} MB",
+                    "The file is larger than {} MB",
+                    limit / 1_000_000
+                )));
+            }
+            out.extend_from_slice(&chunk);
+        }
+        Ok((mime, out))
+    }
+
     /// Sends a request; retries 429 and 503; turns error answers into readable errors.
     async fn send(&self, method: Method, url: &str, body: Option<&Value>) -> Result<Value> {
         let mut attempt = 0;
@@ -726,11 +779,13 @@ impl JiraClient {
         found
     }
 
-    async fn fields(&self) -> (String, Option<String>) {
+    /// The fields to ask for (`detail`: with description and comments) and the sprint field.
+    async fn fields(&self, detail: bool) -> (String, Option<String>) {
         let sprint = self.sprint_field().await;
+        let base = if detail { DETAIL_FIELDS } else { FIELDS };
         let fields = match &sprint {
-            Some(id) => format!("{FIELDS},{id}"),
-            None => FIELDS.to_owned(),
+            Some(id) => format!("{base},{id}"),
+            None => base.to_owned(),
         };
         (fields, sprint)
     }
@@ -771,7 +826,7 @@ impl IssueProvider for JiraClient {
     }
 
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>> {
-        let (fields, sprint) = self.fields().await;
+        let (fields, sprint) = self.fields(false).await;
         let mut at = match self.kind {
             SiteKind::Cloud => PageAt::Token(None),
             SiteKind::Server => PageAt::Start(0),
@@ -796,12 +851,15 @@ impl IssueProvider for JiraClient {
         if !super::is_key(key) {
             return Err(Error::State(trf!("„{key}“ ist kein Issue-Schlüssel", "“{key}” is not an issue key")));
         }
-        let (fields, sprint) = self.fields().await;
+        let (fields, sprint) = self.fields(true).await;
         let mut url = reqwest::Url::parse(&api_url(&self.base, self.kind, &format!("issue/{key}")))
             .map_err(|e| Error::State(e.to_string()))?;
         url.query_pairs_mut().append_pair("fields", &fields);
         let v = self.get_json(url.as_str()).await?;
-        parse_issue(&v, &self.site, &self.base, sprint.as_deref()).ok_or_else(|| Error::not_found("issue", key))
+        let mut issue =
+            parse_issue(&v, &self.site, &self.base, sprint.as_deref()).ok_or_else(|| Error::not_found("issue", key))?;
+        issue.detailed = true;
+        Ok(issue)
     }
 
     async fn projects(&self) -> Result<Vec<RemoteProject>> {
@@ -916,7 +974,7 @@ impl IssueProvider for JiraClient {
             Err(Error::Remote { status: 404 | 403, .. }) => return Ok(None),
             Err(e) => return Err(e),
         };
-        let (fields, sprint_field) = self.fields().await;
+        let (fields, sprint_field) = self.fields(false).await;
         for b in boards["values"].as_array().into_iter().flatten().filter(|b| b["type"].as_str() != Some("kanban")) {
             let Some(id) = b["id"].as_i64() else { continue };
             let sprints = match self.get_json(&agile_url(&self.base, &format!("board/{id}/sprint?state=active"))).await

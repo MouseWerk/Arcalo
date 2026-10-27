@@ -25,14 +25,14 @@ const openTree = async (title) => {
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === title) return r.click();
   throw new Error(`tree row ${title} not found`);
 };
-const pageTitle = async () => (await app.$(".pane.active .page-title")).getValue();
-const flashed = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror .cite-flash")?.textContent ?? "");
+const pageTitle = async () => (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue();
+const flashed = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror .cite-flash")?.textContent ?? "");
 const entries = () => app.invoke("time_entries", { from: null, to: null });
 const caretLine = () => app.browser.execute(() => window.getSelection().anchorNode?.parentElement?.closest("p")?.textContent ?? "");
 
 test("answers cite numbered sources; the chip previews and opens the exact paragraph", async () => {
   await openTree("Jour fixe 22.09.");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.keys(["Control", "j"]);
   const ta = await app.waitFor(".composer textarea");
   await ta.setValue("Komponenten Mapping");
@@ -107,7 +107,7 @@ test("smart /zeit: a line without reference asks the AI, Enter books the confirm
   assert.equal(e.vorgang_nr, "1020");
   assert.equal(e.leistungsart, "DEV");
   assert.equal(e.page_id, page.id);
-  await app.waitText(".pane.active .ProseMirror .time-chip", /NP-8801\/1020/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip", /NP-8801\/1020/);
   assert.equal(await app.browser.execute(() => document.querySelector(".zeit-confirm") === null), true);
 });
 

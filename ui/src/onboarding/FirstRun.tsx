@@ -6,7 +6,7 @@ import { Intake } from "./Intake";
 import { Intro } from "./Intro";
 import { finishFirstRun, startIntake, useFirstRun } from "./state";
 import { focusMain } from "../lib/regions";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 export function FirstRun() {
   const phase = useFirstRun((s) => s.phase);
@@ -37,7 +37,7 @@ export function FirstRun() {
       void finishFirstRun();
       return;
     }
-    if (e.key !== "Tab") return;
+    if (!isTab(e)) return;
     const all = [...el.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]")].filter(
       (x) => x.tabIndex >= 0 && !(x as HTMLButtonElement).disabled && x.offsetParent !== null,
     );

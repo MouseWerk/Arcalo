@@ -11,6 +11,7 @@ import { closeHistory } from "@tiptap/pm/history";
 import { classifyPaste, type ChatMessage, type PasteKind } from "./paste";
 import { t } from "../lib/i18n";
 import { onHidden } from "../lib/keepalive";
+import { blockDecorations, updateBlockDecorations } from "./incremental";
 
 export interface SmartPasteOptions {
   /** Title of a web page (Rust `link_title`); null or the URL itself when there is none. */
@@ -109,21 +110,23 @@ export function cleanTitle(title: string | null, url: string): string | null {
 // `**Name** (10:32):` at the start of a list item: the time is shown small and muted.
 const CHAT_TIME = /^ \(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp]\.?[Mm]\.?)?\)(?=:)/;
 
-function chatTimes(doc: PMNode): DecorationSet {
+/** The chat times in `block` (a top-level block at `pos`); kept per block over edits (incremental.ts). */
+function chatTimes(block: PMNode, pos: number): Decoration[] {
   const decos: Decoration[] = [];
-  doc.descendants((node, pos, parent) => {
+  const visit = (node: PMNode, at: number, parent: PMNode | null) => {
     if (node.type.name !== "paragraph") return !node.isTextblock;
     if (parent?.type.name !== "listItem" || node.childCount < 2) return false;
     const [a, b] = [node.child(0), node.child(1)];
     if (!a.isText || !a.marks.some((m) => m.type.name === "bold") || !b.isText || b.marks.length) return false;
     const m = CHAT_TIME.exec(b.text ?? "");
     if (m) {
-      const from = pos + 1 + a.nodeSize + 1;
+      const from = at + 1 + a.nodeSize + 1;
       decos.push(Decoration.inline(from, from + m[0].length - 1, { class: "chat-time" }));
     }
     return false;
-  });
-  return DecorationSet.create(doc, decos);
+  };
+  if (visit(block, pos, null)) block.descendants((node, p, parent) => visit(node, pos + 1 + p, parent));
+  return decos;
 }
 
 // ------------------------------------------------------------------ plugin
@@ -191,10 +194,10 @@ export const SmartPaste = Extension.create<SmartPasteOptions>({
       new Plugin<PasteState>({
         key,
         state: {
-          init: (_, { doc }): PasteState => ({ hint: null, decos: chatTimes(doc) }),
+          init: (_, { doc }): PasteState => ({ hint: null, decos: blockDecorations(doc, chatTimes) }),
           apply(tr, old, _prev, next: EditorState): PasteState {
             const meta = tr.getMeta(key) as { hint: Hint | null } | undefined;
-            const decos = tr.docChanged ? chatTimes(tr.doc) : old.decos;
+            const decos = updateBlockDecorations(old.decos, tr, chatTimes);
             if (meta) return { hint: meta.hint, decos };
             if (!old.hint) return { hint: null, decos };
             // Any other edit ends the offer.

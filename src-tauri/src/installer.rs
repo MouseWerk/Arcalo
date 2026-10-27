@@ -203,6 +203,28 @@ pub fn install(bytes: &[u8], target: &Target, before_exit: impl FnOnce()) -> Res
     }
 }
 
+/// Whether the running copy can replace its own program files (`arcalo_core::update::install_blocked`):
+/// the bundle or AppImage it runs from, and whether a file can be created next to it.
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+pub fn blocked(app: &tauri::AppHandle) -> Option<arcalo_core::update::Blocked> {
+    #[cfg(target_os = "linux")]
+    let program = {
+        use tauri::Manager;
+        app.env().appimage.map(PathBuf::from)
+    };
+    #[cfg(target_os = "macos")]
+    let program = std::env::current_exe().ok().and_then(|exe| bundle_of(&exe));
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let program: Option<PathBuf> = None;
+    let probe = program.as_deref().and_then(Path::parent).and_then(write_probe);
+    arcalo_core::update::install_blocked(std::env::consts::OS, program.as_deref(), probe)
+}
+
+/// Creates and removes a file in `dir`: the kind of error when that is not possible.
+pub fn write_probe(dir: &Path) -> Option<std::io::ErrorKind> {
+    tempfile::Builder::new().prefix(".arcalo-update-check").tempfile_in(dir).err().map(|e| e.kind())
+}
+
 // ------------------------------------------------------------------ Windows
 
 /// The installer to start and its command line.
@@ -382,8 +404,8 @@ pub fn admin_move_script(bundle: &Path, new: &Path) -> String {
 #[cfg(unix)]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn replace_bundle(bytes: &[u8], bundle: &Path) -> Result<()> {
-    let backup = tempfile::Builder::new().prefix("tauri_current_app").tempdir()?;
-    let extract = tempfile::Builder::new().prefix("tauri_updated_app").tempdir()?;
+    let backup = work_dir("tauri_current_app", bundle)?;
+    let extract = work_dir("tauri_updated_app", bundle)?;
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(Cursor::new(bytes)));
     let mut files = 0;
     for entry in archive.entries()? {
@@ -415,6 +437,23 @@ pub fn replace_bundle(bytes: &[u8], bundle: &Path) -> Result<()> {
     }
     let _ = std::process::Command::new("touch").arg(bundle).status();
     Ok(())
+}
+
+/// A temp folder on the volume of `bundle`: a bundle is moved, never copied, and a move does not
+/// cross volumes (an app on an external drive). The system's temp folder when it is on that
+/// volume, otherwise a hidden folder next to the bundle; when that cannot be made either (no
+/// write permission), the system's (the move then goes through the administrator's `mv`).
+#[cfg(unix)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn work_dir(prefix: &str, bundle: &Path) -> std::io::Result<tempfile::TempDir> {
+    use std::os::unix::fs::MetadataExt;
+    let tmp = tempfile::Builder::new().prefix(prefix).tempdir()?;
+    let Some(parent) = bundle.parent() else { return Ok(tmp) };
+    let dev = |p: &Path| p.metadata().map(|m| m.dev()).ok();
+    if dev(tmp.path()).is_some() && dev(tmp.path()) == dev(parent) {
+        return Ok(tmp);
+    }
+    Ok(tempfile::Builder::new().prefix(&format!(".{prefix}")).tempdir_in(parent).unwrap_or(tmp))
 }
 
 /// The bundle's folder is not writable: `osascript` asks for an administrator's password and
@@ -532,6 +571,15 @@ mod tests {
         assert_eq!(windows_config(None).0, InstallMode::Passive);
         let quiet = serde_json::json!({ "windows": { "installMode": "quiet", "installerArgs": ["/D=x"] } });
         assert_eq!(windows_config(Some(&quiet)), (InstallMode::Quiet, vec!["/D=x".to_string()]));
+    }
+
+    /// The setup carries the WebView2 bootstrapper instead of downloading it with NSIS' own HTTP
+    /// client (which may not get through a proxy), and runs it without asking.
+    #[test]
+    fn the_setup_carries_the_webview2_bootstrapper() {
+        let mode = &conf()["bundle"]["windows"]["webviewInstallMode"];
+        assert_eq!(mode["type"], "embedBootstrapper");
+        assert_eq!(mode["silent"], true);
     }
 
     #[test]
@@ -663,6 +711,40 @@ mod tests {
         assert!(replace_bundle(b"\x1f\x8bnot really", &bundle).is_err());
         assert!(replace_bundle(&tar_gz(&[]), &bundle).is_err());
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An app on another volume than the temp folder (an external drive): renames do not cross
+    /// volumes, so the old and the new bundle are moved within the bundle's own volume.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_bundle_on_another_volume_than_the_temp_folder_is_replaced() {
+        use std::os::unix::fs::MetadataExt;
+        let shm = Path::new("/dev/shm");
+        let tmp_dev = std::env::temp_dir().metadata().map(|m| m.dev()).ok();
+        if !shm.is_dir() || shm.metadata().map(|m| m.dev()).ok() == tmp_dev {
+            eprintln!("no second volume (/dev/shm) here: skipped");
+            return;
+        }
+        let root = shm.join(format!("arcalo-installer-xdev-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bundle = root.join("Arcalo.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/arcalo"), "old").unwrap();
+        let archive = tar_gz(&[("Arcalo.app/", b"", 0o755), ("Arcalo.app/Contents/MacOS/arcalo", b"new", 0o755)]);
+        replace_bundle(&archive, &bundle).unwrap();
+        assert_eq!(std::fs::read_to_string(bundle.join("Contents/MacOS/arcalo")).unwrap(), "new");
+        let left: Vec<_> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left, ["Arcalo.app"], "nothing left beside the bundle");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_write_probe_leaves_nothing_behind() {
+        let root = scratch("probe");
+        assert_eq!(write_probe(&root), None);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        assert_eq!(write_probe(&root.join("missing")), Some(std::io::ErrorKind::NotFound));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

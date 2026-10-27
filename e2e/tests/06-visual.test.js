@@ -16,7 +16,7 @@ before(async () => {
   await app.invoke("api_key_set", { key: llm.apiKey });
   await app.invoke("log_time", { line: "/zeit NP-8801/1020 3h #DEV Delta-Load Tests" });
   await app.invoke("log_time", { line: "/zeit NP-8801/1030 1.5h #DEV Review API @gestern @09:00" });
-  await app.browser.refresh();
+  await app.reload();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
 });
 after(async () => {

@@ -6,7 +6,7 @@ import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, FileText, Tar
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Input, Spinner, Switch, type Tone } from "../components/ui";
-import { addDays, dateLocale, fmtDate, fmtMinutes, isoDay, isoWeek, parseDurationInput, time, weekdayShort } from "../lib/format";
+import { addDays, dateLocale, fmtDate, fmtMinutes, isoDay, parseDurationInput, shownWeek, time, weekdayShort } from "../lib/format";
 import { NetzplanSelect, VorgangSelect } from "./wbs";
 import { accepted, dayState, dayTotals, edit, gapSummary, initRows, nextRow, overlaps, rowProblem, selectable, setChecked, toggle, wbsKey, type ReviewRow } from "../lib/weekplan";
 import type { ProjectTree, ProposalConfidence, ProposalSourceKind, TimeEntryRow, WeekProposal } from "../lib/types";
@@ -120,7 +120,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
       open
       onClose={onClose}
       title={tr("wp.title")}
-      description={tr("wp.desc", { week: isoWeek(week), range })}
+      description={tr("wp.desc", { week: shownWeek(week), range })}
       width={960}
       footer={
         <>

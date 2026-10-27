@@ -7,6 +7,7 @@ import {
   defaultFilter,
   defaultOptions,
   folderPalette,
+  fromGraphTable,
   listRows,
   matchesQuery,
   matchesRule,
@@ -214,5 +215,27 @@ describe("announcements", () => {
   it("joins parts as sentences without a double period", () => {
     expect(sentences(["Jour fixe 22.09.", "3 Verknüpfungen", ""])).toBe("Jour fixe 22.09. 3 Verknüpfungen");
     expect(sentences(["Architektur", "1 Verknüpfung", "Ordner Projekte"])).toBe("Architektur. 1 Verknüpfung. Ordner Projekte");
+  });
+});
+
+describe("compact graph", () => {
+  it("decodes the table of graph_compact into the objects of graph_data", () => {
+    const d = fromGraphTable({
+      folders: ["", "Projekte/Kunde"],
+      nodes: [
+        [1, "Start", null, null, 0, [], [], null, false, 1, 2],
+        [7, "Portal", "star", 3, 1, ["projekt"], ["NP-1"], "ABC-1", true, 0, 1],
+      ],
+      links: [1, 7, 7, 1],
+      unresolved: [[7, "fehlt", "Fehlt"]],
+      files: [[1, "a.pdf"]],
+      removed: [9],
+    });
+    expect(d.nodes[1]).toEqual({ id: 7, title: "Portal", icon: "star", parent_id: 3, folder: "Projekte/Kunde", tags: ["projekt"], netzplan: ["NP-1"], jira: "ABC-1", daily: true, links_in: 0, links_out: 1 });
+    expect(d.nodes[0].folder).toBe("");
+    expect(d.links).toEqual([{ from: 1, to: 7 }, { from: 7, to: 1 }]);
+    expect(d.unresolved).toEqual([{ from: 7, key: "fehlt", title: "Fehlt" }]);
+    expect(d.files).toEqual([{ from: 1, name: "a.pdf" }]);
+    expect(d.removed).toEqual([9]);
   });
 });

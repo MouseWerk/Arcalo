@@ -13,6 +13,7 @@ import type { DesktopInfo, MailSettings } from "../../lib/types";
 import { CommitInput, Group, Row, ShortcutField, type SectionProps } from "./common";
 import { t, useT } from "../../lib/i18n";
 import { formatShortcut } from "../../lib/shortcut";
+import { caps } from "../../lib/capabilities";
 import { IS_MAC } from "../../lib/platform";
 
 const defaults = (): MailSettings => ({ notes_parent: t("mail.parentDefault"), shortcut: "", save_attachments: false, private_notes: true, default_action: "task", own_addresses: [] });
@@ -42,12 +43,12 @@ export function MailGroup({ draft, update }: SectionProps) {
   const [info, setInfo] = useState<DesktopInfo | null>(null);
   const [outlook, setOutlook] = useState(false);
   useEffect(() => void mailApi.status().then((st) => setOutlook(st.outlook_available), () => setOutlook(false)), []);
-  useEffect(() => void api.desktopInfo().then(setInfo, () => setInfo(null)), [saved?.shortcut]);
+  useEffect(() => void (caps().globalShortcuts && api.desktopInfo().then(setInfo, () => setInfo(null))), [saved?.shortcut]);
   const set = (p: Partial<MailSettings>) => update({ mail: { ...mail, ...p } });
   const marker = draft.router?.private_markers?.[0] ?? "#vertraulich";
   return (
     <Group title={t("mailset.title")} description={t("mailset.desc")}>
-      {outlook && (
+      {outlook && caps().globalShortcuts && (
         <Row label={t("set.desktop.globalShortcut")} description={t("mailset.shortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+Y`) })}>
           <ShortcutField
             value={mail.shortcut}

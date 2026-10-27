@@ -1,5 +1,10 @@
 // Starts the real Arcalo desktop binary under tauri-driver and returns a
 // WebdriverIO session. Each call uses a fresh, isolated data directory.
+//
+// Processes: only what this run started is stopped. tauri-driver (with the WebDriver and the app
+// below it) and every app a test starts without WebDriver run in a process group of their own
+// (`startProcess`); an app that restarts itself stays in its group. Nothing is killed by name or
+// pattern: other runs may share the machine.
 
 import { spawn, execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,8 +14,12 @@ import path from "node:path";
 import { remote } from "webdriverio";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-// Resolved, so `pkill -f APP` also matches an app that restarted itself (it runs as its real path).
 export const APP = path.resolve(process.env.ARCALO_APP ?? path.join(ROOT, "target/debug/arcalo"));
+/**
+ * The first editor on screen. A kept tab keeps its editor in the document while hidden, and kept
+ * places do not move when their tab is shown again, so a hidden one may come first.
+ */
+export const EDITOR = ".ProseMirror:not([hidden] *)";
 export const SHOTS = process.env.ARCALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
@@ -26,6 +35,47 @@ function ensureXvfb() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** The process groups this run started (their leaders' PIDs), until they are empty. */
+const groups = new Set();
+
+/** Signals the process group `pgid`; false (and forgotten) once nothing of it runs any more. */
+function signalGroup(pgid, signal) {
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    groups.delete(pgid);
+    return false;
+  }
+}
+
+/** Waits until the group `pgid` has ended; SIGKILL for what is left after `timeout` ms. */
+async function groupEnded(pgid, timeout = 5000) {
+  const begun = Date.now();
+  while (signalGroup(pgid, 0)) {
+    if (Date.now() - begun > timeout) {
+      signalGroup(pgid, "SIGKILL");
+      await sleep(200);
+      return;
+    }
+    await sleep(100);
+  }
+}
+
+/** Starts a program in a process group of its own that `stopStarted` (and the end of the run) stops. */
+export function startProcess(command, args, options = {}) {
+  const child = spawn(command, args, { ...options, detached: true });
+  if (child.pid) groups.add(child.pid);
+  return child;
+}
+
+/** Sends `signal` to everything this run started that still runs (apps, drivers, restarted apps). */
+export function stopStarted(signal = "SIGTERM") {
+  for (const pgid of [...groups]) signalGroup(pgid, signal);
+}
+
+process.on("exit", () => stopStarted("SIGKILL"));
+
 /**
  * A session bus of this test run's own, with no services on it. Without one the app reaches
  * whatever the machine has: on CI a user bus whose desktop portal cannot start held every start
@@ -33,17 +83,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * further window, which froze the app for 5 s right after it got ready), elsewhere a bus that
  * X11 autolaunches. The tests expect a desktop without keyring, portal or notification service,
  * as on a machine without a session bus. "" when there is no dbus-daemon.
+ *
+ * Its socket is in /tmp, not in TMPDIR: a unix socket path has at most 107 bytes, and a test that
+ * starts the app below a deep TMPDIR (36-settings-layout) left the app on the machine's bus. A
+ * bus that does not start fails the run instead of falling back to that bus.
  */
 let busAddress = null;
 function sessionBus() {
   if (busAddress !== null) return busAddress;
   busAddress = "";
-  const conf = path.join(os.tmpdir(), `arcalo-e2e-bus-${process.pid}.conf`);
+  const conf = path.join("/tmp", `arcalo-e2e-bus-${process.pid}.conf`);
   try {
     fs.writeFileSync(
       conf,
       `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig><type>session</type><listen>unix:tmpdir=${os.tmpdir()}</listen>
+<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen>
 <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>`,
     );
     const out = execFileSync("dbus-daemon", ["--config-file", conf, "--fork", "--print-address=1", "--print-pid=1"], { encoding: "utf8", timeout: 5000 });
@@ -56,8 +110,9 @@ function sessionBus() {
       }
     });
     busAddress = address;
-  } catch {
-    /* no dbus-daemon: the machine's bus, if any */
+  } catch (e) {
+    // No dbus-daemon at all: the machine's bus, if any. One that does not start is an error.
+    if (e.code !== "ENOENT") throw new Error(`the test session bus did not start: ${e.stderr || e.message}`);
   } finally {
     fs.rmSync(conf, { force: true });
   }
@@ -110,21 +165,31 @@ async function waitForPort(port, timeout = 15000) {
   throw new Error(`port ${port} did not open`);
 }
 
+/**
+ * A timing budget in ms for the minimum of several runs: `local` on a developer machine, `ci` on CI
+ * (`CI` set; the runners are slower and shared), by default 1.6 times as much.
+ */
+export const budget = (local, ci = Math.round(local * 1.6)) => (process.env.CI ? ci : local);
+
 /** Wraps node:test's `test` so a failing test leaves a screenshot and the editor DOM behind. */
 export function guarded(test, getApp) {
-  return (name, fn) =>
-    test(name, async (t) => {
+  return (name, options, body) => {
+    // `options` of node:test (`{ timeout }`, a picture selection's `{ skip }`) may come before the body.
+    const fn = typeof options === "function" ? options : body;
+    return test(name, typeof options === "function" ? {} : options, async (t) => {
       try {
         await fn(t);
       } catch (e) {
         const app = getApp();
         const slug = name.replace(/[^a-z0-9]+/gi, "-").slice(0, 60);
         await app?.browser.saveScreenshot(path.join(SHOTS, `FAIL-${slug}.png`)).catch(() => {});
-        const dom = await app?.browser.execute(() => document.querySelector(".ProseMirror")?.innerHTML ?? "").catch(() => "");
+        // A phone test's app (e2e/android) has a screenshot but no WebDriver session.
+        const dom = typeof app?.browser?.execute === "function" ? await app.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "") : "";
         if (dom) fs.writeFileSync(path.join(SHOTS, `FAIL-${slug}.html`), dom);
         throw e;
       }
     });
+  };
 }
 
 /**
@@ -139,6 +204,14 @@ export function daytimeZone(hour = 9) {
   process.env.TZ = offset === 0 ? "Etc/UTC" : `Etc/GMT${offset > 0 ? "-" : "+"}${Math.abs(offset)}`;
   return process.env.TZ;
 }
+
+// Every test file runs at about 9:00 local time: fixtures placed relative to now ("a meeting that
+// ends in 45 minutes", "the activity of today") stay on today's date whenever the suite runs, also
+// across midnight on CI. This runs when the file imports the harness, before its own top-level
+// code. A file that needs another hour calls `daytimeZone(hour)` at its top; one that needs a real
+// zone (a clock change) sets `process.env.TZ` there. The weekday is still the real one (the date
+// can be the one before or after UTC's), so tests of "this week" must hold on any weekday.
+daytimeZone();
 
 /** The folder the app uses as its data folder under `home` (Linux: `$XDG_DATA_HOME/<identifier>`). */
 export const homeDataDir = (home) => path.join(home, ".local", "share", "de.mousewerk.arcalo");
@@ -202,7 +275,7 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
   const opened = path.join(os.tmpdir(), `arcalo-e2e-opened-${process.pid}-${++launches}.log`);
   const env = { ...appEnv(dataDir, { demo, onboarding, env: extraEnv, home }), ARCALO_E2E_OPENED: opened };
   const started = Date.now();
-  const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const driver = startProcess("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
   driver.stderr.on("data", (d) => (driverErr += d));
   await waitForPort(port);
@@ -281,19 +354,44 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     },
     /** Puts the caret on a fresh empty line at the end of the open note. */
     async caretToEnd() {
-      const pm = await app.waitFor(".ProseMirror");
+      const pm = await app.waitFor(EDITOR);
       await pm.click();
-      await browser.execute(() => {
-        const el = document.querySelector(".ProseMirror");
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(el.lastElementChild ?? el);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      });
-      await browser.pause(60);
+      // The caret is set in the page (the DOM selection); the editor takes it over on its
+      // `selectionchange`, which a busy WebView delivers late. Keys typed before that land where
+      // the click put the caret, so this waits until the editor's own selection is at the end
+      // (and sets the caret again if a redraw put the click position back meanwhile).
+      const atEnd = (place) =>
+        browser.execute(
+          (css, place) => {
+            const el = document.querySelector(css);
+            const target = el.lastElementChild ?? el;
+            // The end of the note's last text block (none: a note ending in an image or a raw
+            // block, where the caret goes wherever the page puts it).
+            const ed = el.editor;
+            let end = ed?.state.doc.content.size ?? 0;
+            let node = ed?.state.doc.lastChild;
+            while (node && !node.isTextblock) {
+              end -= 1;
+              node = node.lastChild;
+            }
+            if (node && ed.state.selection.empty && ed.state.selection.head === end - 1) return true;
+            if (place) {
+              const sel = window.getSelection();
+              const range = document.createRange();
+              range.selectNodeContents(target);
+              range.collapse(false);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+            return !node;
+          },
+          EDITOR,
+          place,
+        );
+      await atEnd(true);
+      await browser.waitUntil(() => atEnd(true), { timeout: 8000, interval: 100, timeoutMsg: "the editor did not take over the caret at the end" });
       await browser.keys(["End"]);
+      await browser.waitUntil(() => atEnd(false), { timeout: 8000, interval: 50, timeoutMsg: "the caret left the end after End" });
     },
     /**
      * Chooses `value` in a dropdown (components/Select.tsx) like a user: clicks the combobox,
@@ -321,6 +419,30 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         timeoutMsg: `${sel} does not show ${value}`,
       });
     },
+    /**
+     * Reloads the page and waits until the new document is ready. `location.reload()` returns
+     * before the old document goes: a check for `ready` right after it can still see the old one,
+     * and keys sent then are lost while the new one starts. `hash`, when given, is set in the same
+     * step, so the old document never sees it. WebDriver sends a missing argument as `null`, not
+     * `undefined`: without a hash the page keeps its own (`#capture` stays the capture window).
+     */
+    async reload(hash) {
+      await browser.execute((h) => {
+        window.__arcaloOldDocument = true;
+        if (h != null) location.hash = h;
+        location.reload();
+      }, hash ?? null);
+      await browser.waitUntil(
+        async () => {
+          try {
+            return await browser.execute(() => !window.__arcaloOldDocument && document.body.classList.contains("ready"));
+          } catch {
+            return false; // between the documents
+          }
+        },
+        { timeout: 20000, timeoutMsg: "not ready after reload" },
+      );
+    },
     async waitFor(sel, timeout = 8000) {
       // A view that re-renders can replace the element between the lookup and the check; look it up again then.
       await browser.waitUntil(
@@ -334,7 +456,15 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         },
         { timeout, timeoutMsg: `${sel} not displayed after ${timeout}ms` },
       );
-      return browser.$(sel);
+      // The same race once more for the element handed back: a re-render right after the check.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await browser.$(sel);
+        } catch (e) {
+          if (attempt >= 20 || !/stale element/i.test(String(e?.message ?? e))) throw e;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
     },
     async waitText(sel, pattern, timeout = 8000) {
       await browser.waitUntil(async () => {
@@ -350,15 +480,15 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     async consoleErrors() {
       return browser.execute(() => window.__arcaloErrors ?? []);
     },
+    /** Sends `signal` to the app, its WebDriver and tauri-driver (SIGKILL: a crash or power cut). */
+    kill(signal = "SIGKILL") {
+      signalGroup(driver.pid, signal);
+    },
     async close() {
       await browser.deleteSession().catch(() => {});
-      driver.kill("SIGTERM");
-      await sleep(300);
-      try {
-        execSync(`pkill -f "${APP}"`, { stdio: "ignore" });
-      } catch {
-        /* already gone */
-      }
+      // tauri-driver, the WebDriver and the app (also one that restarted itself) end together.
+      signalGroup(driver.pid, "SIGTERM");
+      await groupEnded(driver.pid);
       // Helpers the app started (xdg-open, WebKit caches) may still write for a moment.
       if (!given) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       const handed = app.opened();

@@ -11,7 +11,9 @@ import { IconButton } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
+import { caps } from "../lib/capabilities";
+import { copyImage, copyText } from "../lib/clipboard";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -21,7 +23,7 @@ const SIZES: { label: TKey; width: number | null }[] = [
 ];
 
 /** Copies an image as PNG to the clipboard (other formats are converted). */
-async function copyImage(src: string) {
+async function copyImageAt(src: string) {
   const blob = await (await fetch(src)).blob();
   let png = blob;
   if (blob.type !== "image/png") {
@@ -32,7 +34,7 @@ async function copyImage(src: string) {
     canvas.getContext("2d")!.drawImage(bmp, 0, 0);
     png = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("PNG"))), "image/png"));
   }
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+  await copyImage(png);
 }
 
 /** The menu for the image node at `pos`. `view` opens the full view. */
@@ -58,16 +60,16 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
           { label: t("img.size"), icon: Ruler, submenu: SIZES.map((z) => ({ label: t(z.label), checked: (node.attrs.alt ?? null) === (z.width ? String(z.width) : null), onSelect: () => setWidth(z.width) })) },
           "separator",
           { label: t("file.open"), icon: ExternalLink, onSelect: () => api.openAttachment(name).catch(failed(t("img.openFailed"))) },
-          { label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) },
+          ...(caps().folders ? [{ label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) }] : []),
         ] as MenuEntry[])
       : []),
     "separator",
     {
       label: t("img.copy"),
       icon: ClipboardCopy,
-      onSelect: () => copyImage(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
+      onSelect: () => copyImageAt(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
     },
-    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => navigator.clipboard.writeText(`![[${name}]]`) } as MenuEntry] : []),
+    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => copyText(`![[${name}]]`).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))) } as MenuEntry] : []),
     "separator",
     {
       label: t("file.removeFromNote"),
@@ -89,7 +91,7 @@ export function ImageViewer({ src, name, onClose }: { src: string; name: string;
       if (isComposing(e)) return;
       if (e.key === "Escape") (e.stopPropagation(), onClose());
       // Like a dialog: the focus stays on the full view (its only control is „Schließen“).
-      else if (e.key === "Tab") {
+      else if (isTab(e)) {
         e.preventDefault();
         box.current?.querySelector<HTMLElement>("button")?.focus();
       }

@@ -99,6 +99,17 @@ describe("<Select>", () => {
     expect(trigger.dataset.value).toBe("h3");
   });
 
+  it("Tab closes the list, also Shift+Tab as WebKitGTK sends it (key Unidentified, code Tab)", () => {
+    const picked: string[] = [];
+    const trigger = mount("h2", (v) => picked.push(v));
+    trigger.focus();
+    key(trigger, "ArrowDown");
+    expect(list()).not.toBeNull();
+    key(trigger, "Unidentified", { code: "Tab", shiftKey: true });
+    expect(list()).toBeNull();
+    expect(picked).toEqual([]);
+  });
+
   it("type-ahead while open and closed; Escape closes without choosing", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));
@@ -112,6 +123,26 @@ describe("<Select>", () => {
     key(trigger, "Escape");
     expect(list()).toBeNull();
     expect(picked).toEqual(["h1"]);
+  });
+
+  it("keeps the selected option active when the list opens under a pointer that does not move", () => {
+    const trigger = mount("h2", () => {});
+    trigger.focus();
+    key(trigger, "ArrowDown");
+    const active = () => document.getElementById(trigger.getAttribute("aria-activedescendant") ?? "")?.textContent;
+    const move = (value: string, x: number) =>
+      act(() => {
+        document.querySelector(`[role="option"][data-value="${value}"]`)!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: x, screenY: 300 }));
+      });
+    // The engine reports the pointer over the new list (twice, it did not move).
+    move("paragraph", 200);
+    move("paragraph", 200);
+    expect(active()).toBe("Überschrift 2");
+    // A real move picks the option under the pointer.
+    move("paragraph", 204);
+    expect(active()).toBe("Text");
+    move("h1", 210);
+    expect(active()).toBe("Überschrift 1");
   });
 
   it("chooses with the mouse and closes on a click outside", () => {

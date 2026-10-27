@@ -17,23 +17,30 @@ mod backupdest;
 mod bookmarks;
 mod briefing;
 mod calsync;
+mod calwrite;
 mod canvas;
 mod chats;
+#[cfg(desktop)]
+mod cmdpath;
 mod dashboard;
 mod dayreview;
 #[cfg_attr(mobile, path = "mobile/desktop.rs")]
 mod desktop;
 mod devlog;
 mod diagnostics;
+#[cfg(desktop)]
+mod external;
 mod feed;
 mod files;
 mod filing;
 mod focus;
+mod gitsetup;
 mod graph;
 #[cfg(desktop)]
 mod identity;
 #[cfg(desktop)]
 mod installer;
+mod issueview;
 mod jira;
 #[cfg(desktop)]
 mod jumplist;
@@ -43,6 +50,8 @@ mod meetwork;
 mod network;
 #[cfg_attr(mobile, path = "mobile/notifyact.rs")]
 mod notifyact;
+mod picked;
+mod platform;
 mod policy;
 mod portable;
 mod prefs;
@@ -116,7 +125,7 @@ use arcalo_core::tracking::{self, BudgetStatus, LogOutcome};
 use arcalo_core::trash::TrashEntry;
 use arcalo_core::vault::{self, ImportReport};
 use arcalo_core::versions::VersionInfo;
-use arcalo_core::{Database, Error, datadir, demo};
+use arcalo_core::{Database, Error, cmdlock, datadir, demo};
 use arcalo_core::{tr, trf};
 use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
@@ -144,6 +153,8 @@ struct AiRuntime {
     /// Why the network settings cannot be applied (a missing CA file): requests fail with this
     /// instead of going out without proxy and certificates.
     network_error: Option<String>,
+    /// What each provider's client was built from (`arcalo_core::ai::capability::fingerprints`).
+    fingerprints: HashMap<String, u64>,
 }
 
 /// A client of `provider`: its key, the network profile it is routed to (direct on the
@@ -203,7 +214,14 @@ impl AiRuntime {
             }
         }
         let router = Arc::new(ModelRouter::new(settings.router.clone()));
-        AiRuntime { clients, router, http: Mutex::new(HashMap::new()), network_error, settings }
+        let fingerprints = arcalo_core::ai::capability::fingerprints(
+            &settings.providers,
+            settings.ai_on(),
+            &settings.network,
+            keys,
+            proxy_passwords,
+        );
+        AiRuntime { clients, router, http: Mutex::new(HashMap::new()), network_error, settings, fingerprints }
     }
 }
 
@@ -211,10 +229,18 @@ impl AiRuntime {
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let keys = provider_keys(&state.data_dir, &settings.providers);
     let rt = AiRuntime::new(settings.clone(), &keys, &network::passwords_of(&state.data_dir, &settings.network));
-    *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
-    // Another server or key may offer other models, and a fixed server gets another chance.
-    lock(&state.server_models).clear();
-    lock(&state.caps).clear();
+    let before = std::mem::replace(&mut *state.ai.write().unwrap_or_else(|e| e.into_inner()), rt).fingerprints;
+    let after = state.ai.read().unwrap_or_else(|e| e.into_inner()).fingerprints.clone();
+    // Another server, key or network may offer other models, and a fixed server gets another
+    // chance. Another setting saved keeps what is known (q119: forgetting that a model rejects
+    // tools sent them again, and the 400 put the model into the server's cooldown).
+    let changed = arcalo_core::ai::capability::changed_providers(&before, &after);
+    let mut models = lock(&state.server_models);
+    let mut caps = lock(&state.caps);
+    for id in &changed {
+        models.remove(id);
+        caps.forget_provider(id);
+    }
 }
 
 /// When a provider was asked for its models, and the answer (`None` = it could not be asked).
@@ -224,8 +250,9 @@ pub struct AppState {
     db: Mutex<Database>,
     /// Read-only connections for commands that only read (WAL: they see the last committed
     /// state and neither wait for a save nor hold one up); several, so one long read (the task
-    /// list, the graph) does not hold up the small reads of a page switch. Empty when they could
-    /// not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    /// list, the graph) does not hold up the small reads of a page switch. The one after the
+    /// first [`READERS`] is for slow reads nobody waits for ([`background_read`]). Empty when they
+    /// could not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
     readers: Vec<Mutex<Database>>,
     /// The reader to wait for when all are busy (round robin).
     next_reader: AtomicUsize,
@@ -251,8 +278,21 @@ pub struct AppState {
     caps: Mutex<Capabilities>,
 }
 
-/// Read-only connections of [`AppState`].
+/// Read-only connections of [`AppState`] for the reads of views and page switches.
 const READERS: usize = 3;
+
+/// Runs a slow read that no view waits for (tag suggestions, duplicate hints, unlinked mentions
+/// of the opened page) on a thread of its own with the background connection: it holds neither a
+/// worker of the async runtime nor one of the readers the next page switch needs. Such reads
+/// queue behind each other instead.
+pub(crate) async fn background_read<T: Send + 'static>(
+    app: tauri::AppHandle,
+    f: impl FnOnce(&Database) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>().background_reader()))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // A panic while holding the lock leaves SQLite consistent (transactions roll back).
@@ -265,17 +305,25 @@ impl AppState {
     }
     /// The connection for commands that only read (see [`AppState::reader`]).
     fn reader(&self) -> MutexGuard<'_, Database> {
-        if self.readers.is_empty() {
+        let readers = &self.readers[..self.readers.len().min(READERS)];
+        if readers.is_empty() {
             return lock(&self.db);
         }
-        for r in &self.readers {
+        for r in readers {
             match r.try_lock() {
                 Ok(g) => return g,
                 Err(std::sync::TryLockError::Poisoned(e)) => return e.into_inner(),
                 Err(std::sync::TryLockError::WouldBlock) => {}
             }
         }
-        lock(&self.readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len()])
+        lock(&readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % readers.len()])
+    }
+    /// The connection for slow reads nobody waits for (see [`background_read`]).
+    fn background_reader(&self) -> MutexGuard<'_, Database> {
+        match self.readers.get(READERS) {
+            Some(r) => lock(r),
+            None => self.reader(),
+        }
     }
     /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
     /// neither connection above is held meanwhile; `None` falls back to the main one.
@@ -344,6 +392,12 @@ fn workspace_tree(state: State<AppState>) -> Result<Vec<PageNode>> {
     state.reader().page_tree()
 }
 
+/// The tree as the sidebar loads it: rows instead of objects (`PageRow`), half the size.
+#[tauri::command(async)]
+fn workspace_tree_compact(state: State<AppState>) -> Result<Vec<arcalo_core::model::PageRow>> {
+    Ok(state.reader().page_tree()?.into_iter().map(Into::into).collect())
+}
+
 #[tauri::command(async)]
 fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
     state.reader().page_doc(id)
@@ -360,13 +414,15 @@ fn page_embed(
 }
 
 /// Saves a page. Returns tags, unresolved links and the new time only: the caller has the
-/// content, and a save does not change the page's backlinks.
+/// content, and a save does not change the page's backlinks. `base`: the page as the editor last
+/// knew it; when it changed meanwhile (the command line, a task ticked off elsewhere) both
+/// changes are kept and the merged text is returned (`SavedPage::merged`).
 #[tauri::command(async)]
-fn page_save(state: State<AppState>, id: i64, content: String) -> Result<SavedPage> {
+fn page_save(state: State<AppState>, id: i64, content: String, base: Option<String>) -> Result<SavedPage> {
     if let Some(e) = simulated_disk_full(&state.data_dir) {
         return Err(e);
     }
-    state.db().save_page(id, &content)
+    state.db().save_page_from(id, &content, base.as_deref())
 }
 
 /// Test builds: while the file `test-disk-full` is in the data folder, page saves fail as on a
@@ -450,16 +506,9 @@ fn page_create(
     Ok(page)
 }
 
-/// Avoid duplicate titles so [[links]] stay unambiguous.
+/// Avoid duplicate titles so [[links]] stay unambiguous (see `Database::unique_title`).
 pub(crate) fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = arcalo_core::notes::clean_title(title);
-    let mut name = base.clone();
-    let mut n = 2;
-    while db.page_by_title(&name)?.is_some() {
-        name = format!("{base} {n}");
-        n += 1;
-    }
-    Ok(name)
+    db.unique_title(title)
 }
 
 #[tauri::command(async)]
@@ -672,9 +721,9 @@ fn os_locale() -> Option<String> {
     if let Some(l) = arcalo_core::identity::env("ARCALO_LOCALE").filter(|l| !l.trim().is_empty()) {
         return Some(l);
     }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "android")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "android", target_os = "ios")))]
     let tags = arcalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
-    #[cfg(any(windows, target_os = "macos", target_os = "android"))]
+    #[cfg(any(windows, target_os = "macos", target_os = "android", target_os = "ios"))]
     let tags = sys_locale::get_locales();
     arcalo_core::i18n::preferred_locale(tags)
 }
@@ -780,10 +829,13 @@ async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Reque
 #[tauri::command]
 async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<SavedAttachment> {
     let dir = state.attachments_dir();
-    let saved =
-        tauri::async_runtime::spawn_blocking(move || attachments::import_file(&dir, std::path::Path::new(&path)))
-            .await
-            .map_err(|e| Error::State(e.to_string()))??;
+    // Android's document picker: a copy of the file under its name, removed afterwards.
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        let file = picked::input(&path)?;
+        attachments::import_file(&dir, file.path())
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))??;
     feed::file_added(&state, &saved.name);
     Ok(saved)
 }
@@ -828,33 +880,35 @@ async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
 /// Writes a page shared as one HTML file (the path comes from the save dialog).
 #[tauri::command]
 fn html_file_write(path: String, html: String) -> Result<()> {
-    let p = std::path::Path::new(&path);
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ext != "html" && ext != "htm" {
-        return Err(Error::State(
-            tr!("Nur .html-Dateien können so gespeichert werden", "Only .html files can be saved this way").into(),
-        ));
-    }
-    std::fs::write(p, html).at(p)?;
-    Ok(())
+    picked::output(&path, |p| {
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "html" && ext != "htm" {
+            return Err(Error::State(
+                tr!("Nur .html-Dateien können so gespeichert werden", "Only .html files can be saved this way").into(),
+            ));
+        }
+        std::fs::write(p, html).at(p)?;
+        Ok(())
+    })
 }
 
 /// Writes an exported diagram (`.svg` or `.png`, from a Mermaid block) to `path`.
 #[tauri::command(async)]
 fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
-    let p = std::path::Path::new(&path);
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if ext != "svg" && ext != "png" {
-        return Err(Error::State(
-            tr!(
-                "Nur .svg- und .png-Dateien können so gespeichert werden",
-                "Only .svg and .png files can be saved this way"
-            )
-            .into(),
-        ));
-    }
-    std::fs::write(p, data).at(p)?;
-    Ok(())
+    picked::output(&path, |p| {
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ext != "svg" && ext != "png" {
+            return Err(Error::State(
+                tr!(
+                    "Nur .svg- und .png-Dateien können so gespeichert werden",
+                    "Only .svg and .png files can be saved this way"
+                )
+                .into(),
+            ));
+        }
+        std::fs::write(p, data).at(p)?;
+        Ok(())
+    })
 }
 
 /// Opens a file of the attachments folder in its default app, or shows it in the file
@@ -864,6 +918,19 @@ fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
 fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     let path = attachments::existing(&state.attachments_dir(), &name)?;
+    // Android: a copy in the cache, handed to the app Android has for its type (1.20); iOS: the
+    // share sheet with the copy (another app, Files, AirDrop).
+    #[cfg(mobile)]
+    if !reveal && !attachments::is_executable(&name) {
+        let cache = app.path().app_cache_dir().map_err(|e| Error::State(e.to_string()))?;
+        #[cfg(target_os = "android")]
+        let opened = mobile::android::open_file(&cache, &path);
+        #[cfg(target_os = "ios")]
+        let opened = mobile::ios::share_file(&cache, &path);
+        return opened.map_err(|e| {
+            Error::State(trf!("„{name}“ ließ sich nicht öffnen: {e}", "“{name}” could not be opened: {e}"))
+        });
+    }
     let opened = if reveal || attachments::is_executable(&name) {
         app.opener().reveal_item_in_dir(&path)
     } else {
@@ -995,25 +1062,36 @@ fn required(value: &str, what: &str) -> Result<String> {
     if v.is_empty() { Err(Error::State(trf!("{what} fehlt", "{what} is missing"))) } else { Ok(v.to_owned()) }
 }
 
-#[tauri::command(async)]
-fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
-    state
-        .db()
-        .create_project(&required(&code, tr!("Projekt-ID", "Project ID"))?, &required(&name, tr!("Name", "Name"))?)
+/// Tells the UI that projects, Netzpläne, Vorgänge or Leistungsarten changed (its shared WBS cache
+/// reads them again), whoever changed them: a view, the assistant, a test, the sample data.
+fn wbs_changed<T>(app: &AppHandle, result: Result<T>) -> Result<T> {
+    if result.is_ok() {
+        let _ = app.emit("data://wbs", ());
+    }
+    result
 }
 
 #[tauri::command(async)]
-fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
-    state.db().update_project(id, &required(&name, tr!("Name", "Name"))?)
+fn project_create(app: AppHandle, state: State<AppState>, code: String, name: String) -> Result<Project> {
+    let code = required(&code, tr!("Projekt-ID", "Project ID"))?;
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().create_project(&code, &name))
 }
 
 #[tauri::command(async)]
-fn project_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_project(id)
+fn project_update(app: AppHandle, state: State<AppState>, id: i64, name: String) -> Result<()> {
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().update_project(id, &name))
+}
+
+#[tauri::command(async)]
+fn project_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_project(id))
 }
 
 #[tauri::command(async)]
 fn netzplan_create(
+    app: AppHandle,
     state: State<AppState>,
     project_id: i64,
     netzplan_nr: String,
@@ -1023,28 +1101,31 @@ fn netzplan_create(
 ) -> Result<Netzplan> {
     let nr = required(&netzplan_nr, tr!("Netzplan-Nr.", "Network no."))?;
     let wbs = if wbs_element.trim().is_empty() { nr.clone() } else { wbs_element.trim().to_owned() };
-    state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
+    wbs_changed(&app, state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
 fn netzplan_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     wbs_element: String,
     description: String,
     planned_hours: f64,
 ) -> Result<()> {
-    state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0))
+    wbs_changed(&app, state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
-fn netzplan_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_netzplan(id)
+fn netzplan_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_netzplan(id))
 }
 
 /// Adds a Vorgang; `predecessors` are Vorgang numbers of the same Netzplan.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 fn vorgang_create(
+    app: AppHandle,
     state: State<AppState>,
     netzplan_id: i64,
     vorgang_nr: String,
@@ -1066,7 +1147,7 @@ fn vorgang_create(
                 .ok_or_else(|| Error::not_found("vorgang", p.clone()))
         })
         .collect::<Result<_>>()?;
-    db.atomic(|| {
+    let created = db.atomic(|| {
         // A new Vorgang has no successors, so linking it cannot create a cycle.
         let mut v =
             db.create_vorgang(netzplan_id, &nr, description.trim(), duration_days.max(0.0), planned_hours.max(0.0))?;
@@ -1075,11 +1156,13 @@ fn vorgang_create(
             v.predecessors.push(p);
         }
         Ok(v)
-    })
+    });
+    wbs_changed(&app, created)
 }
 
 #[tauri::command(async)]
 fn vorgang_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     description: String,
@@ -1087,12 +1170,16 @@ fn vorgang_update(
     planned_hours: f64,
     remaining_hours: Option<f64>,
 ) -> Result<()> {
-    state.db().update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours)
+    let db = state.db();
+    wbs_changed(
+        &app,
+        db.update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours),
+    )
 }
 
 #[tauri::command(async)]
-fn vorgang_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_vorgang(id)
+fn vorgang_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_vorgang(id))
 }
 
 #[tauri::command(async)]
@@ -1101,13 +1188,13 @@ fn leistungsarten_list(state: State<AppState>) -> Result<Vec<(String, String)>> 
 }
 
 #[tauri::command(async)]
-fn leistungsart_save(state: State<AppState>, code: String, description: String) -> Result<()> {
-    state.db().upsert_leistungsart(&code, &description)
+fn leistungsart_save(app: AppHandle, state: State<AppState>, code: String, description: String) -> Result<()> {
+    wbs_changed(&app, state.db().upsert_leistungsart(&code, &description))
 }
 
 #[tauri::command(async)]
-fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
-    state.db().delete_leistungsart(&code)
+fn leistungsart_delete(app: AppHandle, state: State<AppState>, code: String) -> Result<()> {
+    wbs_changed(&app, state.db().delete_leistungsart(&code))
 }
 
 // ---------------------------------------------------------- time tracking
@@ -1523,7 +1610,7 @@ fn export_entries(
     };
     let res = export::export(&rows, format, &options)?;
     if let Some(p) = path {
-        std::fs::write(&p, &res.content).at(&p)?;
+        picked::output(&p, |f| std::fs::write(f, &res.content).at(f))?;
     }
     if mark_exported {
         db.set_entry_status(&res.exported_ids, StatusFlag::Exported)?;
@@ -1627,7 +1714,7 @@ pub(crate) fn run_git_sync_with(
     let hold = syncmerge::hold_paths(&state.db());
     // The settings file, when the settings are synced too.
     let settings_file = if settings.git_sync.sync_settings {
-        match state.db().settings_sync_file(&gitsync::hostname()) {
+        match state.db().settings_sync_file(&gitsync::device_name(&state.data_dir)) {
             Ok(f) => Some(f),
             Err(e) => {
                 devlog::warn("settings", format!("settings file for the sync not written: {e}"));
@@ -1656,11 +1743,11 @@ pub(crate) fn run_git_sync_with(
         };
         let git = network::git(&state, token.clone(), &settings.git_sync.remote_url);
         // Locks of a git that was stopped (timeout, crash) would block every sync from now on.
-        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
+        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), git.stale_lock_age()) {
             devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
         }
         let repo = state.git_repo_dir();
-        let host = gitsync::hostname();
+        let host = gitsync::device_name(&state.data_dir);
         let req = SyncRequest {
             repo: &repo,
             source: &source,
@@ -1706,9 +1793,14 @@ pub(crate) fn run_git_sync_with(
     })();
     let mut taken_over = true;
     if let Ok(out) = &res
-        && !out.remote_changes.is_empty()
+        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty() || !out.pulled_files.is_empty())
     {
         taken_over = take_over_pulled(app, &state, out);
+    }
+    // The pages hold the pulled notes: the next sync starts from the mirror again (a failed
+    // take-over leaves them waiting, so the next sync brings them once more).
+    if res.is_ok() && taken_over {
+        gitsync::taken_over(&state.git_repo_dir());
     }
     // Decided after a restore: done once the server's notes are in (else the next sync asks again).
     if res.is_ok() && taken_over && restored.is_some() && after_restore.is_some_and(|c| c != AfterRestore::Ask) {
@@ -1757,7 +1849,39 @@ pub(crate) fn run_git_sync_with(
 fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> bool {
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
-        Ok(p) => {
+        Ok(mut p) => {
+            // Anything not taken over here keeps the pull waiting for the next sync.
+            let mut complete = true;
+            // Files of one name that differ here and there: this computer's takes its new name
+            // before the server's comes in under the old one (below), its notes link to it.
+            if !out.renamed_files.is_empty() {
+                let renamed = syncmerge::apply_file_renames(
+                    &state.db(),
+                    &state.attachments_dir(),
+                    &state.git_repo_dir(),
+                    &out.renamed_files,
+                    Local::now(),
+                );
+                match renamed {
+                    Ok(pages) => {
+                        let names: Vec<String> =
+                            out.renamed_files.iter().map(|r| format!("{} → {}", r.from, r.to)).collect();
+                        devlog::info(
+                            "git",
+                            format!("files that differ on the server kept under a new name here: {}", names.join(", ")),
+                        );
+                        for id in pages {
+                            if !p.pages.contains(&id) {
+                                p.pages.push(id);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        complete = false;
+                        devlog::warn("git", format!("files of the same name not renamed here: {e}"));
+                    }
+                }
+            }
             // For the start page's „Per Git-Sync geändert“.
             use arcalo_core::dashboard::notes::{PulledChange, record_pulled};
             let changes: Vec<(i64, PulledChange)> = p
@@ -1771,12 +1895,29 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
             if let Err(e) = record_pulled(&state.db(), &changes, chrono::Utc::now()) {
                 devlog::warn("git", format!("pulled pages not recorded for the start page: {e}"));
             }
-            let files = state.git_repo_dir().join(attachments::DIR_NAME);
-            if files.is_dir()
-                && let Err(e) = copy_new_attachments(&files, &state.attachments_dir())
-            {
-                devlog::warn("git", format!("attachments from the server not copied: {e}"));
-            }
+            // New files, and the ones only the server changed; a file that could not be copied keeps
+            // the pull waiting, so the next sync does not upload the old file over the server's.
+            let taken = syncmerge::take_over_files(&state.git_repo_dir(), &state.attachments_dir(), &out.pulled_files);
+            let files_taken = match taken {
+                Ok(kept) => {
+                    if !kept.is_empty() {
+                        // Changed here while the sync ran: both kept, the next sync uploads this one.
+                        let names: Vec<String> = kept.iter().map(|r| format!("{} → {}", r.from, r.to)).collect();
+                        devlog::info(
+                            "git",
+                            format!(
+                                "files changed here and on the server kept under a new name here: {}",
+                                names.join(", ")
+                            ),
+                        );
+                    }
+                    true
+                }
+                Err(e) => {
+                    devlog::warn("git", format!("attachments from the server not copied: {e}"));
+                    false
+                }
+            };
             devlog::info(
                 "git",
                 format!(
@@ -1797,7 +1938,7 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
                 );
             }
             let _ = app.emit("gitsync://pulled", &p);
-            true
+            complete && files_taken
         }
         Err(e) => {
             devlog::error("git", format!("taking over the server's notes failed: {e}"));
@@ -1821,6 +1962,18 @@ async fn git_sync_now(
         ));
     }
     let allow = allow_deletions.unwrap_or(false);
+    // Android (the full app): the phone's sync, HTTPS only, with the desktop's projects and
+    // appointments taken over from its database copy afterwards.
+    #[cfg(mobile)]
+    {
+        mobile::https_only(&app.state::<AppState>().settings().git_sync.remote_url)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            mobile::sync_and_import(&app, allow, after_restore).map(|s| s.outcome)
+        })
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+    }
+    #[cfg(desktop)]
     tauri::async_runtime::spawn_blocking(move || run_git_sync_with(&app, false, allow, after_restore))
         .await
         .map_err(|e| Error::State(e.to_string()))?
@@ -1879,9 +2032,12 @@ struct GitTest {
     latency_ms: u64,
     branches: Vec<String>,
     error: Option<String>,
+    /// Tested without the stored token, and why (it belongs to the saved repository's server).
+    note: Option<String>,
 }
 
-/// Checks URL and credentials with `git ls-remote`. An unsaved URL or token can be tested.
+/// Checks URL and credentials with `git ls-remote`. An unsaved URL or token can be tested; the
+/// stored token only goes to the server of the saved repository (`gitsetup::test_token`).
 #[tauri::command]
 async fn git_sync_test(app: AppHandle, url: Option<String>, token: Option<String>) -> Result<GitTest> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1893,20 +2049,24 @@ async fn git_sync_test(app: AppHandle, url: Option<String>, token: Option<String
                 latency_ms: 0,
                 branches: vec![],
                 error: Some(tr!("Keine Remote-URL", "No remote URL").into()),
+                note: None,
             });
         }
-        let token = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).or_else(|| state.git_secret.get());
+        let saved = state.settings().git_sync.remote_url;
+        let (token, note) = gitsetup::test_token(token, state.git_secret.get(), &saved, &url);
+        devlog::remember_secret(token.as_deref());
         let git = network::git(&state, token.clone(), &url);
         let start = Instant::now();
         let res = git.version().and_then(|_| git.ls_remote(&url));
         let latency_ms = start.elapsed().as_millis() as u64;
         Ok(match res {
-            Ok(branches) => GitTest { ok: true, latency_ms, branches, error: None },
+            Ok(branches) => GitTest { ok: true, latency_ms, branches, error: None, note },
             Err(e) => GitTest {
                 ok: false,
                 latency_ms,
                 branches: vec![],
                 error: Some(gitsync::redact(&e.to_string(), token.as_deref())),
+                note,
             },
         })
     })
@@ -2152,66 +2312,18 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 #[tauri::command]
 fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::Value) -> Result<SettingsView> {
     let previous = state.settings();
-    // Settings without the provider list (scripts, an older settings page) keep the stored
-    // providers and their keys instead of falling back to the default one.
-    let has_providers = settings.get("providers").is_some();
-    let mut settings: Settings = serde_json::from_value(settings).map_err(|e| Error::Parse(e.to_string()))?;
-    if !has_providers {
-        settings.providers = previous.providers.clone();
-    }
-    // Scripts and older settings pages set only `litellm_base_url`; it moves the LiteLLM provider.
-    settings.sync_legacy(&previous);
-    settings.normalize_ai()?;
-    settings.backup_keep = settings.backup_keep.clamp(1, 365);
-    settings.backup_dir = settings.backup_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
-    settings.markdown_mirror_dir = settings.markdown_mirror_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
-    settings.git_sync = gitsync::normalize(&settings.git_sync)?;
-    settings.network = settings.network.normalized()?;
+    let mut settings = Settings::for_save(settings, &previous)?;
     // What an organization's policy fixes (routes, locked profiles) stays as it says.
     network::enforce_policy(&previous.network, &mut settings.network);
     settings.normalize();
     // A missing or unreadable CA file is reported now, not on the next request.
     network::check(&settings.network)?;
     network::forget_removed(&state, &previous.network, &settings.network);
-    settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
-    if let Some(t) = &settings.reminder_time {
-        let time = arcalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
-            Error::State(trf!(
-                "Erinnerungszeit „{t}“ ungültig, erwartet HH:MM",
-                "Reminder time “{t}” is invalid, expected HH:MM"
-            ))
-        })?;
-        settings.reminder_time = Some(time.format("%H:%M").to_string());
-    }
-    settings.capture_shortcut = settings.capture_shortcut.trim().to_owned();
-    settings.palette_shortcut = settings.palette_shortcut.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
-    settings.search_shortcut = settings.search_shortcut.trim().to_owned();
-    // What is stored (the database, which a scope change or a settings sync may have changed
-    // ahead of the running settings).
+    // What is stored (the database, which a scope change, a settings sync or the command line
+    // may have changed ahead of the running settings).
     let stored = state.db().load_settings()?;
-    // The start page saves its widgets itself (`dashboard_save`); a settings draft opened
-    // earlier must not overwrite them.
-    settings.dashboard = stored.dashboard.clone();
-    // The same for the sidebar's links (`quick_links_save`).
-    settings.quick_links = stored.quick_links.clone();
-    // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
-    settings.calendar.sources = stored.calendar.sources.clone();
-    // And for the shared sections' scopes (`settings_scope_set`) and the version of the shape.
-    settings.workspace_scopes = stored.workspace_scopes.clone();
-    settings.version = stored.version.max(arcalo_core::settings_migrate::SETTINGS_VERSION);
-    // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
-    let stored_cal = stored.calendar.clone();
-    settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
-    settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
-    settings.calendar = std::mem::take(&mut settings.calendar).normalized();
-    // And for the first-run flags (`onboarding_complete` / `onboarding_reset`).
-    settings.onboarding = stored.onboarding.clone();
-    // And for the Jira sites (`jira_site_*`; their tokens are secrets).
-    settings.jira.sites = stored.jira.sites.clone();
-    settings.jira = std::mem::take(&mut settings.jira).normalized();
-    // An inbox title still at the other language's default follows the language.
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
-    arcalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.lang(), page);
+    let settings = settings.finish_save(&stored, page)?;
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -3668,8 +3780,16 @@ fn ai_cancel(state: State<AppState>, request_id: String) {
 #[serde(tag = "risk", rename_all = "snake_case")]
 enum ToolPlan {
     Workspace,
-    RequiresApproval { call: SystemCall, summary: String },
+    /// `token`: the one-time approval `ai_run_system_tool` needs for exactly this call.
+    RequiresApproval {
+        call: SystemCall,
+        summary: String,
+        token: String,
+    },
 }
+
+/// System tool calls shown to the user for approval (see [`tools::Approvals`]).
+static TOOL_APPROVALS: tools::Approvals = tools::Approvals::new();
 
 /// Classifies a tool call so the UI knows whether to ask the user first.
 #[tauri::command(async)]
@@ -3679,7 +3799,8 @@ fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Resu
         Risk::Workspace => ToolPlan::Workspace,
         Risk::RequiresApproval => {
             let call = SystemCall::from_tool_call(&name, &arguments)?;
-            ToolPlan::RequiresApproval { summary: call.describe(), call }
+            let token = TOOL_APPROVALS.issue(&call)?;
+            ToolPlan::RequiresApproval { summary: call.describe(), call, token }
         }
     })
 }
@@ -3749,10 +3870,16 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
 }
 
-/// Executes a system tool. The UI calls this only after the user approved
-/// the exact summary returned by `ai_plan_tool`.
+/// Executes a system tool after the user approved the exact summary returned by `ai_plan_tool`:
+/// only with the token issued there for exactly this call, and only once.
 #[tauri::command]
-async fn ai_run_system_tool(app: AppHandle, state: State<'_, AppState>, call: SystemCall) -> Result<String> {
+async fn ai_run_system_tool(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    token: String,
+    call: SystemCall,
+) -> Result<String> {
+    TOOL_APPROVALS.take(&token, &call)?;
     let name = match &call {
         SystemCall::RunPowershell { .. } => "run_powershell",
         SystemCall::Git { .. } => "git",
@@ -3935,7 +4062,7 @@ fn onboarding_needed(state: State<AppState>) -> Result<bool> {
 fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> Result<()> {
     let db = state.db();
     if samples {
-        demo::seed_explicit(&db, Utc::now())?;
+        demo::seed_explicit(&db, Local::now())?;
     }
     db.meta_set("onboarded", "1")?;
     let _ = app.emit("data://entries", ());
@@ -3993,7 +4120,19 @@ fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsVi
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     let n = demo::remove(&state.db())?;
     let _ = app.emit("data://entries", ());
+    let _ = app.emit("data://wbs", ());
     Ok(n)
+}
+
+/// A short tag of a data folder (FNV-1a of its path): page ids of two workspaces never mix in
+/// what the UI keeps per workspace.
+#[cfg(desktop)]
+fn workspace_tag(data_dir: &std::path::Path) -> String {
+    let hash = data_dir
+        .to_string_lossy()
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    format!("{hash:016x}")
 }
 
 #[cfg(desktop)]
@@ -4004,14 +4143,20 @@ fn create_main_window(
     effect: arcalo_core::prefs::WindowEffect,
     custom_frame: bool,
     webview_dir: Option<PathBuf>,
+    data_dir: &std::path::Path,
 ) -> tauri::Result<tauri::WebviewWindow> {
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
         .title("Arcalo")
-        .min_inner_size(900.0, 560.0)
+        // Android's windows have no minimum: the simulation (tests) lets the window go to a
+        // tablet's width.
+        .min_inner_size(if platform::simulated_android() { 320.0 } else { 900.0 }, 560.0)
         // The display language before the UI script runs (index.html cannot carry a script):
         // the splash and the first frame are in it, a first run on an English system included.
         .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", arcalo_core::i18n::lang().as_str()))
+        // Which workspace (data folder) this is: what the UI keeps per workspace in localStorage
+        // (the open folders of the tree) is stored under it.
+        .initialization_script(format!("window.__ARCALO_WORKSPACE__ = {:?};", workspace_tag(data_dir)))
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
     // Portable: the webview's profile stays in the data folder, not in the user profile.
@@ -4197,6 +4342,36 @@ fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     dir.map_err(|e| Error::State(e.to_string()))
 }
 
+/// A restore or an encryption switch waits for this start (both replace the database file).
+#[cfg(desktop)]
+fn swap_pending(dir: &std::path::Path) -> bool {
+    dir.join(arcalo_core::backupdest::PENDING_RESTORE).is_file()
+        || arcalo_core::cipher::read_marker(dir).is_some_and(|m| m.step != arcalo_core::cipher::Step::Swapped)
+}
+
+/// A restore or an encryption switch waits for the next start: `running` terminal commands (none
+/// named: a program without a mark) still work on the workspace.
+#[cfg(desktop)]
+fn swap_postponed_notice(running: &[cmdlock::Running]) -> datadir::Notice {
+    let names = running.iter().map(|r| format!("arcalo {}", r.command)).collect::<Vec<_>>().join(", ");
+    let message = if names.is_empty() {
+        tr!(
+            "Ein anderes Programm arbeitet gerade mit den Daten. Die Wiederherstellung oder Umstellung der \
+             Verschlüsselung folgt beim nächsten Start.",
+            "Another program is working with the data right now. The restore or the encryption switch follows at \
+             the next start."
+        )
+        .to_owned()
+    } else {
+        trf!(
+            "Im Terminal läuft noch {names}. Die Wiederherstellung oder Umstellung der Verschlüsselung folgt beim \
+             nächsten Start.",
+            "{names} is still running in a terminal. The restore or the encryption switch follows at the next start."
+        )
+    };
+    datadir::Notice::titled("warning", tr!("Auf den nächsten Start verschoben", "Postponed to the next start"), message)
+}
+
 /// The standard data folder (the one without `location.json`).
 fn default_data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
     #[cfg(desktop)]
@@ -4343,12 +4518,20 @@ static BACKUP_RUNNING: Mutex<()> = Mutex::new(());
 /// [`prepare_exit`] ran; [`resume_after_failed_exit`] undoes it.
 static EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
 
+/// The workspace is closed for an exit ([`prepare_exit`]): threads with connections of their
+/// own let go of them.
+#[cfg_attr(mobile, allow(dead_code))]
+pub(crate) fn exit_prepared() -> bool {
+    EXIT_PREPARED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// The process did not end after all (the update installer or the new process could not be
 /// started): opens the workspace again, so edits are not written into the in-memory stand-in.
 pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
     if !EXIT_PREPARED.swap(false, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
+    voice::resume(app);
     if let Some(state) = app.try_state::<AppState>() {
         let file = state.data_dir.join(datadir::DB_FILE);
         match Database::open(&file) {
@@ -4385,6 +4568,39 @@ pub(crate) fn restart(app: &AppHandle) -> Result<()> {
 struct StartupOptions {
     /// Seed the demo workspace on first start (tests; users choose in the onboarding).
     demo: Option<bool>,
+}
+
+/// `arcalo pages list`, `Arcalo.exe --json tasks list`: the program runs as the command line
+/// (crate `arcalo-cli`, docs/cli.md) instead of starting the app, on the same workspace and with
+/// the same version. `None` when the arguments are the app's own (none, `--minimized`, a jump
+/// list or notification address).
+#[cfg(desktop)]
+pub fn command_line() -> Option<std::process::ExitCode> {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    // The installer puts the program folder on the user's Path (installer/hooks.nsh).
+    if args.get(1).is_some_and(|a| a == cmdpath::INTERNAL_ARG) {
+        return Some(cmdpath::internal(&args[2..]));
+    }
+    if !arcalo_cli::is_command_line(&args) {
+        return None;
+    }
+    #[cfg(windows)]
+    attach_console();
+    Some(arcalo_cli::main_with(args))
+}
+
+/// A release build on Windows is a program without a console of its own: output redirected to a
+/// pipe or a file (scripts, AI agents) already has its handles; typed in a console, the output
+/// goes to that console.
+#[cfg(windows)]
+fn attach_console() {
+    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE};
+    // SAFETY: plain Win32 calls without pointers of ours.
+    unsafe {
+        if GetStdHandle(STD_OUTPUT_HANDLE).is_null() {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
 }
 
 #[cfg(desktop)]
@@ -4483,11 +4699,29 @@ pub fn run() {
             // `location.json` in the config folder may point to a chosen data folder.
             // A pending move is carried out here, before the database is opened. A portable
             // copy (marker next to the executable) keeps its data in `<exe dir>/data`.
+            let env_dir = arcalo_core::identity::env_os("ARCALO_DATA_DIR").map(PathBuf::from);
+            let config = config_dir(app.handle()).ok();
+            let default_dir = identity::data_dir(app.handle())?;
+            // The second line of defence against two processes on one workspace: the
+            // single-instance plugin needs a session bus on Linux, and an installed copy and the
+            // Store's may share a data folder. A lock on a file in the data folder, as a portable
+            // copy holds already, taken before a pending move copies the folder. Test runs
+            // (ARCALO_DATA_DIR) use folders of their own.
+            let instance_lock = portable::detect().is_none() && env_dir.is_none();
+            let locked = instance_lock.then(|| datadir::locate(None, None, config.as_deref(), default_dir.clone()));
+            if let Some(current) = &locked
+                && !portable::lock_instance(current)
+            {
+                portable::already_running(current);
+                std::process::exit(0);
+            }
+            let commands = updates::commands_dir(app.handle());
             let startup = datadir::prepare_portable(
-                arcalo_core::identity::env_os("ARCALO_DATA_DIR").map(PathBuf::from),
+                env_dir,
                 portable::detect(),
-                config_dir(app.handle()).ok().as_deref(),
-                identity::data_dir(app.handle())?,
+                config.as_deref(),
+                default_dir,
+                commands.as_deref(),
             );
             let dir = startup.dir.clone();
             // Until the settings are read (and on the recovery screens): the system's language.
@@ -4502,14 +4736,8 @@ pub fn run() {
                 recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
             }
-            // The second line of defence against two processes on one workspace: the
-            // single-instance plugin needs a session bus on Linux, and an installed copy and the
-            // Store's may share a data folder. A lock on a file in the data folder, as a portable
-            // copy holds already. Test runs (ARCALO_DATA_DIR) use folders of their own.
-            if portable::detect().is_none()
-                && arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none()
-                && !portable::lock_instance(&dir)
-            {
+            // The folder after a move (or the default one when the chosen folder is missing).
+            if locked.as_ref().is_some_and(|current| *current != dir) && !portable::lock_instance(&dir) {
                 devlog::warn("core", format!("another Arcalo process runs on {}: this one ends", dir.display()));
                 portable::already_running(&dir);
                 std::process::exit(0);
@@ -4553,11 +4781,23 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 arcalo_core::identity::env("ARCALO_STARTUP").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+            // A restore or an encryption switch replaces the database file: not while a terminal
+            // command works on it, and none starts until it is done.
+            let swap = swap_pending(&dir).then(|| cmdlock::exclusive(&dir, commands.as_deref(), cmdlock::START_WAIT));
+            let may_swap = !matches!(swap, Some(Err(_)));
+            let swap_notice = match &swap {
+                Some(Err(running)) => {
+                    devlog::warn("core", format!("restore or encryption switch postponed: {} commands running", running.len()));
+                    Some(swap_postponed_notice(running))
+                }
+                _ => None,
+            };
             // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
-            let restored = backupdest::apply_pending_restore(&dir);
+            let restored = if may_swap { backupdest::apply_pending_restore(&dir) } else { None };
             // Encrypted database: its key, a requested switch (Settings → Sicherheit), and the
             // recovery screen when the key is missing or wrong.
-            let prepared = security::prepare(&dir);
+            let prepared = security::prepare(&dir, may_swap);
+            drop(swap);
             if let Some(reason) = prepared.blocked {
                 security::show_keygate(app.handle(), &dir, reason);
                 return Ok(());
@@ -4606,7 +4846,13 @@ pub fn run() {
             // with a notice that nothing is saved.
             // A restore that was encrypted on the way says so itself; a failed switch still wins.
             let cipher_notice = prepared.notice.filter(|n| restored.is_none() || n.kind != "info");
-            let mut notice = cipher_notice.or(restored).or(startup.notice.clone()).or_else(identity::notice);
+            // Last: macOS started the app from the disk image or translocated from Downloads.
+            let mut notice = cipher_notice
+                .or(swap_notice)
+                .or(restored)
+                .or(startup.notice.clone())
+                .or_else(identity::notice)
+                .or_else(cmdpath::temporary_place_notice);
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(
@@ -4617,7 +4863,7 @@ pub fn run() {
                 )));
             }
             if opts.demo.unwrap_or(false) {
-                demo::seed(&db, Utc::now())?;
+                demo::seed(&db, Local::now())?;
             }
             // Once: a workspace from before 1.7 gets the notice of the rename to Arcalo (before
             // the intro's classification, whose first row tells a 1.6 workspace).
@@ -4713,7 +4959,7 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, &proxy_passwords);
 
-            let readers = match (0..READERS)
+            let readers = match (0..=READERS)
                 .map(|_| Database::open_read_only(dir.join(datadir::DB_FILE)))
                 .collect::<arcalo_core::Result<Vec<_>>>()
             {
@@ -4785,7 +5031,8 @@ pub fn run() {
             // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
             // Windows showed the unstyled page, then the webview's white, then the splash.
             let webview_dir = portable::webview_dir(&app.state::<AppState>().data_dir);
-            let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir)?;
+            let data_dir = app.state::<AppState>().data_dir.clone();
+            let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir, &data_dir)?;
             startup_mark("main window");
             PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
             // Should the UI never report (a script error), the window still appears.
@@ -4818,422 +5065,574 @@ pub fn run() {
                 }
             }
             spawn_activity_sampler(app.handle().clone());
+            // The command line (`arcalo pages …`) may change the workspace while the app runs.
+            external::spawn(app.handle().clone());
             backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
             timeblocks::spawn_scheduler(app.handle().clone());
+            calwrite::spawn_scheduler(app.handle().clone());
             jira::spawn_scheduler(app.handle().clone());
             semantic::spawn_indexer(app.handle().clone());
             mail::clean_temp(app.handle());
+            // 1.17: the folders and credential entries of the old identifier, once their copies are in use.
+            identity::spawn_cleanup(app.handle());
             Ok(())
         })
-        .invoke_handler(security::guard(tauri::generate_handler![
-            security::keygate_status,
-            security::keygate_unlock,
-            security::keygate_quit,
-            security::keygate_restore,
-            security::keygate_open_folder,
-            security::cipher_status,
-            security::cipher_recovery_key,
-            security::cipher_recovery_save,
-            security::cipher_switch,
-            security::cipher_password,
-            security::cipher_rekey_prepare,
-            security::cipher_rekey,
-            security::cipher_rekey_cancel,
-            security::cipher_drop_old,
-            security::cipher_drop_plain_backups,
-            security::applock_status,
-            security::applock_configure,
-            security::applock_unlock,
-            security::applock_unlock_os,
-            security::applock_reset,
-            security::applock_lock_now,
-            security::applock_flushed,
-            security::applock_show_main,
-            security::applock_test_idle,
-            workspace_tree,
-            page_get,
-            page_save,
-            page_collection,
-            netzplan_overview,
-            budgets_all,
-            suggestion_facts,
-            page_schema,
-            known_persons,
-            page_versions,
-            page_version_content,
-            page_snapshot,
-            page_version_restore,
-            page_create,
-            page_rename,
-            page_delete,
-            page_restore,
-            page_purge,
-            trash_list,
-            trash_empty,
-            page_move,
-            page_set_favorite,
-            page_set_icon,
-            page_resolve,
-            recent_pages,
-            daily_note,
-            daily_overview,
-            tags_list,
-            tag_pages,
-            tasks_list,
-            tasks_compact,
-            task_set_done,
-            tasks_edit,
-            tasks_undo,
-            task_next_due,
-            task_recur_preview,
-            search_workspace,
-            vault_import,
-            vault_import_cancel,
-            vault_export,
-            templates_list,
-            templates_root,
-            template_render,
-            page_from_template,
-            attachment_save,
-            attachment_store,
-            attachment_import,
-            attachment_read,
-            attachment_size,
-            page_embed,
-            diagram_file_write,
-            link_title,
-            html_file_write,
-            drawing_create,
-            drawing_read,
-            drawing_save,
-            files::attachments_list,
-            files::attachment_rename,
-            files::attachment_trash,
-            files::attachments_trashed,
-            files::attachment_restore,
-            files::attachment_purge,
-            wbs_tree,
-            project_create,
-            project_update,
-            project_delete,
-            netzplan_create,
-            netzplan_update,
-            netzplan_delete,
-            vorgang_create,
-            vorgang_update,
-            vorgang_delete,
-            leistungsarten_list,
-            leistungsart_save,
-            leistungsart_delete,
-            log_time,
-            page_work,
-            timer_status,
-            timer_start,
-            timer_stop,
-            timer_pause,
-            timer_discard,
-            time_entries,
-            time_entry_create,
-            time_entry_update,
-            set_entry_status,
-            delete_time_entry,
-            time_chip_states,
-            time_chip_delete,
-            time_chip_restore,
-            time_chip_book,
-            budget,
-            schedule,
-            export_entries,
-            backup_now,
-            backup_list,
-            backupdest::backup_destinations,
-            backupdest::backup_destination_test,
-            backupdest::backup_destination_retry,
-            backupdest::backup_remote_list,
-            backupdest::backup_restore,
-            mirror_status,
-            mirror_open,
-            git_sync_now,
-            git_sync_status,
-            git_token_set,
-            git_sync_test,
-            git_restore_import,
-            syncmerge::git_conflicts,
-            syncmerge::git_conflict_get,
-            syncmerge::git_conflict_resolve,
-            syncmerge::git_conflict_keep_both,
-            settings_get,
-            settings_save,
-            settings_scope_set,
-            settings_sync_undo,
-            api_key_set,
-            ai_test_connection,
-            provider_key_set,
-            ai_provider_models,
-            ai_provider_test,
-            ollama_detect,
-            ollama_pull,
-            ai_route_preview,
-            ai_models,
-            ai_meter,
-            ai_chat,
-            ai_transform,
-            zeit_suggest_ai,
-            ai_cancel,
-            ai_plan_tool,
-            ai_run_workspace_tool,
-            ai_run_system_tool,
-            ai_index_pending,
-            semantic::search_semantic,
-            semantic::semantic_status,
-            semantic::semantic_rebuild,
-            ai_embedding_status,
-            network::network_status,
-            network::network_test,
-            network::network_services,
-            network::network_service_test,
-            network::network_certificate,
-            network::network_legacy_probe,
-            network::network_fetch_pac,
-            network::network_ca_info,
-            network::proxy_password_set,
-            prefs::settings_export,
-            prefs::settings_file_read,
-            prefs::theme_export,
-            prefs::theme_file_read,
-            prefs::settings_defaults,
-            prefs::window_state_save,
-            prefs::ai_cost_status,
-            app_info,
-            data_dir_status,
-            data_dir_inspect,
-            data_dir_set,
-            data_dir_cancel,
-            app_restart,
-            demo_remove,
-            onboarding_needed,
-            onboarding_finish,
-            onboarding_status,
-            onboarding_complete,
-            onboarding_hint_shown,
-            rebrand_notice_shown,
-            onboarding_reset,
-            window_backdrop,
-            window_frame,
-            window_ready,
-            os_locale,
-            jumplist::jump_take,
-            window_set_backdrop,
-            desktop::window_hide,
-            desktop::window_close_action,
-            desktop::app_quit,
-            desktop::capture_submit,
-            desktop::capture_hide,
-            desktop::capture_show,
-            desktop::capture_ready,
-            desktop::capture_context,
-            desktop::capture_undo,
-            desktop::capture_open,
-            desktop::search_hide,
-            desktop::search_open,
-            desktop::timer_resume_last,
-            dashboard_save,
-            dashboard::dashboard_data,
-            dashboard::dashboard_file_write,
-            dashboard::dashboard_inbox_move,
-            worktime::absence_list,
-            worktime::day_targets,
-            worktime::absence_save,
-            worktime::absence_remove,
-            worktime::mail_flagged,
-            worktime::mail_flagged_open,
-            worktime::mail_flagged_available,
-            quick_links_save,
-            quick_link_open,
-            bookmarks::bookmarks_sources,
-            bookmarks::bookmarks_read,
-            bookmarks::bookmarks_read_file,
-            bookmarks::bookmarks_read_text,
-            attachment_open,
-            desktop::desktop_info,
-            desktop::autostart_set,
-            chats::chat_list,
-            chats::chat_get,
-            chats::chat_create,
-            chats::chat_append,
-            chats::chat_truncate,
-            chats::chat_update,
-            chats::chat_delete,
-            chats::chat_restore,
-            chats::chat_delete_all,
-            chats::chat_duplicate,
-            focus::focus_state,
-            focus::focus_start,
-            focus::focus_finish,
-            focus::focus_abort,
-            focus::focus_end_break,
-            focus::focus_report,
-            focus::focus_daily_line,
-            focus::focus_entry_ids,
-            feed::activity_list,
-            feed::activity_summary,
-            feed::activity_people,
-            present::presentation_begin,
-            present::presentation_end,
-            present::presenter_open,
-            present::presenter_close,
-            updates::update_status,
-            updates::update_check,
-            updates::update_install,
-            updates::update_download,
-            updates::update_pause,
-            updates::update_restart_now,
-            updates::update_skip,
-            updates::update_unskip,
-            updates::update_remind,
-            updates::update_whats_new_seen,
-            updates::update_rollback,
-            updates::update_release_notes,
-            store::store_open_updates,
-            devlog::devlog_write,
-            devlog::devlog_read,
-            devlog::devlog_stats,
-            devlog::devlog_clear,
-            devlog::devlog_open_folder,
-            diagnostics::diagnostics_bundle,
-            secrets::secrets_status,
-            notifyact::notify_test,
-            jira::jira_status,
-            jira::jira_site_save,
-            jira::jira_site_remove,
-            jira::jira_test,
-            jira::jira_wbs_set,
-            jira::jira_sync_now,
-            jira::jira_issues,
-            jira::jira_index,
-            jira::jira_issue_view,
-            jira::jira_issue_fetch,
-            jira::jira_issue_note,
-            filing::filing_tidy_plan,
-            filing::filing_tidy_apply,
-            filing::pages_move,
-            filing::move_last,
-            filing::move_undo,
-            filing::filing_preview,
-            filing::folder_style_get,
-            filing::folder_style_set,
-            filing::smart_counts,
-            filing::smart_pages,
-            filing::smart_groups,
-            graph::graph_data,
-            graph::graph_patch,
-            graph::graph_state_get,
-            graph::graph_state_set,
-            filing::page_create_filed,
-            canvas::canvas_create,
-            canvas::canvas_note_path,
-            linking::mentions_get,
-            linking::mentions_link,
-            linking::mentions_ignore,
-            linking::tags_suggest,
-            linking::tags_dismiss,
-            linking::tags_suggest_ai,
-            linking::duplicates_for,
-            linking::duplicates_all,
-            linking::duplicates_ignore,
-            linking::pages_merge,
-            linking::pages_merge_undo,
-            linking::pdf_highlights_list,
-            linking::pdf_highlight_add,
-            linking::pdf_highlight_update,
-            linking::pdf_highlight_delete,
-            linking::pdf_highlight_markdown,
-            linking::page_append,
-            jira::jira_add_task,
-            jira::jira_entry_issues,
-            jira::jira_projects,
-            jira::jira_issue_types,
-            jira::jira_create_issue,
-            jira::jira_sprint,
-            jira::jira_worklog_retry,
-            jira::jira_tool,
-            calsync::calendar_status,
-            calsync::calendar_events,
-            calsync::calendar_source_add,
-            calsync::calendar_source_update,
-            calsync::calendar_source_remove,
-            calsync::calendar_sync_now,
-            calsync::calendar_outlook_discover,
-            calsync::calendar_outlook_update,
-            calsync::calendar_outlook_people,
-            calsync::calendar_set_skip,
-            calsync::calendar_link_entry,
-            calsync::calendar_wbs_hint,
-            calsync::calendar_meeting_note,
-            timeblocks::blocks_list,
-            timeblocks::block_create,
-            timeblocks::block_update,
-            timeblocks::block_delete,
-            timeblocks::block_task_done,
-            timeblocks::block_free_slots,
-            timeblocks::blocks_outlook_retry,
-            weekplan::week_proposal,
-            weekplan::week_proposal_apply,
-            mail::mail_status,
-            mail::mail_outlook_current,
-            mail::mail_parse_file,
-            mail::mail_parse_text,
-            mail::mail_import,
-            mail::mail_link_info,
-            mail::mail_open,
-            mail::mail_suggest,
-            dayreview::day_review,
-            dayreview::day_review_summary,
-            weekreview::week_review,
-            weekreview::week_review_summary,
-            weekreview::week_report_save,
-            weekreview::week_report_template,
-            briefing::briefing,
-            briefing::briefing_summary,
-            meetwork::meeting_prep,
-            meetwork::meeting_prep_page,
-            meetwork::meeting_prep_key,
-            meetwork::status_scopes,
-            meetwork::status_templates,
-            meetwork::status_template_save,
-            meetwork::status_template_delete,
-            meetwork::status_last,
-            meetwork::status_report,
-            meetwork::page_markdown_write,
-            meetwork::page_markdown_text,
-            meetwork::mail_draft_available,
-            meetwork::mail_draft,
-            meetwork::followup_build,
-            meetwork::followup_polish,
-            briefing::briefing_start,
-            voice::voice_devices,
-            voice::voice_start,
-            voice::voice_pause,
-            voice::voice_stop,
-            voice::voice_discard,
-            voice::voice_status,
-            voice::voice_job_cancel,
-            voice::voice_summary_apply,
-            voice::voice_models,
-            voice::voice_model_download,
-            voice::voice_model_cancel,
-            voice::voice_model_import,
-            voice::voice_model_delete,
-            voice::voice_transcribe_again,
-            voice::voice_unfinished,
-            voice::voice_unfinished_save,
-            voice::voice_unfinished_discard,
-        ]))
+        .invoke_handler(commands())
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
         .run(on_run_event);
+}
+
+/// The app's commands, on the desktop and on Android (1.20: the Android app shows the full app on
+/// large screens, so it registers every command but the desktop-only ones, `#[cfg(desktop)]`,
+/// listed in `platform::DESKTOP_ONLY`; the phone app's own are `#[cfg(mobile)]`). While the app
+/// lock is on, other commands are refused (`security::guard`).
+pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    platform::guard(security::guard(tauri::generate_handler![
+        security::keygate_status,
+        security::keygate_unlock,
+        security::keygate_quit,
+        security::keygate_restore,
+        security::keygate_open_folder,
+        security::cipher_status,
+        security::cipher_recovery_key,
+        security::cipher_recovery_save,
+        security::cipher_switch,
+        security::cipher_password,
+        security::cipher_rekey_prepare,
+        security::cipher_rekey,
+        security::cipher_rekey_cancel,
+        security::cipher_drop_old,
+        security::cipher_drop_plain_backups,
+        security::applock_status,
+        security::applock_configure,
+        security::applock_unlock,
+        security::applock_unlock_os,
+        security::applock_reset,
+        security::applock_lock_now,
+        security::applock_flushed,
+        security::applock_show_main,
+        security::applock_test_idle,
+        workspace_tree,
+        workspace_tree_compact,
+        page_get,
+        page_save,
+        page_collection,
+        netzplan_overview,
+        budgets_all,
+        suggestion_facts,
+        page_schema,
+        known_persons,
+        page_versions,
+        page_version_content,
+        page_snapshot,
+        page_version_restore,
+        page_create,
+        page_rename,
+        page_delete,
+        page_restore,
+        page_purge,
+        trash_list,
+        trash_empty,
+        page_move,
+        page_set_favorite,
+        page_set_icon,
+        page_resolve,
+        recent_pages,
+        daily_note,
+        daily_overview,
+        tags_list,
+        tag_pages,
+        tasks_list,
+        tasks_compact,
+        task_set_done,
+        tasks_edit,
+        tasks_undo,
+        task_next_due,
+        task_recur_preview,
+        search_workspace,
+        vault_import,
+        vault_import_cancel,
+        vault_export,
+        templates_list,
+        templates_root,
+        template_render,
+        page_from_template,
+        attachment_save,
+        attachment_store,
+        attachment_import,
+        attachment_read,
+        attachment_size,
+        page_embed,
+        diagram_file_write,
+        link_title,
+        html_file_write,
+        drawing_create,
+        drawing_read,
+        drawing_save,
+        files::attachments_list,
+        files::attachment_rename,
+        files::attachment_trash,
+        files::attachments_trashed,
+        files::attachment_restore,
+        files::attachment_purge,
+        wbs_tree,
+        project_create,
+        project_update,
+        project_delete,
+        netzplan_create,
+        netzplan_update,
+        netzplan_delete,
+        vorgang_create,
+        vorgang_update,
+        vorgang_delete,
+        leistungsarten_list,
+        leistungsart_save,
+        leistungsart_delete,
+        log_time,
+        page_work,
+        timer_status,
+        timer_start,
+        timer_stop,
+        timer_pause,
+        timer_discard,
+        time_entries,
+        time_entry_create,
+        time_entry_update,
+        set_entry_status,
+        delete_time_entry,
+        time_chip_states,
+        time_chip_delete,
+        time_chip_restore,
+        time_chip_book,
+        budget,
+        schedule,
+        export_entries,
+        backup_now,
+        backup_list,
+        backupdest::backup_destinations,
+        backupdest::backup_destination_test,
+        backupdest::backup_destination_retry,
+        backupdest::backup_remote_list,
+        backupdest::backup_restore,
+        mirror_status,
+        mirror_open,
+        git_sync_now,
+        git_sync_status,
+        git_token_set,
+        git_sync_test,
+        gitsetup::git_setup_account,
+        gitsetup::git_setup_repos,
+        gitsetup::git_setup_create,
+        gitsetup::git_setup_check,
+        git_restore_import,
+        syncmerge::git_conflicts,
+        syncmerge::git_conflict_get,
+        syncmerge::git_conflict_resolve,
+        syncmerge::git_conflict_keep_both,
+        settings_get,
+        settings_save,
+        settings_scope_set,
+        settings_sync_undo,
+        api_key_set,
+        ai_test_connection,
+        provider_key_set,
+        ai_provider_models,
+        ai_provider_test,
+        ollama_detect,
+        ollama_pull,
+        ai_route_preview,
+        ai_models,
+        ai_meter,
+        ai_chat,
+        ai_transform,
+        zeit_suggest_ai,
+        ai_cancel,
+        ai_plan_tool,
+        ai_run_workspace_tool,
+        ai_run_system_tool,
+        ai_index_pending,
+        semantic::search_semantic,
+        semantic::semantic_status,
+        semantic::semantic_rebuild,
+        ai_embedding_status,
+        network::network_status,
+        network::network_test,
+        network::network_services,
+        network::network_service_test,
+        network::network_certificate,
+        network::network_legacy_probe,
+        network::network_fetch_pac,
+        network::network_ca_info,
+        network::proxy_password_set,
+        prefs::settings_export,
+        prefs::settings_file_read,
+        prefs::theme_export,
+        prefs::theme_file_read,
+        prefs::settings_defaults,
+        prefs::window_state_save,
+        prefs::ai_cost_status,
+        app_info,
+        data_dir_status,
+        data_dir_inspect,
+        data_dir_set,
+        data_dir_cancel,
+        #[cfg(desktop)]
+        identity::legacy_cleanup_notice,
+        app_restart,
+        demo_remove,
+        onboarding_needed,
+        onboarding_finish,
+        onboarding_status,
+        onboarding_complete,
+        onboarding_hint_shown,
+        rebrand_notice_shown,
+        onboarding_reset,
+        window_backdrop,
+        window_frame,
+        #[cfg(desktop)]
+        window_ready,
+        os_locale,
+        #[cfg(desktop)]
+        jumplist::jump_take,
+        window_set_backdrop,
+        #[cfg(desktop)]
+        desktop::window_hide,
+        #[cfg(desktop)]
+        desktop::window_close_action,
+        #[cfg(desktop)]
+        desktop::app_quit,
+        desktop::capture_submit,
+        #[cfg(desktop)]
+        desktop::clipboard_write,
+        #[cfg(desktop)]
+        desktop::clipboard_write_image,
+        #[cfg(desktop)]
+        desktop::capture_hide,
+        #[cfg(desktop)]
+        desktop::capture_show,
+        #[cfg(desktop)]
+        desktop::capture_ready,
+        #[cfg(desktop)]
+        desktop::capture_context,
+        #[cfg(desktop)]
+        desktop::capture_undo,
+        #[cfg(desktop)]
+        desktop::capture_open,
+        #[cfg(desktop)]
+        desktop::search_hide,
+        #[cfg(desktop)]
+        desktop::search_open,
+        #[cfg(desktop)]
+        desktop::timer_resume_last,
+        dashboard_save,
+        dashboard::dashboard_data,
+        dashboard::dashboard_file_write,
+        dashboard::dashboard_inbox_move,
+        worktime::absence_list,
+        worktime::day_targets,
+        worktime::absence_save,
+        worktime::absence_remove,
+        worktime::mail_flagged,
+        worktime::mail_flagged_open,
+        worktime::mail_flagged_available,
+        quick_links_save,
+        quick_link_open,
+        bookmarks::bookmarks_sources,
+        bookmarks::bookmarks_read,
+        bookmarks::bookmarks_read_file,
+        bookmarks::bookmarks_read_text,
+        attachment_open,
+        #[cfg(desktop)]
+        desktop::desktop_info,
+        #[cfg(desktop)]
+        desktop::autostart_set,
+        #[cfg(desktop)]
+        cmdpath::cli_path_info,
+        #[cfg(desktop)]
+        cmdpath::cli_path_set,
+        chats::chat_list,
+        chats::chat_get,
+        chats::chat_create,
+        chats::chat_append,
+        chats::chat_truncate,
+        chats::chat_update,
+        chats::chat_delete,
+        chats::chat_restore,
+        chats::chat_delete_all,
+        chats::chat_duplicate,
+        focus::focus_state,
+        focus::focus_start,
+        focus::focus_finish,
+        focus::focus_abort,
+        focus::focus_end_break,
+        focus::focus_report,
+        focus::focus_daily_line,
+        focus::focus_entry_ids,
+        feed::activity_list,
+        feed::activity_summary,
+        feed::activity_people,
+        #[cfg(desktop)]
+        present::presentation_begin,
+        #[cfg(desktop)]
+        present::presentation_end,
+        #[cfg(desktop)]
+        present::presenter_open,
+        #[cfg(desktop)]
+        present::presenter_close,
+        #[cfg(desktop)]
+        updates::update_status,
+        #[cfg(desktop)]
+        updates::update_flushed,
+        #[cfg(desktop)]
+        updates::update_check,
+        #[cfg(desktop)]
+        updates::update_install,
+        #[cfg(desktop)]
+        updates::update_download,
+        #[cfg(desktop)]
+        updates::update_pause,
+        #[cfg(desktop)]
+        updates::update_restart_now,
+        #[cfg(desktop)]
+        updates::update_skip,
+        #[cfg(desktop)]
+        updates::update_unskip,
+        #[cfg(desktop)]
+        updates::update_remind,
+        #[cfg(desktop)]
+        updates::update_whats_new_seen,
+        #[cfg(desktop)]
+        updates::update_rollback,
+        #[cfg(desktop)]
+        updates::update_release_notes,
+        #[cfg(desktop)]
+        store::store_open_updates,
+        devlog::devlog_write,
+        devlog::devlog_read,
+        devlog::devlog_stats,
+        devlog::devlog_clear,
+        devlog::devlog_open_folder,
+        diagnostics::diagnostics_bundle,
+        secrets::secrets_status,
+        #[cfg(desktop)]
+        notifyact::notify_test,
+        jira::jira_status,
+        jira::jira_site_save,
+        jira::jira_site_remove,
+        jira::jira_test,
+        jira::jira_wbs_set,
+        jira::jira_sync_now,
+        jira::jira_issues,
+        jira::jira_issues_compact,
+        jira::jira_index,
+        jira::jira_issue_view,
+        jira::jira_issue_fetch,
+        jira::jira_issue_detail,
+        jira::jira_issue_note,
+        filing::filing_tidy_plan,
+        filing::filing_tidy_apply,
+        filing::pages_move,
+        filing::move_last,
+        filing::move_undo,
+        filing::filing_preview,
+        filing::folder_style_get,
+        filing::folder_style_set,
+        filing::smart_counts,
+        filing::smart_pages,
+        filing::smart_groups,
+        graph::graph_data,
+        graph::graph_compact,
+        graph::graph_patch,
+        graph::graph_state_get,
+        graph::graph_state_set,
+        filing::page_create_filed,
+        canvas::canvas_create,
+        canvas::canvas_note_path,
+        linking::mentions_get,
+        linking::mentions_link,
+        linking::mentions_ignore,
+        linking::tags_suggest,
+        linking::tags_dismiss,
+        linking::tags_suggest_ai,
+        linking::duplicates_for,
+        linking::duplicates_all,
+        linking::duplicates_ignore,
+        linking::pages_merge,
+        linking::pages_merge_undo,
+        linking::pdf_highlights_list,
+        linking::pdf_highlight_add,
+        linking::pdf_highlight_update,
+        linking::pdf_highlight_delete,
+        linking::pdf_highlight_markdown,
+        linking::page_append,
+        jira::jira_add_task,
+        jira::jira_entry_issues,
+        jira::jira_projects,
+        jira::jira_issue_types,
+        jira::jira_create_issue,
+        jira::jira_sprint,
+        jira::jira_worklog_retry,
+        jira::jira_tool,
+        issueview::jira_full_cached,
+        issueview::jira_full,
+        issueview::jira_full_comments,
+        issueview::jira_full_worklogs,
+        issueview::jira_full_history,
+        issueview::jira_full_update,
+        issueview::jira_full_assign,
+        issueview::jira_full_transition,
+        issueview::jira_full_comment_add,
+        issueview::jira_full_comment_edit,
+        issueview::jira_full_comment_delete,
+        issueview::jira_full_worklog_add,
+        issueview::jira_full_worklog_delete,
+        issueview::jira_full_users,
+        issueview::jira_body_doc,
+        issueview::jira_image,
+        issueview::jira_attachment,
+        calsync::calendar_status,
+        calsync::calendar_events,
+        calsync::calendar_source_add,
+        calsync::calendar_source_update,
+        calsync::calendar_source_remove,
+        calsync::calendar_sync_now,
+        calsync::calendar_outlook_discover,
+        calsync::calendar_outlook_update,
+        calsync::calendar_outlook_people,
+        calsync::calendar_set_skip,
+        calsync::calendar_link_entry,
+        calsync::calendar_wbs_hint,
+        calsync::calendar_meeting_note,
+        calwrite::calendar_entries_enable,
+        calwrite::calendar_entry_create,
+        calwrite::calendar_entry_update,
+        calwrite::calendar_entry_delete,
+        calwrite::calendar_entry_undo,
+        calwrite::calendar_entry_resolve,
+        calwrite::calendar_entry_discard,
+        calwrite::calendar_entry_show,
+        calwrite::calendar_entries_retry,
+        timeblocks::blocks_list,
+        timeblocks::block_create,
+        timeblocks::block_update,
+        timeblocks::block_delete,
+        timeblocks::block_task_done,
+        timeblocks::block_free_slots,
+        timeblocks::blocks_outlook_retry,
+        weekplan::week_proposal,
+        weekplan::week_proposal_apply,
+        mail::mail_status,
+        mail::mail_outlook_current,
+        mail::mail_parse_file,
+        mail::mail_parse_text,
+        mail::mail_import,
+        mail::mail_link_info,
+        mail::mail_open,
+        mail::mail_suggest,
+        dayreview::day_review,
+        dayreview::day_review_summary,
+        weekreview::week_review,
+        weekreview::week_review_summary,
+        weekreview::week_report_save,
+        weekreview::week_report_template,
+        briefing::briefing,
+        briefing::briefing_summary,
+        meetwork::meeting_prep,
+        meetwork::meeting_prep_page,
+        meetwork::meeting_prep_key,
+        meetwork::status_scopes,
+        meetwork::status_templates,
+        meetwork::status_template_save,
+        meetwork::status_template_delete,
+        meetwork::status_last,
+        meetwork::status_report,
+        meetwork::page_markdown_write,
+        meetwork::page_markdown_text,
+        meetwork::mail_draft_available,
+        meetwork::mail_draft,
+        meetwork::followup_build,
+        meetwork::followup_polish,
+        briefing::briefing_start,
+        #[cfg(desktop)]
+        voice::voice_devices,
+        #[cfg(desktop)]
+        voice::voice_start,
+        #[cfg(desktop)]
+        voice::voice_pause,
+        #[cfg(desktop)]
+        voice::voice_stop,
+        #[cfg(desktop)]
+        voice::voice_discard,
+        #[cfg(desktop)]
+        voice::voice_status,
+        #[cfg(desktop)]
+        voice::voice_job_cancel,
+        #[cfg(desktop)]
+        voice::voice_summary_apply,
+        #[cfg(desktop)]
+        voice::voice_models,
+        #[cfg(desktop)]
+        voice::voice_model_download,
+        #[cfg(desktop)]
+        voice::voice_model_cancel,
+        #[cfg(desktop)]
+        voice::voice_model_import,
+        #[cfg(desktop)]
+        voice::voice_model_delete,
+        #[cfg(desktop)]
+        voice::voice_transcribe_again,
+        #[cfg(desktop)]
+        voice::voice_unfinished,
+        #[cfg(desktop)]
+        voice::voice_unfinished_save,
+        #[cfg(desktop)]
+        voice::voice_unfinished_discard,
+        platform::app_capabilities,
+        // The Android app's own: the phone app's screens, the window and its updates.
+        #[cfg(mobile)]
+        mobile::mobile_settings_get,
+        #[cfg(mobile)]
+        mobile::mobile_settings_save,
+        #[cfg(mobile)]
+        mobile::mobile_today,
+        #[cfg(mobile)]
+        mobile::mobile_daily,
+        #[cfg(mobile)]
+        mobile::mobile_book,
+        #[cfg(mobile)]
+        mobile::mobile_capture,
+        #[cfg(mobile)]
+        mobile::mobile_timer_stop,
+        #[cfg(mobile)]
+        mobile::mobile_recent_targets,
+        #[cfg(mobile)]
+        mobile::mobile_sync,
+        #[cfg(mobile)]
+        mobile::mobile_shared_text,
+        #[cfg(mobile)]
+        mobile::mobile_bars,
+        #[cfg(mobile)]
+        mobile::mobile_to_background,
+        #[cfg(mobile)]
+        mobile::android_display,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_status,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_check,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_download,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_install,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_allow_install,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_update_set_mobile_data,
+        #[cfg(target_os = "android")]
+        mobile::apkupdate::apk_whats_new_seen,
+    ]))
 }
 
 #[cfg(desktop)]
@@ -5246,6 +5645,9 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
         // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI
         // never hears of (macOS: Dock menu „Beenden“, logging out).
         tauri::RunEvent::Exit => {
+            // A running recording is closed properly (offered at the next start), a transcription
+            // marked as interrupted, as for a restart or an update.
+            voice::shutdown(app);
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);

@@ -18,8 +18,9 @@ import { isPdfName } from "../editor/fileEmbed";
 import { lazyView, preloadWhenIdle } from "./lazyView";
 import { t, useT } from "../lib/i18n";
 import { hint, withHint } from "../lib/keymap";
-import { keepAlive, type Kept } from "../lib/keepalive";
+import { keepAlive, slotKey, type Kept } from "../lib/keepalive";
 import { isComposing } from "../lib/ime";
+import { PAGE_MIME, draggedPages } from "../lib/blocks";
 
 // Views other than pages load when first opened (a smaller script at start), or in the
 // background once the app is idle.
@@ -115,14 +116,15 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
   useT();
   const tab = pane.tabs.find((x) => x.id === pane.activeTabId) ?? null;
   const s = useApp.getState;
-  // Switching tabs (or going back and forth in one) keeps the recent places mounted.
+  // Switching tabs (or going back and forth in one) keeps the recent places mounted, each where
+  // it is in the document.
   const keptRef = useRef<Kept[]>([]);
   const kept = (keptRef.current = keepAlive(
     keptRef.current,
     tab,
     pane.tabs.map((x) => x.id),
   ));
-  const shownKey = kept[0].key;
+  const shownKey = slotKey(tab);
   // A tab dragged from another pane can be dropped onto this pane's content.
   const [dropHere, setDropHere] = useState(false);
   const [fileDrop, setFileDrop] = useState(false);
@@ -130,10 +132,20 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
   // Files open in a tab when they land on the tab bar or on a pane without a note (a note's
   // editor embeds them itself).
   const fileTarget = (e: DragEvent) => hasFiles(e) && (!!(e.target as HTMLElement).closest(".tabbar") || tab?.kind !== "page");
+  // A page from the sidebar opens in this pane; over a note's text it becomes a link there (NoteEditor).
+  const pageDrag = (e: DragEvent) => e.dataTransfer.types.includes(PAGE_MIME);
+  const overText = (e: DragEvent) => !!(e.target as HTMLElement).closest(".ProseMirror");
   return (
     <section
       className={`pane ${active ? "active" : ""} ${multi ? "multi" : ""} ${dropHere ? "tab-drop" : ""} ${fileDrop ? "file-drop" : ""}`}
       onDragOver={(e) => {
+        if (pageDrag(e)) {
+          e.preventDefault();
+          const text = overText(e);
+          e.dataTransfer.dropEffect = text ? "link" : "copy";
+          if (dropHere === text) setDropHere(!text);
+          return;
+        }
         if (fileTarget(e)) {
           e.preventDefault();
           e.dataTransfer.dropEffect = "copy";
@@ -153,6 +165,14 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
         if (fileTarget(e) && !e.defaultPrevented) {
           e.preventDefault();
           void openDroppedFiles([...e.dataTransfer.files], pane.id);
+          return;
+        }
+        const dropped = draggedPages(e.dataTransfer);
+        if (dropped.length) {
+          if (e.defaultPrevented) return;
+          e.preventDefault();
+          s().focusPane(pane.id);
+          for (const id of dropped) s().openPage(id, { newTab: true });
           return;
         }
         const id = e.dataTransfer.getData(TAB_MIME);
@@ -563,6 +583,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
         <IconButton
           icon={ChevronDown}
           label={tr("tabs.all")}
+          aria-haspopup="menu"
           size={26}
           iconSize={15}
           onClick={(e) => {

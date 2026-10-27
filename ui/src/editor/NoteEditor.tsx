@@ -7,13 +7,14 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { mailLinkId, openMailLink } from "../lib/mail";
 import { AudioLines, Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight, Ticket } from "lucide-react";
 import { jiraReady, requestCreateIssue } from "./taskIssue";
-import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
+import { api, attachmentMedia, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
 import { drawPdfPreview } from "../lib/pdf";
 import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
 import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
+import { draggedPages } from "../lib/blocks";
 import { fmtMinutes, h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { joinFrontmatter, linkAtCaret, pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, textShape, toMarkdown, withShape } from "./schema";
@@ -41,11 +42,13 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { isReplaceKey, keys, replaceHint } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
+import { chipsParked } from "./timeChip";
 import { flushAllEditors, keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
 import { SaveFailed } from "./SaveFailed";
-import { titleSet } from "../lib/links";
+import { linkKey, titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
+import { caps } from "../lib/capabilities";
 import { scrollMotion } from "../lib/motion";
 import { isComposing } from "../lib/ime";
 import { consumeKey } from "../lib/keymap";
@@ -121,6 +124,11 @@ export interface NoteEditorHandle {
   flush: () => Promise<void>;
   /** Replaces the page's frontmatter (property editor); saved like any other edit. */
   setFrontmatter: (fm: string) => void;
+  /**
+   * The page as stored after the Markdown source view (this editor was parked behind it): only what
+   * changed is replaced, as one step of the undo history; caret, history and scroll stay.
+   */
+  takeOver: (content: string) => void;
 }
 
 /** Asks the page view of `pageId` for „Besprechung zusammenfassen“ (slash command). */
@@ -142,9 +150,15 @@ export function NoteEditor({
   handleRef,
   onFrontmatter,
   active = true,
+  parked = false,
   toolbarSlot,
 }: {
   active?: boolean;
+  /**
+   * Kept alive but hidden behind the page's Markdown source view: it takes no content from other
+   * panes meanwhile (the source view saves them) and gets the page back through `takeOver`.
+   */
+  parked?: boolean;
   /** Where the toolbar goes (the page's header row); in the note itself without one. */
   toolbarSlot?: HTMLElement | null;
   doc: PageDoc;
@@ -175,6 +189,8 @@ export function NoteEditor({
   cb.current = { onSaved, onOpenLink, onOpenTag, onFrontmatter };
   const activeRef = useRef(active);
   activeRef.current = active;
+  const parkedRef = useRef(parked);
+  parkedRef.current = parked;
   const instance = useRef(Math.random().toString(36).slice(2));
   // Inline AI bar: the range it works on (null = closed); `seq` remounts it per opening.
   const [ai, setAi] = useState<{ range: AiRange; seq: number } | null>(null);
@@ -212,7 +228,8 @@ export function NoteEditor({
   const unmounted = useRef(false);
   const failed = useRef(false);
 
-  const apply = (editor: Editor, content: string) => {
+  // `undoable`: the edits of the source view, one step of the undo history (else another pane's, outside it).
+  const apply = (editor: Editor, content: string, undoable = false) => {
     const { frontmatter: fm, body, gap } = splitFrontmatter(content);
     fmGap.current = gap;
     shape.current = textShape(body);
@@ -221,7 +238,7 @@ export function NoteEditor({
       cb.current.onFrontmatter?.(fm);
     }
     if (bodyOf(editor) === body) return;
-    replaceChanged(editor, body);
+    replaceChanged(editor, body, undoable);
     if (activeRef.current) publishOutline(editor);
   };
 
@@ -262,13 +279,21 @@ export function NoteEditor({
     const mergesBefore = merges.current;
     // Saves run one after another so an older one never lands last.
     const p: Promise<void> = (saving.current ?? Promise.resolve())
-      .then(() => api.savePage(doc.id, md))
+      // With the page as this editor knew it: a change made elsewhere since is merged, not overwritten.
+      .then(() => api.savePage(doc.id, md, base.current))
       .then((saved) => {
         failed.current = false;
+        const stored = saved.merged ?? md;
         if (merges.current === mergesBefore) base.current = md;
-        cb.current.onSaved({ ...saved, content: md });
+        cb.current.onSaved({ ...saved, content: stored });
         // Other panes showing the same page pick up the new content.
-        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: stored, from: instance.current } }));
+        // Merged with a change made elsewhere (the command line, a task ticked off): shown here too,
+        // with what was typed since this save started.
+        if (saved.merged !== undefined && !editor.isDestroyed) {
+          base.current = md;
+          absorb(editor, saved.merged);
+        }
         if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");
       })
       .catch((e) => {
@@ -276,8 +301,9 @@ export function NoteEditor({
         // Reported once per failure series, not on every retry.
         if (!failed.current) useApp.getState().error(tr("editor.saveFailed"), e);
         failed.current = true;
-        // Closed meanwhile: the edits outlive the editor and are saved again from there.
-        if (unmounted.current) return keepUnsaved(doc.id, md, api.savePage);
+        // Closed meanwhile: the edits outlive the editor and are saved again from there, unless a
+        // newer save of this editor follows (it holds these edits too).
+        if (unmounted.current) return void (saving.current === p && keepUnsaved(doc.id, md, api.savePage, base.current));
         setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(saveTimer.current);
@@ -305,7 +331,7 @@ export function NoteEditor({
         richBlock: richMount(pageTitle),
         onOpenLink: (t, newTab, anchor) => openWiki(t, newTab, anchor),
         onOpenTag: (t) => cb.current.onOpenTag(t),
-        isKnown: (t) => titleSet(useApp.getState().pages).has(t.toLowerCase()),
+        isKnown: (t) => titleSet(useApp.getState().pages).has(linkKey(t)),
         searchPages: async (q) => {
           // `Seite#`: the page's headings, `Seite#^`: its block ids.
           const anchors = await anchorItems(q);
@@ -322,7 +348,7 @@ export function NoteEditor({
             .slice(0, 8)
             .map((p) => pageSuggestItem(p, p.parent_id ? useApp.getState().pages.get(p.parent_id)?.title : undefined));
           const items: LinkSuggestItem[] = matches;
-          if (lower && !titleSet(useApp.getState().pages).has(lower)) {
+          if (lower && !titleSet(useApp.getState().pages).has(linkKey(q))) {
             items.push({ id: "create", title: tr("cap.linkNew", { title: q.trim() }), subtitle: tr("cap.linkNewSub"), target: q.trim(), create: true });
           }
           return items;
@@ -393,6 +419,7 @@ export function NoteEditor({
         zeitRefs: zeitRefItems,
         zeitLeistungsarten: zeitLaItems,
         attachmentUrl,
+        attachmentMedia,
         uploadImage: async (file) => {
           try {
             return (await uploadAttachment(file)).name;
@@ -438,7 +465,7 @@ export function NoteEditor({
         // From this editor's element: only its own page view opens the summary (not another
         // view of the same page in a second pane or a tab kept open behind another one).
         onSummary: (editor) => editor.view.dom.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { bubbles: true, detail: { id: doc.id } })),
-        onVoice: () => void startVoice({ pageId: doc.id }),
+        onVoice: caps().voice ? () => void startVoice({ pageId: doc.id }) : undefined,
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
         taskNextDue: (text) => api.taskNextDue(text),
@@ -474,6 +501,21 @@ export function NoteEditor({
           event.preventDefault();
           event.stopPropagation();
           openAi(editorRef.current);
+          return true;
+        },
+        // Pages dragged from the sidebar become links where they are dropped.
+        handleDrop: (view, event) => {
+          const ids = draggedPages(event.dataTransfer);
+          const link = view.state.schema.nodes.wikiLink;
+          if (!ids.length || !link) return false;
+          const pages = useApp.getState().pages;
+          const titles = ids.map((id) => pages.get(id)?.title).filter((x): x is string => !!x);
+          if (!titles.length) return false;
+          event.preventDefault();
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
+          const nodes = titles.flatMap((target, i) => (i ? [view.state.schema.text(" "), link.create({ target })] : [link.create({ target })]));
+          view.dispatch(view.state.tr.insert(at, nodes).scrollIntoView());
+          view.focus();
           return true;
         },
         // A paste of megabytes of text: offered as an attached file first (see `largePaste`).
@@ -557,6 +599,15 @@ export function NoteEditor({
     [doc.id],
   );
 
+  // Parked behind the source view: its chips are the note's from before and count nowhere (a chip
+  // cut there and pasted into another note moves its booking along).
+  useEffect(() => {
+    if (!editor || !parked) return;
+    const view = editor.view;
+    chipsParked(view, true);
+    return () => chipsParked(view, false);
+  }, [editor, parked]);
+
   // „Neu transkribieren“ on a voice note's audio in this page.
   useEffect(() => {
     if (!editor) return;
@@ -570,7 +621,7 @@ export function NoteEditor({
     editorRef.current = editor;
     if (!editor) return;
     // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
-    const kept = takeUnsaved(doc.id);
+    const kept = takeUnsaved(doc.id, doc.content);
     if (kept !== undefined && kept !== doc.content) {
       apply(editor, kept);
       dirty.current = true;
@@ -593,8 +644,15 @@ export function NoteEditor({
       window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
     };
-    handleRef?.({ editor, flush: flushNow, setFrontmatter });
-    const unflush = registerFlusher(flushNow);
+    const takeOver = (content: string) => {
+      if (editor.isDestroyed) return;
+      // The source view started after this editor's edits were saved; one still unsaved is merged.
+      if (busy()) return absorb(editor, content);
+      base.current = content;
+      apply(editor, content, true);
+    };
+    handleRef?.({ editor, flush: flushNow, setFrontmatter, takeOver });
+    const unflush = registerFlusher(flushNow, () => dirty.current);
     const unregister = registerEditor(doc.id, editor);
     const flush = () => {
       window.clearTimeout(saveTimer.current);
@@ -637,14 +695,15 @@ export function NoteEditor({
   // (or in-flight) edits; then reload after our own save. Renames reload all pages.
   useEffect(() => {
     if (!editor) return;
+    // Parked behind the source view: that view takes these over, and this editor the page after it.
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
-      if (d.id !== doc.id || d.from === instance.current) return;
+      if (d.id !== doc.id || d.from === instance.current || parkedRef.current) return;
       absorb(editor, d.content);
     };
     const onReload = (e: Event) => {
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
-      if (!ids || ids.includes(doc.id)) reload(editor);
+      if ((!ids || ids.includes(doc.id)) && !parkedRef.current) reload(editor);
     };
     const onFlushPage = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; from: string }>).detail;
@@ -752,15 +811,17 @@ export function NoteEditor({
   };
 
   return (
-    <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
+    // Parked: hidden with its menus and bars; the editor, its history and selection stay.
+    <div className="editor-wrap" data-save-status={status} ref={wrapRef} hidden={parked}>
       {status === "failed" && <SaveFailed />}
       {editor &&
+        !parked &&
         toolbarOn &&
         (toolbarSlot
           ? createPortal(<EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />, toolbarSlot)
           : <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />)}
-      {zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
-      {find !== null && findLayer(
+      {!parked && zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
+      {find !== null && !parked && findLayer(
         <div className="find-stack">
           <div className="find-bar" role="search">
           <Search size={14} className="faint" />
@@ -817,7 +878,7 @@ export function NoteEditor({
         )}
         </div>
       )}
-      {editor && (
+      {editor && !parked && (
         // A selected block (table of contents, image, drawing, file) has no text to format.
         <BubbleMenu editor={editor} className="bubble" shouldShow={showBubble}>
           <IconButton icon={Bold} label={`${tr("tb.bold")} (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
@@ -878,8 +939,8 @@ export function NoteEditor({
           )}
         </BubbleMenu>
       )}
-      {editor && <TableToolbar editor={editor} hidden={find !== null} />}
-      {editor && ai && (
+      {editor && !parked && <TableToolbar editor={editor} hidden={find !== null} />}
+      {editor && !parked && ai && (
         <InlineAiBar
           key={ai.seq}
           editor={editor}

@@ -34,7 +34,7 @@ test("behind a confirmation no shortcut runs; it starts on „Abbrechen“ and i
   await open(parent.id, true);
   await app.waitText(".pane.active .tab.active", /Dialog Eltern/);
   const before = await tabCount();
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => /Seite löschen/.test(b.textContent)).click());
   await app.waitFor(".dialog");
@@ -82,7 +82,7 @@ test("over the palette Ctrl+W does not close the tab; closing the palette gives 
   await app.browser.waitUntil(async () => (await focused()).cls.includes("ProseMirror"), { timeoutMsg: "the focus did not go back to the editor" });
   // Typing goes on where the caret was.
   await app.type("!");
-  await app.browser.waitUntil(async () => /Zweite Zeile!/.test(await app.text(".pane.active .ProseMirror")), { timeoutMsg: "the caret was not kept" });
+  await app.browser.waitUntil(async () => /Zweite Zeile!/.test(await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")), { timeoutMsg: "the caret was not kept" });
 });
 
 test("switching tabs keeps scroll position, undo history and a view's filter", async () => {
@@ -91,8 +91,8 @@ test("switching tabs keeps scroll position, undo history and a view's filter", a
   const b = await app.invoke("page_create", { parentId: null, title: "Seite B", icon: null, content: "Kurz\n" });
   await open(a.id, true);
   await app.waitText(".pane.active .tab.active", /Lange Seite A/);
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.browser.execute(() => (document.querySelector(".pane.active .page-scroll").scrollTop = 3000));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.browser.execute(() => (document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll").scrollTop = 3000));
   await sleep(200);
   const at = await scroller();
   assert.ok(at > 2000, `not scrolled: ${at}`);
@@ -105,18 +105,18 @@ test("switching tabs keeps scroll position, undo history and a view's filter", a
   // Typing, a switch and back: Ctrl+Z still takes the typing back.
   await app.caretToEnd();
   await app.type(" Zusatz");
-  await app.browser.waitUntil(async () => /Zusatz/.test(await app.text(".pane.active .ProseMirror")));
+  await app.browser.waitUntil(async () => /Zusatz/.test(await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")));
   await showTab(/Seite B/);
   await app.waitText(".pane.active .tab.active", /Seite B/);
   await showTab(/Lange Seite A/);
   await app.waitText(".pane.active .tab.active", /Lange Seite A/);
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").focus());
   await app.keys(["Control", "z"]);
-  await app.browser.waitUntil(async () => !/Zusatz/.test(await app.text(".pane.active .ProseMirror")), { timeoutMsg: "the undo history was lost by switching tabs" });
+  await app.browser.waitUntil(async () => !/Zusatz/.test(await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")), { timeoutMsg: "the undo history was lost by switching tabs" });
   // A view's filter: Aufgaben „Erledigt“ survives a switch.
   await app.keys(["Control", "Shift", "a"]);
-  await app.waitFor(".pane.active .tasks-view [role=radio]");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .tasks-view [role=radio]")].find((x) => /Erledigt/.test(x.textContent))?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .tasks-view [role=radio]");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .tasks-view [role=radio]")].find((x) => /Erledigt/.test(x.textContent))?.click());
   await sleep(300);
   const chosen = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .pane-content:not([hidden]) .tasks-view [role=radio]")].filter((x) => x.getAttribute("aria-checked") === "true").map((x) => x.textContent.trim()).join("|"));
   assert.match(await chosen(), /Erledigt/, "„Erledigt“ was not chosen");
@@ -131,7 +131,7 @@ test("the outline shows the shown page's headings, also in the source view", asy
   const a = await app.invoke("page_create", { parentId: null, title: "Gliederung A", icon: null, content: "# Alpha\n\nText\n\n## Beta\n\nText\n" });
   const b = await app.invoke("page_create", { parentId: null, title: "Gliederung B", icon: null, content: "# Gamma\n\nText\n" });
   await open(a.id, true);
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   // The outline tab of the side panel.
   await app.browser.execute(() => {
     if (!document.querySelector(".app > .panel")) document.querySelector('.tabbar [aria-label^="Seitenpanel"]')?.click();
@@ -141,8 +141,8 @@ test("the outline shows the shown page's headings, also in the source view", asy
   await app.waitText(".panel .outline", /Alpha/);
   await open(b.id, true);
   await app.waitText(".pane.active .tab.active", /Gliederung B/);
-  await app.click('.pane.active .vh [aria-label^="Markdown-Quelltext"]');
-  await app.waitFor(".pane.active .source-text");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label^="Markdown-Quelltext"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   await app.browser.waitUntil(async () => /Gamma/.test(await app.text(".panel .outline-panel")), { timeoutMsg: "the outline did not follow to the source view" });
   assert.doesNotMatch(await app.text(".panel .outline-panel"), /Alpha|Beta/);
 });
@@ -167,7 +167,7 @@ test("Escape that closes the slash menu keeps the focus mode; a second Escape en
 test("an Enter that finishes a composition (keyCode 229) neither commits the title nor the tree rename", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Komposition", icon: null, content: "Text\n" });
   await open(page.id);
-  await app.waitFor(".pane.active .page-title");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .page-title");
   const composingEnter = (sel) =>
     app.browser.execute((s) => {
       const el = document.querySelector(s);
@@ -175,7 +175,7 @@ test("an Enter that finishes a composition (keyCode 229) neither commits the tit
       el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true, cancelable: true }));
       return document.activeElement === el;
     }, sel);
-  assert.equal(await composingEnter(".pane.active .page-title"), true, "the title lost the focus on a composing Enter");
+  assert.equal(await composingEnter(".pane.active > .pane-content:not([hidden]) .page-title"), true, "the title lost the focus on a composing Enter");
   // Tree rename (F2): the field stays open.
   // The tree may only draw the rows in view: filter it down to the page.
   await (await app.waitFor(".sidebar .tree-filter input")).setValue("Komposition");

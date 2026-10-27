@@ -19,7 +19,7 @@ const openFromTree = async (title) => {
 /** Focuses the open note and selects its first longer paragraph at once, then keeps the main thread busy for `busy` ms. */
 const selectWhileBusy = (busy) =>
   app.browser.execute((ms) => {
-    const root = document.querySelector(".pane.active .ProseMirror");
+    const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const p = [...root.querySelectorAll("p")].find((x) => x.textContent.length > 30);
     root.focus();
     const range = document.createRange();
@@ -36,7 +36,7 @@ const selected = () => app.browser.execute(() => window.getSelection().toString(
 
 test("text selected right after a note opens stays selected, and Ctrl+J opens the inline AI bar", async () => {
   await openFromTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror p");
   const text = await selectWhileBusy(60);
   await sleep(300);
   assert.equal(await selected(), text, "the selection is kept");

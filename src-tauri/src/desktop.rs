@@ -3,8 +3,9 @@
 //! this module only wires them to the window system.
 
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
 use arcalo_core::calsync::tz::Zone;
@@ -93,6 +94,9 @@ pub struct Desktop {
     /// The capture window is created once the user is idle, not right after the start (the
     /// desktop portal hangs, see [`precreate_capture`]).
     capture_deferred: AtomicBool,
+    /// The tray handles were touched on a thread other than the main thread (stays 0; checked by
+    /// the e2e tests, see [`tray_handles`]).
+    tray_off_main: AtomicU64,
 }
 
 impl Desktop {
@@ -103,6 +107,46 @@ impl Desktop {
 
 fn desktop(app: &AppHandle) -> State<'_, Desktop> {
     app.state::<Desktop>()
+}
+
+/// The thread the tray was built on (the main thread; unset: no tray).
+static TRAY_THREAD: OnceLock<ThreadId> = OnceLock::new();
+
+/// Runs `f` on the main thread and waits for it. The tray icon is reference-counted without
+/// atomics (an `Rc` inside `TrayIcon`): a copy or a call made on another thread (the 30-second
+/// tick, a timer or voice command) raced with the main thread on that count, and the app
+/// aborted with "RefCell already borrowed" (CI soak, 390). So every touch of the tray handles
+/// happens on the main thread.
+fn on_tray_thread(app: &AppHandle, f: impl FnOnce(&AppHandle) + Send + 'static) {
+    match TRAY_THREAD.get() {
+        Some(id) if *id != std::thread::current().id() => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let app2 = app.clone();
+            if app
+                .run_on_main_thread(move || {
+                    f(&app2);
+                    let _ = tx.send(());
+                })
+                .is_ok()
+            {
+                // Err: the event loop ended (quitting) and dropped the task.
+                let _ = rx.recv();
+            }
+        }
+        _ => f(app),
+    }
+}
+
+/// The tray handles, copied out of the lock; only on the main thread (see [`on_tray_thread`]).
+/// A tray call made there runs right away, so holding the lock would not block, but the copy keeps
+/// a guard in an `if let` scrutinee from living through the whole block.
+fn tray_handles(app: &AppHandle) -> Option<TrayHandles> {
+    let d = desktop(app);
+    if TRAY_THREAD.get().is_some_and(|id| *id != std::thread::current().id()) {
+        d.tray_off_main.fetch_add(1, Ordering::Relaxed);
+        crate::devlog::warn("desktop", "tray handles used off the main thread");
+    }
+    lock(&d.tray).clone()
 }
 
 pub fn show_main(app: &AppHandle) {
@@ -194,8 +238,11 @@ fn time_tracking(app: &AppHandle) -> bool {
 /// The display language changed: the tray menu, the macOS menu bar and the taskbar jump list
 /// are built again in the new language.
 pub fn relocalize(app: &AppHandle) {
-    let handles = lock(&desktop(app).tray).clone();
-    if let Some(t) = handles {
+    on_tray_thread(app, relocalize_here);
+}
+
+fn relocalize_here(app: &AppHandle) {
+    if let Some(t) = tray_handles(app) {
         let time = time_tracking(app);
         match tray_menu(app, time) {
             Ok((menu, timer)) => {
@@ -242,6 +289,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     let tray = builder.build(app)?;
+    let _ = TRAY_THREAD.set(std::thread::current().id());
     let recording = crate::voice::is_recording(app);
     *lock(&desktop(app).tray) =
         Some(TrayHandles { tray, timer, time, recording, locked: crate::security::is_locked() });
@@ -334,20 +382,24 @@ fn resume_last(app: &AppHandle) -> Result<()> {
 /// Updates the tooltip (running timer) and which timer entry is enabled; rebuilds the menu
 /// when time tracking was switched on or off.
 pub fn refresh_tray(app: &AppHandle) {
+    on_tray_thread(app, refresh_tray_here);
+}
+
+fn refresh_tray_here(app: &AppHandle) {
     crate::jumplist::refresh(app);
     let Some(state) = app.try_state::<AppState>() else { return };
     let time = state.settings().time_tracking();
     rebuild_tray_menu(app, time);
     // Locked: the tooltip names no timer, task or recording.
     if crate::security::is_locked() {
-        if let Some(t) = lock(&desktop(app).tray).clone() {
+        if let Some(t) = tray_handles(app) {
             let _ = t.tray.set_tooltip(Some(tr!("Arcalo – gesperrt", "Arcalo – locked")));
         }
         return;
     }
     if !time {
         // Nothing about a timer, also not one left running from before.
-        if let Some(t) = lock(&desktop(app).tray).clone() {
+        if let Some(t) = tray_handles(app) {
             let tip = crate::voice::tray_tip(app, core::tray_tooltip(None));
             let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
         }
@@ -366,9 +418,7 @@ pub fn refresh_tray(app: &AppHandle) {
         });
         (running, db.last_finished_entry().ok().flatten().is_some())
     };
-    // Cloned out of the lock: tray calls wait for the main thread, which may want the lock.
-    let handles = lock(&desktop(app).tray).clone();
-    let Some(t) = handles else { return };
+    let Some(t) = tray_handles(app) else { return };
     let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m, _)| (l.as_str(), *m))));
     let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
     if let Some((stop, pause, resume)) = &t.timer {
@@ -381,7 +431,7 @@ pub fn refresh_tray(app: &AppHandle) {
 
 /// A new tray menu when the one shown was built for the other state of time tracking.
 fn rebuild_tray_menu(app: &AppHandle, time: bool) {
-    let Some(t) = lock(&desktop(app).tray).clone() else { return };
+    let Some(t) = tray_handles(app) else { return };
     let recording = crate::voice::is_recording(app);
     if t.time == time && t.recording == recording && t.locked == crate::security::is_locked() {
         return;
@@ -430,7 +480,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
         // Without close-to-tray the UI destroys the main window; a hidden capture window
         // must not keep the process alive then. Closing it quits: a downloaded update installs.
-        (MAIN, WindowEvent::Destroyed) => crate::updates::quit(app),
+        (MAIN, WindowEvent::Destroyed) => crate::updates::quit(app, false),
         #[cfg(any(windows, target_os = "macos"))]
         (CAPTURE | SEARCH, WindowEvent::Focused(false)) => {
             let _ = window.hide();
@@ -476,7 +526,7 @@ pub fn close_front_window(app: &AppHandle) {
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
     // A downloaded update is installed now (mode „automatisch“).
-    crate::updates::quit(&app);
+    crate::updates::quit(&app, true);
 }
 
 // ------------------------------------------------------------ quick capture
@@ -743,6 +793,49 @@ fn clipboard_text(selection: bool) -> Option<String> {
     (!t.trim().is_empty()).then(|| t.chars().take(20_000).collect())
 }
 
+/// The clipboard for the UI's copies when the web clipboard refuses them: WebKitGTK lets a page
+/// write only with transient user activation, and a click handled while the app is busy can arrive
+/// without it (the write fails with NotAllowedError). It stays open for the whole run, as X11
+/// serves its content from this process.
+fn with_clipboard(
+    f: impl FnOnce(&mut arboard::Clipboard) -> std::result::Result<(), arboard::Error>,
+) -> std::result::Result<(), String> {
+    use std::sync::{Mutex, OnceLock};
+    static CLIPBOARD: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
+    let mut cb = CLIPBOARD.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner());
+    if cb.is_none() {
+        *cb = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
+    }
+    cb.as_mut().map_or(Ok(()), |c| f(c).map_err(|e| e.to_string()))
+}
+
+/// Puts `text` on the clipboard; with `html` as formatted text (`text` is its plain version).
+#[tauri::command]
+pub fn clipboard_write(text: String, html: Option<String>) -> std::result::Result<(), String> {
+    with_clipboard(|c| match html {
+        Some(html) => c.set_html(html, Some(text)),
+        None => c.set_text(text),
+    })
+}
+
+/// Puts an image on the clipboard: the request body holds its RGBA pixels, the headers its size.
+#[tauri::command]
+pub fn clipboard_write_image(request: tauri::ipc::Request<'_>) -> std::result::Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(rgba) = request.body() else {
+        return Err("no image".into());
+    };
+    let size =
+        |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    let (Some(width), Some(height)) = (size("x-arcalo-width"), size("x-arcalo-height")) else {
+        return Err("no image size".into());
+    };
+    if width == 0 || height == 0 || width.checked_mul(height).and_then(|n| n.checked_mul(4)) != Some(rgba.len()) {
+        return Err("the image size does not match its pixels".into());
+    }
+    let image = arboard::ImageData { width, height, bytes: std::borrow::Cow::Borrowed(rgba) };
+    with_clipboard(|c| c.set_image(image))
+}
+
 /// Esc, or the capture was stored.
 #[tauri::command]
 pub fn capture_hide(app: AppHandle) {
@@ -942,10 +1035,8 @@ pub fn capture_submit(
         }
         Err(e) if cap::is_retryable(&e) => {
             let path = state.data_dir.join(cap::QUEUE_FILE);
-            let mut queue = cap::load_queue(&path);
-            queue.push(QueuedCapture { text, target, at: now, attempts: 1, error: e.to_string() });
             // Not even the queue file can be written: the window keeps the text and shows why.
-            cap::save_queue(&path, &queue)?;
+            cap::enqueue(&path, QueuedCapture { text, target, at: now, attempts: 1, error: e.to_string() })?;
             crate::devlog::warn("desktop", format!("capture queued: {e}"));
             let _ = app.emit_to(MAIN, "capture://queued", e.to_string());
             schedule_retry(&app, Duration::from_secs(5));
@@ -1000,8 +1091,7 @@ pub fn retry_queue(app: &AppHandle) {
     let settings = state.settings();
     let zone = Zone::Local;
     let opts = capture_options(&settings, &zone);
-    let mut left = vec![];
-    for mut q in cap::load_queue(&path) {
+    let stored = cap::retry_queued(&path, |q| {
         let first = cap::capture_to(&state.db(), &q.text, &q.target, &opts, q.at, &Local);
         let result = match first {
             Err(e) if !cap::is_retryable(&e) && !matches!(q.target, CaptureTarget::Inbox | CaptureTarget::Daily) => {
@@ -1013,19 +1103,17 @@ pub fn retry_queue(app: &AppHandle) {
             Ok((out, undo)) => {
                 announce(app, &out, true);
                 remember(app, &q.text, &out, undo, q.at);
+                Ok(())
             }
-            Err(e) if cap::is_retryable(&e) => {
-                q.attempts += 1;
-                q.error = e.to_string();
-                left.push(q);
-            }
+            Err(e) if cap::is_retryable(&e) => Err(e.to_string()),
             Err(e) => {
                 crate::devlog::error("desktop", format!("queued capture not stored: {e}"));
                 let _ = app.emit_to(MAIN, "capture://failed", (e.to_string(), q.text.clone()));
+                Ok(())
             }
         }
-    }
-    if let Err(e) = cap::save_queue(&path, &left) {
+    });
+    if let Err(e) = stored {
         crate::devlog::error("desktop", format!("capture queue not written: {e}"));
     }
     RETRYING.store(false, Ordering::Relaxed);
@@ -1380,6 +1468,8 @@ pub struct DesktopInfo {
     store: bool,
     /// Entry ids of the tray menu shown now (`None`: no tray).
     tray_menu: Option<Vec<&'static str>>,
+    /// How often the tray handles were touched off the main thread (always 0).
+    tray_off_main: u64,
 }
 
 #[tauri::command]
@@ -1416,6 +1506,7 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         mail_shortcut_active: slots[Role::Mail as usize].is_some(),
         voice_shortcut_active: slots[Role::Voice as usize].is_some(),
         capture_open_ms: Some(d.capture_open_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
+        tray_off_main: d.tray_off_main.load(Ordering::Relaxed),
     }
 }
 

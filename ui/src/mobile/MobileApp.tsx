@@ -1,17 +1,21 @@
-// The shell of the Android companion app: four tabs and a capture button at the bottom,
-// screens opened above them (Android's back button closes them), toasts, and the sync when the
-// app comes back to the front.
+// The shell of the phone app (Android and iPhone): four tabs and a capture button at the bottom,
+// screens opened above them, toasts, Android's back button, the app's own updates, text shared
+// from other apps, the colors behind the system bars, and the sync when the app comes back to
+// the front.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { onBackButtonPress } from "@tauri-apps/api/app";
 import { CircleCheck, Clock, FileText, Info, ListChecks, Plus, Sun, TriangleAlert } from "lucide-react";
 import "../styles/mobile.css";
 import { applyPrefs } from "../lib/prefs";
+import { onIos } from "../lib/capabilities";
+import { applyThemeState } from "../lib/themes";
 import { t, useT, type TKey } from "../lib/i18n";
 import type { Settings, SettingsView } from "../lib/types";
-import { mobileApi } from "./api";
+import { mobileApi, type UpdateStatus } from "./api";
 import { Ctx, errorText, useMobile, type MobileContext, type Toast, type ToastTone } from "./context";
-import { START, current, navigate, syncDue, type Tab } from "./model";
+import { START, backAction, cssHex, current, navigate, syncDue, type Tab } from "./model";
 import { TodayScreen } from "./screens/Today";
 import { CaptureScreen } from "./screens/Capture";
 import { DailyScreen } from "./screens/Daily";
@@ -32,8 +36,13 @@ export function MobileApp() {
   const [version, setVersion] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  const [installBlocked, setInstallBlocked] = useState(false);
   const lastSync = useRef<number | null>(null);
-  const depth = useRef(0);
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  // What the back button closes before it leaves a screen (an edit mode), last one first.
+  const layers = useRef<(() => void)[]>([]);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const toast = useCallback((tone: ToastTone, title: string, detail?: string) => {
@@ -59,28 +68,64 @@ export function MobileApp() {
     void loadSettings();
   }, [loadSettings]);
 
-  // Data changed in the shell (a booking, a sync that pulled notes): the screens load again.
+  // Data changed in the shell (a booking, a sync that pulled notes): the screens load again. A
+  // sync of the app's own timer (at the start, every 15 minutes) or after a merged conflict
+  // shows its outcome on „Heute“ and in the settings as well.
   useEffect(() => {
     const offs = [
       listen("data://entries", refresh),
       listen("data://pages", refresh),
       listen("gitsync://pulled", refresh),
+      listen("gitsync://done", refresh),
+      listen("gitsync://failed", refresh),
       listen("settings://changed", () => void loadSettings()),
+      listen<UpdateStatus>("apkupdate://status", (e) => setUpdate(e.payload)),
     ];
+    // Android's own updates; the App Store updates the iOS app.
+    if (!onIos())
+      mobileApi.update
+        .status()
+        .then((s) => s && setUpdate(s))
+        .catch(() => {});
     return () => offs.forEach((p) => void p.then((off) => off()).catch(() => {}));
   }, [refresh, loadSettings]);
 
-  // Android's back button goes back through the browser history: every opened screen is an
-  // entry, so back closes the top screen instead of leaving the app.
+  // „Wie das System“: the theme follows Android's dark mode while the app runs.
   useEffect(() => {
-    const onPop = () => {
-      if (depth.current > 0) {
-        depth.current--;
-        dispatch({ type: "pop" });
-      }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyThemeState({});
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  const onBack = useCallback((close: () => void) => {
+    layers.current.push(close);
+    return () => {
+      layers.current = layers.current.filter((c) => c !== close);
     };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Android's back button: an edit mode first, then the top screen, then „Heute“; on „Heute“
+  // the app goes to the background (it never quits from here).
+  useEffect(() => {
+    // iOS has no back button (and no listener for one).
+    if (onIos()) return;
+    const listener = onBackButtonPress(() => {
+      switch (backAction(routeRef.current, layers.current.length)) {
+        case "layer":
+          layers.current[layers.current.length - 1]();
+          break;
+        case "pop":
+          dispatch({ type: "pop" });
+          break;
+        case "today":
+          dispatch({ type: "tab", tab: "today" });
+          break;
+        case "background":
+          void mobileApi.toBackground().catch(() => {});
+      }
+    });
+    return () => void listener.then((l) => l.unregister()).catch(() => {});
   }, []);
 
   const sync = useCallback<MobileContext["sync"]>(
@@ -103,17 +148,83 @@ export function MobileApp() {
     [toast, refresh],
   );
 
-  // Back in front: sync (at most every two minutes) and show fresh numbers.
+  // Text shared from another app („Teilen“ → Arcalo) opens a capture with it.
+  const takeShared = useCallback(() => {
+    mobileApi
+      .sharedText()
+      .then((text) => text && dispatch({ type: "push", screen: { kind: "capture", mode: "note", text } }))
+      .catch(() => {});
+  }, []);
+  const ready = !!view;
+  useEffect(() => {
+    if (ready) takeShared();
+  }, [ready, takeShared]);
+  // The settings are loaded and the first screen is drawn: the splash goes (lib/splash.ts waits
+  // for body.ready, else for its 8 s limit).
+  useEffect(() => {
+    if (ready) document.body.classList.add("ready");
+  }, [ready]);
+
+  // Back in front: sync (at most every two minutes), show fresh numbers, take shared text.
   const gs = view?.settings.git_sync;
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       refresh();
+      takeShared();
       if (gs?.enabled && gs.remote_url.trim() && syncDue(lastSync.current, Date.now())) void sync({ quiet: true });
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [gs?.enabled, gs?.remote_url, sync, refresh]);
+  }, [gs?.enabled, gs?.remote_url, sync, refresh, takeShared]);
+
+  // The window behind the status and navigation bars has the colors of the header and of the
+  // tab bar (or of the screen, on a screen without tab bar), in every theme.
+  const screen = current(route);
+  const onTab = typeof screen === "string";
+  useEffect(() => {
+    if (!ready) return;
+    let frame = 0;
+    const apply = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const app = document.querySelector(".m-app");
+        const bar = document.querySelector(".m-tabbar");
+        const top = app && cssHex(getComputedStyle(app).backgroundColor);
+        const bottom = (bar && cssHex(getComputedStyle(bar).backgroundColor)) || top;
+        if (top && bottom) void mobileApi.bars(document.documentElement.dataset.theme === "dark", top, bottom).catch(() => {});
+      });
+    };
+    apply();
+    const watch = new MutationObserver(apply);
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-theme-id"] });
+    return () => {
+      watch.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [ready, onTab]);
+
+  const installUpdate = useCallback(async () => {
+    try {
+      const out = await mobileApi.update.install();
+      setInstallBlocked(out === "needs_permission");
+    } catch (e) {
+      toast("error", t("mob.upd.failed"), errorText(e));
+    }
+  }, [toast]);
+
+  const allowInstall = useCallback(async () => {
+    try {
+      if (await mobileApi.update.allowInstall()) {
+        setInstallBlocked(false);
+        await installUpdate();
+      } else {
+        toast("info", t("mob.upd.permissionDenied"));
+      }
+    } catch (e) {
+      toast("error", t("mob.upd.failed"), errorText(e));
+    }
+  }, [installUpdate, toast]);
 
   const ctx = useMemo<MobileContext | null>(() => {
     if (!view) return null;
@@ -125,30 +236,22 @@ export function MobileApp() {
       toast,
       syncing,
       sync,
-      open: (s) => {
-        depth.current++;
-        window.history.pushState({ arcalo: depth.current }, "");
-        dispatch({ type: "push", screen: s });
-      },
-      back: () => {
-        if (depth.current > 0) window.history.back();
-      },
-      tab: (tab) => {
-        // Screens above the tabs close with a tab: their history entries go too.
-        if (depth.current > 0) {
-          const n = depth.current;
-          depth.current = 0;
-          window.history.go(-n);
-        }
-        dispatch({ type: "tab", tab });
-      },
+      open: (s) => dispatch({ type: "push", screen: s }),
+      back: () => dispatch({ type: "pop" }),
+      tab: (tab) => dispatch({ type: "tab", tab }),
       saveSettings: async (next: Settings) => {
         const saved = await mobileApi.saveSettings(next);
         applyPrefs(saved.settings);
         setView(saved);
       },
+      update,
+      setUpdate,
+      installBlocked,
+      installUpdate,
+      allowInstall,
+      onBack,
     };
-  }, [view, version, refresh, toast, syncing, sync]);
+  }, [view, version, refresh, toast, syncing, sync, update, installBlocked, installUpdate, allowInstall, onBack]);
 
   if (!ctx) {
     return (
@@ -167,8 +270,6 @@ export function MobileApp() {
     );
   }
 
-  const screen = current(route);
-  const onTab = typeof screen === "string";
   return (
     <Ctx.Provider value={ctx}>
       <div className={onTab ? "m-app" : "m-app m-app-stacked"} data-screen={typeof screen === "string" ? screen : screen.kind}>
@@ -177,7 +278,7 @@ export function MobileApp() {
           {screen === "tasks" && <TasksScreen />}
           {screen === "time" && <TimeScreen />}
           {screen === "notes" && <NotesScreen />}
-          {typeof screen !== "string" && screen.kind === "capture" && <CaptureScreen key={screen.mode} mode={screen.mode} />}
+          {typeof screen !== "string" && screen.kind === "capture" && <CaptureScreen key={`${screen.mode}:${screen.text ?? ""}`} mode={screen.mode} text={screen.text} />}
           {typeof screen !== "string" && screen.kind === "daily" && <DailyScreen key={screen.date} date={screen.date} />}
           {typeof screen !== "string" && screen.kind === "page" && <PageScreen key={screen.id} id={screen.id} />}
           {typeof screen !== "string" && screen.kind === "settings" && <SettingsScreen />}
@@ -208,7 +309,7 @@ function TabBar({ tab }: { tab: Tab }) {
         <span className="m-tab-icon">
           <Icon size={22} />
         </span>
-        <span>{t(TAB_LABELS[id])}</span>
+        <span className="m-tab-label">{t(TAB_LABELS[id])}</span>
       </button>
     );
   };
@@ -220,7 +321,7 @@ function TabBar({ tab }: { tab: Tab }) {
         <span className="m-tab-icon m-capture-btn-primary">
           <Plus size={24} />
         </span>
-        <span>{t("mob.tab.capture")}</span>
+        <span className="m-tab-label">{t("mob.tab.capture")}</span>
       </button>
       {item("time")}
       {item("notes")}

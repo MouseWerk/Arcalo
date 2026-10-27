@@ -82,6 +82,12 @@ impl Error {
         }
     }
 
+    /// Whether another connection (or process) held the database longer than the busy timeout.
+    pub fn is_busy(&self) -> bool {
+        use rusqlite::ErrorCode as C;
+        matches!(self, Error::Db(rusqlite::Error::SqliteFailure(f, _)) if matches!(f.code, C::DatabaseBusy | C::DatabaseLocked))
+    }
+
     /// Whether the storage is the problem (read-only, full, cannot be opened), not the data.
     pub fn is_storage(&self) -> bool {
         use rusqlite::ErrorCode as C;

@@ -1,9 +1,11 @@
 // Issues: the Jira issues of every site (my open issues and the saved JQL searches), read from
 // the offline cache, filterable by site, project, status, sprint and priority, grouped, and
-// searchable. A row opens the issue: description, last comments, the pages that name it, its WBS.
+// searchable. A row opens the issue: description, last comments, the pages that name it, its WBS;
+// „Als Fenster öffnen“ (row action, menu, double click or Shift+Enter) the whole issue in the issue view.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
+import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, PanelTop, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
+import { openIssueView } from "../lib/issueFull";
 import { openStatusReport } from "../components/MeetingWork";
 import { on } from "../lib/api";
 import { useApp } from "../store/app";
@@ -52,6 +54,7 @@ export function StatusPill({ issue }: { issue: Pick<Issue, "status" | "status_ca
 
 export function issueMenu(i: Issue): MenuEntry[] {
   return [
+    { label: t("iv.openWindow"), icon: PanelTop, onSelect: () => openIssueView(i.key) },
     { label: t("jira.openNote"), icon: FileText, onSelect: () => void openIssueNote(i.key) },
     { label: t("jira.openBrowser"), icon: ExternalLink, onSelect: () => void openIssueInBrowser(i.key, i.url) },
     { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(i.key) },
@@ -247,7 +250,13 @@ export function IssuesView() {
                             tabIndex={0}
                             aria-expanded={open === i.key}
                             onClick={() => setOpen(open === i.key ? null : i.key)}
-                            onKeyDown={(e) => !isComposing(e) && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(open === i.key ? null : i.key))}
+                            onDoubleClick={() => openIssueView(i.key)}
+                            onKeyDown={(e) => {
+                              if (isComposing(e)) return;
+                              // Shift+Enter: the issue view; Enter or Space: the details here.
+                              if (e.key === "Enter" && e.shiftKey) (e.preventDefault(), openIssueView(i.key));
+                              else if (e.key === "Enter" || e.key === " ") (e.preventDefault(), setOpen(open === i.key ? null : i.key));
+                            }}
                             onContextMenu={(e) => openMenuAt(e, issueMenu(i))}
                           >
                             {sites.length > 1 && <span className="issues-site-dot" style={{ background: siteColor(i.site) }} title={siteName(i.site)} aria-hidden />}
@@ -263,6 +272,7 @@ export function IssuesView() {
                             </span>
                           </div>
                           <span className="issue-actions">
+                            <IconButton icon={PanelTop} size="sm" label={t("iv.openWindow")} className="issue-open-view" onClick={() => openIssueView(i.key)} />
                             <IconButton icon={ExternalLink} size="sm" label={t("jira.openBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />
                             <IconButton icon={FileText} size="sm" label={t("jira.openNote")} onClick={(e) => void openIssueNote(i.key, { newTab: e.ctrlKey || e.metaKey })} />
                             <IconButton icon={Copy} size="sm" label={t("jira.copyKey")} onClick={() => void copyIssueKey(i.key)} />
@@ -293,6 +303,26 @@ function IssueDetail({ issue }: { issue: Issue }) {
   useEffect(() => {
     jiraApi.view(issue.key).then(setView, () => {});
   }, [issue.key, pages]);
+  // The list loads the issues without their comments; the issue's view has them. Syncs load no
+  // descriptions (1.19): one not loaded yet (or changed in Jira since) is loaded now and cached.
+  const cached = view?.issue?.key === issue.key ? view.issue : null;
+  const [detail, setDetail] = useState<{ key: string; issue: Issue | null; failed: boolean } | null>(null);
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!cached || cached.detailed || asked.current === issue.key) return;
+    const key = issue.key;
+    asked.current = key;
+    setDetail({ key, issue: null, failed: false });
+    jiraApi.detail(key).then(
+      (full) => setDetail((d) => (d?.key === key ? { key, issue: full, failed: false } : d)),
+      () => setDetail((d) => (d?.key === key ? { key, issue: null, failed: true } : d)),
+    );
+  }, [cached, issue.key]);
+  const loaded = detail?.key === issue.key ? detail : null;
+  const full = loaded?.issue ?? cached;
+  const description = full ? full.description : issue.description;
+  const comments = full ? full.comments : issue.comments;
+  const loading = !!loaded && !loaded.issue && !loaded.failed;
   const s = useApp.getState;
   return (
     <div className="issue-detail">
@@ -323,11 +353,19 @@ function IssueDetail({ issue }: { issue: Issue }) {
             </>
           )}
         </dl>
-        {issue.description ? <div className="issue-desc">{issue.description}</div> : <div className="faint small">{t("jira.noDescription")}</div>}
-        {issue.comments.length > 0 && (
+        {description ? (
+          <div className="issue-desc">{description}</div>
+        ) : loading || !view ? (
+          <div className="issue-desc-loading" aria-label={t("jira.descLoading")}>
+            <Spinner size={14} />
+          </div>
+        ) : (
+          <div className="faint small">{loaded?.failed ? t("jira.descUnavailable") : t("jira.noDescription")}</div>
+        )}
+        {comments.length > 0 && (
           <div className="issue-comments">
             <h3>{t("jira.comments")}</h3>
-            {issue.comments.map((c, n) => (
+            {comments.map((c, n) => (
               <div key={n} className="issue-comment">
                 <div className="issue-comment-head">
                   <b>{c.author}</b> <span className="faint small">{c.created ? relative(c.created) : ""}</span>
@@ -340,6 +378,9 @@ function IssueDetail({ issue }: { issue: Issue }) {
       </div>
       <aside className="issue-detail-side">
         <div className="issue-detail-buttons">
+          <Button size="sm" variant="primary" icon={PanelTop} className="issue-full-view" onClick={() => openIssueView(issue.key)}>
+            {t("iv.fullView")}
+          </Button>
           <Button size="sm" icon={FileText} onClick={() => void openIssueNote(issue.key)}>
             {view?.note_page_id ? t("jira.openNote") : t("jira.createNote", { key: issue.key })}
           </Button>

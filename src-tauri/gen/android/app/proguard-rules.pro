@@ -24,3 +24,10 @@
 -keep class de.mousewerk.arcalo.SecretsPlugin { *; }
 -keep class de.mousewerk.arcalo.SecretAccountArgs { *; }
 -keep class de.mousewerk.arcalo.SecretPutArgs { *; }
+
+# The app's update and window plugins (UpdatePlugin.kt, ShellPlugin.kt), loaded by name from Rust;
+# their activity callbacks are found by reflection.
+-keep class de.mousewerk.arcalo.UpdatePlugin { *; }
+-keep class de.mousewerk.arcalo.ApkPathArgs { *; }
+-keep class de.mousewerk.arcalo.ShellPlugin { *; }
+-keep class de.mousewerk.arcalo.BarsArgs { *; }

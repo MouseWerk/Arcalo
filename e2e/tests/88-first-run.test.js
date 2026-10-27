@@ -171,7 +171,7 @@ test("the app follows the answers: English, no timesheet, no AI, Outlook syncs",
   assert.ok((await titles("introduction")).includes("Replay the introduction"));
   // A step of „Erste Schritte“ opens what it names and ticks itself off.
   await app.click('.first-step[data-step="today"]');
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.click(".pane.active .tabbar-home");
   await app.waitFor('.first-step.done[data-step="today"]');
   // The Outlook fixture calendar syncs once it is switched on.

@@ -7,10 +7,11 @@ import { editorForPage } from "../../editor/reveal";
 import { flushAllEditors, reloadEditors } from "../../editor/NoteEditor";
 import { useApp } from "../../store/app";
 import { currentPage, privateTag, useChat } from "../../store/chat";
+import { copyText as writeClipboard } from "../../lib/clipboard";
 
 export function copyText(text: string, done?: () => void) {
   const s = useApp.getState();
-  navigator.clipboard.writeText(text).then(
+  writeClipboard(text).then(
     () => (done ? done() : s.toast({ tone: "success", title: t("chat.copied") })),
     (err) => s.error(t("chat.copyFailed"), err),
   );

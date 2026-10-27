@@ -29,6 +29,7 @@ function Checks({ all, chosen, onChange, label, color }: { all: [string, string]
         <label key={id} className="dws-check">
           <input
             type="checkbox"
+            className="check"
             checked={!chosen.length || chosen.includes(id)}
             onChange={(e) => {
               const base = chosen.length ? chosen : all.map((a) => a[0]);
@@ -55,7 +56,7 @@ function DeadlineFields({ c, set, Row }: WorkSettingsProps) {
         <div className="dws-checks">
           {Object.entries(DEADLINE_PROVIDER_LABELS).map(([id, label]) => (
             <label key={id} className="dws-check">
-              <input type="checkbox" checked={!off.includes(id)} onChange={(e) => set({ off: e.target.checked ? off.filter((x) => x !== id) : [...off, id] })} />
+              <input type="checkbox" className="check" checked={!off.includes(id)} onChange={(e) => set({ off: e.target.checked ? off.filter((x) => x !== id) : [...off, id] })} />
               <span>{t(label)}</span>
             </label>
           ))}

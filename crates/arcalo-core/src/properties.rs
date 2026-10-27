@@ -140,7 +140,7 @@ fn parse_block(lines: &[&str]) -> Option<Yaml> {
         return Some(Yaml::Str(String::new()));
     }
     let mut i = 0;
-    let v = block_at(&lines, &mut i, lines[0].indent)?;
+    let v = block_at(&lines, &mut i, lines[0].indent, 0)?;
     (i == lines.len()).then_some(v)
 }
 
@@ -148,14 +148,21 @@ fn is_item(text: &str) -> bool {
     text == "-" || text.starts_with("- ")
 }
 
-fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
+/// How deep lists and maps may nest (block or flow). Deeper front matter is no property: the
+/// readers recurse once per level, and a line of thousands of `[` must not overflow the stack.
+const MAX_DEPTH: usize = 64;
+
+fn block_at(lines: &[Line], i: &mut usize, indent: usize, depth: usize) -> Option<Yaml> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     if is_item(lines[*i].text) {
         let mut items = vec![];
         while *i < lines.len() && lines[*i].indent == indent && is_item(lines[*i].text) {
             let rest = lines[*i].text[1..].trim();
             *i += 1;
             let item = if rest.is_empty() {
-                nested(lines, i, indent)?
+                nested(lines, i, indent, depth)?
             } else if split_key(rest).is_some() && !rest.starts_with(['"', '\'']) {
                 return None; // maps inside block lists are not part of the subset
             } else {
@@ -172,9 +179,9 @@ fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
         let value = if rest.is_empty() || rest.starts_with('#') {
             // `key:` followed by a deeper block, or by `- items` on the same level.
             if *i < lines.len() && lines[*i].indent == indent && is_item(lines[*i].text) {
-                block_at(lines, i, indent)?
+                block_at(lines, i, indent, depth + 1)?
             } else {
-                nested(lines, i, indent)?
+                nested(lines, i, indent, depth)?
             }
         } else {
             parse_inline(rest)?
@@ -188,10 +195,10 @@ fn block_at(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
 }
 
 /// The block below a line of `indent`, or an empty value when the next line is not deeper.
-fn nested(lines: &[Line], i: &mut usize, indent: usize) -> Option<Yaml> {
+fn nested(lines: &[Line], i: &mut usize, indent: usize, depth: usize) -> Option<Yaml> {
     if *i < lines.len() && lines[*i].indent > indent {
         let deeper = lines[*i].indent;
-        block_at(lines, i, deeper)
+        block_at(lines, i, deeper, depth + 1)
     } else {
         Some(Yaml::Str(String::new()))
     }
@@ -202,7 +209,7 @@ pub fn parse_inline(text: &str) -> Option<Yaml> {
     let text = text.trim();
     if text.starts_with(['[', '{']) {
         let chars: Vec<char> = text.chars().collect();
-        let mut p = Flow { s: &chars, i: 0 };
+        let mut p = Flow { s: &chars, i: 0, depth: 0 };
         let v = p.value()?;
         p.ws();
         let rest: String = chars[p.i..].iter().collect();
@@ -217,7 +224,7 @@ fn scalar(v: &str) -> Option<String> {
     let v = v.trim();
     if v.starts_with(['"', '\'']) {
         let chars: Vec<char> = v.chars().collect();
-        let mut p = Flow { s: &chars, i: 0 };
+        let mut p = Flow { s: &chars, i: 0, depth: 0 };
         let s = p.quoted()?;
         let rest: String = chars[p.i..].iter().collect();
         let trimmed = rest.trim_start();
@@ -238,6 +245,8 @@ fn scalar(v: &str) -> Option<String> {
 struct Flow<'a> {
     s: &'a [char],
     i: usize,
+    /// Collections open around the current position (at most [`MAX_DEPTH`]).
+    depth: usize,
 }
 
 impl Flow<'_> {
@@ -252,6 +261,16 @@ impl Flow<'_> {
     }
 
     fn value(&mut self) -> Option<Yaml> {
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let v = self.value_here();
+        self.depth -= 1;
+        v
+    }
+
+    fn value_here(&mut self) -> Option<Yaml> {
         self.ws();
         match self.peek()? {
             '[' => {
@@ -814,6 +833,79 @@ pub struct CollectionView {
     pub rows: Vec<CollectionViewRow>,
 }
 
+/// How a value given as text is written after `key: `: a flow list or map (`[a, b]`,
+/// `{typ: zahl}`) as it is, anything else as a scalar ([`flow_scalar`]: plain when it reads back
+/// unchanged, else quoted).
+fn property_text(value: &str) -> String {
+    let v = value.trim();
+    match parse_inline(v) {
+        Some(Yaml::List(_) | Yaml::Map(_)) => v.to_owned(),
+        _ => flow_scalar(v),
+    }
+}
+
+/// `markdown` with the top-level frontmatter property `key` set to `value` (see
+/// [`property_text`]), or removed with `None`. An existing entry keeps its place (its indented
+/// lines go with it; the key matches case-insensitively and in either language, like
+/// [`crate::pagework::frontmatter_value`]); a new one goes last, and a page without frontmatter
+/// gets a block. A block left empty is removed. Everything else stays byte for byte.
+pub fn set_property(markdown: &str, key: &str, value: Option<&str>) -> String {
+    let key = key.trim();
+    let eol = if markdown.contains("\r\n") { "\r\n" } else { "\n" };
+    let text = value.map(property_text);
+    let open = ["---\n", "---\r\n"].into_iter().find(|o| markdown.starts_with(o));
+    let Some(open) = open else {
+        return match text {
+            Some(t) => {
+                format!("---{eol}{key}: {t}{eol}---{eol}{}{markdown}", if markdown.is_empty() { "" } else { eol })
+            }
+            None => markdown.to_owned(),
+        };
+    };
+    let rest = &markdown[open.len()..];
+    let lines: Vec<&str> = rest.split_inclusive('\n').collect();
+    let Some(end) = lines.iter().position(|l| l.trim_end() == "---") else {
+        // An unclosed block is no frontmatter: nothing to edit in place.
+        return markdown.to_owned();
+    };
+    let want = crate::i18n::canonical_key(key);
+    let mut out: Vec<String> = vec![];
+    let mut done = false;
+    let mut i = 0;
+    while i < end {
+        let head = lines[i];
+        i += 1;
+        let start = i;
+        while i < end && lines[i].starts_with([' ', '\t', '-']) && !lines[i].trim().is_empty() {
+            i += 1;
+        }
+        // The entry keeps its key as written (`Status:` stays `Status:`).
+        let found = split_key(head.trim_end_matches(['\r', '\n']))
+            .map(|(k, _)| k)
+            .filter(|k| !done && crate::i18n::canonical_key(k) == want);
+        let Some(written) = found else {
+            out.extend(lines[start - 1..i].iter().map(|l| l.to_string()));
+            continue;
+        };
+        done = true;
+        if let Some(t) = &text {
+            out.push(format!("{written}: {t}{eol}"));
+        }
+    }
+    if !done && let Some(t) = &text {
+        if out.last().is_some_and(|l| !l.ends_with('\n')) {
+            out.last_mut().expect("checked").push_str(eol);
+        }
+        out.push(format!("{key}: {t}{eol}"));
+    }
+    let tail: String = lines[end + 1..].concat();
+    if out.iter().all(|l| l.trim().is_empty()) {
+        // Nothing left in the block: the page without it (and without the blank line under it).
+        return tail.strip_prefix(eol).unwrap_or(&tail).to_owned();
+    }
+    format!("{open}{}{}{tail}", out.concat(), lines[end])
+}
+
 /// The frontmatter block of a Markdown text with its `---` lines (line endings normalized).
 pub fn frontmatter_block(markdown: &str) -> String {
     let Some(lines) = frontmatter_lines(markdown) else { return String::new() };
@@ -988,6 +1080,68 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Front matter nested deeper than anyone writes (a long line of `[`, from a sync or an
+    /// import) is no property, and saving the page does not overflow the stack.
+    #[test]
+    fn deep_nesting_is_refused_without_a_crash() {
+        let open = "[".repeat(200_000);
+        assert_eq!(parse_inline(&open), None);
+        let balanced = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+        assert_eq!(parse_inline(&balanced), None);
+        let maps = format!("{}{}", "{a: ".repeat(100_000), "}".repeat(100_000));
+        assert_eq!(parse_inline(&maps), None);
+        let fine = format!("{}x{}", "[".repeat(10), "]".repeat(10));
+        assert!(parse_inline(&fine).is_some());
+        // Block nesting: each line one space deeper.
+        let block: String = (0..2_000).map(|d| format!("{}k{d}:\n", " ".repeat(d))).collect();
+        let entries = page_entries(&format!("---\n{block}---\n"));
+        assert_eq!((entries.len(), entries[0].value.clone()), (1, None), "a key without a value");
+        let shallow: String = (0..20).map(|d| format!("{}k{d}:\n", " ".repeat(d))).collect();
+        assert!(page_entries(&format!("---\n{shallow}  x: 1\n---\n"))[0].value.is_some());
+        let db = crate::db::Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Tief", None).unwrap();
+        db.save_page_content(p.id, &format!("---\naliases: {open}\n---\nText\n")).unwrap();
+        db.save_page_content(p.id, &format!("---\naliases: {balanced}\n---\nText\n")).unwrap();
+    }
+
+    #[test]
+    fn setting_a_property_keeps_everything_else() {
+        let md = "---\nstatus: offen\ntags:\n  - a\n  - b\nvorgang: NP-1/10\n---\n\n# Text\n";
+        assert_eq!(
+            set_property(md, "Status", Some("erledigt")),
+            "---\nstatus: erledigt\ntags:\n  - a\n  - b\nvorgang: NP-1/10\n---\n\n# Text\n"
+        );
+        // A block value is replaced with its indented lines; a list given as text stays a list.
+        assert_eq!(
+            set_property(md, "tags", Some("[x, \"y, z\"]")),
+            "---\nstatus: offen\ntags: [x, \"y, z\"]\nvorgang: NP-1/10\n---\n\n# Text\n"
+        );
+        // The English alias names the same property.
+        assert_eq!(set_property(md, "activity", None), "---\nstatus: offen\ntags:\n  - a\n  - b\n---\n\n# Text\n");
+        // New ones go last; values that would read back differently are quoted.
+        assert_eq!(
+            set_property(md, "titel", Some("a: b #c")),
+            "---\nstatus: offen\ntags:\n  - a\n  - b\nvorgang: NP-1/10\ntitel: \"a: b #c\"\n---\n\n# Text\n"
+        );
+    }
+
+    #[test]
+    fn a_page_without_frontmatter_gets_a_block_and_an_empty_block_goes() {
+        assert_eq!(set_property("Text\n", "status", Some("offen")), "---\nstatus: offen\n---\n\nText\n");
+        assert_eq!(set_property("", "status", Some("offen")), "---\nstatus: offen\n---\n");
+        assert_eq!(set_property("Text\n", "status", None), "Text\n");
+        assert_eq!(set_property("---\nstatus: offen\n---\n\nText\n", "status", None), "Text\n");
+        // Windows line ends stay.
+        assert_eq!(
+            set_property("---\r\na: 1\r\n---\r\nText\r\n", "b", Some("2")),
+            "---\r\na: 1\r\nb: 2\r\n---\r\nText\r\n"
+        );
+        assert_eq!(
+            page_entries(&set_property("x", "datum", Some("2026-10-11")))[0].value,
+            Some(Yaml::Str("2026-10-11".into()))
+        );
+    }
 
     #[test]
     fn english_keys_and_operators() {

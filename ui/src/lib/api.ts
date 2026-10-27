@@ -5,8 +5,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
 import { noteSystemLang, t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
+import type * as GS from "./gitsetup";
 import type * as G from "./graph";
+import { fromGraphTable } from "./graph";
+import { fromPageRows, type PageRow } from "./tree";
 import { fromTaskTable, type TaskTable } from "./tasks";
+import { IS_LINUX } from "./platform";
 
 // App-Sperre: a command refused while locked never settles (the app behind the lock screen is
 // unmounted; its last requests are simply dropped instead of showing errors).
@@ -21,18 +25,21 @@ function withSystemLang(v: T.SettingsView): T.SettingsView {
 
 export const api = {
   // pages
-  tree: () => call<T.PageNode[]>("workspace_tree"),
+  tree: () => call<PageRow[]>("workspace_tree_compact").then(fromPageRows),
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
   /** What `![[target#anchor]]` shows (page, heading section or block). */
   pageEmbed: (target: string, anchor: string | null) => call<T.EmbedView>("page_embed", { target, anchor }),
   // graph view
-  graphData: (filter: G.GraphFilter) => call<G.GraphData>("graph_data", { filter }),
+  graphData: (filter: G.GraphFilter) => call<G.GraphTable>("graph_compact", { filter }).then(fromGraphTable),
   graphPatch: (ids: number[], filter: G.GraphFilter) => call<G.GraphData>("graph_patch", { ids, filter }),
   /** `layout`, `presets` or `view`, stored per workspace. */
   graphStateGet: (key: "layout" | "presets" | "view") => call<unknown>("graph_state_get", { key }),
   graphStateSet: (key: "layout" | "presets" | "view", value: unknown) => call<void>("graph_state_set", { key, value }),
-  /** Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content. */
-  savePage: (id: number, content: string) => call<T.SavedPage>("page_save", { id, content }),
+  /**
+   * Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content.
+   * `base`: the page as the editor last knew it; a page changed since is merged, the result in `merged`.
+   */
+  savePage: (id: number, content: string, base?: string) => call<T.SavedPage>("page_save", { id, content, base }),
   /** The child pages of a page with their typed properties (table and board views). */
   pageCollection: (parentId: number) => call<T.PageCollection>("page_collection", { parentId }),
   /** The schema a page's properties follow (its parent's), with the parent's id. */
@@ -197,6 +204,20 @@ export const api = {
   calendarWbsHint: (key: string) => call<T.WbsHint | null>("calendar_wbs_hint", { key }),
   /** The meeting note of an appointment (created on first use). */
   calendarMeetingNote: (key: string) => call<{ page: T.Page; created: boolean }>("calendar_meeting_note", { key }),
+  /** „Termine in Outlook eintragen“ on or off. */
+  calendarEntriesEnable: (on: boolean) => call<void>("calendar_entries_enable", { on }),
+  /** A new appointment; `source` empty: the calendar chosen in the settings. */
+  calendarEntryCreate: (draft: { source?: string; title: string; start: string; end: string; location?: string }) =>
+    call<T.CalendarEvent>("calendar_entry_create", { draft: { source: "", location: "", ...draft } }),
+  /** Changes only the given fields; `send`: the user confirmed the update to the attendees. */
+  calendarEntryUpdate: (key: string, patch: T.EntryFields, send = false) => call<T.CalendarEvent>("calendar_entry_update", { key, patch, send }),
+  calendarEntryDelete: (key: string) => call<void>("calendar_entry_delete", { key }),
+  calendarEntryUndo: (key: string) => call<T.CalendarEvent>("calendar_entry_undo", { key }),
+  calendarEntryResolve: (key: string, keepMine: boolean) => call<void>("calendar_entry_resolve", { key, keepMine }),
+  calendarEntryDiscard: (key: string) => call<void>("calendar_entry_discard", { key }),
+  /** „In Outlook öffnen“. */
+  calendarEntryShow: (key: string) => call<void>("calendar_entry_show", { key }),
+  calendarEntriesRetry: () => call<void>("calendar_entries_retry"),
 
   // Woche vorschlagen
   /** The timesheet draft for the week starting at `weekStart` (YYYY-MM-DD, local). */
@@ -275,6 +296,14 @@ export const api = {
   setGitToken: (token: string | null) => call<T.GitSyncStatus>("git_token_set", { token }),
   gitSyncTest: (url: string | null, token: string | null) => call<T.GitTest>("git_sync_test", { url, token }),
   gitRestoreImport: (url: string) => call<T.ImportReport>("git_restore_import", { url }),
+  /** Guided setup: whom the token belongs to (the typed token, else the stored one). */
+  gitSetupAccount: (server: GS.GitServer, token: string | null) => call<GS.SetupAnswer<GS.SetupAccount | null>>("git_setup_account", { server, token }),
+  /** Guided setup: the token's repositories, newest first. */
+  gitSetupRepos: (server: GS.GitServer, token: string | null) => call<GS.SetupAnswer<GS.SetupRepo[]>>("git_setup_repos", { server, token }),
+  /** Guided setup: a new private repository. */
+  gitSetupCreate: (server: GS.GitServer, token: string | null, name: string) => call<GS.SetupAnswer<GS.SetupRepo>>("git_setup_create", { server, token, name }),
+  /** Guided setup: the check before saving (server, token, rights, git, branch, content). */
+  gitSetupCheck: (server: GS.GitServer, target: GS.SetupTarget, token: string | null) => call<GS.SetupCheck>("git_setup_check", { server, target, token }),
   /** Pages with an undecided Git sync conflict. */
   gitConflicts: () => call<T.GitConflictInfo[]>("git_conflicts"),
   gitConflict: (pageId: number) => call<T.GitConflictView>("git_conflict_get", { pageId }),
@@ -290,6 +319,8 @@ export const api = {
   /** Takes effect at the next start; `useExisting` opens a workspace already in `path`. */
   setDataDir: (path: string, useExisting = false) => call<T.DataDirStatus>("data_dir_set", { path, useExisting }),
   cancelDataDirMove: () => call<T.DataDirStatus>("data_dir_cancel"),
+  /** What 1.17 deleted of the data kept twice since the rename in 1.15, once; null when nothing (or told already). */
+  legacyCleanupNotice: () => call<string | null>("legacy_cleanup_notice"),
   restart: () => call<void>("app_restart"),
   updateStatus: () => call<T.UpdateStatus>("update_status"),
   /** Asks the release feed; null when this is the newest version. Never installs. */
@@ -301,11 +332,17 @@ export const api = {
   updatePause: () => call<void>("update_pause"),
   /** Installs the downloaded update now and restarts. */
   updateRestartNow: () => call<void>("update_restart_now"),
+  /** The answer to `update://flush`: the editors are stored (`ok`), or the user stays. */
+  updateFlushed: (ok: boolean) => call<void>("update_flushed", { ok }),
   updateSkip: (version: string) => call<void>("update_skip", { version }),
   /** Undoes a skipped version and „Später erinnern“. */
   updateUnskip: () => call<void>("update_unskip"),
   updateRemind: (days: number) => call<string>("update_remind", { days }),
   updateWhatsNewSeen: (version: string) => call<void>("update_whats_new_seen", { version }),
+  /** The Android app's updater (src-tauri/src/mobile/apkupdate.rs): the version running and the one
+   *  it was updated from while „Neu in Arcalo“ was not shown since. */
+  androidUpdateStatus: () => call<{ current: string; updated_from: string | null }>("apk_update_status"),
+  androidWhatsNewSeen: () => call<unknown>("apk_whats_new_seen"),
   /** „Zur vorherigen Version zurückkehren“: restores the database of before the update and the previous program. */
   updateRollback: () => call<void>("update_rollback"),
   /** Release notes (Markdown) of a version the app does not bundle, from the repository. */
@@ -352,6 +389,10 @@ export const api = {
   // desktop
   desktopInfo: () => call<T.DesktopInfo>("desktop_info"),
   setAutostart: (enabled: boolean) => call<T.DesktopInfo>("autostart_set", { enabled }),
+  /** Whether `arcalo` works in a terminal. */
+  cliPathInfo: () => call<T.CliPathInfo>("cli_path_info"),
+  /** Puts `arcalo` on the PATH or takes it off (macOS: after the password prompt). */
+  setCliPath: (enabled: boolean) => call<T.CliPathInfo>("cli_path_set", { enabled }),
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
   /** What closing the main window does (macOS: always hide; elsewhere „close to tray“). */
@@ -446,7 +487,7 @@ export const api = {
   cancelChat: (requestId: string) => call<void>("ai_cancel", { requestId }),
   planTool: (name: string, args: string) => call<T.ToolPlan>("ai_plan_tool", { name, arguments: args }),
   runWorkspaceTool: (name: string, args: string) => call<string>("ai_run_workspace_tool", { name, arguments: args }),
-  runSystemTool: (callSpec: unknown) => call<string>("ai_run_system_tool", { call: callSpec }),
+  runSystemTool: (token: string, callSpec: unknown) => call<string>("ai_run_system_tool", { token, call: callSpec }),
   indexPending: () => call<number>("ai_index_pending"),
   embeddingStatus: () => call<T.EmbeddingStatus>("ai_embedding_status"),
 
@@ -521,6 +562,21 @@ export function attachmentUrl(name: string) {
   } catch {
     return `attachments/${encodeURIComponent(base)}`;
   }
+}
+
+/**
+ * Address of a stored audio file for a player, and a release for when the player goes.
+ * WebKitGTK (Linux) hands media to GStreamer, which loads only http(s), file, data and blob
+ * addresses, never the app's `arcalo-asset:` scheme (the load ends with a format error). There
+ * the bytes come through IPC and play from a `blob:` address of the given media type. WebView2,
+ * WKWebView and Android load the scheme's address directly (with ranges for seeking).
+ */
+export async function attachmentMedia(name: string, type: string): Promise<{ src: string; release: () => void }> {
+  const src = attachmentUrl(name);
+  if (!IS_LINUX || !/^arcalo-asset:/i.test(src)) return { src, release: () => {} };
+  const bytes = await api.readAttachment(name.split(/[\\/]/).pop() ?? name);
+  const blob = URL.createObjectURL(new Blob([bytes], { type }));
+  return { src: blob, release: () => URL.revokeObjectURL(blob) };
 }
 
 /** Reads a file as base64 (without the `data:` prefix) and stores it as an attachment. */

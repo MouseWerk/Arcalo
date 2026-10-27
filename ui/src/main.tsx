@@ -1,5 +1,5 @@
 import "./lib/storageBoot";
-import { lazy, StrictMode, Suspense } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
@@ -13,6 +13,7 @@ import "./styles/settings.css";
 import "./styles/firstrun.css";
 import "./styles/dashboard.css";
 import "./styles/workwidgets.css";
+import "./styles/issueview.css";
 import "./styles/a11y.css";
 import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
@@ -25,12 +26,16 @@ import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
-import { describeError, logUi } from "./lib/devlog";
+import { installReloadGuard } from "./lib/reloadGuard";
+import { installLongPress } from "./lib/longpress";
+import { collectErrors } from "./lib/errorLog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
 import { bootLang, setLang } from "./lib/i18n";
-
-// The Android shell is loaded only there (a chunk of its own): the desktop bundle stays as it was.
-const MobileApp = lazy(() => import("./mobile/MobileApp").then((m) => ({ default: m.MobileApp })));
+import { loadCapabilities, onAndroid, onIos, onMobileDevice } from "./lib/capabilities";
+import { bootInterface, followInterface } from "./lib/uiswitch";
+import { flushAll, unsavedLeft } from "./lib/flush";
+import { installAndroidBack } from "./lib/androidBack";
+import { fitIosViewport, followBars } from "./lib/ios";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -40,9 +45,17 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 const presenterMode = location.hash === "#presenter";
 // The recovery screen of an encrypted database whose key is missing (instead of the app).
 const keygateMode = location.hash === "#keygate";
-// The Android companion app (ui/src/mobile): its own shell with tabs; `?mobile` shows it in a
-// browser for the screenshot check (e2e/mobile/shots.mjs).
-const mobileMode = /\bAndroid\b/.test(navigator.userAgent) || new URLSearchParams(location.search).has("mobile");
+// The Android and iOS apps open their phone entry (`mobile.html`, ui/src/mobile/main.tsx) and come
+// here on a large screen or an iPad (1.20, lib/uiswitch.ts); `?mobile` opens the phone app in a
+// browser.
+const forcedMobile = new URLSearchParams(location.search).has("mobile");
+if (forcedMobile) location.replace(`mobile.html${location.search}`);
+// What the app can do here (the desktop, or the full app on Android or the iPad), before the first frame.
+const capabilities = forcedMobile ? null : await loadCapabilities();
+// iOS: the page covers the whole window and keeps clear of the safe areas itself.
+if (capabilities && onIos()) fitIosViewport();
+// On Android and iOS: still the right interface for this window? Otherwise to the phone app at once.
+const mobileMode = forcedMobile || (!!capabilities && onMobileDevice() && (await bootInterface("full")) === null);
 
 // The language the shell resolved („Wie das System“ included) holds from the first frame on.
 const boot = bootLang();
@@ -51,46 +64,32 @@ startSplash(captureMode || searchMode || presenterMode || keygateMode);
 if (!mobileMode) {
   trackModKey();
   installTooltips();
+  installReloadGuard();
+  // Touch screens (the full app on Android): a long press opens the context menus.
+  installLongPress();
 }
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
 // the developer log (Settings → Protokoll).
-const w = window as unknown as { __arcaloErrors: string[] };
-w.__arcaloErrors = [];
-window.addEventListener("error", (e) => {
-  w.__arcaloErrors.push(String(e.message));
-  logUi("ERROR", e.error ? describeError(e.error) : `${e.message} (${e.filename}:${e.lineno})`);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  w.__arcaloErrors.push(String(e.reason));
-  logUi("ERROR", `Unhandled rejection: ${describeError(e.reason)}`);
-});
-const origError = console.error;
-console.error = (...args: unknown[]) => {
-  w.__arcaloErrors.push(args.map(String).join(" "));
-  logUi("ERROR", args.map((a) => (a instanceof Error ? describeError(a) : typeof a === "string" ? a : describeError(a))).join(" "));
-  origError(...args);
-};
+collectErrors();
 
 // Follow the OS theme until settings are loaded.
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 // Windows 11: the window can have a Mica or Acrylic backdrop that the app lets show through.
-if (mobileMode) {
-  document.documentElement.classList.add("mobile");
-  applyBootAppearance();
-} else if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
+if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode) {
   initBackdrop();
   applyBootAppearance();
 }
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
-if (!mobileMode) {
+if (!mobileMode && capabilities?.windowFrame) {
   import("@tauri-apps/api/core")
     .then(({ invoke }) => invoke<boolean>("window_frame"))
     .then((custom) => custom && !captureMode && !searchMode && !presenterMode && document.documentElement.classList.add("frame-custom"))
     .catch(() => {});
 }
 // macOS: the tab bar sits in the title bar (overlay); the chrome leaves room for the traffic lights.
-if (IS_MAC && !captureMode) document.documentElement.classList.add("os-macos");
+// (The iPad reports itself as a Mac too, for the Cmd shortcuts, but has no title bar.)
+if (IS_MAC && !captureMode && !capabilities?.mobile) document.documentElement.classList.add("os-macos");
 
 // The small windows follow the language and formats of the settings (the main window does so
 // through its store).
@@ -98,11 +97,7 @@ if (captureMode || searchMode || presenterMode) followLocale();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {mobileMode ? (
-      <Suspense fallback={null}>
-        <MobileApp />
-      </Suspense>
-    ) : keygateMode ? (
+    {mobileMode ? null : keygateMode ? (
       <KeyGateApp />
     ) : captureMode ? (
       <PopupLockGate>
@@ -129,11 +124,37 @@ createRoot(document.getElementById("root")!).render(
 // The main window starts hidden and appears once the app script runs: the page and the splash
 // styles are loaded by then, so there is no unstyled page and no white flash before the splash.
 // (Not after a requestAnimationFrame: hidden webviews do not run frames.)
-if (mobileMode) {
-  splashShown();
-} else if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
-  import("@tauri-apps/api/core")
-    .then(({ invoke }) => invoke("window_ready"))
-    .catch(() => {})
-    .finally(splashShown);
+if (!mobileMode && !captureMode && !searchMode && !presenterMode && !keygateMode) {
+  if (capabilities?.windowFrame) {
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("window_ready"))
+      .catch(() => {})
+      .finally(splashShown);
+  } else {
+    splashShown();
+  }
+  // The full app on Android and the iPad follows the window: back to the phone app when it becomes
+  // phone-sized (iPad: Slide Over, a third of Split View), with the editors' text stored first.
+  if (onMobileDevice()) {
+    // Android's back button closes what is open, else the app goes to the background.
+    if (onAndroid()) installAndroidBack(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_to_background")));
+    // iOS: text shared to the app („Teilen“ → Arcalo) goes into the inbox.
+    if (onIos()) {
+      void import("./lib/iosShare").then(({ followShared }) => followShared());
+      // The margins around the WebView take the colors of the app's edges.
+      followBars((dark, top, bottom) => void import("@tauri-apps/api/core").then(({ invoke }) => invoke("mobile_bars", { dark, top, bottom })).catch(() => {}));
+    }
+    // Right before it goes: nothing typed while the flush ran (the editors' module is loaded by then).
+    let editorsDirty = () => false;
+    followInterface(
+      "full",
+      async () => {
+        const saves = await import("./editor/saves");
+        editorsDirty = saves.editorsDirty;
+        const editors = await Promise.race([saves.flushAllEditors().then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5000))]).catch(() => false);
+        return editors && (await flushAll());
+      },
+      () => editorsDirty() || unsavedLeft(),
+    );
+  }
 }

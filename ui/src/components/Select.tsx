@@ -11,7 +11,7 @@
 import { Children, Fragment, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, type LucideIcon } from "lucide-react";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 
 export interface SelectOption {
   value: string;
@@ -141,9 +141,20 @@ export function Select({ value, onChange, options, children, disabled, className
     setOpen(false);
     if (o.value !== current) onChange?.({ target: { value: o.value }, currentTarget: { value: o.value } });
   };
+  // Where the pointer was when the list reported it last: the list opening under a pointer that
+  // did not move gets a mouse move from the engine too, which must not take the highlight from
+  // the selected option (opened with the keyboard).
+  const pointer = useRef<string | null>(null);
+  const hover = (e: React.MouseEvent, i: number) => {
+    const at = `${e.screenX},${e.screenY}`;
+    const moved = pointer.current !== null && pointer.current !== at;
+    pointer.current = at;
+    if (moved && !items[i].disabled && activeRef.current !== i) highlight(i);
+  };
   const show = () => {
     if (disabled || !items.length) return;
     typed.current.text = "";
+    pointer.current = null;
     highlight(selected >= 0 && !items[selected].disabled ? selected : step(items, -1, 1));
     setOpen(true);
   };
@@ -154,6 +165,10 @@ export function Select({ value, onChange, options, children, disabled, className
     t.at = now;
     return typeAhead(items, t.text, from);
   };
+
+  // A window that changes its size (also a new scale of the interface, which arrives a moment
+  // after it was chosen) places the open list again instead of closing it.
+  const [resized, setResized] = useState(0);
 
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
@@ -171,7 +186,7 @@ export function Select({ value, onChange, options, children, disabled, className
     const width = Math.max(r.width, el.offsetWidth);
     const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - width - MARGIN));
     setPos({ left, top: up ? r.top - GAP - height : r.bottom + GAP, minWidth: r.width, maxHeight: natural > room ? room : undefined, above: up });
-  }, [open]);
+  }, [open, resized]);
 
   // The selected option is in view when the list opens; the active one while moving.
   useLayoutEffect(() => {
@@ -197,14 +212,15 @@ export function Select({ value, onChange, options, children, disabled, className
         for (let k = 0; k < n; k++) j = step(items, j, dir);
         return j;
       };
+      if (isTab(e)) {
+        setOpen(false);
+        return;
+      }
       switch (e.key) {
         case "Escape":
           stop();
           setOpen(false);
           trigger.current?.focus();
-          return;
-        case "Tab":
-          setOpen(false);
           return;
         case "ArrowDown":
           stop();
@@ -245,13 +261,14 @@ export function Select({ value, onChange, options, children, disabled, className
     window.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", close);
+    const onResize = () => setResized((n) => n + 1);
+    window.addEventListener("resize", onResize);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("mousedown", onDown, true);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("blur", close);
     };
   });
@@ -325,7 +342,7 @@ export function Select({ value, onChange, options, children, disabled, className
                   aria-selected={i === selected}
                   aria-disabled={o.disabled || undefined}
                   className={`select-option ${i === active ? "active" : ""} ${i === selected ? "selected" : ""} ${o.disabled ? "disabled" : ""}`}
-                  onMouseMove={() => !o.disabled && active !== i && highlight(i)}
+                  onMouseMove={(e) => hover(e, i)}
                   onClick={() => choose(i)}
                 >
                   <span className="select-check">{i === selected && <Check size={14} strokeWidth={2.25} />}</span>

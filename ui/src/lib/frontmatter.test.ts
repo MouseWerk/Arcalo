@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIRST_LINE_RE, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "./frontmatter";
+import { FIRST_LINE_RE, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, withTag, type Property } from "./frontmatter";
 
 const OBSIDIAN = `---
 title: Kickoff Systemintegration
@@ -135,5 +135,49 @@ describe("serializeFrontmatter", () => {
 
   it("splits typed lists", () => {
     expect(splitItems("a, #b ,, c")).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("adding a tag (the sidebar's selection)", () => {
+  it("creates the tags list, appends to it and leaves the rest as it was", () => {
+    expect(withTag("", "#projekt")).toBe("---\ntags: [projekt]\n---\n");
+    expect(withTag("---\nstatus: offen\n---\n", "kunde")).toBe("---\nstatus: offen\ntags: [kunde]\n---\n");
+    expect(withTag("---\ntags: [a, b]\nstatus: offen\n---\n", "c")).toBe("---\ntags: [a, b, c]\nstatus: offen\n---\n");
+    expect(withTag("---\ntags:\n  - a\n---\n", "b")).toBe("---\ntags: [a, b]\n---\n");
+    // Already there (any case), or nothing to add: unchanged.
+    const fm = "---\ntags: [Kunde]\n---\n";
+    expect(withTag(fm, "kunde")).toBe(fm);
+    expect(withTag(fm, "  ")).toBe(fm);
+  });
+});
+
+describe("selection action: tag into frontmatter", () => {
+  const tagsOf = (fm: string) => parseFrontmatter(fm).find((p) => p.key === "tags");
+
+  it("keeps the existing tags of a block list with a comment (raw property)", () => {
+    const fm = "---\ntitle: Angebot\ntags:\n  - projekt # wichtig\n  - kunde\n---\n";
+    const next = withTag(fm, "neu");
+    expect(next).toContain("projekt");
+    expect(next).not.toContain('"tags:');
+    // The editor cannot read the comment, so the tag becomes one more item of the block list; the
+    // comment and the other items stay as written.
+    expect(next).toBe("---\ntitle: Angebot\ntags:\n  - projekt # wichtig\n  - kunde\n  - neu\n---\n");
+    expect(tagsOf(next!)?.type).toBe("raw");
+    // Already there (behind a comment or not): unchanged.
+    expect(withTag(fm, "Projekt")).toBe(fm);
+    expect(withTag(fm, "kunde")).toBe(fm);
+  });
+
+  it("keeps a nested flow list", () => {
+    const next = withTag("---\ntags: [a, [b, c]]\n---\n", "neu");
+    expect(next ?? "").not.toContain('"tags:');
+    expect(next ?? "").not.toContain('"[a');
+    // Not safe to change: the page is skipped.
+    expect(next).toBeNull();
+  });
+
+  it("skips other raw tags it cannot extend safely", () => {
+    expect(withTag("---\ntags: # keine\n  - a\n---\n", "neu")).toBeNull();
+    expect(withTag("---\ntags:\n  - a\n  # Kommentar\n---\n", "neu")).toBeNull();
   });
 });

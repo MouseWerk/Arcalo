@@ -30,7 +30,7 @@ const exists = (sel) => app.browser.execute((s) => !!document.querySelector(s), 
 /** Selects the first longer paragraph of the open note, as a mouse drag would. */
 const selectParagraph = () =>
   app.browser.execute(() => {
-    const root = document.querySelector(".pane.active .ProseMirror");
+    const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const p = [...root.querySelectorAll("p")].find((x) => x.textContent.length > 30);
     root.focus();
     const range = document.createRange();
@@ -40,7 +40,7 @@ const selectParagraph = () =>
   });
 const openInlineBar = async () => {
   await openFromTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror p");
   await selectParagraph();
   await sleep(250);
   await app.keys(["Control", "j"]);
@@ -81,7 +81,7 @@ test("without an AI the inline bar shows the way to the settings instead of acti
 
 test("without an AI the meeting summary and the assistant say how to set one up", async () => {
   await openFromTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror p");
   const id = await pageId("Architektur");
   // As „/Zusammenfassung“ does: from the shown editor of the page (a kept page elsewhere stays out).
   await app.browser.execute(

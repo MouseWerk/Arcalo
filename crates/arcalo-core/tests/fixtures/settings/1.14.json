@@ -1,0 +1,437 @@
+{
+  "ai": {
+    "allowed_tools": [
+      "log_time",
+      "search_workspace",
+      "budget_status",
+      "list_tasks",
+      "time_summary",
+      "activity_log"
+    ],
+    "chat_history": "all",
+    "citations": true,
+    "inline_presets": null,
+    "max_tokens": null,
+    "meeting_template": null,
+    "monthly_cost_limit_usd": null,
+    "streaming": true,
+    "temperature": 0.30000001192092896
+  },
+  "appearance": {
+    "accent": "theme",
+    "code_font": "jetbrains",
+    "custom_themes": [],
+    "custom_titlebar": true,
+    "density": "normal",
+    "editor_font": "sans",
+    "line_width": "normal",
+    "reduce_motion": false,
+    "startup_animation": true,
+    "theme_dark": "annalo-dark",
+    "theme_light": "annalo-light",
+    "ui_font": "inter",
+    "ui_scale": 100,
+    "window_effect": "none",
+    "window_opacity": 80
+  },
+  "assistant_instructions": "",
+  "auto_route": true,
+  "auto_update_check": true,
+  "backup_dir": null,
+  "backup_keep": 21,
+  "backup_targets": {
+    "destinations": [],
+    "local_latest_only": false
+  },
+  "briefing": {
+    "mode": "off",
+    "notify_time": "",
+    "prep_auto": false,
+    "prep_minutes": 30,
+    "sections": [
+      {
+        "id": "ai",
+        "on": true
+      },
+      {
+        "id": "meetings",
+        "on": true
+      },
+      {
+        "id": "tasks",
+        "on": true
+      },
+      {
+        "id": "jira",
+        "on": true
+      },
+      {
+        "id": "time",
+        "on": true
+      }
+    ]
+  },
+  "calendar": {
+    "block_minutes": 60,
+    "blocks_outlook": false,
+    "future_days": 90,
+    "include_body": false,
+    "meeting_links": true,
+    "outlook": false,
+    "outlook_calendars": [
+      {
+        "booking": true,
+        "color": "#2563eb",
+        "default": true,
+        "enabled": true,
+        "entry_id": "",
+        "free_busy": false,
+        "id": "outlook",
+        "kind": "own",
+        "name": "Kalender",
+        "owner": "",
+        "path": "",
+        "recipient": "",
+        "store_id": ""
+      }
+    ],
+    "outlook_color": "#2563eb",
+    "outlook_recipients": [],
+    "past_days": 30,
+    "private_details": false,
+    "sources": [],
+    "sync_minutes": 15
+  },
+  "capture": {
+    "auto_hide_ms": 1200,
+    "default_target": "daily",
+    "inbox_title": "Posteingang",
+    "meeting_target": true,
+    "selection_shortcut": ""
+  },
+  "capture_shortcut": "Ctrl+Shift+Space",
+  "close_to_tray": false,
+  "daily_target_hours": 8,
+  "daily_template": null,
+  "dashboard": {
+    "active": "",
+    "boards": [],
+    "notes": {},
+    "version": 0
+  },
+  "dev_log_json": false,
+  "dev_log_level": "",
+  "dev_log_verbose": false,
+  "editor": {
+    "auto_pair": false,
+    "autosave_ms": 450,
+    "code_line_numbers": false,
+    "default_icon": null,
+    "duplicate_hints": true,
+    "hover_delay_ms": 450,
+    "hover_preview": true,
+    "inbox_title": "Inbox",
+    "link_suggestions": true,
+    "mention_hints": false,
+    "new_page_location": "top",
+    "scroll_outline": true,
+    "smart_quotes": false,
+    "spellcheck": "de",
+    "tab_size": 2,
+    "tag_suggestions": true,
+    "toolbar": true
+  },
+  "embedding_model": "nomic-embed-text",
+  "embedding_provider": "ollama",
+  "filing": {
+    "rules": [],
+    "types": {}
+  },
+  "git_sync": {
+    "author_email": "arcalo@localhost",
+    "author_name": "Arcalo",
+    "branch": "main",
+    "enabled": false,
+    "include_database": false,
+    "mode": "with_backup",
+    "remote_url": "",
+    "sync_settings": false
+  },
+  "idle_threshold_minutes": 5,
+  "jira": {
+    "queries": [],
+    "sites": [],
+    "sync_minutes": 10,
+    "tick_done_tasks": true
+  },
+  "jira_issue_map": {},
+  "keymap": {
+    "open_daily": "Ctrl+Shift+D"
+  },
+  "litellm_base_url": "http://localhost:4000",
+  "locale": {
+    "date_format": "de",
+    "language": "de"
+  },
+  "mail": {
+    "default_action": "task",
+    "notes_parent": "E-Mails",
+    "own_addresses": [],
+    "private_notes": true,
+    "save_attachments": false,
+    "shortcut": ""
+  },
+  "markdown_mirror": true,
+  "markdown_mirror_dir": null,
+  "network": {
+    "profiles": [
+      {
+        "connect_timeout_secs": 30,
+        "extra_ca_path": null,
+        "http_proxy": "",
+        "https_proxy": "",
+        "id": "standard",
+        "legacy_accept_invalid_certs": false,
+        "mode": "system",
+        "name": "Standard",
+        "no_proxy": "localhost, 127.0.0.1, ::1",
+        "pac_results": {},
+        "pac_url": "",
+        "proxy_user": "",
+        "read_timeout_secs": 0,
+        "socks_proxy": ""
+      }
+    ],
+    "routes": {},
+    "trusted_hosts": []
+  },
+  "notes": {
+    "daily_folder": "Journal",
+    "daily_title": "iso",
+    "max_versions": 50,
+    "trash_retention_days": 30,
+    "version_interval_minutes": 10
+  },
+  "notifications": {
+    "backup_failed": true,
+    "budget": true,
+    "day_review": false,
+    "day_review_time": "17:30",
+    "end_of_day": true,
+    "git_failed": true,
+    "late_timer": true,
+    "quiet_from": "22:00",
+    "quiet_hours": false,
+    "quiet_to": "07:00",
+    "task_due": true,
+    "updates": true,
+    "week_proposal": true
+  },
+  "onboarding": {
+    "completed_at": null,
+    "completed_version": null
+  },
+  "open_daily_on_start": false,
+  "palette_shortcut": null,
+  "pernr": null,
+  "prices": [
+    {
+      "input_per_mtok": 2.5,
+      "model": "gpt-4o*",
+      "output_per_mtok": 10,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.15,
+      "model": "gpt-4o-mini*",
+      "output_per_mtok": 0.6,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 2,
+      "model": "gpt-4.1*",
+      "output_per_mtok": 8,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.4,
+      "model": "gpt-4.1-mini*",
+      "output_per_mtok": 1.6,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.1,
+      "model": "gpt-4.1-nano*",
+      "output_per_mtok": 0.4,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 2,
+      "model": "o3*",
+      "output_per_mtok": 8,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 1.1,
+      "model": "o3-mini*",
+      "output_per_mtok": 4.4,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 1.1,
+      "model": "o4-mini*",
+      "output_per_mtok": 4.4,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.02,
+      "model": "text-embedding-3-small*",
+      "output_per_mtok": 0,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.13,
+      "model": "text-embedding-3-large*",
+      "output_per_mtok": 0,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 2,
+      "model": "mistral-large*",
+      "output_per_mtok": 6,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.1,
+      "model": "mistral-small*",
+      "output_per_mtok": 0.3,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.1,
+      "model": "mistral-embed*",
+      "output_per_mtok": 0,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.59,
+      "model": "llama-3.3-70b*",
+      "output_per_mtok": 0.79,
+      "provider": ""
+    },
+    {
+      "input_per_mtok": 0.05,
+      "model": "llama-3.1-8b*",
+      "output_per_mtok": 0.08,
+      "provider": ""
+    }
+  ],
+  "privacy": {
+    "local_only": false,
+    "read_open_page": true
+  },
+  "providers": [
+    {
+      "api_version": "",
+      "base_url": "http://localhost:4000",
+      "bypass_proxy": false,
+      "enabled": true,
+      "id": "litellm",
+      "kind": "litellm",
+      "local": false,
+      "models": [],
+      "name": "LiteLLM"
+    },
+    {
+      "api_version": "",
+      "base_url": "http://localhost:11434",
+      "bypass_proxy": false,
+      "enabled": true,
+      "id": "ollama",
+      "kind": "ollama",
+      "local": true,
+      "models": [],
+      "name": "Ollama"
+    }
+  ],
+  "quick_links": [],
+  "reminder_time": "17:30",
+  "router": {
+    "local_model": "ollama/llama3.2",
+    "local_provider": "litellm",
+    "private_markers": [
+      "#privat",
+      "#private",
+      "#vertraulich",
+      "#confidential"
+    ],
+    "reasoning_model": "cloud-reasoning",
+    "reasoning_provider": "litellm",
+    "reasoning_threshold": 60,
+    "standard_model": "cloud-standard",
+    "standard_provider": "litellm",
+    "standard_threshold": 30
+  },
+  "search_shortcut": "Ctrl+Shift+O",
+  "start": {
+    "minimized": false,
+    "open": "tabs",
+    "restore_window": true
+  },
+  "theme": "dark",
+  "thresholds": {
+    "critical": 0.9,
+    "warning": 0.75
+  },
+  "time": {
+    "balance": {
+      "carry_over": 0,
+      "opening_hours": 0,
+      "start": null,
+      "state": "",
+      "vacation_days": 30,
+      "weekday_hours": []
+    },
+    "cats_columns": "standard",
+    "cats_decimal": "comma",
+    "cats_delimiter": "semicolon",
+    "default_leistungsart": {},
+    "enabled": true,
+    "export_file_pattern": "zeiten-{von}-{bis}",
+    "hours_display": "decimal",
+    "rounding": {
+      "min_minutes": 0,
+      "mode": "up",
+      "step_minutes": 0
+    },
+    "week_start": "monday",
+    "work_end": "18:00",
+    "work_start": "08:00"
+  },
+  "updates": {
+    "allow_github_fallback": true,
+    "check_interval_hours": 6,
+    "mode": "auto",
+    "restore_session": true,
+    "source_url": ""
+  },
+  "version": 13,
+  "voice": {
+    "auto_summary": false,
+    "input_device": "",
+    "keep_audio": true,
+    "language": "auto",
+    "model": "small",
+    "shortcut": "",
+    "source_url": "",
+    "system_audio": false
+  },
+  "workdays": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "workspace_scopes": {}
+}

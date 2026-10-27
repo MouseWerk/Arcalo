@@ -1,9 +1,13 @@
 // What a click on an issue does (chips, the Issues page, widgets, the hover card).
 
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Copy, ExternalLink, FileText, PanelTop } from "lucide-react";
+import type { MenuEntry } from "../components/ui";
 import { useApp } from "../store/app";
 import { t } from "./i18n";
 import { jiraApi, useIssueIndex } from "./jira";
+import { openIssueView } from "./issueFull";
+import { copyText } from "./clipboard";
 
 const s = useApp.getState;
 
@@ -26,15 +30,17 @@ export async function openIssueNote(key: string, opts: { newTab?: boolean } = {}
   }
 }
 
-/** Chip click: the note page; Ctrl/Cmd+click: the browser. */
-export async function openIssue(key: string, opts: { browser?: boolean; newTab?: boolean } = {}) {
+/** A click on an issue (chip, row, widget, plan block): the issue view; Ctrl/Cmd+click the
+ *  browser; `note` (Shift+click in lists) the issue's note, in a new tab with `newTab`. */
+export async function openIssue(key: string, opts: { browser?: boolean; note?: boolean; newTab?: boolean } = {}) {
   if (opts.browser) return openIssueInBrowser(key);
-  return openIssueNote(key, opts);
+  if (opts.note) return openIssueNote(key, { newTab: opts.newTab });
+  openIssueView(key);
 }
 
 export async function copyIssueKey(key: string) {
   try {
-    await navigator.clipboard.writeText(key);
+    await copyText(key);
     s().toast({ tone: "success", title: t("jira.copied", { key }) });
   } catch (e) {
     s().error(t("jira.copyFailed"), e);
@@ -54,3 +60,13 @@ export async function addIssueTask(key: string) {
 
 /** Opens the Issues page. */
 export const openIssuesView = () => s().openTab({ kind: "issues" });
+
+/** The context menu of an issue in a list or widget: the issue view first. */
+export function issueOpenMenu(i: { key: string; url?: string }): MenuEntry[] {
+  return [
+    { label: t("iv.openWindow"), icon: PanelTop, onSelect: () => openIssueView(i.key) },
+    { label: t("jira.openBrowser"), icon: ExternalLink, onSelect: () => void openIssueInBrowser(i.key, i.url) },
+    { label: t("jira.openNote"), icon: FileText, onSelect: () => void openIssueNote(i.key) },
+    { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(i.key) },
+  ];
+}

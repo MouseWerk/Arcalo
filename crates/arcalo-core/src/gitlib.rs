@@ -26,14 +26,26 @@ use git2::{
 
 use super::{Git, GitOutput};
 
-/// Whether [`Git::new`] uses libgit2: always on Android; in tests of this crate when
+/// Whether [`Git::new`] uses libgit2: always on Android and iOS; in tests of this crate when
 /// `ARCALO_TEST_EMBEDDED_GIT` is set (the sync's tests then run on libgit2).
 pub(super) fn default_on() -> bool {
-    cfg!(target_os = "android") || (cfg!(test) && std::env::var_os("ARCALO_TEST_EMBEDDED_GIT").is_some())
+    cfg!(any(target_os = "android", target_os = "ios"))
+        || (cfg!(test) && std::env::var_os("ARCALO_TEST_EMBEDDED_GIT").is_some())
 }
 
 /// The CA bundle libgit2's OpenSSL checks servers against (Android: written by [`init_tls`]).
 static CA_FILE: OnceLock<PathBuf> = OnceLock::new();
+/// The system's certificates of that bundle, and the ones last added to it.
+static SYSTEM_PEM: OnceLock<String> = OnceLock::new();
+static ADDED: std::sync::Mutex<Added> = std::sync::Mutex::new(Added { user: String::new(), profile: String::new() });
+
+/// Certificates in the bundle besides the system's.
+struct Added {
+    /// Installed by the user on the phone ([`set_user_certificates`]).
+    user: String,
+    /// The extra CA of the Git sync's network profile (`http.sslCAInfo`, [`set_profile_certificates`]).
+    profile: String,
+}
 
 /// Writes the CA bundle for HTTPS into `dir` and points libgit2 at it: the system's
 /// certificates (Android: `/system/etc/security/cacerts`, the updatable store of Android 14 and
@@ -75,18 +87,98 @@ pub fn init_tls(dir: &Path) -> crate::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let file = dir.join("git-ca.pem");
     if !pem.is_empty() {
-        fs::write(&file, pem)?;
+        replace_file(&file, &pem)?;
         // SAFETY: called once at start-up, before any git operation runs.
         unsafe { git2::opts::set_ssl_cert_file(&file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
         let _ = CA_FILE.set(file.clone());
+        let _ = SYSTEM_PEM.set(pem);
     }
     Ok(file)
+}
+
+/// The certificates the user installed on the phone (Einstellungen → Sicherheit →
+/// Verschlüsselung & Anmeldedaten), as PEM, added to the bundle of [`init_tls`]: Android lets an
+/// app trust them when its network security config says so (`src-tauri/gen/android`, for a
+/// company's proxy that inspects HTTPS). Rewrites the bundle only when they changed; `true` then.
+pub fn set_user_certificates(pem: &str) -> crate::Result<bool> {
+    add_certificates(|a| &mut a.user, certificates_only(pem))
+}
+
+/// The extra CA of the network profile (the file `git` names in `http.sslCAInfo`: the shell's
+/// bundle of that CA and the system's roots), added to the bundle of [`init_tls`], as `http.sslCAInfo`
+/// adds it for the program; a `Git` without one takes it out again. `true` when the bundle was
+/// rewritten.
+fn set_profile_certificates(git: &Git) -> crate::Result<bool> {
+    add_certificates(|a| &mut a.profile, profile_certificates(git))
+}
+
+/// The certificates of the file in `http.sslCAInfo` (empty without one).
+fn profile_certificates(git: &Git) -> String {
+    config(git, "http.sslCAInfo")
+        .and_then(|p| fs::read_to_string(p).ok())
+        .map(|t| certificates_only(&t))
+        .unwrap_or_default()
+}
+
+/// Sets one part of [`Added`] and rewrites the bundle when it changed.
+fn add_certificates(part: impl Fn(&mut Added) -> &mut String, pem: String) -> crate::Result<bool> {
+    let (Some(file), Some(system)) = (CA_FILE.get(), SYSTEM_PEM.get()) else { return Ok(false) };
+    let mut added = ADDED.lock().unwrap_or_else(|e| e.into_inner());
+    if *part(&mut added) == pem {
+        return Ok(false);
+    }
+    *part(&mut added) = pem;
+    // A connection that starts meanwhile reads the old bundle or the new one, never half of it.
+    replace_file(file, &format!("{system}{}{}", added.user, added.profile))?;
+    // SAFETY: libgit2 reads the file when a TLS connection starts; the path stays the same.
+    unsafe { git2::opts::set_ssl_cert_file(file) }.map_err(|e| crate::Error::State(e.message().to_owned()))?;
+    Ok(true)
+}
+
+/// Writes `text` to a file beside `file`, then renames it over `file` (atomic on one file system).
+fn replace_file(file: &Path, text: &str) -> std::io::Result<()> {
+    let tmp = file.with_extension("pem.tmp");
+    fs::write(&tmp, text)?;
+    fs::rename(&tmp, file).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
+}
+
+/// The `CERTIFICATE` blocks of `pem`, each on its own lines; anything else is dropped.
+fn certificates_only(pem: &str) -> String {
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    let mut out = String::new();
+    let mut rest = pem;
+    while let Some(a) = rest.find(BEGIN) {
+        let Some(b) = rest[a..].find(END) else { break };
+        out.push_str(&rest[a..a + b + END.len()]);
+        out.push('\n');
+        rest = &rest[a + b + END.len()..];
+    }
+    out
 }
 
 /// Runs the git command `args` in `cwd`. Never fails: errors come back as git's would, a
 /// non-zero exit with the reason in `stderr`.
 pub(super) fn run(git: &Git, cwd: Option<&Path>, args: &[&str]) -> GitOutput {
     set_timeouts(git.timeout);
+    #[cfg(test)]
+    {
+        static SYSTEM: OnceLock<()> = OnceLock::new();
+        SYSTEM.get_or_init(|| {
+            let dir = super::test_system_config();
+            // SAFETY: a global libgit2 option, set once before the first repository is opened.
+            unsafe {
+                let _ = git2::opts::set_search_path(git2::ConfigLevel::System, dir.as_os_str());
+            }
+        });
+    }
+    if super::is_network(args)
+        && let Err(e) = set_profile_certificates(git)
+    {
+        return GitOutput { ok: false, stdout: String::new(), stderr: format!("error: CA bundle: {e}") };
+    }
     let (config, rest) = split_config(args);
     let mut out = String::new();
     match dispatch(git, cwd, &config, &rest, &mut out) {
@@ -96,22 +188,31 @@ pub(super) fn run(git: &Git, cwd: Option<&Path>, args: &[&str]) -> GitOutput {
     }
 }
 
+/// libgit2's network timeouts: how long connecting may take and how long one read or write may
+/// wait (a stalled transfer, not the total time). Global options: set again when another `Git`
+/// (the setup's check with its shorter timeout) ran before.
 fn set_timeouts(timeout: Duration) {
-    static DONE: OnceLock<()> = OnceLock::new();
-    DONE.get_or_init(|| {
-        let ms = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
-        // SAFETY: global libgit2 options, set once before the first network operation.
-        unsafe {
-            let _ = git2::opts::set_server_connect_timeout_in_milliseconds(ms.min(30_000));
-            let _ = git2::opts::set_server_timeout_in_milliseconds(ms);
-        }
-    });
+    static LAST: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == Some(timeout) {
+        return;
+    }
+    let ms = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+    // SAFETY: global libgit2 options; a connection that started already keeps its values.
+    unsafe {
+        let _ = git2::opts::set_server_connect_timeout_in_milliseconds(ms.min(30_000));
+        let _ = git2::opts::set_server_timeout_in_milliseconds(ms);
+    }
+    *last = Some(timeout);
 }
 
 /// git's wording for a libgit2 error, so the sync classifies it like the program's
 /// (`failure_message`: sign-in, not reachable, locked, …).
 fn describe(e: &git2::Error) -> String {
     let msg = e.message();
+    if msg.contains(REMOTE_REJECTED) {
+        return msg.to_owned();
+    }
     if e.code() == ErrorCode::Auth || msg.contains("authentication") || msg.contains("401") {
         return format!("fatal: Authentication failed: {msg}");
     }
@@ -214,6 +315,25 @@ fn dispatch(
             Ok(true)
         }
         "rev-parse" => rev_parse(&open(cwd)?, &p, out),
+        "config" => {
+            // Only the working tree's own configuration: `config <key>` and `config <key> <value>`.
+            let repo = open(cwd)?;
+            match p.words.as_slice() {
+                [key] => match repo.config()?.open_level(git2::ConfigLevel::Local)?.get_string(key) {
+                    Ok(v) => {
+                        let _ = writeln!(out, "{v}");
+                        Ok(true)
+                    }
+                    Err(e) if e.code() == ErrorCode::NotFound => Ok(false),
+                    Err(e) => Err(e),
+                },
+                [key, value] => {
+                    repo.config()?.open_level(git2::ConfigLevel::Local)?.set_str(key, value)?;
+                    Ok(true)
+                }
+                _ => Err(err("config: unsupported arguments")),
+            }
+        }
         "symbolic-ref" => {
             let repo = open(cwd)?;
             match p.words.as_slice() {
@@ -281,6 +401,12 @@ fn dispatch(
             fo.remote_callbacks(callbacks(git, &url, &attempts));
             fo.proxy_options(proxy(git));
             fo.download_tags(git2::AutotagOption::None);
+            // Shallow over the network only, as with `clone`.
+            if let Some(d) = value(&p, "--depth").and_then(|d| d.parse().ok())
+                && super::is_http(&url)
+            {
+                fo.depth(d);
+            }
             remote.fetch(&[*spec], Some(&mut fo), None)?;
             Ok(true)
         }
@@ -368,8 +494,12 @@ fn dispatch(
             let work = repo.workdir().ok_or_else(|| err("bare repository"))?.to_path_buf();
             for path in &p.paths {
                 let _ = index.remove_path(Path::new(path));
+                if p.has("-r") {
+                    let _ = index.remove_dir(Path::new(path), 0);
+                }
+                // `--cached`: the index only, the working tree keeps the files.
                 let full = work.join(path);
-                if full.is_file() {
+                if !p.has("--cached") && full.is_file() {
                     fs::remove_file(&full).map_err(|e| err(e.to_string()))?;
                 }
             }
@@ -596,25 +726,31 @@ fn push(git: &Git, repo: &Repository, p: &Parsed) -> Result<bool, git2::Error> {
     let mut remote = repo.find_remote(name)?;
     let url = remote.url().unwrap_or_default().to_owned();
     let attempts = Cell::new(0);
-    let rejected: Cell<Option<String>> = Cell::new(None);
+    let rejected: Cell<Option<(String, String)>> = Cell::new(None);
+    // What the server says on the side band (its hooks' output: why it refuses a push).
+    let said = std::cell::RefCell::new(String::new());
     let mut cb = callbacks(git, &url, &attempts);
     cb.push_update_reference(|refname, status| {
         if let Some(s) = status {
-            rejected.set(Some(format!("{refname}: {s}")));
+            rejected.set(Some((refname.to_owned(), s.to_owned())));
         }
         Ok(())
+    });
+    cb.sideband_progress(|data| {
+        let mut s = said.borrow_mut();
+        // Enough for the server's reason; a server that talks on and on is cut off.
+        if s.len() < 16 * 1024 {
+            s.push_str(&String::from_utf8_lossy(data).replace('\r', "\n"));
+        }
+        true
     });
     let mut po = PushOptions::new();
     po.remote_callbacks(cb);
     po.proxy_options(proxy(git));
     remote.push(&[spec.as_str()], Some(&mut po))?;
     drop(po);
-    if let Some(why) = rejected.take() {
-        return Err(git2::Error::new(
-            ErrorCode::NotFastForward,
-            ErrorClass::Reference,
-            format!("rejected (fetch first): {why}"),
-        ));
+    if let Some((refname, status)) = rejected.take() {
+        return Err(refused(&refname, &status, &said.borrow()));
     }
     // What `git push` does as well: the remote-tracking branch follows.
     if let Some(dst) = spec.split_once(':').map(|(_, d)| d)
@@ -625,6 +761,30 @@ fn push(git: &Git, repo: &Repository, p: &Parsed) -> Result<bool, git2::Error> {
     }
     Ok(true)
 }
+
+/// The error for a reference the server did not update (`status`), in git's words: a branch that
+/// moved on there is a non-fast-forward (the sync merges); anything else (a hook, push protection,
+/// a protected branch) is `! [remote rejected]` with what the server said (`said`, its side-band
+/// messages) as `remote:` lines, which the sync shows.
+fn refused(refname: &str, status: &str, said: &str) -> git2::Error {
+    let l = status.to_ascii_lowercase();
+    if l.contains("non-fast-forward") || l.contains("non-fastforward") || l.contains("fetch first") {
+        return git2::Error::new(
+            ErrorCode::NotFastForward,
+            ErrorClass::Reference,
+            format!("rejected (fetch first): {refname}: {status}"),
+        );
+    }
+    let mut msg = String::new();
+    for line in said.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let _ = writeln!(msg, "remote: {line}");
+    }
+    let _ = write!(msg, "{REMOTE_REJECTED} {refname} ({status})");
+    git2::Error::new(ErrorCode::GenericError, ErrorClass::Reference, msg)
+}
+
+/// How git marks a reference the server refused to update.
+const REMOTE_REJECTED: &str = "! [remote rejected]";
 
 /// `log --format= --raw --no-abbrev --no-renames -z <rev> --`: per commit (first parent, merges
 /// left out like git does) `:<mode> <mode> <old> <new> <status>\0<path>\0`.
@@ -664,12 +824,13 @@ fn callbacks<'a>(git: &'a Git, url: &str, attempts: &'a Cell<u32>) -> RemoteCall
     let mut cb = RemoteCallbacks::new();
     let http = super::is_http(url);
     let token = git.token().filter(|_| git.send_token && http).map(str::to_owned);
+    let user = git.token_user;
     cb.credentials(move |_url, _user, allowed| {
         let n = attempts.get();
         attempts.set(n + 1);
         match &token {
             Some(t) if n == 0 && allowed.contains(CredentialType::USER_PASS_PLAINTEXT) => {
-                Cred::userpass_plaintext("x-access-token", t)
+                Cred::userpass_plaintext(user, t)
             }
             _ => Err(git2::Error::new(ErrorCode::Auth, ErrorClass::Http, "authentication failed")),
         }
@@ -697,14 +858,20 @@ fn config<'a>(git: &'a Git, key: &str) -> Option<&'a str> {
     git.network.config.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str())
 }
 
-/// The proxy of the network settings (`https_proxy`/`http_proxy`), else none.
+/// The proxy of the network settings (`https_proxy`/`http_proxy`; mode `system` on Android:
+/// Android's proxy, `network::set_platform_proxy`), else none.
 fn proxy(git: &Git) -> ProxyOptions<'static> {
     let mut po = ProxyOptions::new();
-    let env = |k: &str| git.network.env.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.clone());
-    if let Some(p) = env("https_proxy").or_else(|| env("http_proxy")).filter(|p| !p.is_empty()) {
+    if let Some(p) = proxy_url(git) {
         po.url(&p);
     }
     po
+}
+
+/// The proxy URL [`proxy`] gives libgit2 for the remote of `git`; `None` = direct.
+fn proxy_url(git: &Git) -> Option<String> {
+    let env = |k: &str| git.network.env.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.clone());
+    env("https_proxy").or_else(|| env("http_proxy")).filter(|p| !p.is_empty())
 }
 
 #[cfg(test)]
@@ -745,6 +912,11 @@ mod tests {
         assert!(!run(&g, Some(&work), &["remote", "get-url", "origin"]).ok);
         ok(&g, &work, &["remote", "add", "origin", bare.to_str().unwrap()]);
         assert_eq!(ok(&g, &work, &["remote", "get-url", "origin"]).trim(), bare.to_str().unwrap());
+        // Line ends as stored, as the sync sets them (`ensure_repo`): libgit2 reads the system
+        // configuration (in tests one with `autocrlf=true`), and the working tree's own wins.
+        ok(&g, &work, &["config", "core.autocrlf", "false"]);
+        ok(&g, &work, &["config", "core.eol", "lf"]);
+        assert_eq!(ok(&g, &work, &["config", "--local", "core.eol"]).trim(), "lf");
 
         fs::write(work.join("Notiz.md"), "Hallo\r\nWelt\r\n").unwrap();
         fs::write(work.join(".gitattributes"), "* text=auto\n").unwrap();
@@ -796,6 +968,231 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    /// A sync request of the phone (a companion) from `mirror` into `repo`.
+    fn phone_sync(git: &Git, mirror: &Path, repo: &Path, url: &str) -> crate::Result<super::super::SyncOutcome> {
+        let settings = super::super::GitSyncSettings { enabled: true, remote_url: url.into(), ..Default::default() };
+        super::super::sync(
+            git,
+            &super::super::SyncRequest {
+                repo,
+                source: mirror,
+                database: None,
+                settings: &settings,
+                host: "android",
+                now: chrono::Local::now(),
+                hold: &[],
+                allow_deletions: false,
+                settings_file: None,
+                companion: true,
+            },
+        )
+    }
+
+    fn mirror_with(dir: &Path, notes: &[(&str, &str)]) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(crate::mirror::README_NAME), crate::mirror::MARKER).unwrap();
+        for (name, text) in notes {
+            let p = dir.join(name);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        }
+    }
+
+    /// The phone against a server like GitHub (HTTP, sign-in with the token): the first sync
+    /// pushes, a second phone takes the notes over, both push again after the other one did.
+    #[test]
+    fn syncs_over_http_with_the_token() {
+        let base = tmp("http");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        super::super::gitserve::bare(&root, "notes.git");
+        let server = super::super::gitserve::GitServer::start(&root, Some("tok-123"));
+        let url = server.url("notes.git");
+        let g = git_for(Some("tok-123"), &url);
+
+        // The connection test of the settings.
+        let branches = g.ls_remote(&url).unwrap();
+        assert!(branches.is_empty(), "{branches:?}");
+
+        let (a, b) = (base.join("a"), base.join("b"));
+        mirror_with(&a.join("mirror"), &[("Notiz.md", "vom Handy A\n")]);
+        let first = phone_sync(&g, &a.join("mirror"), &a.join("repo"), &url).unwrap();
+        assert!(first.committed && !first.fallback, "{first:?}");
+        assert_eq!(g.ls_remote(&url).unwrap(), ["main"]);
+
+        mirror_with(&b.join("mirror"), &[("Andere.md", "vom Handy B\n")]);
+        let second = phone_sync(&g, &b.join("mirror"), &b.join("repo"), &url).unwrap();
+        let got: Vec<&str> = second.remote_changes.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(got, ["Notiz.md"], "{second:?}");
+
+        // A moves on, B too: B's push is refused, merged and pushed again.
+        mirror_with(&a.join("mirror"), &[("Notiz.md", "vom Handy A, neu\n")]);
+        phone_sync(&g, &a.join("mirror"), &a.join("repo"), &url).unwrap();
+        mirror_with(&b.join("mirror"), &[("Andere.md", "vom Handy B, neu\n"), ("Notiz.md", "vom Handy A\n")]);
+        let merged = phone_sync(&g, &b.join("mirror"), &b.join("repo"), &url).unwrap();
+        assert!(!merged.fallback, "{merged:?}");
+        assert_eq!(merged.remote_changes.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["Notiz.md"]);
+        let out = std::process::Command::new("git")
+            .args(["show", "main:Andere.md"])
+            .current_dir(root.join("notes.git"))
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "vom Handy B, neu\n");
+
+        // The token went only in the sign-in header, never into the repository's config.
+        for repo in [a.join("repo"), b.join("repo")] {
+            let config = fs::read_to_string(repo.join(".git/config")).unwrap();
+            assert!(!config.contains("tok-123"), "{config}");
+        }
+        let seen = server.seen();
+        assert!(seen.iter().any(|s| s.status == 200 && s.method == "POST"), "{seen:?}");
+        assert!(seen.iter().filter(|s| s.status == 200).all(|s| s.authorization.is_some()), "{seen:?}");
+        assert!(seen.iter().all(|s| !s.target.contains("tok-123")), "{seen:?}");
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A wrong or missing token: a sign-in error the user can act on, after one try (no loop
+    /// of refused requests, which locks accounts on some servers).
+    #[test]
+    fn a_wrong_token_is_a_sign_in_error_after_one_try() {
+        let base = tmp("http-auth");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        super::super::gitserve::bare(&root, "notes.git");
+        let server = super::super::gitserve::GitServer::start(&root, Some("richtig"));
+        let url = server.url("notes.git");
+        for token in [Some("falsch"), None] {
+            let before = server.refused();
+            let err = git_for(token, &url).ls_remote(&url).unwrap_err().to_string();
+            assert!(err.contains("Anmeldung") || err.contains("Sign-in"), "{token:?}: {err}");
+            let refused = server.refused() - before;
+            assert!((1..=2).contains(&refused), "{token:?}: {refused} refused requests");
+
+            mirror_with(&base.join("mirror"), &[("Notiz.md", "x")]);
+            let before = server.refused();
+            let err = phone_sync(&git_for(token, &url), &base.join("mirror"), &base.join("repo"), &url).unwrap_err();
+            let err = err.to_string();
+            assert!(err.contains("Anmeldung") || err.contains("Sign-in"), "{token:?}: {err}");
+            assert!(!err.contains("falsch"), "{err}");
+            assert!(server.refused() - before <= 2, "{token:?}");
+        }
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A server that cannot be reached and a repository that does not exist.
+    #[test]
+    fn unreachable_servers_and_missing_repositories_are_named() {
+        let base = tmp("http-missing");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        let server = super::super::gitserve::GitServer::start(&root, None);
+        let url = server.url("fehlt.git");
+        let err = git_for(None, &url).ls_remote(&url).unwrap_err().to_string();
+        assert!(err.contains("nicht erreichbar") || err.contains("not reachable"), "{err}");
+        // A port nobody listens on.
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let url = format!("http://127.0.0.1:{closed}/x.git");
+        let err = git_for(None, &url).ls_remote(&url).unwrap_err().to_string();
+        assert!(err.contains("nicht erreichbar") || err.contains("not reachable"), "{err}");
+        // SSH: what to enter instead (the connection test and the sync).
+        for ssh in ["git@github.com:me/notes.git", "ssh://git@github.com/me/notes.git"] {
+            let err = git_for(None, ssh).ls_remote(ssh).unwrap_err().to_string();
+            assert!(err.contains("HTTPS"), "{err}");
+            mirror_with(&base.join("mirror"), &[("Notiz.md", "x")]);
+            let err = phone_sync(&git_for(None, ssh), &base.join("mirror"), &base.join("repo"), ssh).unwrap_err();
+            assert!(err.to_string().contains("HTTPS"), "{err}");
+        }
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    fn git_for(token: Option<&str>, url: &str) -> Git {
+        let mut g = Git::new(token.map(str::to_owned), url);
+        g.embedded = true;
+        g
+    }
+
+    /// A push the server refuses (here its pre-receive hook, like GitHub's GH001 for a file over
+    /// 100 MB) is not a server that moved on: the phone shows what the server said, commits no
+    /// empty merges and pushes to no branch of its own.
+    #[cfg(unix)]
+    #[test]
+    fn a_push_the_server_refuses_shows_the_servers_reason() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tmp("http-refused");
+        let root = base.join("srv");
+        fs::create_dir_all(&root).unwrap();
+        let bare = super::super::gitserve::bare(&root, "notes.git");
+        let server = super::super::gitserve::GitServer::start(&root, Some("tok"));
+        let url = server.url("notes.git");
+        let g = git_for(Some("tok"), &url);
+        mirror_with(&base.join("mirror"), &[("Notiz.md", "eins\n")]);
+        phone_sync(&g, &base.join("mirror"), &base.join("repo"), &url).unwrap();
+
+        let hook = bare.join("hooks").join("pre-receive");
+        fs::write(&hook, "#!/bin/sh\necho 'error: GH001: Large files detected.' >&2\nexit 1\n").unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        mirror_with(&base.join("mirror"), &[("Notiz.md", "zwei\n")]);
+        for _ in 0..2 {
+            let err = phone_sync(&g, &base.join("mirror"), &base.join("repo"), &url).unwrap_err().to_string();
+            assert!(err.contains("GH001"), "{err}");
+            assert!(err.contains("abgelehnt") || err.contains("refused"), "{err}");
+            assert!(err.contains("hook declined"), "{err}");
+        }
+        let repo = Repository::open(base.join("repo")).unwrap();
+        let mut walk = repo.revwalk().unwrap();
+        walk.push_head().unwrap();
+        let merges = walk.flatten().filter(|id| repo.find_commit(*id).unwrap().parent_count() > 1).count();
+        assert_eq!(merges, 0, "no empty merge commits");
+        let refs = std::process::Command::new("git")
+            .args(["for-each-ref", "--format=%(refname)"])
+            .current_dir(&bare)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&refs.stdout).trim(), "refs/heads/main", "no fallback branch");
+        drop(server);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Only a status that says the server moved on is a non-fast-forward.
+    #[test]
+    fn push_statuses_are_told_apart() {
+        for s in ["non-fast-forward", "fetch first"] {
+            let e = refused("refs/heads/main", s, "");
+            assert_eq!(e.code(), ErrorCode::NotFastForward, "{s}");
+            assert!(describe(&e).contains("[rejected]"), "{}", describe(&e));
+        }
+        let e = refused("refs/heads/main", "pre-receive hook declined", "error: GH001: Large files detected.\n");
+        assert_ne!(e.code(), ErrorCode::NotFastForward);
+        let text = describe(&e);
+        assert!(text.contains("! [remote rejected] refs/heads/main (pre-receive hook declined)"), "{text}");
+        assert!(text.contains("remote: error: GH001"), "{text}");
+    }
+
+    /// The phone ended in the middle of a sync (swiped away, stopped by Android): its lock files
+    /// are left over at once, not only after two minutes of failed syncs.
+    #[test]
+    fn locks_left_by_an_ended_app_are_removed_at_once() {
+        let base = tmp("locks");
+        let work = base.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let g = git();
+        ok(&g, &work, &["init", "-q"]);
+        fs::write(work.join(".git/index.lock"), "").unwrap();
+        let out = run(&g, Some(&work), &["add", "-A"]);
+        assert!(!out.ok && out.stderr.contains("index.lock"), "{}", out.stderr);
+        assert_eq!(g.stale_lock_age(), Duration::ZERO);
+        assert_eq!(super::super::remove_stale_locks(&work, g.stale_lock_age()).len(), 1);
+        ok(&g, &work, &["add", "-A"]);
+        assert_eq!(Git::new(None, "").with_program("git").stale_lock_age(), super::super::DEFAULT_TIMEOUT);
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn unknown_commands_and_missing_repositories_fail() {
         let base = tmp("fail");
@@ -805,5 +1202,93 @@ mod tests {
         let out = run(&g, Some(&base), &["add", "-A"]);
         assert!(!out.ok && out.stderr.starts_with("fatal:") || out.stderr.starts_with("error:"), "{}", out.stderr);
         let _ = fs::remove_dir_all(&base);
+    }
+
+    /// 1.19: the phone's proxy (Android's, through mode `system` of the network settings) reaches
+    /// libgit2: a fetch asks a local proxy for the remote; an excluded host goes direct.
+    #[test]
+    fn the_system_proxy_of_the_phone_reaches_libgit2() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or_default().to_owned());
+                let _ = s.write_all(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+            }
+        });
+        let android = crate::network::android_proxy(Some("127.0.0.1"), port as i32, "*.intern.test", None);
+        let profile = crate::network::ProxyProfile::default();
+        let with = |remote: &str| {
+            let mut g = Git::new(None, remote).with_network(crate::network::git_network(
+                &profile,
+                None,
+                remote,
+                &android,
+                None,
+                &[],
+            ));
+            g.embedded = true;
+            g
+        };
+        // HTTPS (the phone's remotes) goes through the proxy as a tunnel. (libgit2 1.9 connects to a
+        // plain HTTP remote directly.)
+        let remote = "https://git.example.test/notizen.git";
+        let g = with(remote);
+        assert_eq!(proxy_url(&g).as_deref(), Some(format!("http://127.0.0.1:{port}/").as_str()));
+        let dir = tmp("proxy");
+        let out = run(&g, Some(&dir), &["ls-remote", "--heads", remote]);
+        assert!(!out.ok, "the proxy refuses");
+        let asked = rx.recv_timeout(Duration::from_secs(20)).expect("libgit2 did not ask the proxy");
+        assert!(asked.starts_with("CONNECT git.example.test:443"), "{asked}");
+        // An excluded host: no proxy.
+        assert_eq!(proxy_url(&with("https://git.intern.test/notizen.git")), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_certificates_are_added_to_the_bundle_once() {
+        let pem = "junk\n-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\ntext\n-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----";
+        assert_eq!(
+            certificates_only(pem),
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----\n"
+        );
+        assert_eq!(certificates_only("-----BEGIN CERTIFICATE-----\nCCCC"), "", "an unfinished block is dropped");
+        // Without the bundle of `init_tls` (not on Android): nothing to add to.
+        assert!(!set_user_certificates(pem).unwrap());
+    }
+
+    /// The extra CA of the network profile reaches the built-in git like the program: the
+    /// certificates of the file `http.sslCAInfo` names.
+    #[test]
+    fn the_profiles_ca_reaches_the_built_in_git() {
+        let dir = tmp("profile-ca");
+        let file = dir.join("network-ca-bundle.pem");
+        fs::write(&file, "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n").unwrap();
+        let mut g = git();
+        assert_eq!(profile_certificates(&g), "");
+        g.network.config.push(("http.sslCAInfo".into(), file.display().to_string()));
+        assert_eq!(profile_certificates(&g), "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+        // Without the bundle of `init_tls` (not on Android): nothing to add to.
+        assert!(!set_profile_certificates(&g).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The bundle is replaced as a whole (a temporary file renamed over it), never written in
+    /// place while a connection may read it.
+    #[test]
+    fn the_bundle_is_replaced_as_a_whole() {
+        let dir = tmp("ca-bundle");
+        let file = dir.join("git-ca.pem");
+        replace_file(&file, "alt\n").unwrap();
+        replace_file(&file, "neu\n").unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "neu\n");
+        let names: Vec<String> =
+            fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["git-ca.pem"], "no temporary file is left");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

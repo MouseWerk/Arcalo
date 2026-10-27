@@ -96,7 +96,7 @@ test("closing without saving keeps the draft and its target", async () => {
   assert.equal(await value(), "Entwurf, noch nicht fertig");
   await app.waitText(".capture-chip.target", /Posteingang/);
   // It also survives a reload of the window (a restart of the app).
-  await app.browser.execute(() => location.reload());
+  await app.reload();
   await app.browser.waitUntil(async () => (await value()) === "Entwurf, noch nicht fertig", { timeoutMsg: "draft lost on reload" });
   await app.waitText(".capture-chip.target", /Posteingang/);
   await app.browser.execute(() => {
@@ -127,7 +127,7 @@ test("dark theme and the settings of quick capture", async () => {
 
   // Settings → Desktop shows the group.
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => b.textContent.includes("Desktop"))?.click());
   await app.waitText(".settings-head h1", /Desktop/);
   await app.waitFor('[aria-label="Standardziel der Schnellerfassung"]');

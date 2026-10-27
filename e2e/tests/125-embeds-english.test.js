@@ -26,8 +26,8 @@ const HOST = [
 
 async function open(id, title) {
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 }
 
 before(async () => {
@@ -48,15 +48,15 @@ after(async () => {
 
 test("embeds, queries and diagrams in English and dark", async () => {
   await open(ids.host, "Embedded");
-  const n = await app.browser.execute(() => document.querySelectorAll(".pane.active .ProseMirror > p > .page-embed, .pane.active .rich-preview").length);
+  const n = await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror > p > .page-embed, .pane.active > .pane-content:not([hidden]) .rich-preview").length);
   assert.equal(n, 9);
   for (let i = 0; i < n; i++) {
-    await app.browser.execute((k) => document.querySelectorAll(".pane.active .ProseMirror > p > .page-embed, .pane.active .rich-preview")[k].scrollIntoView({ block: "center" }), i);
+    await app.browser.execute((k) => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror > p > .page-embed, .pane.active > .pane-content:not([hidden]) .rich-preview")[k].scrollIntoView({ block: "center" }), i);
     await app.browser.pause(150);
   }
-  const text = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").innerText);
+  const text = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").innerText);
   await app.browser.waitUntil(async () => /Ship early\.[\s\S]*Too late\.[\s\S]*Offer/.test(await text()) && !/Loading/.test(await text()), { timeout: 15000, timeoutMsg: "not rendered" });
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active .mmd[data-state="ready"] svg') && !!document.querySelector('.pane.active .mmd[data-state="error"]')), { timeout: 15000, timeoutMsg: "diagrams not rendered" });
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .mmd[data-state="ready"] svg') && !!document.querySelector('.pane.active > .pane-content:not([hidden]) .mmd[data-state="error"]')), { timeout: 15000, timeoutMsg: "diagrams not rendered" });
   const all = await text();
   assert.match(all, /Source › Goals\s+Goals\s+Ship early\./);
   assert.doesNotMatch(all, /Risks[\s\S]*Source › \^r1/, "the section ends before Risks");
@@ -73,8 +73,8 @@ test("embeds, queries and diagrams in English and dark", async () => {
   assert.equal((await app.invoke("page_get", { id: ids.host })).content, `${HOST}\n`, "the Markdown stays as written");
   const left = await germanLeftovers(app, [/Ship early|Too late|Intro text/]);
   assert.deepEqual(left, []);
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror > p > .page-embed").scrollIntoView({ block: "start" }));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror > p > .page-embed").scrollIntoView({ block: "start" }));
   await app.shot("125-embeds-dark");
-  await app.browser.execute(() => document.querySelector(".pane.active .rich-preview.rich-query").scrollIntoView({ block: "start" }));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .rich-preview.rich-query").scrollIntoView({ block: "start" }));
   await app.shot("125-queries-mermaid-dark");
 });

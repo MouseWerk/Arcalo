@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PAGE_MIME, PLAN_MIME, blockIdOf, blockKey, blockMinutes, canPlan, dropRange, itemTitle, linkOf, minuteAt, moved, plannedMinutes, readPlanData, resized, snapMinutes } from "./blocks";
+import { PAGE_MIME, PAGES_MIME, PLAN_MIME, blockIdOf, editedTimes, draggedPages, blockKey, blockMinutes, canPlan, dropRange, itemTitle, linkOf, minuteAt, moved, plannedMinutes, readPlanData, resized, snapMinutes } from "./blocks";
 
 const data = (m: Record<string, string>) => ({ getData: (k: string) => m[k] ?? "" });
 
@@ -61,5 +61,41 @@ describe("focus blocks", () => {
     expect(blockIdOf("outlook|G1|")).toBeNull();
     expect(blockMinutes(undefined)).toBe(60);
     expect(blockMinutes({ block_minutes: 90 } as never)).toBe(90);
+  });
+});
+
+describe("pages dragged from the sidebar", () => {
+  const dt = (data: Record<string, string>) => ({ types: Object.keys(data), getData: (t: string) => data[t] ?? "" });
+  it("reads the selection, else the one page, else nothing", () => {
+    expect(draggedPages(dt({ [PAGE_MIME]: "4", [PAGES_MIME]: "4,9,12" }))).toEqual([4, 9, 12]);
+    expect(draggedPages(dt({ [PAGE_MIME]: "4" }))).toEqual([4]);
+    expect(draggedPages(dt({ "text/plain": "4" }))).toEqual([]);
+    expect(draggedPages(dt({ [PAGE_MIME]: "x" }))).toEqual([]);
+    expect(draggedPages(null)).toEqual([]);
+  });
+});
+
+describe("times edited in an appointment's panel", () => {
+  const at = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m);
+  const hm = (x: Date) => [x.getDate(), x.getHours(), x.getMinutes()];
+  it("changes nothing when the fields were only passed through", () => {
+    // Three days long: leaving the fields unchanged must not cut it to one day.
+    expect(editedTimes(at(5, 9), at(8, 17), { date: "2026-10-05", from: "09:00", to: "17:00" })).toBeNull();
+    expect(editedTimes(at(5, 22), at(6, 1), { date: "2026-10-05", from: "22:00", to: "01:00" })).toBeNull();
+  });
+  it("keeps the length for a new start and the days of a long one for a new end", () => {
+    const r = editedTimes(at(5, 9), at(8, 17), { date: "2026-10-05", from: "10:00", to: "17:00" })!;
+    expect([hm(r.start), hm(r.end)]).toEqual([[5, 10, 0], [8, 18, 0]]);
+    const e = editedTimes(at(5, 9), at(8, 17), { date: "2026-10-05", from: "09:00", to: "12:30" })!;
+    expect([hm(e.start), hm(e.end)]).toEqual([[5, 9, 0], [8, 12, 30]]);
+    // Another day moves the whole appointment.
+    const d = editedTimes(at(5, 9), at(8, 17), { date: "2026-10-12", from: "09:00", to: "17:00" })!;
+    expect([hm(d.start), hm(d.end)]).toEqual([[12, 9, 0], [15, 17, 0]]);
+    // An end before the start on a one-day appointment goes to the next day.
+    const n = editedTimes(at(5, 22), at(5, 23), { date: "2026-10-05", from: "22:00", to: "01:00" })!;
+    expect([hm(n.start), hm(n.end)]).toEqual([[5, 22, 0], [6, 1, 0]]);
+  });
+  it("refuses fields that are no time", () => {
+    expect(editedTimes(at(5, 9), at(5, 10), { date: "2026-10-05", from: "9:xx", to: "10:00" })).toBeNull();
   });
 });
