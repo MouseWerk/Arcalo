@@ -67,6 +67,25 @@ svg.lucide[stroke-width="2"] {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+/* Small scroll areas get a thinner bar. Not `scrollbar-width: thin`: with it WebKitGTK draws its own
+   overlay bar, always shown and painted above dialogs, and Chromium drops the styles above. */
+.settings-nav-list::-webkit-scrollbar,
+.lic-body::-webkit-scrollbar,
+.dw-body::-webkit-scrollbar,
+.wk-cols::-webkit-scrollbar,
+.wk-cards::-webkit-scrollbar,
+.cv-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.settings-nav-list::-webkit-scrollbar-thumb,
+.lic-body::-webkit-scrollbar-thumb,
+.dw-body::-webkit-scrollbar-thumb,
+.wk-cols::-webkit-scrollbar-thumb,
+.wk-cards::-webkit-scrollbar-thumb,
+.cv-scroll::-webkit-scrollbar-thumb {
+  border-width: 1px;
+}
 kbd {
   font: 500 var(--fs-xs) / 1 var(--font-ui);
   color: var(--text-2);

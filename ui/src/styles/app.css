@@ -597,7 +597,8 @@ button.side-section-title:hover { color: var(--text-2); }
 .cal-day.today .cal-num { background: var(--accent-fill); color: var(--on-accent); font-weight: var(--fw-semibold); }
 .cal-day.picked .cal-num { background: var(--bg-selected); color: var(--text); font-weight: var(--fw-semibold); }
 .cal-day.today.picked .cal-num { background: var(--accent-fill); color: var(--on-accent); }
-.cal-day.focus { border-color: var(--border-focus); }
+/* The keyboard cursor: shown once the keys are in use, not on a calendar opened with the mouse. */
+.calendar:focus-visible .cal-day.focus { border-color: var(--border-focus); }
 .cal-num { display: grid; place-items: center; min-width: 20px; height: 18px; padding: 0 4px; border-radius: var(--r-pill); font-size: var(--fs-sm); line-height: 1; }
 .cal-hours { height: 11px; font-size: var(--fs-2xs); line-height: 11px; color: var(--text-2); }
 .cal-day.tone-below .cal-hours { color: var(--danger); }
@@ -871,7 +872,8 @@ button.side-section-title:hover { color: var(--text-2); }
 .stat-success .stat-value { color: var(--success); }
 
 .timer-card { padding: 14px 16px; display: grid; gap: 12px; }
-.timer-form { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) 96px minmax(0, 2fr) auto; gap: 8px; }
+/* The network field gets the most room: its value (NP-8801 · Systemintegration ERP) was cut off in a wide window next to a half-empty description field. */
+.timer-form { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) 96px minmax(0, 1.4fr) auto; gap: 8px; }
 .timer-form > * { min-width: 0; }
 .quick-book { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
 .timer-card.running { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--bg-active); }
@@ -1922,7 +1924,8 @@ body.presenter-window .presenter { height: 100vh; }
 .calv-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .calv-heading h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-heading); letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .calv-kw { flex: none; padding: 2px 7px; border-radius: var(--r-pill); background: var(--bg-hover); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; }
-.calv-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Right-aligned also when a long day title pushes them onto a second row: they do not jump left when switching views. */
+.calv-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .calv-nav { display: flex; align-items: center; gap: 2px; }
 .calv-views .segmented button { padding-inline: 10px; }
 .calv-view-select { display: none; min-width: 132px; }
@@ -3885,7 +3888,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .cv-card.has-color { border-color: color-mix(in srgb, var(--cv-color) 62%, transparent); background: color-mix(in srgb, var(--cv-color) 7%, var(--cv-card)); }
 .cv-card.is-selected { box-shadow: 0 0 0 calc(2px / var(--cv-zoom, 1)) var(--border-focus), 0 6px 20px -8px rgb(0 0 0 / 0.25); border-color: transparent; }
 .cv-card-inner { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; display: flex; flex-direction: column; }
-.cv-scroll { overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.cv-scroll { overflow: auto; overscroll-behavior: contain; }
 .cv-text { flex: 1; padding: 12px 16px; }
 .cv-md { font-size: var(--fs-base); line-height: 1.55; user-select: text; }
 .cv-md > :first-child { margin-top: 0; }

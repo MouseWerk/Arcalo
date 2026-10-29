@@ -540,7 +540,7 @@ function buildDecorations(doc: PMNode): DecorationSet {
               h.textContent = t("blocks.footnotes");
               return h;
             },
-            { side: -1, key: "footnotes-head", ignoreSelection: true },
+            { side: 1, key: "footnotes-head", ignoreSelection: true },
           ),
         );
       }

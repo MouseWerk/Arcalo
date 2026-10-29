@@ -20,6 +20,20 @@ describe("stylesheets", () => {
       expect(depth).toBe(0);
     });
   }
+  // `scrollbar-width: thin` hands the bar to WebKitGTK, which then paints an always visible overlay
+  // bar above dialogs (a line through the release notes dialog); thin bars use ::-webkit-scrollbar.
+  it("the date picker's keyboard cursor shows only once the keys are in use", () => {
+    const css = readFileSync(resolve(dir, "app.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map((m) => m[1].trim()).filter((s) => /\.cal-day\.focus\b/.test(s));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const s of rules) expect(s).toMatch(/:focus-visible/);
+  });
+  it("no scroll area asks the engine for its own thin scrollbar", () => {
+    const hits = readdirSync(dir)
+      .filter((f) => f.endsWith(".css"))
+      .flatMap((f) => [...readFileSync(resolve(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^{}]*scrollbar-width:\s*thin/g)].map((m) => `${f}: ${m[1].trim()}`));
+    expect(hits).toEqual([]);
+  });
 });
 
 // Colors come from the theme tokens (tokens.css, lib/themes.ts). A literal color elsewhere is only
