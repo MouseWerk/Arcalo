@@ -86,7 +86,8 @@ async function shot(name, root) {
   // Nothing may stick out of the window sideways.
   const wide = await app.browser.execute(() => document.documentElement.scrollWidth - window.innerWidth);
   if (wide > 1) note(file, `the page scrolls sideways by ${wide}px`);
-  if (lang === "en") for (const h of await germanLeftovers(app, [/Arcalo/, /Sprint|Quartal|Tour/])) note(file, `German: ${h}`);
+  // The release notes are the release's own file (a development build shows 1.0.0's, with SAP terms).
+  if (lang === "en" && name !== "release-notes") for (const h of await germanLeftovers(app, [/Arcalo/, /Sprint|Quartal|Tour/])) note(file, `German: ${h}`);
 }
 
 /** Runs one stop; a stop that fails is a finding, the tour goes on. */
@@ -486,6 +487,8 @@ async function tour(pages, { full = true } = {}) {
         return a?.closest("[role=dialog]") ? `${a.tagName.toLowerCase()}.${[...a.classList].join(".")} ${a.getAttribute("aria-label") ?? ""}` : null;
       });
       if (focus) console.log(`[tour] ${combo} ${name}: focus on ${focus}`);
+      // The status report starts at its first field, the project (it started at the template name at the bottom).
+      if (name === "status-report" && !/\bmw-sr-scope\b/.test(focus ?? "")) note(name, `the dialog opened with the focus on ${focus}`);
     });
   }
 
@@ -495,7 +498,10 @@ async function tour(pages, { full = true } = {}) {
   const listed = () => app.browser.execute((p) => [...document.querySelectorAll(`${p} .settings-nav-item`)].filter((b) => b.offsetParent).map((b) => b.dataset.section), PANE);
   await stop("settings", async () => {
     await ribbon("ribbon.settings");
-    await app.waitFor(`${PANE} .settings-nav-item, ${PANE} .settings-section-select`);
+    await app.browser.waitUntil(
+      async () => app.browser.execute((p) => [...document.querySelectorAll(`${p} .settings-nav-item, ${p} .settings-section-select`)].some((e) => e.offsetParent), PANE),
+      { timeoutMsg: "no settings sections" },
+    );
     sections = await listed();
     if (!sections.length) {
       await app.click(`${PANE} .settings-section-select`);

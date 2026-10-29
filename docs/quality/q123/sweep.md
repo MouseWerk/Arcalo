@@ -49,6 +49,7 @@ in the test. UI texts come from the catalogs (`e2e/lib/catalog.js`), so the same
 | S10 | Start page widget titles were cut („ZULETZT BE…“) in the default layout. | The hidden gear and menu buttons reserved their room in the header. | They lie over the header's end and get the card's background while shown (touch screens keep the old layout). | tour audit (clipped text) |
 | S11 | Settings → Tastatur listed „Umschalt F10 oder ContextMenu“. | The key name table had no entry for the menu key. | „Menütaste“ / „Menu key“ (`lib/shortcut.ts`, catalogs). | `shortcut.test.ts` |
 | S12 | Settings → Desktop said „Mit Windows starten“ on Linux. | Only macOS had its own wording. | „Bei der Anmeldung starten“ / „Start at login“ on Linux. | `13-desktop` (label), `400-android-full-app` (gone) |
+| S14 | The status report dialog opened with the focus in „Name der Vorlage“ at its bottom. | `Dialog` focuses the first `input`; the fields above it (project, period, sections) are the app's own dropdown and buttons. | The project dropdown is marked `data-autofocus` (`Select` passes it on). | tour |
 | S13 | Settings → Notizen: the path example read `C:\Users\du\Obsidian\Vault` („you“ in English). | The du-form had reached a user name. | `C:\Users\…\Obsidian\Vault`, like the calendar file example. | – (catalog text) |
 
 ## Looked at, not changed
@@ -70,3 +71,5 @@ in the test. UI texts come from the catalogs (`e2e/lib/catalog.js`), so the same
 | Run | Result |
 |---|---|
 | local, 412 on `main` + tour | 6 combinations, 473 screenshots, findings S1–S13 |
+| CI 40847542891 | Core red before the e2e step: `datadir` test red on `main` (fixed there, merged) |
+| CI 40853105746 | all jobs green but Core: only 412 red (narrow settings not reached, release notes text, S14); S1–S13 confirmed in the screenshots |
