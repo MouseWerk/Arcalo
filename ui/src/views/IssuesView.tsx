@@ -262,7 +262,7 @@ export function IssuesView() {
                             {sites.length > 1 && <span className="issues-site-dot" style={{ background: siteColor(i.site) }} title={siteName(i.site)} aria-hidden />}
                             <TypeIcon type={i.issue_type} />
                             <span className="issue-key mono">{i.key}</span>
-                            <span className="issue-summary ellipsis">{i.summary}</span>
+                            <span className="issue-summary" title={i.summary}>{i.summary}</span>
                             <span className="issue-meta">
                               {i.sprint && pref.group !== "sprint" && <span className="issue-sprint faint ellipsis">{i.sprint}</span>}
                               {i.priority && <span className={`issue-prio ${priorityClass(i)}`}>{i.priority}</span>}

@@ -39,6 +39,7 @@ import { canCreate, canEdit, deleteEntry, EntryEditor, EntryFieldsEdit, EntryGho
 import type { EntryFields } from "../lib/types";
 import { takeNewEntry } from "../lib/calentries";
 import { isComposing } from "../lib/ime";
+import { overlayOpen } from "../lib/overlays";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -335,7 +336,7 @@ export function CalendarView() {
       const pane = focused?.closest(".pane");
       if (pane && !pane.contains(el)) return;
       if (focused?.closest("input, textarea, select, [contenteditable='true'], [role='combobox']")) return;
-      if (document.querySelector(".dialog, .menu, .palette, .calendar, .select-pop")) return;
+      if (overlayOpen()) return;
       const k = keyState.current;
       if (e.key === "Escape") {
         if (k.selected || k.draft) {

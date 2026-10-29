@@ -3227,6 +3227,8 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issue-row-main:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .issue-key { flex: none; font-size: var(--fs-sm); color: var(--text-2); min-width: 7ch; }
 .issue-summary { flex: 1 1 auto; min-width: 0; color: var(--text); }
+/* One line each (there is no global .ellipsis): a long summary must not make the row four lines high. */
+.issue-summary, .issue-sprint, .issue-assignee, .issue-backlinks .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-row.done .issue-summary { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
 .issue-meta { display: flex; align-items: center; gap: 12px; flex: none; }
 .issue-sprint { max-width: 14ch; font-size: var(--fs-xs); }

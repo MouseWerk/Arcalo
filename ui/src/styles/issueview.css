@@ -29,7 +29,9 @@
 }
 .iv-crumbs { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; flex: 1 1 auto; font-size: var(--fs-sm); color: var(--text-2); }
 .iv-crumb { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
-.iv-crumb-project { max-width: 28ch; color: var(--text-3); }
+.iv-crumb-project { max-width: 28ch; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Single-line names and summaries (subtasks, links, attachments, people, the open list). */
+.iv .ellipsis, .iv-open-list .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iv-crumb-sep { color: var(--text-3); padding: 0 2px; }
 .iv-crumb-link {
   display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-xs); padding: 0 6px;

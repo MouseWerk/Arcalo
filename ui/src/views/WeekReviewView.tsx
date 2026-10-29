@@ -32,6 +32,7 @@ import {
 } from "../lib/weekreview";
 import { useT } from "../lib/i18n";
 import { copyText } from "../lib/clipboard";
+import { overlayOpen } from "../lib/overlays";
 
 const s = useApp.getState;
 
@@ -113,7 +114,7 @@ export function WeekReviewView() {
       const pane = focused?.closest(".pane");
       if (pane && !pane.contains(el)) return;
       if (focused?.closest("input, textarea, select, [contenteditable='true'], [role='combobox']")) return;
-      if (document.querySelector(".dialog, .menu, .palette, .calendar, .select-pop")) return;
+      if (overlayOpen()) return;
       if (e.key === "ArrowLeft") keys.current.go(-1);
       else if (e.key === "ArrowRight") keys.current.go(1);
       else if (e.key === "t" || e.key === "T") keys.current.toThisWeek();

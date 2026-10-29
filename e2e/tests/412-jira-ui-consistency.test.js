@@ -63,6 +63,8 @@ const clickText = async (sel, pattern) => {
   await app.browser.pause(150);
 };
 /** The open buttons in `root`: label, icon and size, in their order. */
+/** The layout audit of `root`; the time tracking value is several lines on purpose (bar and three rows). */
+const audit = async (root) => (await app.browser.execute(auditLayout, root)).filter((p) => !/Zeiterfassung bearbeiten/.test(p));
 const openButtons = (root) =>
   app.browser.execute(
     (r) =>
@@ -132,6 +134,7 @@ test("the Issues list: the actions keep their room, the issue view comes first e
   assert.deepEqual(hover.summary, rest.summary, "the summary moved when the actions showed");
   assert.deepEqual(hover.status, rest.status, "the status moved when the actions showed");
   assert.ok(hover.status.right + 6 <= hover.actions.left, `the actions cover the status: ${JSON.stringify(hover)}`);
+  assert.ok(hover.summary.bottom - hover.summary.top < 30, `the long summary is not one line: ${JSON.stringify(hover.summary)}`);
   assert.ok(hover.actions.top >= hover.summary.top - 12 && hover.actions.bottom <= hover.summary.bottom + 12, "actions centered on the row");
   const row = await openButtons('.issues-view [data-issue-row="PROJ-130"] .issue-actions');
   assert.deepEqual(row.map((b) => b.label), [VIEW, JIRA]);
@@ -158,11 +161,12 @@ test("the Issues list: the actions keep their room, the issue view comes first e
   assert.deepEqual(items.map((m) => m.label), [VIEW, JIRA, "Notiz öffnen", "Schlüssel kopieren"]);
   assert.equal(items[0].icon, viewIcon, "the same icon in the menu");
   await app.keys(["Escape"]);
+  await app.browser.waitUntil(async () => (await count(".menu")) === 0, { timeoutMsg: "menu still open" });
   // The opened row: the primary button says the same.
-  await main.click();
+  await app.browser.execute(() => document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-row-main').click());
   await app.waitText('.issues-view [data-issue-row="PROJ-123"] .issue-full-view', new RegExp(`^${VIEW}$`));
   assert.equal(await app.browser.execute(() => (document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view svg')?.getAttribute("class") ?? "").match(/lucide-[a-z0-9-]+/)?.[0]), viewIcon);
-  const problems = await app.browser.execute(auditLayout, ".issues-view");
+  const problems = await audit(".issues-view");
   assert.deepEqual(problems, [], "Issues list layout");
 });
 
@@ -211,7 +215,9 @@ test("a plan block with an issue: the same two buttons", async () => {
   assert.equal(btns[0].icon, viewIcon, "the same icon as in the list");
   await app.click(".calv-block-detail .issue-open-view");
   await shown("PROJ-123");
+  // Esc closes the issue view, not the calendar's block under it (the calendar took the key).
   await closeView();
+  assert.equal(await count(".calv-block-detail"), 1, "Esc went to the calendar");
   await app.invoke("block_delete", { id: b.id }).catch(() => {});
 });
 
@@ -283,7 +289,7 @@ test("screenshots: list, card and view in every theme and at 900, 1480 and 1920 
     await openByPalette("PROJ-123");
     await app.dismissToasts();
     await sleep(300);
-    assert.deepEqual(await app.browser.execute(auditLayout, ".iv"), [], `${name}: issue view layout`);
+    assert.deepEqual(await audit(".iv"), [], `${name}: issue view layout`);
     await app.shot(`412-issue-view-${name}`);
     await closeView();
   }
@@ -296,10 +302,10 @@ test("screenshots: list, card and view in every theme and at 900, 1480 and 1920 
     await sleep(300);
     const g = await rowGeometry("PROJ-130");
     assert.ok(g.status.right + 6 <= g.actions.left, `${w}px: the actions cover the status`);
-    assert.deepEqual(await app.browser.execute(auditLayout, ".issues-view"), [], `${w}px: Issues list layout`);
+    assert.deepEqual(await audit(".issues-view"), [], `${w}px: Issues list layout`);
     await app.shot(`412-issues-${w}`);
     await openByPalette("PROJ-123");
-    assert.deepEqual(await app.browser.execute(auditLayout, ".iv"), [], `${w}px: issue view layout`);
+    assert.deepEqual(await audit(".iv"), [], `${w}px: issue view layout`);
     await app.shot(`412-issue-view-${w}`);
     await closeView();
   }
