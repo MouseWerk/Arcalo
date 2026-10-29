@@ -119,16 +119,18 @@ test("links in Excalidraw's dialogs open in the browser, the app stays", async (
   await app.browser.waitUntil(async () => (await app.$$(".ttd-dialog-input")).length === 0);
 });
 
-test("Excalidraw's command palette and help (dialogs on <body>) take keys", async () => {
+test("Excalidraw's help (a dialog on <body>): its links open outside, Esc closes only the help", async () => {
   await app.browser.execute(() => document.querySelector(".drawing-overlay .excalidraw")?.focus());
-  await app.keys(["Control", "/"]);
-  await app.waitFor(".command-palette-dialog input");
-  await app.browser.waitUntil(() => focused(".command-palette-dialog input"), { timeoutMsg: "palette input not focused" });
-  await app.type("Rechteck");
-  assert.equal(await value(".command-palette-dialog input"), "Rechteck");
+  await app.keys(["?"]);
+  await app.waitFor(".HelpDialog a.HelpDialog__btn");
+  const before = app.opened().length;
+  await app.click(".HelpDialog a.HelpDialog__btn");
+  await app.browser.waitUntil(async () => app.opened().length > before, { timeout: 8000, timeoutMsg: "help link not handed to the browser" });
+  assert.match(app.opened().at(-1), /^https:\/\//);
+  assert.ok(await app.browser.execute(() => !!document.querySelector(".drawing-overlay")), "the window navigated away");
   await app.keys(["Escape"]);
-  await app.browser.waitUntil(async () => (await app.$$(".command-palette-dialog")).length === 0, { timeoutMsg: "palette still open" });
-  assert.ok(await overlayOpen());
+  await app.browser.waitUntil(async () => (await app.$$(".HelpDialog")).length === 0, { timeoutMsg: "help still open" });
+  assert.ok(await overlayOpen(), "Esc closed the whole editor");
 });
 
 test("text on the canvas, link, color hex, font search, canvas search and frame names take typing", async () => {
@@ -143,10 +145,10 @@ test("text on the canvas, link, color hex, font search, canvas search and frame 
 
   // The new text is selected: font search in the font picker.
   await app.click(".drawing-overlay [data-testid=font-family-show-fonts]");
-  await app.waitFor(".drawing-overlay .FontPicker__container .QuickSearch__input");
-  await app.browser.execute(() => document.querySelector(".drawing-overlay .FontPicker__container .QuickSearch__input").focus());
+  await app.waitFor(".QuickSearch__input");
+  await app.browser.execute(() => document.querySelector(".QuickSearch__input").focus());
   await app.type("nunito");
-  assert.equal(await value(".drawing-overlay .FontPicker__container .QuickSearch__input"), "nunito");
+  assert.equal(await value(".QuickSearch__input"), "nunito");
   await app.keys(["Escape"]);
 
   // Stroke color as hex.
@@ -174,7 +176,7 @@ test("text on the canvas, link, color hex, font search, canvas search and frame 
   await app.waitFor(".drawing-overlay a.excalidraw-hyperlinkContainer-link");
   await app.click(".drawing-overlay a.excalidraw-hyperlinkContainer-link");
   await app.browser.waitUntil(async () => app.opened().length > before, { timeout: 8000, timeoutMsg: "shape link not handed to the browser" });
-  assert.equal(app.opened().at(-1), "url\thttps://example.org/plan");
+  assert.equal(app.opened().at(-1), "https://example.org/plan");
   assert.ok(await overlayOpen());
 
   // Search on the canvas (Ctrl+F is Excalidraw's here).
@@ -256,6 +258,7 @@ test("Mermaid in a note: slash menu, typing with live preview, errors and back",
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Diagramm-Notiz");
   await app.caretToEnd();
+  await app.keys(["Enter"]);
   await app.type("/mermaid");
   await app.waitText(".sugg-item.sel", /Mermaid/);
   await app.keys(["Enter"]);
