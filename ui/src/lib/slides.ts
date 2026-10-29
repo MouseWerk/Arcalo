@@ -4,7 +4,8 @@
 // Slides are separated by horizontal rules (`---`, `***`, `___`) outside code blocks. A `---`
 // directly below a line of text is a setext heading in Markdown, not a rule, so it only splits
 // after a blank line, a heading or at the start. A note without rules is split before each
-// level-1 heading (`# …`); without those it is one slide.
+// level-1 heading (`# …`); a note with at most one of those (its title) and several level-2
+// headings before each `## …`; otherwise it is one slide.
 //
 // Speaker notes: a callout `> [!notiz]` (also `[!notes]`, `[!speaker]`, `[!sprecher]`) with all its
 // `>` lines, or a paragraph starting with `Notiz:`. They are hidden on the slide and shown in
@@ -89,14 +90,20 @@ function ruleLines(lines: string[]): number[] {
   return out;
 }
 
-/** Line indexes of level-1 headings outside code (the fallback split). */
-function h1Lines(lines: string[]): number[] {
+/**
+ * Line indexes where the fallback split starts a slide: the level-1 headings outside code, or the
+ * level-2 ones when the note has at most one level-1 heading (its title) and several sections.
+ */
+function headingSplits(lines: string[]): number[] {
   const inFence = fenceTracker();
-  const out: number[] = [];
+  const h1: number[] = [];
+  const h2: number[] = [];
   lines.forEach((line, i) => {
-    if (!inFence(line) && /^ {0,3}#[ \t]+\S/.test(line)) out.push(i);
+    if (inFence(line)) return;
+    if (/^ {0,3}#[ \t]+\S/.test(line)) h1.push(i);
+    else if (/^ {0,3}##[ \t]+\S/.test(line)) h2.push(i);
   });
-  return out;
+  return h1.length <= 1 && h2.length >= 2 ? h2 : h1;
 }
 
 /** Separates the speaker notes from a slide's Markdown. */
@@ -176,7 +183,7 @@ export function splitSlides(content: string): Slide[] {
     }
     chunks.push(lines.slice(start).join("\n"));
   } else {
-    const heads = h1Lines(lines).filter((i) => lines.slice(0, i).some((l) => l.trim()));
+    const heads = headingSplits(lines).filter((i) => lines.slice(0, i).some((l) => l.trim()));
     let start = 0;
     for (const h of heads) {
       chunks.push(lines.slice(start, h).join("\n"));

@@ -2675,6 +2675,7 @@ export const en = {
   "present.stopPresentation": "End presentation",
   "present.stopKey": "End (Esc)",
   "present.waiting": "Waiting for the presentation…",
+  "present.imageMissing": "Image missing: {name}",
   // ---- tb
   "tb.h4": "Heading 4",
   "tb.needLines": "Select several lines or list items",

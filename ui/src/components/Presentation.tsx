@@ -20,8 +20,9 @@ import { useMenu } from "./ui";
 import { t as tr, useT } from "../lib/i18n";
 import { embedLabel, embedProblem, splitTarget } from "../editor/embedSyntax";
 import { time } from "../lib/format";
-import { isComposing } from "../lib/ime";
+import { isComposing, isTab } from "../lib/ime";
 import { caps } from "../lib/capabilities";
+import { applyTheme } from "../lib/actions";
 
 /** Design size of a slide; it is scaled to the screen (and to the previews). */
 const STAGE_W = 1600;
@@ -64,7 +65,7 @@ export function PresentationHost() {
 // ------------------------------------------------------------------ slides
 
 /** `![[Notiz#Abschnitt]]`: the embedded page part as slide content, nested up to the limit. */
-async function fillPageEmbed(el: HTMLElement, name: string, stack: string[], depth: number, refit: () => void) {
+async function fillPageEmbed(el: HTMLElement, name: string, stack: string[], depth: number, refit: () => void, light: boolean) {
   const { target, anchor } = splitTarget(name);
   const box = document.createElement("div");
   box.className = "slide-page-embed";
@@ -86,23 +87,89 @@ async function fillPageEmbed(el: HTMLElement, name: string, stack: string[], dep
   const v = await api.pageEmbed(target, anchor).catch(() => null);
   if (!v || v.content == null) return notice(v?.missing === "section" ? tr("embed.noSection", { anchor: anchor ?? "", title: v.title }) : tr("embed.noPage", { title: target }));
   head.textContent = embedLabel({ target: v.title, anchor });
-  body.innerHTML = renderMarkdown(prepareSlideMarkdown(v.content));
-  hydrate(body, refit, [...stack, v.title.toLowerCase()], depth + 1);
+  if (!body.isConnected) return;
+  body.innerHTML = slideHtml(prepareSlideMarkdown(v.content));
+  hydrate(body, refit, light, [...stack, v.title.toLowerCase()], depth + 1);
   refit();
 }
 
-/** Replaces the embed placeholders and marks callouts (after each render). */
-function hydrate(root: HTMLElement, refit: () => void, stack: string[] = [], depth = 1) {
-  // Mermaid diagrams as SVG (the library loads with the first one).
+/**
+ * Slide HTML from Markdown with the addresses of local images (`![x](attachments/bild.png)`)
+ * resolved to the stored attachment. Done on an inert template, so the browser never requests
+ * the unresolved address.
+ */
+function slideHtml(md: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = renderMarkdown(md);
+  for (const img of tpl.content.querySelectorAll("img")) {
+    const src = img.getAttribute("src") ?? "";
+    if (!src || /^(https?:|data:|blob:|arcalo-asset:)/i.test(src)) continue;
+    let path = src;
+    try {
+      path = decodeURI(src);
+    } catch {
+      /* keep as is */
+    }
+    img.setAttribute("src", attachmentUrl(path));
+  }
+  return tpl.innerHTML;
+}
+
+/** Design width of an image with a given width (`![[bild.png|480]]`): the editor's width, enlarged like the slide text. */
+const IMAGE_WIDTH_SCALE = 1.6;
+
+/**
+ * An image on a slide: the slide is fitted again once it has loaded; a missing image (or an
+ * empty drawing) shows its name instead of a broken picture.
+ */
+function hydrateImage(img: HTMLImageElement, refit: () => void, name: string) {
+  img.classList.add("slide-img");
+  img.draggable = false;
+  img.addEventListener("load", refit);
+  img.addEventListener("error", () => {
+    const chip = document.createElement("span");
+    chip.className = "slide-file slide-img-missing";
+    chip.append(fileIcon("image", 20), document.createTextNode(tr("present.imageMissing", { name: name || img.alt || "" })));
+    img.replaceWith(chip);
+    refit();
+  });
+}
+
+/** Marks paragraphs that hold only images (shown side by side, centered) and slides that hold only those. */
+function markMedia(root: HTMLElement) {
+  const media = (el: Element) => el.matches("img.slide-img, .slide-img-missing") || (el.matches(".slide-embed") && !!el.querySelector(":scope > img.slide-img, :scope > .slide-img-missing"));
+  for (const p of root.querySelectorAll<HTMLElement>("p")) {
+    const kids = [...p.childNodes].filter((n) => !(n.nodeType === Node.TEXT_NODE && !n.textContent?.trim()) && !(n instanceof HTMLBRElement));
+    p.classList.toggle("slide-media", kids.length > 0 && kids.every((n) => n instanceof Element && media(n)));
+  }
+  const blocks = [...root.children];
+  root.classList.toggle("slide-media-only", blocks.length > 0 && blocks.every((b) => b.classList.contains("slide-media")));
+}
+
+/** Replaces the embed placeholders and marks callouts (after each render); `light`: the white Beamer slide. */
+function hydrate(root: HTMLElement, refit: () => void, light = false, stack: string[] = [], depth = 1) {
+  // Images written as Markdown (`![x](bild.png)`); embeds are handled below.
+  for (const img of root.querySelectorAll<HTMLImageElement>("img:not(.slide-img)")) hydrateImage(img, refit, img.getAttribute("alt") ?? "");
+  // Mermaid diagrams as SVG (the library loads with the first one); light on the white Beamer slide.
   for (const code of root.querySelectorAll<HTMLElement>("pre > code.language-mermaid")) {
     const pre = code.parentElement!;
     const fig = document.createElement("figure");
     fig.className = "slide-diagram";
     pre.replaceWith(fig);
     void import("../editor/mermaid").then(async (m) => {
-      const res = await m.renderDiagram(code.textContent ?? "");
-      if ("svg" in res) fig.innerHTML = res.svg;
-      else {
+      const res = await m.renderDiagram(code.textContent ?? "", light ? "light" : m.diagramTheme());
+      if (!fig.isConnected) return;
+      if ("svg" in res) {
+        fig.innerHTML = res.svg;
+        // Mermaid caps the drawing at its natural width (`max-width: 225px`), tiny on a 1600 px
+        // slide: enlarged like images and text, never wider than the slide.
+        const svg = fig.querySelector("svg");
+        const natural = svg ? parseFloat(svg.style.maxWidth) : NaN;
+        if (svg && natural > 0) {
+          svg.style.maxWidth = "100%";
+          svg.style.width = `${Math.round(natural * IMAGE_WIDTH_SCALE)}px`;
+        }
+      } else {
         fig.classList.add("slide-diagram-error");
         fig.textContent = `${tr("mmd.failed")}: ${res.error}`;
       }
@@ -137,11 +204,11 @@ function hydrate(root: HTMLElement, refit: () => void, stack: string[] = [], dep
     const label = name.split(/[\\/]/).pop() ?? name;
     if (isDrawingName(name) || isImageName(name)) {
       const img = document.createElement("img");
-      img.src = attachmentUrl(isDrawingName(name) ? `${name}.svg` : name);
       img.alt = label;
-      img.className = isDrawingName(name) ? "slide-img slide-drawing" : "slide-img";
-      if (width) img.style.width = `${Math.round(width * 1.6)}px`;
-      img.onload = refit;
+      if (isDrawingName(name)) img.className = "slide-drawing";
+      if (width) img.dataset.width = String(Math.round(width * IMAGE_WIDTH_SCALE));
+      hydrateImage(img, refit, label);
+      img.src = attachmentUrl(isDrawingName(name) ? `${name}.svg` : name);
       el.replaceChildren(img);
     } else if (isPdfName(name)) {
       const fig = document.createElement("figure");
@@ -159,7 +226,7 @@ function hydrate(root: HTMLElement, refit: () => void, stack: string[] = [], dep
       el.replaceChildren(chip);
     } else {
       // `![[Notiz]]`: the embedded note (or its section) on the slide.
-      void fillPageEmbed(el, name, stack, depth, refit);
+      void fillPageEmbed(el, name, stack, depth, refit, light);
     }
   }
   // Task boxes are for reading only.
@@ -189,17 +256,18 @@ function hydrate(root: HTMLElement, refit: () => void, stack: string[] = [], dep
     a.removeAttribute("href");
     a.tabIndex = -1;
   }
+  markMedia(root);
 }
 
 /**
  * One slide, scaled to its box: the stage has the box's aspect at a design width of 1600 px,
  * content that is too long for it is scaled down further (never cut).
  */
-export function SlideView({ slide, className = "", label }: { slide: Slide | null; className?: string; label?: string }) {
+export function SlideView({ slide, className = "", label, light = false }: { slide: Slide | null; className?: string; label?: string; light?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => (slide ? renderMarkdown(prepareSlideMarkdown(slide.markdown, slide)) : ""), [slide]);
+  const html = useMemo(() => (slide ? slideHtml(prepareSlideMarkdown(slide.markdown, slide)) : ""), [slide]);
   const fit = useCallback(() => {
     const b = box.current;
     const st = stage.current;
@@ -213,6 +281,15 @@ export function SlideView({ slide, className = "", label }: { slide: Slide | nul
     // The content's own scale: the largest that fits. Content gets wider as it shrinks, so its
     // height depends on the scale: a short binary search.
     const inner = { width: STAGE_W - 2 * 110, height: height - 2 * 80 };
+    // A slide of only images may fill its height; images with a width keep their aspect when
+    // the height limit takes over (the width follows it instead of the image being squeezed).
+    c.style.setProperty("--slide-h", `${Math.round(inner.height)}px`);
+    for (const img of c.querySelectorAll<HTMLImageElement>("img.slide-img[data-width]")) {
+      const want = Number(img.dataset.width);
+      const maxH = parseFloat(getComputedStyle(img).maxHeight);
+      const capped = img.naturalWidth && maxH ? Math.min(want, (maxH * img.naturalWidth) / img.naturalHeight) : want;
+      img.style.width = `${Math.round(capped)}px`;
+    }
     c.style.transform = "none";
     const fits = (s: number) => {
       c.style.width = `${inner.width / s}px`;
@@ -234,20 +311,23 @@ export function SlideView({ slide, className = "", label }: { slide: Slide | nul
     c.dataset.scale = s.toFixed(3);
   }, []);
   useLayoutEffect(() => {
-    if (content.current) hydrate(content.current, fit);
+    if (content.current) hydrate(content.current, fit, light);
     fit();
-  }, [html, fit]);
+  }, [html, fit, light]);
   useEffect(() => {
     const b = box.current;
     if (!b) return;
     const ro = new ResizeObserver(() => fit());
     ro.observe(b);
+    // The slide font arrives after the first fit: measure again with it.
+    void document.fonts?.ready.then(() => fit());
     return () => ro.disconnect();
   }, [fit]);
   return (
     <div className={`slide-box ${className}`} ref={box} aria-label={label}>
       <div className="slide-stage" ref={stage}>
-        <div className="slide-content prose" ref={content} dangerouslySetInnerHTML={{ __html: html }} />
+        {/* Keyed by the look: a diagram is drawn again in the Beamer's light colors. */}
+        <div key={light ? "light" : "theme"} className="slide-content prose" ref={content} dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     </div>
   );
@@ -294,7 +374,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
           {t("present.current")} <span className="num">{deck.slides.length ? deck.index + 1 : 0} / {deck.slides.length}</span>
           {cur && <span className="faint ellipsis"> · {cur.title}</span>}
         </div>
-        <SlideView slide={cur} className={`presenter-current ${deck.beamer ? "beamer" : ""}`} label={t("present.currentPreview")} />
+        <SlideView slide={cur} className={`presenter-current ${deck.beamer ? "beamer" : ""}`} light={deck.beamer} label={t("present.currentPreview")} />
       </div>
       <aside className="presenter-side">
         <div className="presenter-clock">
@@ -311,7 +391,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
             t("present.last")
           )}
         </div>
-        {next ? <SlideView slide={next} className={`presenter-next ${deck.beamer ? "beamer" : ""}`} label={t("present.nextPreview")} /> : <div className="presenter-next presenter-end">{t("present.end")}</div>}
+        {next ? <SlideView slide={next} className={`presenter-next ${deck.beamer ? "beamer" : ""}`} light={deck.beamer} label={t("present.nextPreview")} /> : <div className="presenter-next presenter-end">{t("present.end")}</div>}
         <div className="presenter-label">{t("present.notes")}</div>
         <div className="presenter-notes prose" aria-label={t("present.notes")}>
           {notes ? (
@@ -396,24 +476,72 @@ function Presentation({ pageId }: { pageId: number }) {
   const ended = useRef(false);
   const theme = document.documentElement.dataset.theme ?? "light";
 
+  const load = useCallback(
+    (first: boolean) =>
+      api
+        .page(pageId)
+        .then((doc) => {
+          setTitle(doc.title);
+          const next = splitSlides(doc.content);
+          setSlides(next);
+          // The note changed while presenting: stay on the slide, or on the last one left.
+          setIndex((i) => Math.min(i, Math.max(next.length - 1, 0)));
+        })
+        .catch((e) => {
+          if (!first) return;
+          s().error(t("present.failed"), e);
+          s().set({ presenting: null });
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId, s],
+  );
   useEffect(() => {
-    api
-      .page(pageId)
-      .then((doc) => {
-        setTitle(doc.title);
-        setSlides(splitSlides(doc.content));
-      })
-      .catch((e) => {
-        s().error(t("present.failed"), e);
-        s().set({ presenting: null });
-      });
+    void load(true);
+    // Changes of the note made elsewhere (capture window, voice note, mail, command line, Git)
+    // show on the slides right away.
+    const mine = (ids: number[] | null | undefined) => !ids || ids.includes(pageId);
+    const un = [
+      on<number[] | null>("data://pages", (ids) => mine(ids) && void load(false)),
+      on<number>("data://tasks", (id) => id === pageId && void load(false)),
+      on<{ page_id: number }>("capture://stored", (c) => c.page_id === pageId && void load(false)),
+      on<{ pages?: number[]; all?: boolean }>("data://external", (c) => (c.all || c.pages?.includes(pageId)) && void load(false)),
+      on("gitsync://pulled", () => void load(false)),
+    ];
+    return () => un.forEach((u) => u.then((f) => f()));
+  }, [load, pageId]);
+
+  useEffect(() => {
     // Full screen and the presenter's own window are the desktop's (Android shows the overlay).
     if (!caps().popupWindows) return;
     void api.presentationBegin().catch(() => {});
     return () => {
       void api.presentationEnd().catch(() => {});
     };
-  }, [pageId, s]);
+  }, []);
+
+  // The presentation takes the keyboard focus (keys must never type into the note underneath)
+  // and gives it back where it was when it ends.
+  const root = useRef<HTMLDivElement>(null);
+  const loaded = slides != null;
+  useLayoutEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    // Like a modal dialog: a focus that wanders to the app underneath (a closing palette gives
+    // it back to where it came from) comes back to the presentation; its menus may have it.
+    const keep = (e: FocusEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (root.current && el && !root.current.contains(el) && !el.closest(".menu")) root.current.focus({ preventScroll: true });
+    };
+    document.addEventListener("focusin", keep);
+    return () => {
+      document.removeEventListener("focusin", keep);
+      // Back where it was, or into the note that was presented (started from the palette or a menu).
+      const back = prev?.isConnected && prev !== document.body ? prev : document.querySelector<HTMLElement>(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+      back?.focus({ preventScroll: true });
+    };
+  }, []);
+  useLayoutEffect(() => {
+    root.current?.focus({ preventScroll: true });
+  }, [loaded]);
 
   const count = slides?.length ?? 0;
   const end = useCallback(() => {
@@ -496,12 +624,26 @@ function Presentation({ pageId }: { pageId: number }) {
         void togglePresenter();
         return;
       }
+      // Tab moves between the presentation's own buttons only, never to the app underneath.
+      if (isTab(e)) {
+        const own = [...(root.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])].filter((b) => b.offsetParent !== null);
+        e.preventDefault();
+        if (!own.length) return;
+        wake();
+        const at = own.indexOf(document.activeElement as HTMLElement);
+        const to = at < 0 ? (e.shiftKey ? own.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + own.length) % own.length;
+        own[to].focus();
+        return;
+      }
+      // Enter and Space press a focused button of the presentation (they turn the slide elsewhere).
+      if ((e.key === "Enter" || e.key === " ") && !typedRef.current && (document.activeElement as HTMLElement | null)?.closest(".presentation button")) return;
       const n = keyNav(e, typedRef);
       setTyped(typedRef.current);
       if (/^[0-9]$/.test(e.key)) return e.preventDefault();
       if (!n) {
-        // App shortcuts (Ctrl+K …) stay off while presenting.
-        if (e.ctrlKey || e.metaKey) e.preventDefault();
+        // App shortcuts (Ctrl+K …) stay off while presenting, and no key does anything else
+        // (typing, Delete, a reload with F5).
+        e.preventDefault();
         return;
       }
       e.preventDefault();
@@ -509,6 +651,7 @@ function Presentation({ pageId }: { pageId: number }) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav, end, togglePresenter]);
 
   // The presenter window mirrors the deck and steers it.
@@ -537,15 +680,19 @@ function Presentation({ pageId }: { pageId: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!slides || !deck) return <div className="presentation loading" aria-label={t("present.title")} />;
+  if (!slides || !deck) return <div className="presentation loading" ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t("present.title")} />;
   const cur = slides[index] ?? null;
   return (
     <div
       className={`presentation ${beamer ? "beamer" : ""} ${hud ? "hud-on" : ""}`}
+      ref={root}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={t("present.titleOf", { title })}
       onMouseMove={wake}
+      // A clicked button keeps no focus: Space and Enter go on turning slides, not pressing it again.
+      onMouseDown={(e) => (e.target as HTMLElement).closest("button") && e.preventDefault()}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button, .presenter, .menu")) return;
         nav({ action: "next" });
@@ -561,13 +708,13 @@ function Presentation({ pageId }: { pageId: number }) {
           {t("present.empty")} <kbd>---</kbd> {t("present.emptyEnd")}
         </div>
       ) : (
-        <SlideView slide={cur} className="present-slide" label={t("present.slide", { n: index + 1 })} />
+        <SlideView slide={cur} className="present-slide" light={beamer} label={t("present.slide", { n: index + 1 })} />
       )}
       <div className="present-progress" aria-hidden>
         <span style={{ width: `${count ? ((index + 1) / count) * 100 : 0}%` }} />
       </div>
-      <div className="present-corner" aria-live="polite">
-        <span className="present-counter num">
+      <div className="present-corner">
+        <span className="present-counter num" aria-live="polite">
           {count ? index + 1 : 0} / {count}
         </span>
         <TimerLabel deck={deck} />
@@ -605,13 +752,24 @@ export function PresenterApp() {
   const [deck, setDeck] = useState<DeckState | null>(null);
   const typed = useRef("");
   useEffect(() => {
+    // The theme of the settings (Nord, high contrast, the accent …), like the other small windows.
+    const theme = () =>
+      api
+        .settings()
+        .then((v) => applyTheme(v.settings.theme, v.settings.appearance))
+        .catch(() => {});
+    void theme();
     const un = on<DeckState>("presentation://state", (d) => {
       setDeck(d);
-      document.documentElement.dataset.theme = d.theme;
+      if (!document.documentElement.dataset.themeId) document.documentElement.dataset.theme = d.theme;
     });
+    const unTheme = on("settings://changed", () => void theme());
     void un.then(() => emitTo("main", "presentation://hello", null).catch(() => {}));
     document.body.classList.add("ready", "presenter-window");
-    return () => void un.then((f) => f());
+    return () => {
+      void un.then((f) => f());
+      void unTheme.then((f) => f());
+    };
   }, []);
   const send = (n: Nav) => void emitTo("main", "presentation://nav", n).catch(() => {});
   useEffect(() => {

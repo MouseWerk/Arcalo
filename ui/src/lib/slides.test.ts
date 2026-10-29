@@ -35,6 +35,14 @@ describe("splitSlides", () => {
     expect(splitSlides("")).toEqual([]);
   });
 
+  it("ohne Trennlinien und mit höchstens einem H1 wird an mehreren H2 geteilt", () => {
+    const md = "# Bericht\n\nEinleitung\n\n## Ziele\n\n- a\n\n## Stand\n\n```\n## kein H2\n```\n\n## Ausblick\n\nText";
+    expect(splitSlides(md).map((x) => x.title)).toEqual(["Bericht", "Ziele", "Stand", "Ausblick"]);
+    expect(splitSlides("## Eins\n\nx\n\n## Zwei\n\ny").map((x) => x.title)).toEqual(["Eins", "Zwei"]);
+    // Two H1 sections keep their H2 inside.
+    expect(splitSlides("# A\n\n## a1\n\n## a2\n\n# B\n\n## b1").map((x) => x.title)).toEqual(["A", "B"]);
+  });
+
   it("Titel ohne Überschrift: erste Zeile ohne Markup", () => {
     expect(splitSlides("- [ ] **Wichtig**: [[Kunde X|Kunde]] anrufen")[0].title).toBe("Wichtig: Kunde anrufen");
     expect(splitSlides("![[bild.png]]")[0].title).toBe("Folie 1");

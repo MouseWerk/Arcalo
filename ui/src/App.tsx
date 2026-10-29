@@ -96,6 +96,9 @@ export function App() {
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
       if (caps().pac) void refreshPac(view);
     })().catch((e) => s.error(t("onb.failed"), e));
+    // A reload in the middle of a presentation: the window leaves its full screen and the
+    // presenter window closes (nothing happens without a presentation).
+    if (caps().popupWindows) void api.presentationEnd().catch(() => {});
     // Shortcut hints name the keys of the actual keyboard where the engine tells its layout.
     void learnKeyboardLayout().then(refreshI18n);
     // SQLite in a sync client's or a network folder can be corrupted: warn until dismissed.

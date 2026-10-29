@@ -391,7 +391,8 @@ page, on a blocking thread).
   are summed up in the message after the session. The end is announced as a silent notification „Pause“. `focus::write_daily_line`
   writes or replaces „Fokus heute: …“ in the daily note, on demand or once after the reminder time (default 18:00).
 - **Presentation** (`ui/src/lib/slides.ts`, `components/Presentation.tsx`): slides are split at horizontal rules outside code
-  fences (`---` directly under text is a setext heading and does not split), without rules at level-1 headings. Speaker notes are
+  fences (`---` directly under text is a setext heading and does not split), without rules at level-1 headings (at level-2 ones when the note has at most one
+  level-1 heading and several level-2 sections). Speaker notes are
   `> [!notiz]` callouts (also `[!notes]`, `[!speaker]`, `[!sprecher]`) and paragraphs starting with `Notiz:`. A slide is rendered
   with `marked` + DOMPurify into a 1600 px wide stage with the box's aspect, scaled to the box; content that does not fit is scaled
   down further (binary search, never cut). Embeds become placeholders filled after rendering (images, drawing previews, PDF first

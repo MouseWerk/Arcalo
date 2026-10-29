@@ -1545,7 +1545,9 @@ body.search-mode { background: transparent; }
 .slide-content li.slide-task > input:checked { background: var(--accent-strong); border-color: var(--accent-strong); }
 .slide-content li.slide-task > input:checked::after { content: ""; position: absolute; left: 0.22em; top: 0.06em; width: 0.18em; height: 0.36em; border: solid #fff; border-width: 0 0.07em 0.07em 0; transform: rotate(45deg); }
 .slide-content li.slide-task.done .slide-task-text { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 0.06em; }
-.slide-content pre { font-size: 0.72em; padding: 0.8em 1em; border-radius: var(--r-lg); max-width: 100%; white-space: pre; overflow: hidden; }
+/* Long code lines wrap: a slide has no scroll bar, and nothing may be cut off at its edge. */
+.slide-content pre { font-size: 0.72em; padding: 0.8em 1em; border-radius: var(--r-lg); max-width: 100%; overflow: visible; }
+.slide-content pre, .slide-content pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .slide-content pre code { font-size: 1em; }
 .slide-content code { font-size: 0.85em; }
 .slide-content table { font-size: 0.78em; }
@@ -1558,7 +1560,13 @@ body.search-mode { background: transparent; }
 .slide-content blockquote.callout-question, .slide-content blockquote.callout-example, .slide-content blockquote.callout-abstract { --c: var(--violet); }
 .slide-callout-title { font-size: 0.62em; font-weight: var(--fw-heading); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c); margin-bottom: 0.25em; }
 .slide-content a { text-decoration: none; color: var(--accent-text); }
-.slide-content .slide-img { display: block; max-width: 100%; max-height: 640px; margin: 0.2em auto; border-radius: var(--r-lg); }
+/* Images keep their aspect: a width only ever shrinks with the height limit (fitted in SlideView). */
+.slide-content .slide-img { display: block; width: auto; height: auto; max-width: 100%; max-height: 640px; margin: 0.2em auto; border-radius: var(--r-lg); }
+/* A paragraph of only images: side by side, centered; a slide of only those fills its height. */
+.slide-content p.slide-media { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.6em; }
+.slide-content p.slide-media > .slide-embed { display: contents; }
+.slide-content p.slide-media .slide-img { margin: 0; min-width: 0; }
+.slide-content.slide-media-only .slide-img { max-height: var(--slide-h, 640px); }
 .slide-content .slide-drawing { background: #ffffff; border: 1px solid var(--border); padding: 12px; }
 .slide-content .slide-pdf { display: inline-flex; flex-direction: column; align-items: center; gap: 10px; margin: 0.3em 0; }
 .slide-content .slide-pdf canvas { max-width: 560px; height: auto; border-radius: var(--r-md); border: 1px solid var(--border); box-shadow: var(--shadow-md); background: #fff; }
@@ -1603,12 +1611,16 @@ body.search-mode { background: transparent; }
   backdrop-filter: blur(12px);
 }
 .presentation.hud-on .present-hud { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+/* Narrow windows: the controls sit above the counter in the corner instead of covering it. */
+@media (max-width: 1180px) { .present-hud { bottom: 48px; max-width: calc(100vw - 32px); } }
 .presentation:not(.hud-on) { cursor: none; }
 .present-title { max-width: 260px; padding: 0 8px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
 .present-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 .present-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
 .present-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .present-btn:disabled { opacity: 0.4; cursor: default; }
+.present-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.presentation:focus { outline: none; }
 .present-btn.on { background: var(--bg-current); color: var(--text); }
 .present-btn.present-end { color: var(--danger); font-weight: var(--fw-semibold); }
 .present-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-lg); color: var(--text-2); }

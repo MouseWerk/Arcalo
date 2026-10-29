@@ -2672,6 +2672,7 @@ export const de: Catalog = {
   "present.stopPresentation": "Präsentation beenden",
   "present.stopKey": "Beenden (Esc)",
   "present.waiting": "Warte auf die Präsentation…",
+  "present.imageMissing": "Bild fehlt: {name}",
   // ---- tb
   "tb.h4": "Überschrift 4",
   "tb.needLines": "Mehrere Zeilen oder Listenpunkte markieren",

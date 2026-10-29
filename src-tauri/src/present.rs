@@ -60,26 +60,26 @@ pub fn presentation_begin(app: AppHandle) -> Result<PresentInfo> {
     Ok(PresentInfo { monitors })
 }
 
-/// Leaves full screen, closes the presenter window and puts the main window back.
+/// Leaves full screen, closes the presenter window and puts the main window back. Without a
+/// presentation it changes nothing, so the UI can call it after a reload in the middle of one
+/// (the window would otherwise stay full screen with no slides on it).
 #[tauri::command]
 pub fn presentation_end(app: AppHandle) -> Result<()> {
     if let Some(p) = app.get_webview_window(PRESENTER) {
         let _ = p.close();
     }
     let Some(w) = app.get_webview_window(MAIN) else { return Ok(()) };
-    let saved = lock(&SAVED).take();
+    let Some(s) = lock(&SAVED).take() else { return Ok(()) };
     let _ = w.set_fullscreen(false);
-    if let Some(s) = saved {
-        if s.moved {
-            let _ = w.set_position(Position::Physical(s.position));
-            let _ = w.set_size(Size::Physical(s.size));
-        }
-        if s.maximized {
-            let _ = w.maximize();
-        }
-        if s.fullscreen {
-            let _ = w.set_fullscreen(true);
-        }
+    if s.moved {
+        let _ = w.set_position(Position::Physical(s.position));
+        let _ = w.set_size(Size::Physical(s.size));
+    }
+    if s.maximized {
+        let _ = w.maximize();
+    }
+    if s.fullscreen {
+        let _ = w.set_fullscreen(true);
     }
     let _ = w.set_focus();
     Ok(())
@@ -117,7 +117,7 @@ pub async fn presenter_open(app: AppHandle) -> Result<bool> {
     let pos = home.position().to_logical::<f64>(scale);
     let size = home.size().to_logical::<f64>(scale);
     let p = WebviewWindowBuilder::new(&app, PRESENTER, WebviewUrl::App("index.html#presenter".into()))
-        .title("Referentenansicht – Arcalo")
+        .title(arcalo_core::tr!("Referentenansicht – Arcalo", "Presenter view – Arcalo"))
         .position(pos.x + 40.0, pos.y + 40.0)
         .inner_size((size.width - 80.0).max(800.0), (size.height - 80.0).max(560.0))
         .build()
