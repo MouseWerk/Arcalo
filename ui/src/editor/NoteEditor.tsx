@@ -11,6 +11,8 @@ import { api, attachmentMedia, attachmentUrl, errorText, storeFile, uploadAttach
 import { drawPdfPreview } from "../lib/pdf";
 import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
 import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
+import { filesToStore } from "../lib/pasted";
+import { copyFormats } from "../lib/clipboard";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
@@ -445,6 +447,8 @@ export function NoteEditor({
           };
           input.click();
         },
+        readAttachment: async (name) => new Uint8Array(await api.readAttachment(name)),
+        copyFormats,
         uploadFile: async (file) => {
           try {
             return (await storeFile(file)).name;
@@ -521,7 +525,7 @@ export function NoteEditor({
         // A paste of megabytes of text: offered as an attached file first (see `largePaste`).
         handlePaste: (view, event) => {
           const data = event.clipboardData;
-          if (!data || data.files?.length || !editorRef.current) return false;
+          if (!data || filesToStore(data).length || !editorRef.current) return false;
           const text = data.getData("text/plain");
           if (text.length <= LARGE_PASTE) return false;
           event.preventDefault();

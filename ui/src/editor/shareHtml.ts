@@ -84,7 +84,8 @@ const CALLOUT_LABELS: Record<string, TKey> = {
 function editorHtml(markdown: string): string {
   const editor = new Editor({
     element: document.createElement("div"),
-    extensions: buildExtensions({ attachmentUrl: (n) => ATT + encodeURIComponent(n) }),
+    // By file name, as the app's `attachmentUrl` (a Markdown image may name `attachments/x.png`).
+    extensions: buildExtensions({ attachmentUrl: (n) => ATT + encodeURIComponent(baseName(n)) }),
     content: splitFrontmatter(markdown).body,
     contentType: "markdown",
   });
@@ -156,7 +157,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   for (const img of root.querySelectorAll<HTMLImageElement>("img")) {
     const name = attName(img.getAttribute("src"));
     const drawing = img.hasAttribute("data-drawing");
-    for (const a of ["data-embed", "data-alt", "data-drawing", "loading", "draggable", "title"]) img.removeAttribute(a);
+    for (const a of ["data-embed", "data-alt", "data-drawing", "data-src", "loading", "draggable", "title"]) img.removeAttribute(a);
     img.className = drawing ? "drawing" : "";
     if (name && ctx.live) img.setAttribute("src", ctx.live.imageUrl(name));
     else if (name) {
