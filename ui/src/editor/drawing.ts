@@ -31,6 +31,20 @@ export function sceneHasContent(scene: string): boolean {
   }
 }
 
+/**
+ * Whether `node` belongs to the drawing editor `root`: inside the overlay, or inside one of the
+ * dialogs Excalidraw renders into a container of its own on <body> (Mermaid, help, library).
+ */
+export function inDrawing(root: Element, node: globalThis.Node | null): boolean {
+  if (!node) return false;
+  if (root.contains(node)) return true;
+  const el = node instanceof Element ? node : node.parentElement;
+  return !!el?.closest(".excalidraw-modal-container");
+}
+
+/** Web and mail links open outside the app; the app's window never navigates away. */
+export const isExternalLink = (url: string) => /^(https?:|mailto:)/i.test(url.trim());
+
 /** Fired on `window` after a drawing was saved (`detail.name`), so previews reload. */
 export const DRAWING_SAVED_EVENT = "arcalo:drawing-saved";
 

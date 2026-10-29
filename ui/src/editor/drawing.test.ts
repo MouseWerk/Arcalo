@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drawingLabel, drawingTitle, isDrawingName, sceneHasContent } from "./drawing";
+import { drawingLabel, drawingTitle, inDrawing, isDrawingName, isExternalLink, sceneHasContent } from "./drawing";
 
 describe("drawing names", () => {
   it("accepts plain .excalidraw file names", () => {
@@ -23,5 +23,21 @@ describe("drawing names", () => {
     expect(sceneHasContent('{"elements":[{"id":"a","type":"rectangle"}]}')).toBe(true);
     expect(sceneHasContent("")).toBe(false);
     expect(sceneHasContent("kein JSON")).toBe(true);
+  });
+});
+
+describe("drawing editor bounds", () => {
+  it("counts Excalidraw's dialogs on <body> as part of the drawing, the note behind it not", () => {
+    document.body.innerHTML = `<div class="ProseMirror"><p>Notiz</p></div><div class="drawing-overlay"><canvas></canvas></div><div class="excalidraw excalidraw-modal-container"><div class="Modal"><textarea class="ttd-dialog-input"></textarea></div></div>`;
+    const root = document.querySelector(".drawing-overlay")!;
+    expect(inDrawing(root, root.querySelector("canvas"))).toBe(true);
+    expect(inDrawing(root, document.querySelector(".ttd-dialog-input"))).toBe(true);
+    expect(inDrawing(root, document.querySelector(".ProseMirror p")!.firstChild)).toBe(false);
+    expect(inDrawing(root, document.body)).toBe(false);
+    expect(inDrawing(root, null)).toBe(false);
+  });
+  it("opens only web and mail links outside the app", () => {
+    for (const ok of ["https://mermaid.js.org/syntax/flowchart.html", "http://example.org", "mailto:a@b.de"]) expect(isExternalLink(ok), ok).toBe(true);
+    for (const bad of ["/seite", "#x", "javascript:alert(1)", "tauri://localhost/?element=abc", "file:///etc/passwd"]) expect(isExternalLink(bad), bad).toBe(false);
   });
 });
