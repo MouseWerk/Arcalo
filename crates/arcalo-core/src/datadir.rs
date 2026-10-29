@@ -893,9 +893,10 @@ mod tests {
 
     type Consts = std::collections::HashMap<String, String>;
 
-    /// The name a `data_dir.join(<arg>)` refers to: a literal, a constant (of the same file
-    /// first) or a `format!` of constants; `None` for a legacy name of 1.14 and earlier.
-    fn resolve_name(arg: &str, own: &Consts, all: &[Consts]) -> Option<String> {
+    /// The name a `data_dir.join(<arg>)` refers to: a literal, a constant (of the module its path
+    /// names, else of the same file, else of any file) or a `format!` of constants; `None` for a
+    /// legacy name of 1.14 and earlier. `all` holds each file's module name and constants.
+    fn resolve_name(arg: &str, own: &Consts, all: &[(String, Consts)]) -> Option<String> {
         let arg = arg.trim().trim_start_matches('&');
         if arg.contains("legacy(") {
             return None;
@@ -903,11 +904,16 @@ mod tests {
         if let Some(lit) = arg.strip_prefix('"') {
             return Some(lit.split('"').next().unwrap_or_default().to_owned());
         }
-        let lookup = |name: &str| {
-            own.get(name)
-                .or_else(|| all.iter().find_map(|m| m.get(name)))
-                .and_then(|v| resolve_name(v, own, all))
-                .unwrap_or_else(|| panic!("constant {name} not found"))
+        let lookup = |path: &str| {
+            // `datadir::DB_FILE` is the constant of datadir.rs, not a namesake in another module.
+            let (module, name) = path.rsplit_once("::").map_or((None, path), |(m, n)| (m.rsplit("::").next(), n));
+            let (consts, value) = module
+                .and_then(|m| all.iter().find(|(stem, c)| stem == m && c.contains_key(name)))
+                .map(|(_, c)| (c, &c[name]))
+                .or_else(|| own.get(name).map(|v| (own, v)))
+                .or_else(|| all.iter().find_map(|(_, c)| c.get(name).map(|v| (c, v))))
+                .unwrap_or_else(|| panic!("constant {path} not found"));
+            resolve_name(value, consts, all).unwrap_or_else(|| panic!("constant {path} not resolved"))
         };
         if let Some(f) = arg.strip_prefix("format!(\"") {
             let mut text = f.split('"').next().unwrap_or_default().to_owned();
@@ -918,7 +924,7 @@ mod tests {
             }
             return Some(text);
         }
-        Some(lookup(arg.rsplit("::").next().unwrap_or(arg)))
+        Some(lookup(arg))
     }
 
     /// Every name the app joins to the data folder moves with the workspace or is named in
@@ -928,11 +934,15 @@ mod tests {
         let files = sources();
         assert!(files.len() > 50, "sources not found: {}", files.len());
         let texts: Vec<String> = files.iter().map(|f| std::fs::read_to_string(f).unwrap()).collect();
-        let all: Vec<Consts> = texts.iter().map(|t| consts(t)).collect();
+        let all: Vec<(String, Consts)> = files
+            .iter()
+            .zip(&texts)
+            .map(|(f, t)| (f.file_stem().unwrap_or_default().to_string_lossy().into_owned(), consts(t)))
+            .collect();
         let known: Vec<String> =
             DATA_DIRS.iter().chain(&DATA_FILES).chain(&STAYS).map(|s| s.to_string()).chain(db_files()).collect();
         let (mut seen, mut unknown) = (0, vec![]);
-        for ((file, text), own) in files.iter().zip(&texts).zip(&all) {
+        for ((file, text), (_, own)) in files.iter().zip(&texts).zip(&all) {
             let code = text.split("#[cfg(test)]").next().unwrap_or_default();
             for pattern in ["data_dir.join(", "data_dir().join("] {
                 for (at, _) in code.match_indices(pattern) {
