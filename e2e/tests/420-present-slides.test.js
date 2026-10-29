@@ -16,6 +16,8 @@ after(async () => app?.close());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const counter = (re) => app.waitText(".presentation .present-counter", re);
+/** Jumps to slide `n` with its number and Enter (WebKit's WebDriver sends a repeated digit once, so 11 goes by End). */
+const jump = (n, last = 11) => app.keys(n === last ? ["End"] : [...String(n), "Enter"]);
 const isFullscreen = () => app.browser.executeAsync((done) => window.__TAURI__.window.getCurrentWindow().isFullscreen().then(done, () => done(null)));
 
 /** `attachment_store` with the raw bytes as body and the file name as header, like the drop handler. */
@@ -216,6 +218,7 @@ test("images of every size and aspect, Markdown images, code, tables and lists f
   const [square, small] = report[4].imgs;
   assert.ok(square && small && Math.abs(square.top - small.top) < 4, `two images in one paragraph stand side by side: ${JSON.stringify(report[4].imgs)}`);
   assert.ok(report[1].imgs[0].h > 0.7 * (await app.browser.execute(() => innerHeight)), "an image alone on its slide fills its height");
+  assert.ok(report[7].scale > 0.55, `a long list flows into columns instead of shrinking: ${report[7].scale}`);
   assert.ok(report[8].diagram > 400, `the diagram is enlarged with the slide: ${report[8].diagram}`);
   assert.match(report[10].text, /Bild fehlt: Leere Skizze/, "an empty drawing shows its name instead of a broken image");
   assert.deepEqual(await app.consoleErrors(), []);
@@ -224,30 +227,35 @@ test("images of every size and aspect, Markdown images, code, tables and lists f
 
 test("at 900 and 1920 px nothing is cut off and the controls stay apart", async () => {
   await open(deck);
-  for (const [w, h] of [[900, 640], [1920, 1080]]) {
-    await app.browser.setWindowSize(w, h);
-    await present();
-    for (const n of [1, 3, 6, 7, 8]) {
-      await app.keys([String(n), "Enter"]);
-      await counter(new RegExp(`^${n} / 11$`));
-      const m = await measure();
-      assert.deepEqual(m.cut, [], `${w}px slide ${n}: nothing cut off`);
-      for (const i of m.imgs) assert.ok(aspectOk(i), `${w}px slide ${n}: image undistorted: ${JSON.stringify(i)}`);
+  // The other tests run at the default size, also after a failure here.
+  try {
+    for (const [w, h] of [[900, 640], [1920, 1080]]) {
+      await app.browser.setWindowSize(w, h);
+      await present();
+      for (const n of [1, 3, 6, 7, 8]) {
+        await jump(n);
+        await counter(new RegExp(`^${n} / 11$`));
+        const m = await measure();
+        assert.deepEqual(m.cut, [], `${w}px slide ${n}: nothing cut off`);
+        for (const i of m.imgs) assert.ok(aspectOk(i), `${w}px slide ${n}: image undistorted: ${JSON.stringify(i)}`);
+      }
+      await app.browser.execute(() => document.querySelector(".presentation").dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+      await sleep(300);
+      const layout = await app.browser.execute(() => {
+        const r = (s) => document.querySelector(s).getBoundingClientRect();
+        const hud = r(".present-hud");
+        const corner = r(".present-corner");
+        return { title: r(".present-title").height, hud: [hud.left, hud.right], corner: [corner.left, corner.right], vw: innerWidth, overlap: !(hud.right <= corner.left || corner.right <= hud.left || hud.bottom <= corner.top || corner.bottom <= hud.top) };
+      });
+      await app.shot(`420-hud-${w}`);
+      assert.ok(layout.hud[0] >= 0 && layout.hud[1] <= layout.vw, `${w}px: the controls are inside the window ${JSON.stringify(layout)}`);
+      assert.ok(layout.title < 24, `${w}px: the title stays on one line ${JSON.stringify(layout)}`);
+      assert.ok(!layout.overlap, `${w}px: the controls do not cover the counter ${JSON.stringify(layout)}`);
+      await stop();
     }
-    await app.browser.execute(() => document.querySelector(".presentation").dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
-    await sleep(300);
-    const layout = await app.browser.execute(() => {
-      const r = (s) => document.querySelector(s).getBoundingClientRect();
-      const hud = r(".present-hud");
-      const corner = r(".present-corner");
-      return { hud: [hud.left, hud.right], corner: [corner.left, corner.right], vw: innerWidth, overlap: !(hud.right <= corner.left || corner.right <= hud.left || hud.bottom <= corner.top || corner.bottom <= hud.top) };
-    });
-    await app.shot(`420-hud-${w}`);
-    assert.ok(layout.hud[0] >= 0 && layout.hud[1] <= layout.vw, `${w}px: the controls are inside the window ${JSON.stringify(layout)}`);
-    assert.ok(!layout.overlap, `${w}px: the controls do not cover the counter ${JSON.stringify(layout)}`);
-    await stop();
+  } finally {
+    await app.browser.setWindowSize(1480, 920);
   }
-  await app.browser.setWindowSize(1480, 920);
 });
 
 test("keys never type into the note, Tab stays in the presentation, focus and scroll come back", async () => {
@@ -323,7 +331,7 @@ test("the white Beamer slide draws diagrams light in a dark theme; screenshots p
     await open(deck);
     await present();
     for (const n of [1, 2, 5, 6, 7, 9, 10, 11]) {
-      await app.keys([String(n), "Enter"]);
+      await jump(n);
       await counter(new RegExp(`^${n} / 11$`));
       await measure();
       await app.shot(`420-${id}-slide-${n}`);

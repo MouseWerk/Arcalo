@@ -26,6 +26,9 @@ are written by that test as `420-*.png`.
 | P15 | Controls covered the counter in narrow windows | fixed |
 | P16 | Screen readers announced the timer every second | fixed |
 | P17 | Presenter window title always German | fixed |
+| P18 | Slide styles lost to the editor's (headings, code, tables, callouts) | fixed |
+| P19 | Long lists shrank to unreadable text | fixed |
+| P20 | Note title in the control bar wrapped at 900 px | fixed |
 
 ## P1 Images with a width were squeezed
 
@@ -75,7 +78,7 @@ are written by that test as `420-*.png`.
 - Cause: `pre { white-space: pre; overflow: hidden }`; the hidden overflow also kept the fit from seeing the
   width, so the slide was not scaled either.
 - Fix: code on slides wraps (`pre-wrap`, `overflow-wrap: anywhere`, `overflow: visible`), like a slide has no
-  scroll bar.
+  scroll bar. The first CI run showed the rule had no effect: see P18.
 - Test: 420 checks that no element on any slide clips its content or sticks out of the slide.
 
 ## P7 Mermaid diagrams tiny
@@ -152,6 +155,33 @@ are written by that test as `420-*.png`.
 
 - The window title "Referentenansicht – Arcalo" is now translated (`tr!`).
 
+## P18 Slide styles lost to the editor's
+
+- Symptom: on CI the code still did not wrap (the `pre` stayed 3317 px wide); slide headings were smaller than
+  designed (2.2em), tables and callouts used the editor's sizes and padding.
+- Cause: `editor.css` is imported after `app.css`; `.prose pre`, `.prose h1`, `.prose table`,
+  `.prose blockquote.callout` … have the same weight as `.slide-content pre` and so on, and won.
+- Fix: every slide rule is written as `.slide-content.prose …` (one class more). The editor's callout icon,
+  sized in px, is now sized with the slide text and level with the callout title.
+- Test: 420 (the clipped-code check), and the screenshots of every slide in light, dark and high contrast.
+
+## P19 Long lists shrank to unreadable text
+
+- Symptom: a 40 item list was scaled to about 35 % (barely readable at 900 px).
+- Fix: when a list of 10 or more items makes its slide smaller than 75 %, `fit` tries two and three columns and
+  keeps the layout with the largest text.
+- Test: 420 asserts the list slide's scale is above 0.55.
+
+## P20 Title in the control bar wrapped
+
+- Symptom: at 900 px the note title in the control bar broke over three lines.
+- Fix: `white-space: nowrap` with ellipsis. Test: 420 checks a single line at 900 and 1920 px.
+
+## Harness note
+
+WebKit's WebDriver sends a repeated digit (`1`, `1`) as a single key press, so the tests jump to slide 11 with
+End; typing 11 by hand works.
+
 ## Checked without findings
 
 Navigation (arrows, space, PageUp/Down, Home/End, digits + Enter, click and right click, Esc), the empty note,
@@ -163,4 +193,5 @@ callouts, links (shown, not followed), opening from the page menu, the palette a
 
 - Two monitors (the presenter window on a second screen) cannot run in the headless harness; the window's
   rendering is covered by loading `#presenter` in the main window.
-- No local e2e run after the fixes: the machine had less than 6 GB free; the fixes were verified on CI.
+- Tests 420, 43, 51, 52, 61 and 124 pass locally; every slide type was looked at in Arcalo Hell, Arcalo Dunkel
+  and high contrast dark, normal and Beamer, the presenter overlay and window.

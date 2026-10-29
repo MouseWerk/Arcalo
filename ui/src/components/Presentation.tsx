@@ -115,6 +115,9 @@ function slideHtml(md: string): string {
   return tpl.innerHTML;
 }
 
+/** Items from which a list that makes its slide small flows into columns. */
+const LONG_LIST = 10;
+
 /** Design width of an image with a given width (`![[bild.png|480]]`): the editor's width, enlarged like the slide text. */
 const IMAGE_WIDTH_SCALE = 1.6;
 
@@ -295,8 +298,8 @@ export function SlideView({ slide, className = "", label, light = false }: { sli
       c.style.width = `${inner.width / s}px`;
       return fitScale({ width: c.scrollWidth * s, height: c.scrollHeight * s }, inner) >= 0.999;
     };
-    let s = 1;
-    if (!fits(1)) {
+    const search = () => {
+      if (fits(1)) return 1;
       let lo = 0.15;
       let hi = 1;
       for (let i = 0; i < 8; i++) {
@@ -304,7 +307,27 @@ export function SlideView({ slide, className = "", label, light = false }: { sli
         if (fits(mid)) lo = mid;
         else hi = mid;
       }
-      s = lo;
+      return lo;
+    };
+    // A long list flows into two or three columns when that keeps the text larger.
+    c.style.removeProperty("--slide-list-cols");
+    c.classList.remove("slide-list-columns");
+    let s = search();
+    const longList = [...c.children].some((el) => (el.tagName === "UL" || el.tagName === "OL") && el.children.length >= LONG_LIST);
+    if (s < 0.75 && longList) {
+      c.classList.add("slide-list-columns");
+      let best = { cols: 0, s };
+      for (const cols of [2, 3]) {
+        c.style.setProperty("--slide-list-cols", String(cols));
+        const sc = search();
+        if (sc > best.s + 0.02) best = { cols, s: sc };
+      }
+      if (best.cols) c.style.setProperty("--slide-list-cols", String(best.cols));
+      else {
+        c.classList.remove("slide-list-columns");
+        c.style.removeProperty("--slide-list-cols");
+      }
+      s = best.cols ? search() : s;
     }
     c.style.width = `${inner.width / s}px`;
     c.style.transform = `scale(${s})`;
