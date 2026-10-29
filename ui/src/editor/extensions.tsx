@@ -23,7 +23,7 @@ import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
-import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
+import { baseName, embedAttrs, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
 import { splitTarget } from "./embedSyntax";
 import { inOtherLanguage, t, type TKey } from "../lib/i18n";
 import { jiraReady, requestCreateIssue } from "./taskIssue";
@@ -435,10 +435,11 @@ export const ImageEmbed = Node.create<ImageOptions>({
     return { resolve: (name) => `attachments/${encodeURIComponent(name)}` };
   },
   addAttributes() {
-    return { name: { default: "" }, alt: { default: null } };
+    // From the data attributes only: the `alt` of the <img> is the name or the caption.
+    return embedAttrs("embed");
   },
   parseHTML() {
-    return [{ tag: "img[data-embed]", getAttrs: (el) => ({ name: (el as HTMLElement).dataset.embed, alt: (el as HTMLElement).dataset.alt ?? null }) }];
+    return [{ tag: "img[data-embed]", priority: 60 }];
   },
   renderHTML({ node }) {
     const { name, alt } = node.attrs;
@@ -481,6 +482,20 @@ export const MarkdownImage = Image.extend<ImageOptions & { inline: boolean; allo
   addOptions() {
     return { ...this.parent!(), inline: true, resolve: (name: string) => name };
   },
+  addAttributes() {
+    // A copied local image keeps the path it was written with (`data-src`), not the app's address.
+    return { ...this.parent!(), src: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute("data-src") ?? el.getAttribute("src") } };
+  },
+  parseHTML() {
+    // A copy's local image has its bytes as `src` (imageClipboard.ts) and its path in `data-src`;
+    // other `data:` images are stored as attachments when pasted.
+    return [{ tag: "img[data-src]" }, { tag: 'img[src]:not([src^="data:"])' }];
+  },
+  // Copied as plain text: the Markdown, like an embed's `![[name]]`.
+  renderText: ({ node }) => {
+    const src = String(node.attrs.src ?? "");
+    return `![${node.attrs.alt ?? ""}](${/[\s()<>]/.test(src) ? `<${src}>` : src})`;
+  },
   renderHTML({ HTMLAttributes }) {
     const src = String(HTMLAttributes.src ?? "");
     const local = src && !/^(https?:|data:|blob:|arcalo-asset:)/i.test(src);
@@ -490,7 +505,7 @@ export const MarkdownImage = Image.extend<ImageOptions & { inline: boolean; allo
     } catch {
       /* keep as is */
     }
-    return ["img", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: local ? this.options.resolve(path) : src, class: "embed-image", loading: "lazy" })];
+    return ["img", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: local ? this.options.resolve(path) : src, ...(local ? { "data-src": src } : {}), class: "embed-image", loading: "lazy" })];
   },
 });
 

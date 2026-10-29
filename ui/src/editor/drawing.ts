@@ -5,6 +5,7 @@
 import { Node, type Editor } from "@tiptap/core";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
+import { embedAttrs } from "./fileEmbed";
 
 /** `name.excalidraw`: a plain file name (no folders, not hidden), like the Rust side checks. */
 export function isDrawingName(name: string): boolean {
@@ -61,10 +62,12 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
     return { resolve: (name) => `attachments/${encodeURIComponent(name)}`, onOpen: () => {} };
   },
   addAttributes() {
-    return { name: { default: "" }, alt: { default: null } };
+    // From the data attributes only: the preview's `alt` is its label.
+    return embedAttrs("drawing");
   },
   parseHTML() {
-    return [{ tag: "img[data-drawing]", getAttrs: (el) => ({ name: (el as HTMLElement).dataset.drawing, alt: (el as HTMLElement).dataset.alt ?? null }) }];
+    // Before the Markdown image (`img[src]`), which comes earlier in the schema.
+    return [{ tag: "img[data-drawing]", priority: 60 }];
   },
   renderHTML({ node }) {
     const { name, alt } = node.attrs;
