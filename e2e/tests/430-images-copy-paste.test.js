@@ -189,6 +189,38 @@ test("„Bild kopieren“ in the image menu copies the image; pasted in a note i
   await loaded(`${ED} img.embed-image`);
 });
 
+test("a selected image: Delete removes it, Ctrl+Z brings it back, the size menu changes its width", async () => {
+  const page = await h.create("Bilder Tasten", `Davor ![[${image}|240]] danach\n`);
+  await h.open(page.id, "Bilder Tasten");
+  await loaded(`${ED} img.embed-image`);
+  await selectImage();
+  await app.keys(["Delete"]);
+  await h.waitContent(page.id, (t) => t === "Davor  danach\n", "image not deleted");
+  await app.keys(["Control", "z"]);
+  await h.waitContent(page.id, (t) => t === `Davor ![[${image}|240]] danach\n`, "image not back");
+  await loaded(`${ED} img.embed-image`);
+  await (await app.$(`${ED} img.embed-image`)).click({ button: "right" });
+  await app.waitText(".menu-item", /Größe/);
+  await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((m) => m.textContent.includes("Größe"))?.click());
+  await app.waitText(".menu-item", /Groß \(720 px\)/);
+  await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((m) => m.textContent.includes("Groß (720 px)"))?.click());
+  await h.waitContent(page.id, (t) => t === `Davor ![[${image}|720]] danach\n`, "size not set");
+  await app.keys(["Control", "z"]);
+  await h.waitContent(page.id, (t) => t === `Davor ![[${image}|240]] danach\n`, "size not undone");
+});
+
+test("the hover preview of a linked note shows its image, not „!name.png“", async () => {
+  const page = await h.create("Bilder Link", "Siehe [[Bilder Ziel]] hier\n");
+  await h.open(page.id, "Bilder Link");
+  const link = await app.waitFor(`${ED} .wikilink`);
+  await link.moveTo();
+  await app.waitText(".link-preview-title", /Bilder Ziel/);
+  await loaded(".link-preview-body img");
+  assert.doesNotMatch(await app.textOf(await app.$(".link-preview-body")), /!\S+\.png/);
+  await app.shot("430-hover-preview");
+  await (await app.$(`${ED} p`)).moveTo({ xOffset: -200 });
+});
+
 test("the pasted image keeps working after the first note is deleted and the app reloads", async () => {
   await app.invoke("page_delete", { id: a.id });
   await app.reload();

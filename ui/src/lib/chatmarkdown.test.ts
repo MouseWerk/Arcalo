@@ -136,6 +136,28 @@ describe("chat Markdown", () => {
   });
 });
 
+describe("Markdown of a note (link previews, dashboard, canvas)", () => {
+  it("shows an image embed as the stored image with its width, other embeds as links", () => {
+    const root = document.createElement("div");
+    // A paragraph first: happy-dom drops a block element at the very start (see above).
+    root.innerHTML = renderMarkdown('Text\n\n![[a1b2 "x".png|300]] und ![[Skizze.png|Whiteboard]]\n\n![[Notiz]]\n');
+    const imgs = [...root.querySelectorAll("img")];
+    expect(imgs.map((i) => [i.dataset.attachment, i.getAttribute("src"), i.getAttribute("width"), i.getAttribute("alt")])).toEqual([
+      ['a1b2 "x".png', `attachments/${encodeURIComponent('a1b2 "x".png')}`, "300", ""],
+      ["Skizze.png", "attachments/Skizze.png", null, "Whiteboard"],
+    ]);
+    // Not „!a1b2.png“ as a link.
+    expect(root.textContent).not.toContain("!");
+    expect(root.querySelector("a.wikilink")?.textContent).toBe("Notiz");
+    // In a table cell the `|` is escaped.
+    const cell = document.createElement("div");
+    cell.innerHTML = renderMarkdown("Text\n\n| A | B |\n| - | - |\n| eins | ![[a1b2.png\\|480]] [[Notiz\\|die Notiz]] |\n");
+    expect(cell.querySelector("td img")?.getAttribute("width")).toBe("480");
+    expect(cell.querySelector("td a.wikilink")?.getAttribute("data-target")).toBe("Notiz");
+    expect(cell.querySelector("td a.wikilink")?.textContent).toBe("die Notiz");
+  });
+});
+
 describe("chat layout styles", () => {
   const style = document.createElement("style");
   beforeAll(() => {

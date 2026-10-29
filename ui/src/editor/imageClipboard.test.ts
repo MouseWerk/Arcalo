@@ -147,6 +147,20 @@ describe("pasting images", () => {
     editor.destroy();
   });
 
+  it("an image dragged from a note in the other pane is embedded by its name, not stored again", () => {
+    const uploaded: File[] = [];
+    const editor = setup("\n", uploaded);
+    const html = '<p data-pm-slice="1 1 []"><img data-embed="a1b2.png" data-alt="480"></p>';
+    const dataTransfer = { files: [new File([PNG], "a1b2.png", { type: "image/png" })], getData: (t: string) => (t === "text/html" ? html : "") };
+    const event = { dataTransfer, clientX: 0, clientY: 0, preventDefault() {} } as unknown as DragEvent;
+    expect(editor.view.someProp("handleDrop", (f) => f(editor.view, event, Slice.empty, false)) ?? false).toBe(false);
+    expect(uploaded).toEqual([]);
+    // A file from the file manager is stored.
+    const fromDisk = { ...event, dataTransfer: { ...dataTransfer, getData: () => "" } } as unknown as DragEvent;
+    expect(editor.view.someProp("handleDrop", (f) => f(editor.view, fromDisk, Slice.empty, false))).toBe(true);
+    editor.destroy();
+  });
+
   it("reads data: addresses of images only", () => {
     expect(dataUrlFile(`data:image/jpeg;base64,${PNG_B64}`)?.name).toBe("bild.jpg");
     expect(dataUrlFile("data:text/html,<b>x</b>")).toBeNull();

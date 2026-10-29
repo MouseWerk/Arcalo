@@ -21,6 +21,12 @@ describe("share as HTML", () => {
     expect(html).not.toContain("arcalo-attachment:");
   });
 
+  it("inlines a Markdown image of the attachments folder without its path", async () => {
+    const html = await render("![Plan](attachments/bild.png)\n", { "bild.png": PNG });
+    expect(html).toContain(`src="${dataUri(PNG, "image/png")}"`);
+    expect(html).not.toContain("data-src");
+  });
+
   it("embeds small files, lists them at the end", async () => {
     const html = await render("Angebot: ![[a.pdf]] und ![[gross.zip]]\n", { "a.pdf": new Uint8Array([37, 80, 68, 70]) });
     expect(html).toMatch(/<a class="attachment" href="data:application\/pdf;base64,[^"]+" download="a.pdf">a.pdf <small>4 B<\/small><\/a>/);
