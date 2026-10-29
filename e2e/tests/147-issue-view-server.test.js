@@ -1,5 +1,5 @@
 // The issue view with Jira Server/Data Center, in English: opened from a row of the Issues list
-// („Open as window“); Jira's rendered wiki markup with its image and the avatars loaded with the
+// („Open in the issue view“); Jira's rendered wiki markup with its image and the avatars loaded with the
 // personal access token (Bearer) from the site's own addresses; Story Points found by name; the
 // summary and the description edited (written as wiki markup, the macros and the image kept); a
 // transition with a required resolution; a comment with bold text (wiki markup); work logged and
@@ -56,7 +56,7 @@ async function loaded() {
   await app.browser.waitUntil(() => app.browser.execute((s) => !document.querySelector(s), V(".iv-refreshing")), { timeout: 15000, timeoutMsg: "still loading" });
 }
 
-test("opened as a window from the Issues list, with Jira's rendered wiki markup", async () => {
+test("opened in the issue view from the Issues list, with Jira's rendered wiki markup", async () => {
   await app.click(".ribbon-issues");
   const row = await app.waitFor('[data-issue-row="PROJ-123"]');
   await row.moveTo();

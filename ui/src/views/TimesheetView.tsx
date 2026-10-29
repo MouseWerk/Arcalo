@@ -608,7 +608,7 @@ function WorklogChip({ issue }: { issue: EntryIssue }) {
   return (
     <span className={`entry-jira wl-${shown}`} data-key={issue.issue_key} data-state={shown} title={title}>
       <span className="entry-jira-dot" aria-hidden />
-      <button type="button" className="entry-jira-key mono" title={t("iv.openWindow")} onClick={(e) => (e.stopPropagation(), void openIssue(issue.issue_key, { browser: e.ctrlKey || e.metaKey }))}>
+      <button type="button" className="entry-jira-key mono" title={t("iv.openView")} onClick={(e) => (e.stopPropagation(), void openIssue(issue.issue_key, { browser: e.ctrlKey || e.metaKey }))}>
         {issue.issue_key}
       </button>
       {shown !== "none" && <span className="entry-jira-state">{t(`time.wl.short.${shown}` as TKey)}</span>}

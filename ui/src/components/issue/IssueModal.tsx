@@ -20,7 +20,7 @@ import { useApp } from "../../store/app";
 import { t } from "../../lib/i18n";
 import { isComposing, isKey, isTab } from "../../lib/ime";
 import { keys } from "../../lib/shortcut";
-import { dateTime, fileSize, fmtDate, fmtMinutes, isoDay, relative } from "../../lib/format";
+import { dateTime, fileSize, fmtDate, fmtDuration, isoDay, relative } from "../../lib/format";
 import { TYPE_SVG, typeOf } from "../../lib/issueTypes";
 import { addIssueTask, copyIssueKey, openIssueInBrowser, openIssueNote } from "../../lib/jiraActions";
 import {
@@ -50,6 +50,7 @@ import { ConflictNotice, FieldControl, ShownValue, inputFilled, type Conflict } 
 import { Avatar, ImageViewer, JiraHtml, UserChip, followLink, loadImage, openImageViewer, useLazyImage } from "./media";
 import { RichEditor, type RichEditorHandle } from "./RichEditor";
 import { copyText } from "../../lib/clipboard";
+import { useSingleFlight } from "../../lib/singleFlight";
 
 const s = useApp.getState;
 
@@ -308,7 +309,10 @@ function SkeletonView({ issueKey, onClose }: { issueKey: string; onClose: () => 
         <div className="iv-crumbs">
           <span className="mono">{issueKey}</span>
         </div>
+        {/* „In Jira öffnen“ and Close already where the loaded view has them: nothing jumps. */}
         <div className="iv-head-actions">
+          <IconButton icon={ExternalLink} label={t("iv.openInJira")} onClick={() => void openIssueInBrowser(issueKey)} />
+          <IconButton icon={MoreHorizontal} label={t("iv.more")} disabled />
           <IconButton icon={X} label={t("common.close")} onClick={onClose} />
         </div>
       </header>
@@ -369,8 +373,10 @@ function Header({ canGoBack, onBack, onClose, loading }: { canGoBack: boolean; o
   const [transition, setTransition] = useState<Transition | null>(null);
   const [busy, setBusy] = useState(false);
   const summaryField = editable(issue, "summary");
+  const once = useSingleFlight();
 
-  const runTransition = async (tr: Transition, inputs: [string, FieldInput][] = [], comment: unknown = null) => {
+  const runTransition = (tr: Transition, inputs: [string, FieldInput][] = [], comment: unknown = null) => once(() => transitionNow(tr, inputs, comment));
+  const transitionNow = async (tr: Transition, inputs: [string, FieldInput][], comment: unknown) => {
     setBusy(true);
     try {
       const before = issue.status.name;
@@ -437,14 +443,15 @@ function Header({ canGoBack, onBack, onClose, loading }: { canGoBack: boolean; o
   const [summary, setSummary] = useState(issue.summary);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   useEffect(() => setSummary(issue.summary), [issue.summary]);
-  const saveSummary = async (expected?: string) => {
-    if (summary.trim() === issue.summary) return setEditing(null);
-    setBusy(true);
-    const r = await save("summary", t("iv.f.summary"), { t: "text", v: summary }, expected);
-    setBusy(false);
-    if ("conflict" in r) setConflict(r.conflict);
-    else if ("ok" in r) (setConflict(null), setEditing(null));
-  };
+  const saveSummary = (expected?: string) =>
+    once(async () => {
+      if (summary.trim() === issue.summary) return setEditing(null);
+      setBusy(true);
+      const r = await save("summary", t("iv.f.summary"), { t: "text", v: summary }, expected);
+      setBusy(false);
+      if ("conflict" in r) setConflict(r.conflict);
+      else if ("ok" in r) (setConflict(null), setEditing(null));
+    });
   const meAssigned = issue.assignee?.id === issue.me.id;
   const crumbs: { key: string; type: string; label: string }[] = [];
   if (issue.parent) crumbs.push({ key: issue.parent.key, type: issue.parent.issue_type, label: issue.parent.summary });
@@ -651,14 +658,16 @@ function Description() {
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const on = editing === "description" && !!f;
   const start = () => (setValue(f?.current ?? { t: "doc", v: null }), setConflict(null), setEditing("description"));
-  const commit = async (expected?: string, input = value) => {
-    if (!input) return;
-    setBusy(true);
-    const r = await save("description", t("iv.f.description"), input, expected);
-    setBusy(false);
-    if ("conflict" in r) setConflict(r.conflict);
-    else if ("ok" in r) setEditing(null);
-  };
+  const once = useSingleFlight();
+  const commit = (expected?: string, input = value) =>
+    once(async () => {
+      if (!input) return;
+      setBusy(true);
+      const r = await save("description", t("iv.f.description"), input, expected);
+      setBusy(false);
+      if ("conflict" in r) setConflict(r.conflict);
+      else if ("ok" in r) setEditing(null);
+    });
   return (
     <Section
       id="description"
@@ -920,7 +929,9 @@ function Comments() {
       setLoadingMore(false);
     }
   };
-  const add = async () => {
+  const once = useSingleFlight();
+  const add = () => once(addNow);
+  const addNow = async () => {
     const c = composer.current;
     if (!c || c.isEmpty()) return;
     setBusy(true);
@@ -950,7 +961,8 @@ function Comments() {
       s().error(t("iv.commentFailed"), e);
     }
   };
-  const saveEdit = async () => {
+  const saveEdit = () => once(saveEditNow);
+  const saveEditNow = async () => {
     if (!editingId || !editor.current || editor.current.isEmpty()) return;
     setBusy(true);
     try {
@@ -1105,7 +1117,9 @@ function WorklogForm({ view, onDone }: { view: FullView; onDone: (v: FullView) =
   const [comment, setComment] = useState("");
   const [book, setBook] = useState(view.time_tracking && !!view.wbs);
   const [busy, setBusy] = useState(false);
-  const submit = async () => {
+  const once = useSingleFlight();
+  const submit = () => once(submitNow);
+  const submitNow = async () => {
     if (!duration.trim()) return;
     setBusy(true);
     try {
@@ -1238,15 +1252,17 @@ function FieldRow({ id, label, children, empty }: { id: string; label: string; c
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const on = editing === id && !!f && !readOnly;
   const start = () => (setValue(f?.current ?? null), setConflict(null), setEditing(id));
-  const commit = async (expected?: string, input?: FieldInput | null) => {
-    const v = input ?? value;
-    if (!v || !f) return;
-    setBusy(true);
-    const r = await save(id, label, v, expected);
-    setBusy(false);
-    if ("conflict" in r) setConflict(r.conflict);
-    else if ("ok" in r) (setConflict(null), setEditing(null));
-  };
+  const once = useSingleFlight();
+  const commit = (expected?: string, input?: FieldInput | null) =>
+    once(async () => {
+      const v = input ?? value;
+      if (!v || !f) return;
+      setBusy(true);
+      const r = await save(id, label, v, expected);
+      setBusy(false);
+      if ("conflict" in r) setConflict(r.conflict);
+      else if ("ok" in r) (setConflict(null), setEditing(null));
+    });
   const shown = empty ? <span className="faint">{t("iv.none")}</span> : children;
   return (
     <div className={`iv-field ${on ? "editing" : ""}`} data-field={id}>
@@ -1381,8 +1397,11 @@ function Details() {
         </Plain>
         {issue.resolved && (
           <Plain label={t("iv.f.resolved")}>
-            <When at={issue.resolved} />
-            {issue.resolution && <span className="faint"> · {issue.resolution}</span>}
+            {/* One text: the date and the resolution wrap as words, not as two squeezed columns. */}
+            <span>
+              <When at={issue.resolved} />
+              {issue.resolution && <span className="faint"> · {issue.resolution}</span>}
+            </span>
           </Plain>
         )}
       </dl>
@@ -1399,9 +1418,9 @@ function Details() {
       <div className="iv-arcalo">
         <h4>{t("iv.inArcalo")}</h4>
         {view.time_tracking && (
-          <dl className="iv-fields compact">
+          <dl className="iv-fields">
             <Plain label={t("jira.col.wbs")}>{view.wbs ? <span className="mono">{view.wbs}</span> : <span className="faint">{t("jira.noWbs")}</span>}</Plain>
-            {view.booked_minutes > 0 && <Plain label={t("jira.col.booked")}>{fmtMinutes(view.booked_minutes)}</Plain>}
+            {view.booked_minutes > 0 && <Plain label={t("jira.col.booked")}>{fmtDuration(view.booked_minutes)}</Plain>}
           </dl>
         )}
         <div className="iv-arcalo-actions">

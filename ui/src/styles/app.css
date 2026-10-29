@@ -3198,10 +3198,8 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 
 /* Hover card of a chip (like the page-link preview). */
 .issue-preview { padding-bottom: 12px; }
-.issue-preview-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 0; }
+.issue-preview-head { display: flex; align-items: center; gap: 8px; min-height: 22px; padding: 10px 10px 0 14px; }
 .issue-preview-key { font-size: var(--fs-sm); color: var(--text-2); }
-.issue-preview-open { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); }
-.issue-preview-open:hover { background: var(--bg-hover); color: var(--text); }
 .issue-preview-title { padding-top: 6px; line-height: 1.35; }
 .issue-preview-meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; padding: 0 14px 8px; font-size: var(--fs-sm); }
 .issue-preview-meta dt { color: var(--text-3); }
@@ -3223,17 +3221,20 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issue-row { position: relative; border-radius: var(--r-md); }
 .issue-row:hover, .issue-row.open { background: var(--bg-hover); }
 .issue-row.open { box-shadow: inset 0 0 0 1px var(--border); }
-.issue-row-main { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 6px 10px; cursor: pointer; border-radius: var(--r-md); }
+/* The row actions (issue view, Jira, more: 3 × 22 px) sit in room the row always keeps free: the
+   summary and the status never move or hide under them when they show on hover or focus. */
+.issue-row-main { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 6px 92px 6px 10px; cursor: pointer; border-radius: var(--r-md); }
 .issue-row-main:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-.issue-row:hover .issue-row-main, .issue-row:focus-within .issue-row-main, .issue-row.open .issue-row-main { padding-right: 112px; }
 .issue-key { flex: none; font-size: var(--fs-sm); color: var(--text-2); min-width: 7ch; }
 .issue-summary { flex: 1 1 auto; min-width: 0; color: var(--text); }
 .issue-row.done .issue-summary { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
 .issue-meta { display: flex; align-items: center; gap: 12px; flex: none; }
 .issue-sprint { max-width: 14ch; font-size: var(--fs-xs); }
 .issue-assignee { max-width: 16ch; font-size: var(--fs-xs); color: var(--text-2); }
-.issue-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast); }
+.issue-actions { position: absolute; top: 8px; right: 10px; display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast); }
 .issue-row:hover .issue-actions, .issue-row:focus-within .issue-actions, .issue-row.open .issue-actions { opacity: 1; }
+@media (hover: none) { .issue-actions { opacity: 1; } }
+.issue-open-buttons { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .issue-detail { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; padding: 6px 14px 16px 36px; cursor: default; }
 .issue-detail-main { display: grid; gap: 12px; align-content: start; min-width: 0; }
 .issue-facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: var(--fs-sm); }
@@ -3526,7 +3527,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .bf-prep > svg { flex: none; }
 .bf-prep:hover .ellipsis { text-decoration: underline; text-underline-offset: 2px; }
 .bf-actions { display: flex; align-items: center; gap: 4px; }
-.bf-issue { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.bf-issue { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
 .bf-issue .rv-row { grid-template-columns: auto minmax(0, 1fr) auto; }
 .bf-overdue { color: var(--danger); }
 .bf-task.overdue .rv-check { border-color: var(--danger); }
@@ -3558,7 +3559,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .entry-jira-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
 .entry-jira.wl-posted .entry-jira-dot { background: var(--success); }
 .entry-jira.wl-pending .entry-jira-dot { background: var(--warning-fill); }
-.entry-jira.wl-failed { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--danger); }
+.entry-jira.wl-failed { border-color: transparent; background: var(--danger-soft); color: var(--danger); }
 .entry-jira.wl-failed .entry-jira-dot { background: var(--danger); }
 .entry-jira-state { font-weight: var(--fw-medium); color: var(--text-3); }
 .entry-jira.wl-failed .entry-jira-state { color: inherit; }

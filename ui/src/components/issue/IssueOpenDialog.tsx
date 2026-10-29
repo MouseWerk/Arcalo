@@ -82,7 +82,7 @@ export function IssueOpenDialog() {
               <button type="button" className={`iv-picker-item ${i === sel ? "sel" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => go(k)}>
                 {issue && <TypeGlyph name={issue.issue_type} />}
                 <span className="mono">{k}</span>
-                <span className="ellipsis faint">{issue?.summary ?? t("iv.openKey")}</span>
+                <span className="ellipsis faint">{issue?.summary ?? t("iv.openView")}</span>
               </button>
             </li>
           );

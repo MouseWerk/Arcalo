@@ -921,11 +921,13 @@ keys in `useIssueModal`, so an issue opened from a link or subtask goes on top a
 full app on a phone) it is a full-screen sheet; below 860 px the details go under the main column.
 
 - Entry points: a click on an issue chip in a note (Ctrl/Cmd+click: the browser; the note is in the view and in the
-  hover card with Shift), the Issues list (row action and menu „Als Fenster öffnen“, double click, Shift+Enter, „Vollansicht“
+  hover card with Shift; the card's buttons), the Issues list (row action and menu, double click, Shift+Enter, the button
   in the opened row), the Jira widgets and Jira due dates of the start page (click; their menu has the note), the briefing,
   the plan blocks of the calendar, the issue key of a booking in Zeiterfassung, the canvas, the quick search, and the
   palette (a typed key or Jira address, and „Issue öffnen…“, `IssueOpenDialog`). `jiraActions.openIssue` is the one
-  click rule; `issueOpenMenu` the shared context menu.
+  click rule; `issueOpenMenu` the shared context menu. Wherever an issue has buttons, it is `IssueOpenButtons`: „In der
+  Issue-Ansicht öffnen“ (`ISSUE_VIEW_ICON`) first, then „In Jira öffnen“, the labels and icons of the view's header and the
+  menus (q123).
 - Reading (`JiraClient::full`): `GET issue/{key}?expand=renderedFields,names,schema,editmeta,transitions,transitions.fields,changelog&fields=*all,-comment`
   with `mypermissions`, `remotelink` and `myself` in parallel, then the newest 50 comments (`comment?orderBy=-created&expand=renderedBody`;
   a Server that ignores the order is asked for the last page instead), the newest worklogs (Cloud pages, Server sends

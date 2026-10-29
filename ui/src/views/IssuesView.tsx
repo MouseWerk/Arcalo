@@ -1,10 +1,12 @@
 // Issues: the Jira issues of every site (my open issues and the saved JQL searches), read from
 // the offline cache, filterable by site, project, status, sprint and priority, grouped, and
 // searchable. A row opens the issue: description, last comments, the pages that name it, its WBS;
-// „Als Fenster öffnen“ (row action, menu, double click or Shift+Enter) the whole issue in the issue view.
+// „In der Issue-Ansicht öffnen“ (row action, menu, double click or Shift+Enter) the whole issue in
+// the issue view. The row actions (issue view, Jira, more) keep their place: the row reserves it, so
+// nothing moves or hides the status when they show on hover or focus.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, PanelTop, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
+import { CalendarPlus, CheckSquare, ListPlus, FileText, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
 import { openIssueView } from "../lib/issueFull";
 import { openStatusReport } from "../components/MeetingWork";
 import { on } from "../lib/api";
@@ -13,10 +15,11 @@ import { useApp } from "../store/app";
 const NO_QUERIES: never[] = [];
 import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner, useMenu, type MenuEntry, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
-import { fmtDate, fmtMinutes, isoDay, relative } from "../lib/format";
+import { fmtDate, fmtDuration, isoDay, relative } from "../lib/format";
 import { t, useT, type TKey } from "../lib/i18n";
 import { emptyIssueQuery, filterIssues, GROUP_BYS, groupIssues, jiraApi, overdue, priorityClass, valuesOf, type GroupBy, type Issue, type IssueQuery, type IssueView, type JiraStatus } from "../lib/jira";
-import { addIssueTask, copyIssueKey, openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
+import { addIssueTask, ISSUE_VIEW_ICON, issueOpenMenu, openIssueNote } from "../lib/jiraActions";
+import { IssueOpenButtons } from "../components/issue/IssueOpenButtons";
 import { openSettingsSection } from "../lib/calnav";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { useTimeTracking } from "../lib/timetracking";
@@ -54,10 +57,7 @@ export function StatusPill({ issue }: { issue: Pick<Issue, "status" | "status_ca
 
 export function issueMenu(i: Issue): MenuEntry[] {
   return [
-    { label: t("iv.openWindow"), icon: PanelTop, onSelect: () => openIssueView(i.key) },
-    { label: t("jira.openNote"), icon: FileText, onSelect: () => void openIssueNote(i.key) },
-    { label: t("jira.openBrowser"), icon: ExternalLink, onSelect: () => void openIssueInBrowser(i.key, i.url) },
-    { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(i.key) },
+    ...issueOpenMenu(i),
     "separator",
     { label: t("jira.addTask"), icon: ListPlus, onSelect: () => void addIssueTask(i.key) },
     { label: t("blocks.plan"), icon: CalendarPlus, onSelect: () => openPlanPicker({ kind: "issue", key: i.key, summary: i.summary }) },
@@ -272,10 +272,7 @@ export function IssuesView() {
                             </span>
                           </div>
                           <span className="issue-actions">
-                            <IconButton icon={PanelTop} size="sm" label={t("iv.openWindow")} className="issue-open-view" onClick={() => openIssueView(i.key)} />
-                            <IconButton icon={ExternalLink} size="sm" label={t("jira.openBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />
-                            <IconButton icon={FileText} size="sm" label={t("jira.openNote")} onClick={(e) => void openIssueNote(i.key, { newTab: e.ctrlKey || e.metaKey })} />
-                            <IconButton icon={Copy} size="sm" label={t("jira.copyKey")} onClick={() => void copyIssueKey(i.key)} />
+                            <IssueOpenButtons issueKey={i.key} url={i.url} />
                             <IconButton aria-haspopup="menu" icon={MoreHorizontal} size="sm" label={t("jira.more", { key: i.key })} onClick={(e) => openMenuAt(e, issueMenu(i))} />
                           </span>
                           {open === i.key && <IssueDetail issue={i} />}
@@ -347,7 +344,7 @@ function IssueDetail({ issue }: { issue: Issue }) {
               {!!view?.booked_minutes && (
                 <>
                   <dt>{t("jira.col.booked")}</dt>
-                  <dd>{fmtMinutes(view.booked_minutes)}</dd>
+                  <dd>{fmtDuration(view.booked_minutes)}</dd>
                 </>
               )}
             </>
@@ -378,8 +375,8 @@ function IssueDetail({ issue }: { issue: Issue }) {
       </div>
       <aside className="issue-detail-side">
         <div className="issue-detail-buttons">
-          <Button size="sm" variant="primary" icon={PanelTop} className="issue-full-view" onClick={() => openIssueView(issue.key)}>
-            {t("iv.fullView")}
+          <Button size="sm" variant="primary" icon={ISSUE_VIEW_ICON} className="issue-full-view" onClick={() => openIssueView(issue.key)}>
+            {t("iv.openView")}
           </Button>
           <Button size="sm" icon={FileText} onClick={() => void openIssueNote(issue.key)}>
             {view?.note_page_id ? t("jira.openNote") : t("jira.createNote", { key: issue.key })}

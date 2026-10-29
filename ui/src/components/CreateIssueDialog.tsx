@@ -8,6 +8,7 @@ import { jiraApi, type RemoteProject } from "../lib/jira";
 import { CREATE_ISSUE_EVENT, type CreateIssueRequest } from "../editor/taskIssue";
 import { Button, Dialog, Field, Input, Select } from "./ui";
 import { isKey } from "../lib/ime";
+import { useSingleFlight } from "../lib/singleFlight";
 
 const LAST = "arcalo.jira.lastCreate";
 function last(): { site?: string; project?: string; type?: string } {
@@ -65,7 +66,11 @@ function CreateIssueDialog({ req, onClose }: { req: CreateIssueRequest; onClose:
     );
   }, [site, project]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const create = async () => {
+  // Enter in the summary and the button both create: a second press while Jira answers is dropped
+  // (it created a second issue before).
+  const once = useSingleFlight();
+  const create = () => once(createNow);
+  const createNow = async () => {
     if (!site || !project || !type || !summary.trim()) return;
     setBusy(true);
     setError(null);

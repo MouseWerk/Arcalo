@@ -21,7 +21,9 @@
 // every login fail as a Server account locked behind a CAPTCHA; `failWorklogs: n` refuses the
 // first n worklog posts with 500 after storing nothing; `big: "KEY"` gives that issue 500 comments
 // and 100 attachments. `state.fail = { status, times }` answers the next `times` authorized
-// requests with `status` (a gateway error, a proxy asking for a login).
+// requests with `status` (a gateway error, a proxy asking for a login). `state.writeDelayMs`
+// answers every write (POST, PUT, DELETE) that much later, as a slow Jira does; the request is
+// recorded at once.
 
 import http from "node:http";
 import zlib from "node:zlib";
@@ -390,6 +392,7 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     const path = url.pathname;
     const want = url.searchParams.get("fields");
     requests.push({ method: req.method, path, query: Object.fromEntries(url.searchParams), headers: req.headers, body: data });
+    if (state.writeDelayMs && req.method !== "GET") await new Promise((r) => setTimeout(r, state.writeDelayMs));
     if (path === "/rest/api/2/serverInfo") return json(res, 200, { deploymentType: cloud ? "Cloud" : "DataCenter", version: cloud ? "1001.0.0" : "9.12.0" });
     // Cloud's avatars are public (another host in reality); everything else needs the login.
     if (path.startsWith("/avatars/")) return png(res, pngOf(48, 48, path.includes("mia") ? [214, 120, 64] : [90, 160, 110]));

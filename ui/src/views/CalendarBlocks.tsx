@@ -2,7 +2,7 @@
 // the mouse or the keyboard) and its side panel (link, focus session, task done, Outlook, delete).
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { CalendarClock, Check, CircleCheck, FileText, PanelTop, Play, RefreshCw, Target, Timer, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, CircleCheck, ExternalLink, FileText, Play, RefreshCw, Target, Timer, Trash2, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, IconButton, Input } from "../components/ui";
@@ -10,7 +10,7 @@ import { useT, t as tr } from "../lib/i18n";
 import { dateLong, fmtDuration } from "../lib/format";
 import { blockTime, linkLabel, moved, resized, SNAP } from "../lib/blocks";
 import { openFocusDialog } from "../components/Focus";
-import { openIssue } from "../lib/jiraActions";
+import { ISSUE_VIEW_ICON, openIssue, openIssueInBrowser } from "../lib/jiraActions";
 import type { BlockPatch, FocusBlock } from "../lib/types";
 import { isComposing } from "../lib/ime";
 
@@ -281,9 +281,12 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
                 <b className="mono">{b.link.key}</b> {b.issue_summary && <span>{b.issue_summary}</span>}
               </span>
               {b.issue_status && <Badge>{b.issue_status}</Badge>}
-              <Button size="sm" variant="ghost" icon={PanelTop} onClick={(e) => b.link.kind === "issue" && void openIssue(b.link.key, { browser: e.ctrlKey || e.metaKey })}>
-                {t("blocks.openIssue")}
-              </Button>
+              <span className="issue-open-buttons">
+                <Button size="sm" variant="ghost" icon={ISSUE_VIEW_ICON} className="issue-open-view" onClick={(e) => b.link.kind === "issue" && void openIssue(b.link.key, { browser: e.ctrlKey || e.metaKey })}>
+                  {t("iv.openView")}
+                </Button>
+                <IconButton icon={ExternalLink} size="sm" label={t("iv.openInJira")} className="issue-open-jira" onClick={() => b.link.kind === "issue" && void openIssueInBrowser(b.link.key)} />
+              </span>
             </div>
           )}
           {b.link.kind === "page" && (

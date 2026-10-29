@@ -146,6 +146,13 @@ test("a failed post shows, and „Erneut an Jira senden“ sends it", async () =
   await waitState(e.id, "failed");
   await app.waitFor(chip("PROJ-124", "failed"), 10000);
   assert.match(await app.text(chip("PROJ-124", "failed")), /fehlgeschlagen/);
+  // A tinted badge, no colored frame (CLAUDE.md: states never as an accent border).
+  const look = await app.browser.execute((s) => {
+    const cs = getComputedStyle(document.querySelector(s));
+    return { border: cs.borderTopColor, background: cs.backgroundColor };
+  }, chip("PROJ-124", "failed"));
+  assert.match(look.border, /^rgba\(0, 0, 0, 0\)$|transparent/, `colored frame: ${look.border}`);
+  assert.doesNotMatch(look.background, /^rgba\(0, 0, 0, 0\)$|transparent/, "no tint");
   await app.shot("118-timesheet-jira");
   await jira.start();
   await app.click(`${chip("PROJ-124", "failed")} .entry-jira-retry`);

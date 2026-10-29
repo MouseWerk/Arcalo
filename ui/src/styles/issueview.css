@@ -201,6 +201,8 @@
 .iv-tab:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .iv-tabpanel { display: grid; gap: var(--sp-3); min-width: 0; }
 .iv-list-tools { display: flex; justify-content: flex-end; margin-top: calc(-1 * var(--sp-2)); }
+/* The order is a quiet setting next to the list, not a control as large as the tabs above it. */
+.iv-list-tools .segmented button { height: var(--ctl-xs); padding-inline: var(--sp-2); font-size: var(--fs-xs); }
 .iv-composer { display: flex; gap: var(--sp-3); align-items: flex-start; }
 .iv-composer .grow { min-width: 0; display: grid; gap: var(--sp-2); }
 .iv-composer { padding-bottom: var(--sp-2); }
@@ -231,7 +233,6 @@
 .iv-field { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: start; gap: var(--sp-2); min-width: 0; }
 .iv-field > dt { padding-top: 6px; font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: break-word; hyphens: auto; }
 .iv-field > dd { margin: 0; min-width: 0; }
-.iv-fields.compact .iv-field { grid-template-columns: 96px minmax(0, 1fr); }
 /* A field being edited takes the whole width of the details (label above). */
 .iv-field.editing { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: var(--sp-2) 0; }
 .iv-field.editing > dt { padding-top: 0; }
