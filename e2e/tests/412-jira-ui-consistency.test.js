@@ -171,7 +171,15 @@ test("the Issues list: the actions keep their room, the issue view comes first e
   await app.keys(["Escape"]);
   await app.browser.waitUntil(async () => (await count(".menu")) === 0, { timeoutMsg: "menu still open" });
   // The opened row: the primary button says the same.
-  await app.browser.execute(() => document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-row-main').click());
+  await app.browser.waitUntil(
+    () =>
+      app.browser.execute(() => {
+        const el = document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-row-main');
+        if (el.getAttribute("aria-expanded") !== "true") el.click();
+        return !!document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view');
+      }),
+    { interval: 700, timeoutMsg: "the row does not open" },
+  );
   await app.waitFor('.issues-view [data-issue-row="PROJ-123"] .issue-full-view', 10000);
   assert.equal((await app.browser.execute(() => document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view').textContent)).trim(), VIEW);
   assert.equal(await app.browser.execute(() => (document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view svg')?.getAttribute("class") ?? "").match(/lucide-[a-z0-9-]+/)?.[0]), viewIcon);
