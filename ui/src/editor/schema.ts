@@ -21,6 +21,8 @@ import { CiteFlash } from "./reveal";
 import { FocusSelection } from "./focusSelection";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
+import { ImageClipboard } from "./imageClipboard";
+import type { ClipData } from "../lib/clipboard";
 import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
@@ -650,6 +652,10 @@ export interface SchemaOptions {
   attachmentMedia?: (name: string, type: string) => Promise<{ src: string; release: () => void }>;
   /** Stores a pasted/dropped image, returns the attachment name. */
   uploadImage?: (file: File) => Promise<string | null>;
+  /** Bytes of a stored file (images copied with their bytes for other programs). */
+  readAttachment?: (name: string) => Promise<Uint8Array>;
+  /** Writes several clipboard formats at once (`copyFormats` in lib/clipboard.ts). */
+  copyFormats?: (formats: Record<string, ClipData>) => Promise<void>;
   /** Stores any other pasted/dropped file under its name, returns the attachment name. */
   uploadFile?: (file: File) => Promise<string | null>;
   /** Slash „Datei einfügen“: file dialog, embeds the chosen files. */
@@ -773,6 +779,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     PageEmbed.configure({ mount: o.embedPage ?? null }),
     RichBlocks.configure({ mount: o.richBlock ?? null }),
     AttachmentDrop.configure({ uploadImage: o.uploadImage ?? null, uploadFile: o.uploadFile ?? null }),
+    ImageClipboard.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), read: o.readAttachment ?? null, write: o.copyFormats ?? null, upload: o.uploadImage ?? null }),
     SmartPaste.configure({ fetchTitle: o.fetchTitle ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),
     DrawingEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), onOpen: o.onOpenDrawing ?? (() => {}) }),

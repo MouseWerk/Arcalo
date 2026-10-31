@@ -80,7 +80,7 @@
 .dw-title-btn:hover h2 { color: var(--text); }
 .dw-gear { margin-left: auto; opacity: 0; transition: opacity var(--dur-fast); }
 .dw:hover .dw-gear, .dw-gear:focus-visible { opacity: 1; }
-.dw-body { flex: 1; min-height: 0; padding: 2px 14px 14px; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; }
+.dw-body { flex: 1; min-height: 0; padding: 2px 14px 14px; display: flex; flex-direction: column; overflow: auto; }
 .dw .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .dw .warn { color: var(--warning); }
 .dw-strong { font-weight: var(--fw-semibold); color: var(--text); }
@@ -565,7 +565,11 @@
 .dw-size-frame { fill: none; stroke: currentColor; stroke-opacity: 0.45; }
 .dw-size-fill { fill: currentColor; fill-opacity: 0.35; }
 .dw-sizes button[aria-pressed="true"] .dw-size-fill { fill-opacity: 0.9; }
-.dw-hover-tools { display: flex; align-items: center; gap: 1px; margin-left: auto; flex: none; }
+/* The hover tools lie over the end of the header and take no room from the title while hidden (it was cut to „Zuletzt be…“ in a narrow widget). */
+.dw-head { position: relative; }
+.dw-hover-tools { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); display: flex; align-items: center; gap: 1px; border-radius: var(--r-sm); }
+.dw:hover .dw-hover-tools, .dw-hover-tools:focus-within { background: var(--bg-raised); }
+@media (hover: none) { .dw-hover-tools { position: static; transform: none; margin-left: auto; flex: none; } }
 .dw-hover-tools .dw-gear { margin-left: 0; }
 .dw-menu { opacity: 0; transition: opacity var(--dur-fast); }
 .dw:hover .dw-menu, .dw-menu:focus-visible, .dw-menu[aria-expanded="true"] { opacity: 1; }

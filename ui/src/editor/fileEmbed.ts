@@ -9,6 +9,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { t } from "../lib/i18n";
 import { numberLocale } from "../lib/format";
+import { filesToStore } from "../lib/pasted";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
 
@@ -32,6 +33,19 @@ export const isPdfName = (name: string) => fileExtension(name) === "pdf";
 export function isFileEmbedName(name: string): boolean {
   const ext = fileExtension(name);
   return ext != null && !IMAGE_EXT.has(ext) && ext !== "excalidraw";
+}
+
+/**
+ * The attributes of an image or drawing embed's `<img>`: `data-embed`/`data-drawing` holds the
+ * name, `data-alt` the part after `|`. Each is read from its data attribute only; by default
+ * Tiptap reads an attribute from the element's attribute of the same name, so a copied image came
+ * back with its `alt` text (the file name) as caption and without its size.
+ */
+export function embedAttrs(nameAttr: "embed" | "drawing") {
+  return {
+    name: { default: "", parseHTML: (el: HTMLElement) => el.dataset[nameAttr] ?? "" },
+    alt: { default: null, parseHTML: (el: HTMLElement) => el.dataset.alt ?? null },
+  };
 }
 
 /** File name without folders (`![[Ordner/a.pdf]]` shows `a.pdf`). */
@@ -387,7 +401,7 @@ export const AttachmentDrop = Extension.create<AttachmentDropOptions>({
     const schema = this.editor.schema;
     // Images the image node shows (by name or type); anything else is stored as a file.
     const isImage = (f: File) => isImageName(f.name) || (!fileExtension(f.name) && /^image\/(png|jpe?g|gif|webp|svg\+xml)$/.test(f.type));
-    const usable = (list?: FileList | null) => [...(list ?? [])].filter((f) => (isImage(f) ? uploadImage : uploadFile));
+    const usable = (list?: FileList | File[] | null) => [...(list ?? [])].filter((f) => (isImage(f) ? uploadImage : uploadFile));
     const insert = async (view: EditorView, files: File[], at?: number) => {
       for (const file of files) {
         const image = isImage(file);
@@ -405,7 +419,8 @@ export const AttachmentDrop = Extension.create<AttachmentDropOptions>({
         key: new PluginKey("attachmentDrop"),
         props: {
           handlePaste(view, event) {
-            const files = usable(event.clipboardData?.files);
+            // Not the picture Office adds to its HTML, nor the image of a copy in a note (imageClipboard.ts).
+            const files = usable(filesToStore(event.clipboardData));
             if (!files.length) return false;
             event.preventDefault();
             void insert(view, files);
@@ -413,7 +428,8 @@ export const AttachmentDrop = Extension.create<AttachmentDropOptions>({
           },
           handleDrop(view, event, _slice, moved) {
             if (moved) return false;
-            const files = usable(event.dataTransfer?.files);
+            // A drag from another note (split panes) brings its HTML like a copy does.
+            const files = usable(filesToStore(event.dataTransfer));
             if (!files.length) return false;
             event.preventDefault();
             void insert(view, files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);

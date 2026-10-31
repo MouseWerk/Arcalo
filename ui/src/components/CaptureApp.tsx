@@ -62,6 +62,7 @@ import { aiOn as aiOnOf } from "../lib/aiswitch";
 import type { ZeitSuggestItem } from "../editor/extensions";
 import { PageIcon } from "./icons";
 import { t, useT } from "../lib/i18n";
+import { filesToStore } from "../lib/pasted";
 
 const ICONS = { zeit: Clock, task: CalendarCheck2, note: NotebookPen };
 /** Window width and height range (logical px); the height follows the content. */
@@ -773,7 +774,8 @@ export function CaptureApp() {
               }}
               onKeyDown={onKeyDown}
               onPaste={(e) => {
-                const files = [...e.clipboardData.files];
+                // Not the image of a copy in a note (its text is `![[name]]`) or Office's picture of its text.
+                const files = filesToStore(e.clipboardData);
                 if (files.length) {
                   e.preventDefault();
                   void storeFiles(files);

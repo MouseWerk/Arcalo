@@ -550,7 +550,7 @@ function StatusReportDialog({ initial, kind, onClose }: { initial?: Scope; kind?
             </Field>
           )}
           <Field label={t("mw.sr.scope")}>
-            <Select value={scopeKey(req.scope)} options={scopeOptions} aria-label={t("mw.sr.scope")} className="mw-sr-scope" onChange={(e) => {
+            <Select data-autofocus value={scopeKey(req.scope)} options={scopeOptions} aria-label={t("mw.sr.scope")} className="mw-sr-scope" onChange={(e) => {
               const v = e.target.value;
               const x = scopes.find((y) => scopeKey(y) === v);
               if (x) patch({ scope: x });

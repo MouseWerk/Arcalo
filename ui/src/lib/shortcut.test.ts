@@ -133,3 +133,13 @@ describe("one notation (q116 R8)", () => {
     }
   });
 });
+
+describe("the menu key", () => {
+  it("is named as on the keyboard, not by its event name (the help said „ContextMenu“)", () => {
+    setLang("de");
+    expect(keyName("ContextMenu")).toBe("Menütaste");
+    expect(keys("ContextMenu", false)).toBe("Menütaste");
+    setLang("en");
+    expect(keyName("ContextMenu")).toBe("Menu key");
+  });
+});

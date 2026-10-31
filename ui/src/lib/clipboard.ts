@@ -36,6 +36,18 @@ export function copyHtml(html: string, text: string): Promise<void> {
   );
 }
 
+/** A clipboard format's data, now or later: WebKit takes a copy only while the key press or click
+ *  is handled, so `write` is called right away and the data may follow (read from the disk). */
+export type ClipData = Blob | Promise<Blob>;
+
+/**
+ * Several formats in one copy (`text/html`, `text/plain`, `image/png`): the web clipboard only, the
+ * app's takes one format at a time. Rejects when the web clipboard refuses.
+ */
+export function copyFormats(formats: Record<string, ClipData>): Promise<void> {
+  return canWrite() ? navigator.clipboard.write([new ClipboardItem(formats)]) : unsupported();
+}
+
 /** An image (PNG); the app gets its pixels. */
 export function copyImage(png: Blob): Promise<void> {
   return viaApp(

@@ -91,7 +91,7 @@ test("every settings section opens without the desktop-only parts", async () => 
     const text = await app.browser.execute(() => document.querySelector(".settings-body")?.innerText ?? "");
     assert.ok(text.trim().length > 0, `${id} is empty`);
     // Nothing that chooses or opens a local folder, starts with the system or needs a tray.
-    for (const gone of ["Ordner wählen", "Datenordner verschieben", "Ordner öffnen", "In den Infobereich schließen", "Mit Windows starten", "Befehlszeile", "Tastenkürzel (global)", "Hintergrundeffekt", "Minimiert starten", "Vault importieren"]) {
+    for (const gone of ["Ordner wählen", "Datenordner verschieben", "Ordner öffnen", "In den Infobereich schließen", "Mit Windows starten", "Bei der Anmeldung starten", "Befehlszeile", "Tastenkürzel (global)", "Hintergrundeffekt", "Minimiert starten", "Vault importieren"]) {
       assert.ok(!text.includes(gone), `${id} shows „${gone}“`);
     }
     if (id === "backup") {

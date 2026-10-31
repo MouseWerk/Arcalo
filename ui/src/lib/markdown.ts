@@ -4,19 +4,32 @@ import { marked, Marked, type Tokens } from "marked";
 import DOMPurify from "dompurify";
 import { lazyGrammar, loadLanguage, lowlight } from "../editor/languages";
 import { t } from "./i18n";
+import { attachmentUrl } from "./api";
 
 marked.setOptions({ gfm: true, breaks: false });
 
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** Renders Markdown to sanitized HTML; `[[Page]]` becomes a clickable link. */
+/**
+ * Renders Markdown to sanitized HTML; `[[Page]]` becomes a clickable link. An image embed
+ * `![[bild.png|300]]` becomes the stored image (its address is added after sanitizing, the
+ * sanitizer allows no app addresses), other embeds (`![[Notiz]]`) a link.
+ */
 export function renderMarkdown(md: string): string {
-  const withLinks = md.replace(/\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g, (_, target: string, alias?: string) =>
-    `<a data-wikilink data-target="${escapeHtml(target.trim())}" class="wikilink">${escapeHtml((alias ?? target).trim())}</a>`,
-  );
+  const withLinks = md
+    .replace(/!\[\[([^\]|#\n]+?\.(?:png|jpe?g|gif|webp|svg))(?:#[^\]|\n\\]*)?(?:\\?\|([^\]\n]*))?\]\]/gi, (_, name: string, alt?: string) => {
+      const width = /^(\d+)(?:x\d+)?$/.exec(alt?.trim() ?? "")?.[1];
+      return `<img data-attachment="${escapeHtml(name.trim())}" alt="${escapeHtml(width || !alt ? "" : alt.trim())}"${width ? ` width="${width}"` : ""}>`;
+    })
+    .replace(/!?\[\[([^\]|\n]+?)\\?(?:\|([^\]\n]+))?\]\]/g, (_, target: string, alias?: string) =>
+      `<a data-wikilink data-target="${escapeHtml(target.trim())}" class="wikilink">${escapeHtml((alias ?? target).trim())}</a>`,
+    );
   const html = marked.parse(withLinks, { async: false }) as string;
-  return DOMPurify.sanitize(html, { ADD_ATTR: ["data-wikilink", "data-target", "target"] });
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ["data-wikilink", "data-target", "data-attachment", "target"] }) as unknown as string;
+  return clean.replace(/<img data-attachment="([^"]*)"/g, (m, name: string) => `${m} src="${escapeHtml(attachmentUrl(unescapeHtml(name)))}"`);
 }
+
+const unescapeHtml = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 const COPY_ICON =
   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';

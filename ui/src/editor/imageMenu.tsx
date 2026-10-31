@@ -8,12 +8,13 @@ import { NodeSelection } from "@tiptap/pm/state";
 import { ClipboardCopy, Copy, ExternalLink, FolderOpen, Maximize2, Ruler, Trash2, X } from "lucide-react";
 import type { MenuEntry } from "../components/ui";
 import { IconButton } from "../components/ui";
-import { api } from "../lib/api";
+import { api, attachmentUrl } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
 import { isComposing, isTab } from "../lib/ime";
 import { caps } from "../lib/capabilities";
-import { copyImage, copyText } from "../lib/clipboard";
+import { copyFormats, copyImage, copyText } from "../lib/clipboard";
+import { imageCopyFormats, toPng } from "./imageClipboard";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -25,16 +26,21 @@ const SIZES: { label: TKey; width: number | null }[] = [
 /** Copies an image as PNG to the clipboard (other formats are converted). */
 async function copyImageAt(src: string) {
   const blob = await (await fetch(src)).blob();
-  let png = blob;
-  if (blob.type !== "image/png") {
-    const bmp = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    canvas.width = bmp.width;
-    canvas.height = bmp.height;
-    canvas.getContext("2d")!.drawImage(bmp, 0, 0);
-    png = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("PNG"))), "image/png"));
-  }
-  await copyImage(png);
+  await copyImage(await toPng(new Uint8Array(await blob.arrayBuffer()), blob.type || "image/png"));
+}
+
+/**
+ * „Bild kopieren“: like Ctrl+C on the selected image (a paste in a note embeds the same stored
+ * file, other programs get the image and HTML with it); when the clipboard takes only one format
+ * (the app's own), the image alone.
+ */
+function copyImageNode(editor: Editor, pos: number, img: HTMLImageElement): Promise<void> {
+  const src = img.currentSrc || img.src;
+  const formats = imageCopyFormats(editor.view, NodeSelection.create(editor.state.doc, pos).content(), {
+    resolve: attachmentUrl,
+    read: async (name) => new Uint8Array(await api.readAttachment(name)),
+  });
+  return formats ? copyFormats(formats).catch(() => copyImageAt(src)) : copyImageAt(src);
 }
 
 /** The menu for the image node at `pos`. `view` opens the full view. */
@@ -67,7 +73,7 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
     {
       label: t("img.copy"),
       icon: ClipboardCopy,
-      onSelect: () => copyImageAt(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
+      onSelect: () => copyImageNode(editor, pos, img).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
     },
     ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => copyText(`![[${name}]]`).then(() => s.toast({ tone: "success", title: t("file.embedCopied") }), failed(t("file.copyFailed"))) } as MenuEntry] : []),
     "separator",

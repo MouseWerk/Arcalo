@@ -525,7 +525,8 @@ export function CommandPalette() {
               {t("search.exactOnly")}
             </button>
           )}
-          <span className="faint">{t(ai ? (timeOn ? "palette.footHints" : "tt.paletteFoot") : timeOn ? "palette.footHintsNoAi" : "palette.footHintsPlain")}</span>
+          {/* The quick switcher (Ctrl+O) only opens pages: no booking, asking or tags there. */}
+          {mode !== "pages" && <span className="faint pal-foot-hints">{t(ai ? (timeOn ? "palette.footHints" : "tt.paletteFoot") : timeOn ? "palette.footHintsNoAi" : "palette.footHintsPlain")}</span>}
         </div>
       </div>
     </div>

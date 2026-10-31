@@ -3,13 +3,14 @@
 // drawing (debounced) and when closed with „Fertig“ or Esc.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw, MainMenu, WelcomeScreen, exportToSvg, hashElementsVersion, serializeAsJSON } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, WelcomeScreen, exportToSvg, hashElementsVersion, isElementLink, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, LibraryItems } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorText, storeFile } from "../lib/api";
 import { currentLang, useT } from "../lib/i18n";
 import { useApp } from "../store/app";
-import { DRAWING_SAVED_EVENT, drawingLabel } from "./drawing";
+import { DRAWING_SAVED_EVENT, drawingLabel, inDrawing, isExternalLink } from "./drawing";
 import { parseDrawing } from "./drawingFormat";
 import { FileWarning } from "lucide-react";
 import { isComposing } from "../lib/ime";
@@ -207,33 +208,73 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
   // Modal: keys aimed at something behind the overlay (e.g. the note that still had the focus)
   // go nowhere, so typing never edits the note underneath. WebKit also inserts typed text at the
   // document selection even when the focus is elsewhere, so a selection left in the note is dropped.
+  // Excalidraw's own dialogs (Mermaid, help) sit outside the overlay and count as part of it.
   useEffect(() => {
     const dropOutsideSelection = () => {
       const sel = window.getSelection();
-      if (sel?.anchorNode && !overlay.current?.contains(sel.anchorNode)) sel.removeAllRanges();
+      const root = overlay.current;
+      if (root && sel?.anchorNode && !inDrawing(root, sel.anchorNode)) sel.removeAllRanges();
     };
     const active = document.activeElement;
-    if (active instanceof HTMLElement && !overlay.current?.contains(active)) active.blur();
+    if (active instanceof HTMLElement && overlay.current && !inDrawing(overlay.current, active)) active.blur();
     dropOutsideSelection();
     const onKey = (e: KeyboardEvent) => {
       const root = overlay.current;
       if (!root) return;
       dropOutsideSelection();
-      if (e.target instanceof Node && root.contains(e.target)) return;
+      if (e.target instanceof Node && inDrawing(root, e.target)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       root.querySelector<HTMLElement>(".excalidraw")?.focus();
     };
+    // Links in Excalidraw's dialogs (Mermaid syntax, help) open in the browser instead of replacing
+    // the app in its window. A shape's link goes through `onLinkOpen`.
+    const onClick = (e: MouseEvent) => {
+      const root = overlay.current;
+      const a = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!root || !a || !inDrawing(root, a) || a.classList.contains("excalidraw-hyperlinkContainer-link")) return;
+      e.preventDefault();
+      if (isExternalLink(a.href)) openUrl(a.href).catch((err) => useApp.getState().error(t("links.openFailed"), err));
+    };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("click", onClick, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** A shape's link: one to another shape scrolls there, web and mail links open outside the app. */
+  const onLinkOpen = useCallback(
+    (element: { link: string | null }, event: CustomEvent) => {
+      event.preventDefault();
+      const url = element.link ?? "";
+      if (isElementLink(url)) apiRef.current?.scrollToContent(url, { fitToContent: true, animate: true });
+      else if (isExternalLink(url)) openUrl(url).catch((err) => useApp.getState().error(t("links.openFailed"), err));
+    },
+    [t],
+  );
 
   const onKeyDownCapture = (e: React.KeyboardEvent) => {
     if (isComposing(e)) return;
     if (e.key !== "Escape" || e.defaultPrevented) return;
-    // Esc first leaves text or line editing, drops the active tool or closes Excalidraw's own menus; only then the editor.
+    // Esc first leaves text or line editing, a field (link, frame name, search), drops the active
+    // tool or closes Excalidraw's own menus, dialogs and context menu; only then the editor.
+    if (e.target instanceof HTMLElement && e.target.matches("input, textarea, select, [contenteditable='true']")) return;
     const s = apiRef.current?.getAppState();
-    const busy = !!s && (!!s.editingTextElement || !!s.newElement || !!s.editingLinearElement || !!s.openDialog || !!s.openMenu || !!s.openPopup || s.activeTool.type !== "selection");
+    const busy =
+      !!s &&
+      (!!s.editingTextElement ||
+        !!s.newElement ||
+        !!s.editingLinearElement ||
+        !!s.editingFrame ||
+        s.showHyperlinkPopup === "editor" ||
+        !!s.contextMenu ||
+        !!s.openDialog ||
+        !!s.openMenu ||
+        !!s.openPopup ||
+        s.activeTool.type !== "selection");
     if (busy) return;
     e.preventDefault();
     e.stopPropagation();
@@ -286,6 +327,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
             initialData={initial}
             excalidrawAPI={(x) => (apiRef.current = x)}
             onChange={onChange}
+            onLinkOpen={onLinkOpen}
             onLibraryChange={(items) => {
               try {
                 localStorage.setItem(LIBRARY_KEY, JSON.stringify(items));
