@@ -32,6 +32,10 @@ export function cutText(from: Element | null): { el: HTMLElement; text: string }
   return null;
 }
 
+/** Whether `el` opens a menu and a menu is open: the pointer resting on the button after the
+ *  click that opened it would bring its tooltip back over the menu. */
+export const opensOpenMenu = (el: Element) => el.matches("[aria-haspopup]") && !!document.querySelector('[role="menu"]');
+
 export function installTooltips() {
   const tip = document.createElement("div");
   tip.className = "tooltip";
@@ -75,12 +79,13 @@ export function installTooltips() {
     target = null;
     tip.classList.remove("on");
   };
-  /** Whether the tooltip of `el` still belongs on screen: under the pointer or keyboard focus. */
-  const wanted = (el: HTMLElement) => el.isConnected && (el.matches(":hover") || el.contains(document.activeElement) && !!document.activeElement?.matches(":focus-visible"));
+  /** Whether the tooltip of `el` still belongs on screen: under the pointer or keyboard focus, and
+   *  not over the menu it opened. */
+  const wanted = (el: HTMLElement) => el.isConnected && !opensOpenMenu(el) && (el.matches(":hover") || el.contains(document.activeElement) && !!document.activeElement?.matches(":focus-visible"));
   let pending = "";
   const show = (el: HTMLElement) => {
     const text = el.dataset.tooltip ?? pending;
-    if (!text) return;
+    if (!text || opensOpenMenu(el)) return;
     tip.textContent = text;
     place(el);
     tip.classList.add("on");

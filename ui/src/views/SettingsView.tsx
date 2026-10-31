@@ -1522,10 +1522,10 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
   );
 }
 
-/** Wording of the window options: tray and login items are called differently on macOS. */
+/** Wording of the window options: tray and login items are called differently on macOS; Linux has no „Mit Windows starten“. */
 const DESK: Record<"closeLabel" | "closeHint" | "autostartLabel" | "autostartHint", TKey> = IS_MAC
   ? { closeLabel: "set.desktop.closeMac", closeHint: "set.desktop.closeHintMac", autostartLabel: "set.desktop.autostartMac", autostartHint: "set.desktop.autostartHintMac" }
-  : { closeLabel: "set.desktop.close", closeHint: "set.desktop.closeHint", autostartLabel: "set.desktop.autostart", autostartHint: "set.desktop.autostartHint" };
+  : { closeLabel: "set.desktop.close", closeHint: "set.desktop.closeHint", autostartLabel: IS_LINUX ? "set.desktop.autostartLinux" : "set.desktop.autostart", autostartHint: "set.desktop.autostartHint" };
 
 function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
   const t = useT();

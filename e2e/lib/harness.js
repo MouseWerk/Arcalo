@@ -23,11 +23,18 @@ export const EDITOR = ".ProseMirror:not([hidden] *)";
 export const SHOTS = process.env.ARCALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
+/**
+ * `-noreset`: by default an X server resets when its last client leaves, and the reset closes the
+ * connections still in their handshake. The app is the display's only client, so when it restarts
+ * itself and the old process ends while the new one is connecting, the new one's GTK does not
+ * start ("Failed to initialize GTK") and the restart is lost. A desktop session always has other
+ * clients (window manager, panel), so it never resets there either.
+ */
 function ensureXvfb() {
   try {
     execSync(`xdpyinfo -display ${DISPLAY}`, { stdio: "ignore" });
   } catch {
-    const x = spawn("Xvfb", [DISPLAY, "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], { stdio: "ignore", detached: true });
+    const x = spawn("Xvfb", [DISPLAY, "-screen", "0", "1600x1000x24", "-nolisten", "tcp", "-noreset"], { stdio: "ignore", detached: true });
     x.unref();
     execSync("sleep 1");
   }

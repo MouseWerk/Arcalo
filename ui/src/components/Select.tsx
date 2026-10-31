@@ -44,6 +44,8 @@ export interface SelectProps {
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-invalid"?: boolean;
+  /** The control a dialog focuses first (`Dialog` looks for `[data-autofocus]`). */
+  "data-autofocus"?: boolean;
 }
 
 /** Plain text of option children. */

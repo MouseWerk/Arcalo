@@ -9,13 +9,17 @@ import { IconButton } from "../components/ui";
 import { TABLE_ACTIONS, inHeaderRow, runTableAction } from "./table-actions";
 import { useT } from "../lib/i18n";
 
-/** The DOM element of the table around the selection. */
-function tableElement(editor: Editor): HTMLElement | null {
+/**
+ * The `<table>` around the selection. The node's own element is the scroll wrapper, as wide as
+ * the note: the toolbar placed at its end stood far right of a narrow table, over the block above.
+ */
+export function tableElement(editor: Editor): HTMLElement | null {
   const { $from } = editor.state.selection;
   for (let d = $from.depth; d > 0; d--) {
     if ($from.node(d).type.name !== "table") continue;
     const dom = editor.view.nodeDOM($from.before(d));
-    return dom instanceof HTMLElement ? dom : null;
+    if (!(dom instanceof HTMLElement)) return null;
+    return dom.matches("table") ? dom : (dom.querySelector<HTMLElement>(":scope > table") ?? dom);
   }
   return null;
 }
@@ -34,7 +38,15 @@ export function TableToolbar({ editor, hidden }: { editor: Editor; hidden: boole
   const reference = useCallback(() => {
     const el = tableElement(editor);
     if (!el) return null;
-    return { getBoundingClientRect: () => el.getBoundingClientRect(), getClientRects: () => el.getClientRects() };
+    // A table wider than the note scrolls in its wrapper: only its shown part counts.
+    const rect = () => {
+      const r = el.getBoundingClientRect();
+      const box = el.parentElement?.getBoundingClientRect() ?? r;
+      const left = Math.max(r.left, box.left);
+      const right = Math.max(left, Math.min(r.right, box.right));
+      return new DOMRect(left, r.top, right - left, r.height);
+    };
+    return { getBoundingClientRect: rect, getClientRects: () => [rect()] };
   }, [editor]);
   return (
     <BubbleMenu

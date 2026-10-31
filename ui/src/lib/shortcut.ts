@@ -85,6 +85,7 @@ const KEY_NAMES: Record<string, () => string> = {
   end: () => t("keys.end"),
   pageup: () => t("keys.pageUp"),
   pagedown: () => t("keys.pageDown"),
+  contextmenu: () => t("keys.menu"),
 };
 
 /**

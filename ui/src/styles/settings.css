@@ -41,7 +41,7 @@
 .settings-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; outline: none; color: var(--text); font-size: var(--fs-md); user-select: text; }
 .settings-search input::placeholder { color: var(--text-3); }
 .settings-search-key { flex: none; margin-right: 4px; font-size: var(--fs-2xs); color: var(--text-3); }
-.settings-nav-list { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -4px 0; padding: 0 4px 8px; scrollbar-width: thin; }
+.settings-nav-list { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -4px 0; padding: 0 4px 8px; }
 /* More items above or below: the edge fades instead of cutting an item in half. */
 .settings-nav-list.fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
 .settings-nav-list.fade-top { mask-image: linear-gradient(to bottom, transparent, #000 20px); }
@@ -111,7 +111,8 @@
 
 /* A row: text on the left (grows), control on the right; the control wraps below when it does not fit. */
 .set-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 24px; row-gap: 10px; min-width: 0; padding: var(--set-row-pad) 0; }
-.set-row-text { flex: 1 1 200px; min-width: 0; }
+/* 160px: a short label next to a three-way switch (Editor: Serifenlos, Mit Serifen, Monospace) stays on one line in a 1480 px window with both side panels. */
+.set-row-text { flex: 1 1 160px; min-width: 0; }
 .set-row-label { font-weight: var(--fw-medium); color: var(--text); line-height: 1.4; overflow-wrap: anywhere; }
 .set-row-desc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.5; }
 .set-row-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; }
@@ -532,7 +533,7 @@
 /* ---- about: licenses ---- */
 .lic-text { margin: 0; white-space: pre-wrap; font-family: var(--font-mono); font-variant-ligatures: none; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-2); user-select: text; }
 .lic-search { margin-bottom: 12px; }
-.lic-body { display: flex; flex-direction: column; gap: 16px; max-height: min(52vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.lic-body { display: flex; flex-direction: column; gap: 16px; max-height: min(52vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .lic-head { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--text-3); }
 .lic-list { list-style: none; margin: 0; padding: 0; }
 .lic-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 12rem); gap: 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
