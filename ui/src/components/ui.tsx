@@ -211,13 +211,24 @@ export function Dialog({
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
+    // A dialog whose fields arrive after loading: the marked control takes the focus once it is
+    // there, as long as the focus still rests on the dialog itself.
+    let late: MutationObserver | null = null;
     const t = setTimeout(() => {
       const box = ref.current;
       if (!box || box.contains(document.activeElement)) return;
-      // A marked control first, then the first field or the primary button; an info-only dialog
-      // takes the focus itself (screen readers read it, Tab goes to its first control).
-      const first = box.querySelector<HTMLElement>("[data-autofocus]") ?? box.querySelector<HTMLElement>("input, textarea, select, button.btn-primary");
+      // A marked control first, then the first field or the (enabled) primary button; an
+      // info-only dialog takes the focus itself (screen readers read it, Tab goes to its first control).
+      const first = box.querySelector<HTMLElement>("[data-autofocus]") ?? box.querySelector<HTMLElement>("input, textarea, select, button.btn-primary:not(:disabled)");
       (first ?? box).focus();
+      if (first) return;
+      late = new MutationObserver(() => {
+        const marked = box.querySelector<HTMLElement>("[data-autofocus]");
+        if (!marked) return;
+        late?.disconnect();
+        if (document.activeElement === box) marked.focus();
+      });
+      late.observe(box, { childList: true, subtree: true });
     }, 20);
     const onKey = (e: KeyboardEvent) => {
       if (isComposing(e)) return;
@@ -245,6 +256,7 @@ export function Dialog({
     window.addEventListener("keydown", onKey, true);
     return () => {
       clearTimeout(t);
+      late?.disconnect();
       window.removeEventListener("keydown", onKey, true);
       prev?.focus?.();
     };
