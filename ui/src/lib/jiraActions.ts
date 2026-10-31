@@ -61,11 +61,15 @@ export async function addIssueTask(key: string) {
 /** Opens the Issues page. */
 export const openIssuesView = () => s().openTab({ kind: "issues" });
 
-/** The context menu of an issue in a list or widget: the issue view first. */
+/** The icon of „In der Issue-Ansicht öffnen“, the same on every button and menu item. */
+export const ISSUE_VIEW_ICON = PanelTop;
+
+/** The context menu of an issue in a list or widget, in the order of the buttons: the issue view,
+ *  Jira, the note, the key. */
 export function issueOpenMenu(i: { key: string; url?: string }): MenuEntry[] {
   return [
-    { label: t("iv.openWindow"), icon: PanelTop, onSelect: () => openIssueView(i.key) },
-    { label: t("jira.openBrowser"), icon: ExternalLink, onSelect: () => void openIssueInBrowser(i.key, i.url) },
+    { label: t("iv.openView"), icon: ISSUE_VIEW_ICON, onSelect: () => openIssueView(i.key) },
+    { label: t("iv.openInJira"), icon: ExternalLink, onSelect: () => void openIssueInBrowser(i.key, i.url) },
     { label: t("jira.openNote"), icon: FileText, onSelect: () => void openIssueNote(i.key) },
     { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(i.key) },
   ];

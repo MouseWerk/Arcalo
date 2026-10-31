@@ -16,10 +16,11 @@ Jira dafür nicht öffnen, und du bleibst, wo du warst: Esc schließt die Ansich
 
 - **In einer Notiz:** Klick auf den Issue-Chip (`PROJ-123`). Strg+Klick (Mac: Cmd+Klick) öffnet das Issue im
   Browser.
-- **In der Issue-Liste:** „Als Fenster öffnen“ in der Zeile oder im Kontextmenü, Doppelklick oder Umschalt+Eingabe.
-  Ein Klick auf die Zeile klappt wie bisher die Kurzansicht auf; dort führt „Vollansicht“ in die Issue-Ansicht.
+- **In der Issue-Liste:** „In der Issue-Ansicht öffnen“ in der Zeile oder im Kontextmenü, Doppelklick oder
+  Umschalt+Eingabe. Ein Klick auf die Zeile klappt wie bisher die Kurzansicht auf; dort führt derselbe Knopf in die
+  Issue-Ansicht.
 - **Auf der Startseite:** Klick auf ein Issue in den Jira-Widgets oder auf eine Jira-Fälligkeit. Das Kontextmenü
-  hat „Im Browser öffnen“, „Notiz öffnen“ und „Schlüssel kopieren“.
+  hat „In Jira öffnen“, „Notiz öffnen“ und „Schlüssel kopieren“.
 - **Befehlspalette (Strg+K):** einen Schlüssel oder eine Jira-Adresse eintippen, oder „Issue öffnen…“ wählen und
   nach Schlüssel oder Titel suchen.
 - Außerdem aus dem Briefing, den Fokusblöcken im Kalender, dem Issue-Schlüssel einer Buchung in der Zeiterfassung,
@@ -113,10 +114,10 @@ stay where you were: Esc closes the view.
 ### Opening it
 
 - **In a note:** click the issue chip (`PROJ-123`). Ctrl+click (Mac: Cmd+click) opens the issue in the browser.
-- **In the Issues list:** “Open as window” on the row or in its context menu, a double click or Shift+Enter. A click
-  on the row still opens the short view; its “Full view” leads to the issue view.
+- **In the Issues list:** “Open in the issue view” on the row or in its context menu, a double click or Shift+Enter.
+  A click on the row still opens the short view; the same button there leads to the issue view.
 - **On the start page:** click an issue in the Jira widgets or a Jira due date. The context menu has “Open in
-  browser”, “Open note” and “Copy key”.
+  Jira”, “Open note” and “Copy key”.
 - **Command palette (Ctrl+K):** type a key or a Jira address, or choose “Open issue…” and search by key or summary.
 - Also from the briefing, focus blocks in the calendar, the issue key of a time entry, canvas cards and the quick search.
 

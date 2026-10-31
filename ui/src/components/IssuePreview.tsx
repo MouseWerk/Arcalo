@@ -1,12 +1,13 @@
 // Hovering an issue chip (`PROJ-123` in a note) shows a card like the page-link preview: type,
 // key, status, summary, assignee, due date and the start of the description (loaded from Jira the
-// first time, 1.19: syncs load the list fields only).
+// first time, 1.19: syncs load the list fields only). Its head has the open buttons every issue list
+// has (the issue view, then Jira), always in view; the title opens the issue view as well.
 
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { useApp } from "../store/app";
 import { jiraApi, useIssueIndex, type ChipIssue } from "../lib/jira";
-import { openIssue, openIssueInBrowser } from "../lib/jiraActions";
+import { openIssue } from "../lib/jiraActions";
+import { IssueOpenButtons } from "./issue/IssueOpenButtons";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { fmtDate } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -101,22 +102,21 @@ export function IssuePreview() {
   const H = 280;
   const below = shown.rect.bottom + 8 + H < window.innerHeight;
   const left = Math.max(8, Math.min(shown.rect.left, window.innerWidth - W - 8));
-  const top = below ? shown.rect.bottom + 6 : Math.max(8, shown.rect.top - H - 6);
+  // Above the chip the card hangs from its bottom edge: a short card stays next to the chip.
+  const place = below ? { top: shown.rect.bottom + 6 } : { bottom: Math.max(8, window.innerHeight - shown.rect.top + 6) };
   const i = shown.issue;
   const kind = typeOf(i?.issue_type ?? "");
-  const excerpt = i?.description ? (i.description.length > 320 ? `${i.description.slice(0, 320).trimEnd()}…` : i.description) : "";
+  // Jira's paragraphs arrive with blank lines between them: one line break each keeps the excerpt compact.
+  const text = (i?.description ?? "").replace(/\n\s*\n+/g, "\n").trim();
+  const excerpt = text.length > 320 ? `${text.slice(0, 320).trimEnd()}…` : text;
   return (
-    <div ref={card} className="link-preview issue-preview" role="tooltip" style={{ left, top, width: W, maxHeight: H }} onMouseLeave={() => (hideTimer.current = window.setTimeout(() => setShown(null), 220))}>
+    <div ref={card} className="link-preview issue-preview" role="dialog" aria-label={shown.key} style={{ left, ...place, width: W, maxHeight: H }} onMouseLeave={() => (hideTimer.current = window.setTimeout(() => setShown(null), 220))}>
       <div className="issue-preview-head">
         <span className={`issue-type-icon issue-type-${kind}`} dangerouslySetInnerHTML={{ __html: TYPE_SVG[kind] }} aria-hidden />
         <span className="mono issue-preview-key">{shown.key}</span>
         {i && <span className={`issue-status cat-${i.status_category}`}>{i.status}</span>}
         <span className="grow" />
-        {i && (
-          <button type="button" className="issue-preview-open" title={t("jira.openBrowser")} aria-label={t("jira.openBrowser")} onClick={() => (void openIssueInBrowser(shown.key, i.url), setShown(null))}>
-            <ExternalLink size={13} />
-          </button>
-        )}
+        <IssueOpenButtons issueKey={shown.key} url={i?.url} onOpen={() => setShown(null)} />
       </div>
       {i ? (
         <>

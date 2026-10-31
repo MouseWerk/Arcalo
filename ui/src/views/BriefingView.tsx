@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, ClipboardList, Clock, ExternalLink, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ClipboardList, Clock, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { useAi } from "../lib/aiswitch";
@@ -20,7 +20,8 @@ import { hiddenCalendars, useHiddenCalendars } from "../lib/calvisibility";
 import { openTimesheetDay } from "../lib/reviewnav";
 import { requestWeekProposal } from "../lib/weekplan";
 import { briefingCounts, briefingSettings, missingLabel, shows } from "../lib/briefing";
-import { openIssue, openIssueInBrowser } from "../lib/jiraActions";
+import { openIssue } from "../lib/jiraActions";
+import { IssueOpenButtons } from "../components/issue/IssueOpenButtons";
 import { useTimeTracking } from "../lib/timetracking";
 import { renderMarkdown } from "../lib/markdown";
 import { useT, type TKey } from "../lib/i18n";
@@ -440,7 +441,7 @@ function IssueRow({ i }: { i: BriefingIssue }) {
         </span>
         {i.blocked ? <Badge tone="danger">{t("brief.blocked")}</Badge> : <span />}
       </button>
-      {i.url && <IconButton icon={ExternalLink} size="sm" label={t("brief.inBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />}
+      <IssueOpenButtons issueKey={i.key} url={i.url || undefined} />
     </div>
   );
 }
