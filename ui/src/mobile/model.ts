@@ -399,6 +399,30 @@ export function cssHex(color: string): string | null {
     .join("")}`;
 }
 
+/** A computed color with an alpha (`rgba(0, 0, 0, 0.45)`, `rgb(0 0 0 / 0.45)`) laid over an
+ *  opaque one, as `#rrggbb`: what the screen shows under a sheet's scrim, for the status bar
+ *  above it. Null when either is not a color. */
+export function blendHex(over: string, under: string): string | null {
+  const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(over.trim().toLowerCase());
+  const base = cssHex(under);
+  if (!m || !base) return null;
+  const a = m[4] == null ? 1 : m[4].endsWith("%") ? Number(m[4].slice(0, -1)) / 100 : Number(m[4]);
+  const b = [1, 3, 5].map((i) => parseInt(base.slice(i, i + 2), 16));
+  return cssHex(`rgb(${[1, 2, 3].map((i, k) => Number(m[i]) * a + b[k] * (1 - a)).join(", ")})`);
+}
+
+/** Whether the soft keyboard takes the bottom of the screen: the visible height `height` is well
+ *  below the screen's own height `full` (a keyboard takes a third of it or more). */
+export const keyboardUp = (height: number, full: number) => full > 0 && height < full * 0.8;
+
+/** Whether `el` is a field that types text (and so brings up the keyboard). */
+export function typesText(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement) return !el.readOnly;
+  if (el instanceof HTMLInputElement) return !el.readOnly && !["button", "checkbox", "radio", "range", "submit", "reset", "file", "color", "image", "hidden"].includes(el.type);
+  return el instanceof HTMLElement && el.isContentEditable;
+}
+
 /** Days for the booking form's day choice: today and yesterday. */
 export const bookingDays = (now = new Date()) => ({ today: isoDay(now), yesterday: isoDay(addDays(now, -1)) });
 

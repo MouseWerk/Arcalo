@@ -17,17 +17,27 @@ export async function ready(page) {
   return splash;
 }
 
-/** The colors the app gives the system bars: the shell's background on top, the tab bar's (or
- *  the screen's) at the bottom, as `#rrggbb`. */
+/** The colors the system bars should have, as `#rrggbb`: the shell's background on top, the tab
+ *  bar's (or the screen's) at the bottom; with a sheet open the shell under the sheet's scrim on
+ *  top and the sheet's own color at the bottom, where the sheet ends. */
 export function appBarColors() {
-  const hex = (c) => {
-    const m = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(c);
-    return m ? `#${m.slice(1, 4).map((v) => Number(v).toString(16).padStart(2, "0")).join("")}` : null;
+  const rgba = (c) => {
+    const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?/.exec(c);
+    if (!m) return null;
+    const a = m[4] == null ? 1 : m[4].endsWith("%") ? Number(m[4].slice(0, -1)) / 100 : Number(m[4]);
+    return [Number(m[1]), Number(m[2]), Number(m[3]), a];
   };
-  const app = document.querySelector(".m-app");
-  const bar = document.querySelector(".m-tabbar");
-  const top = app && hex(getComputedStyle(app).backgroundColor);
-  return { top, bottom: (bar && hex(getComputedStyle(bar).backgroundColor)) || top };
+  const hex = (v) => (v ? `#${v.slice(0, 3).map((x) => Math.round(x).toString(16).padStart(2, "0")).join("")}` : null);
+  const color = (sel) => {
+    const e = document.querySelector(sel);
+    return e ? rgba(getComputedStyle(e).backgroundColor) : null;
+  };
+  const app = color(".m-app");
+  const bar = color(".m-tabbar");
+  const scrim = color(".m-choice-scrim");
+  const sheet = color(".m-choice-sheet");
+  const top = scrim && app ? app.map((v, i) => (i < 3 ? scrim[i] * scrim[3] + v * (1 - scrim[3]) : 1)) : app;
+  return { top: hex(top), bottom: hex(sheet || bar || app) };
 }
 
 /** Starts the app fresh at `w`×`h` dp in `theme` ("light" or "dark"); `onPage`: functions that
@@ -69,8 +79,19 @@ export async function seed(page) {
       for (const [vorgangNr, text] of steps) await call("vorgang_create", { netzplanId: np.id, vorgangNr, description: text, durationDays: 1, plannedHours: 8, predecessors: [] });
     }
     const capture = (text, inbox) => call("mobile_capture", { text, inbox });
+    // Due dates are ISO days (`due:today` is no syntax: it stayed text, and „Fällig“ was empty).
+    const day = (offset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
     await capture("Abstimmung mit dem Vertrieb: Termine für die Schulung im November festlegen.", false);
-    for (let i = 1; i <= 12; i++) await capture(`- [ ] Aufgabe ${i}: Angebot für Kunde ${i} prüfen und zurückmelden due:today`, false);
+    for (let i = 1; i <= 12; i++) await capture(`- [ ] Aufgabe ${i}: Angebot für Kunde ${i} prüfen und zurückmelden due:${day(i <= 4 ? 0 : i <= 6 ? -1 : i - 5)}${i === 2 ? " !!" : ""}`, false);
+    await capture("- [ ] Reisekosten einreichen", false);
+    await capture("- [x] Raum für die Retro buchen", false);
+    // Bookings of this week (the week list of „Zeit“) and today (the hours on „Heute“).
+    await call("mobile_book", { line: "/zeit NP-8801/1020 1h30m #DEV Schnittstelle zum ERP" });
+    await call("mobile_book", { line: "/zeit NP-8802/2010 45m Schulungsunterlagen" });
     await capture("Idee: die Wochenplanung am Montag mit der Retro verbinden.", true);
     await capture("Buchtipp: Gute Entscheidungen in unsicheren Zeiten.", true);
   });

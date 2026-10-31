@@ -36,6 +36,7 @@ const test = guarded(nodeTest, () => ({
 
 before(() => {
   if (APK) device.install(APK);
+  device.settle();
 });
 
 after(() => {

@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { guarded } from "../lib/harness.js";
+import { startFakeJira } from "../lib/fake-jira.js";
 import * as stock from "../lib/stockui.js";
 import * as device from "./device.js";
 import { appBarColors, openApp, seed } from "./app.js";
@@ -34,6 +35,7 @@ const findings = new Map();
 
 before(() => {
   if (APK) device.install(APK);
+  device.settle();
 });
 
 after(() => {
@@ -94,6 +96,20 @@ for (const [W, H] of [
             }, i);
             if (!at) continue;
             await page.clickAt(at.x, at.y);
+            // What it opened is on the picture (a picture of the closed screen hid that a menu
+            // never opened, or opened only after the screenshot).
+            await page
+              .waitForFunction(
+                (k) => {
+                  const b = [...document.querySelectorAll("[aria-haspopup]")].filter((x) => x.getBoundingClientRect().width > 0)[k];
+                  return b?.getAttribute("aria-expanded") === "true" || !!document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]');
+                },
+                i,
+                { timeout: 5000 },
+              )
+              .catch(() => {
+                throw new Error(`the menu of „${at.label}“ on ${where} did not open`);
+              });
             await shot(`${where}-menu-${at.label.replace(/[^a-z0-9äöüß]+/gi, "-").toLowerCase() || i}`);
             device.back();
             await sleep(500);
@@ -129,6 +145,26 @@ for (const [W, H] of [
           await tab(1);
           await shot("today");
           await menus("today");
+          const end = await page.evaluate(() => {
+            const s = document.querySelector(".m-scroll");
+            if (!s || s.scrollHeight <= s.clientHeight + 1) return false;
+            s.scrollTop = s.scrollHeight;
+            return true;
+          });
+          if (end) await shot("today-end");
+        });
+        await section("daily", async () => {
+          await tab(1);
+          await page.click(".m-row", { text: /Tagesnotiz/ });
+          await page.waitForSelector(".m-head-back");
+          await page.waitForFunction(() => !document.querySelector(".m-loading"));
+          await shot("daily");
+          await menus("daily");
+          // The day before: no note yet, the empty state with its button.
+          await page.click('.m-head-actions [aria-label="Vorheriger Tag"]');
+          await page.waitForFunction(() => !document.querySelector(".m-loading"));
+          await shot("daily-yesterday");
+          await toTabs();
         });
         await section("tasks", async () => {
           await tab(2);
@@ -157,6 +193,9 @@ for (const [W, H] of [
           await page.waitForSelector(".m-tree-page");
           await shot("notes");
           await menus("notes");
+          await page.click(".m-tree-toggle");
+          await page.waitForSelector('.m-tree-toggle[aria-expanded="true"]');
+          await shot("notes-tree-open");
           await page.click(".m-tree-page", { text: /Posteingang|Eingang|Inbox/ });
           await page.waitForSelector(".m-read");
           await shot("page");
@@ -169,9 +208,33 @@ for (const [W, H] of [
         await section("search", async () => {
           await tab(5);
           if (await page.$('.m-app input[type="search"]')) {
+            const title = () => page.evaluate(() => getComputedStyle(document.querySelector(".m-title")).fontSize);
+            const before = await title();
             await page.click('.m-app input[type="search"]');
             await sleep(1200);
             await shot("notes-search-keyboard");
+            if (device.keyboardShown()) {
+              // The tab bar steps aside for the keyboard (it rode on it, switched to its sideways
+              // layout and cut off „Zeit“ and „Notizen“), and the header keeps its size.
+              const bar = await page.evaluate(() => {
+                const b = document.querySelector(".m-tabbar");
+                return b ? b.getBoundingClientRect().height : 0;
+              });
+              assert.equal(bar, 0, "the tab bar is hidden while the keyboard is up");
+              assert.equal(await title(), before, "the title keeps its size with the keyboard up");
+            }
+            await page.insertText("Retro");
+            await sleep(1200);
+            await shot("notes-search-hits");
+            await page.evaluate(() => {
+              const i = document.querySelector('.m-app input[type="search"]');
+              const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+              set.call(i, "");
+              i.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+            await page.insertText("Quartalsbericht Zebra");
+            await sleep(1200);
+            await shot("notes-search-none");
             device.back();
             await sleep(500);
           }
@@ -182,6 +245,15 @@ for (const [W, H] of [
           await page.waitForSelector(".m-sheet");
           await sleep(1200);
           await shot("capture-note");
+          if (device.keyboardShown()) {
+            // The note's field gives way to the keyboard; „Speichern“ stays above it.
+            const save = await page.evaluate(() => {
+              const b = document.querySelector(".m-sheet .m-form-actions .m-btn-primary");
+              const r = b.getBoundingClientRect();
+              return { bottom: Math.round(r.bottom), view: Math.round(Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight)) };
+            });
+            assert.ok(save.bottom <= save.view, `„Speichern“ ends at ${save.bottom} px, the keyboard begins at ${save.view} px`);
+          }
           await page.click(".m-seg-opt:nth-child(2)");
           await shot("capture-task");
           await page.click(".m-seg-opt:nth-child(3)");
@@ -217,6 +289,90 @@ for (const [W, H] of [
           }
           device.back();
           await sleep(600);
+        });
+        await section("gitsetup", async () => {
+          await tab(1);
+          await page.click('.m-head-actions [aria-label="Einstellungen"]');
+          await page.waitForSelector(".m-gs-entry");
+          await page.click(".m-gs-entry .m-btn-primary");
+          await page.waitForSelector(".m-gs");
+          await shot("gitsetup-provider");
+          await page.click(".m-gs-provider");
+          await shot("gitsetup-github");
+          await page.click(".m-gs-actions .m-btn-primary");
+          await page.waitForSelector("#m-gs-token");
+          await shot("gitsetup-token");
+          // Back goes a step back, then closes the setup.
+          device.back();
+          await page.waitForSelector(".m-gs-provider");
+          device.back();
+          await page.waitForSelector(".m-gs-entry");
+          await page.click(".m-gs-entry .m-btn-quiet");
+          await page.waitForSelector("#m-git-url");
+          await shot("settings-manual");
+          await toTabs();
+        });
+        // Last, as it leaves the phone app: the full app („Oberfläche auf Android: Vollständig“)
+        // on the phone with a Jira issue open (1.22), as e2e/tests/153-issue-view-phone.test.js
+        // shows it on the desktop at phone size. The fake Jira runs here; `adb reverse` gives the
+        // emulator its port.
+        await section("full-app-jira", async () => {
+          const jira = await startFakeJira({ flavor: "cloud" });
+          const port = new URL(jira.url).port;
+          device.adb("reverse", `tcp:${port}`, `tcp:${port}`);
+          try {
+            await page.evaluate(async (url) => {
+              const call = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+              await call("jira_site_save", {
+                site: { id: "", name: "Acme", color: "", kind: "cloud", url, email: "mia@firma.de", enabled: true, log_work: false, allow_writes: false },
+                token: "secret-token",
+              });
+              await call("jira_sync_now", { site: "acme" });
+            }, jira.url);
+            await tab(1);
+            await page.click('.m-head-actions [aria-label="Einstellungen"]');
+            await page.click(".m-seg-opt", { text: /^Vollständig$/ });
+            await page.waitForFunction(() => !!document.querySelector(".ribbon") && document.body.classList.contains("ready"), undefined, { timeout: 60000 });
+            await sleep(1500);
+            await shot("full-app");
+            await page.ctrl("k");
+            await page.waitForSelector(".palette input");
+            await page.insertText("PROJ-123");
+            await page.waitForFunction(() => (document.querySelector(".pal-item.sel")?.textContent ?? "").includes("PROJ-123"), undefined, { timeout: 15000 });
+            await page.key("Enter");
+            const V = (sel) => `[data-issue-view="PROJ-123"] ${sel}`;
+            await page.waitForSelector(V(".iv-summary"), { timeout: 30000 });
+            await page.waitForFunction((s) => !document.querySelector(s), V(".iv-refreshing"), { timeout: 30000 });
+            const box = await page.evaluate(() => {
+              const r = document.querySelector(".iv").getBoundingClientRect();
+              const main = document.querySelector(".iv-main").getBoundingClientRect();
+              const side = document.querySelector(".iv-side").getBoundingClientRect();
+              return {
+                at: [r.x, r.y, Math.round(r.width), Math.round(r.height)],
+                view: [0, 0, window.innerWidth, window.innerHeight],
+                wide: [".iv", ".iv-scroll", ".iv-main", ".iv-side"].filter((s) => {
+                  const e = document.querySelector(s);
+                  return e.scrollWidth > e.clientWidth + 1;
+                }),
+                stacked: side.top >= main.bottom - 1,
+                small: [...document.querySelectorAll(".iv-head-actions .icon-btn")].filter((b) => b.getBoundingClientRect().height < 44).map((b) => b.getAttribute("aria-label")),
+              };
+            });
+            await shot("full-app-issue");
+            await page.evaluate(() => (document.querySelector(".iv-scroll").scrollTop = 1400));
+            await shot("full-app-issue-details");
+            assert.deepEqual(box.at, box.view, "the issue fills the screen");
+            assert.deepEqual(box.wide, [], "no sideways scrolling");
+            assert.ok(box.stacked, "the details below the description");
+            assert.deepEqual(box.small, [], "header buttons under 44 px");
+          } finally {
+            await jira.close();
+            try {
+              device.adb("reverse", "--remove", `tcp:${port}`);
+            } catch {
+              /* gone */
+            }
+          }
         });
 
         assert.deepEqual(broken, [], "parts of the tour that could not be shown");

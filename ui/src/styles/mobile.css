@@ -610,8 +610,19 @@ html.mobile body {
   flex: 1 1 auto;
   text-align: center;
 }
+/* The capture's text gives way to the keyboard down to a few lines, so its button stays in view
+   above the keyboard instead of under it. */
+.m-sheet .m-form:has(> .m-textarea) {
+  display: flex;
+  flex-direction: column;
+}
+.m-sheet .m-form:has(> .m-textarea) > * {
+  flex-shrink: 0;
+}
 .m-sheet .m-form > .m-textarea {
   margin-top: var(--sp-2);
+  flex: 0 1 auto;
+  min-height: calc(var(--touch-min) * 2);
 }
 .m-line {
   margin-top: var(--sp-3);
@@ -1316,8 +1327,17 @@ html.mobile body {
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border);
 }
-/* A phone held sideways has little height: a lower header and tab bar (icon beside the label). */
-@media (max-height: 480px) {
+/* The keyboard is up (MobileApp): the tab bar steps aside instead of riding on the keyboard. */
+.m-typing .m-tabbar {
+  display: none;
+}
+.m-typing .m-toasts {
+  bottom: var(--sp-4);
+}
+/* A phone held sideways has little height: a lower header and tab bar (icon beside the label).
+   Only sideways: a phone upright with its keyboard up is as low, and five tabs with their labels
+   beside the icons do not fit its width. */
+@media (max-height: 480px) and (orientation: landscape) {
   .m-head {
     min-height: 48px;
     padding-top: var(--sp-1);

@@ -150,6 +150,19 @@ export class Page {
     await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: codes[key] ?? 0 });
   }
 
+  /** A letter key with Ctrl held (`ctrl("k")` for Strg+K). */
+  async ctrl(letter) {
+    const up = letter.toUpperCase();
+    const ev = { key: letter, code: `Key${up}`, windowsVirtualKeyCode: up.charCodeAt(0), modifiers: 2 };
+    await this.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...ev });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", ...ev });
+  }
+
+  /** Text typed into the focused field (as a keyboard's input method commits it). */
+  async insertText(text) {
+    await this.send("Input.insertText", { text });
+  }
+
   /** A mouse click at a point of the page. */
   async clickAt(x, y) {
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {

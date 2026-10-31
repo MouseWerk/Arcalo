@@ -3,6 +3,9 @@ import {
   START,
   backAction,
   cssHex,
+  blendHex,
+  keyboardUp,
+  typesText,
   updateLine,
   updateProgress,
   captureMarkdown,
@@ -247,6 +250,37 @@ describe("updates", () => {
     expect(cssHex("#ABC")).toBe("#aabbcc");
     expect(cssHex("#0e0f11")).toBe("#0e0f11");
     expect(cssHex("transparent")).toBeNull();
+  });
+
+  it("lays a sheet's scrim over the screen for the status bar above it", () => {
+    expect(blendHex("rgba(0, 0, 0, 0.45)", "rgb(244, 244, 245)")).toBe("#868687");
+    expect(blendHex("rgb(0 0 0 / 0.45)", "#f4f4f5")).toBe("#868687");
+    expect(blendHex("rgb(0 0 0 / 45%)", "#f4f4f5")).toBe("#868687");
+    expect(blendHex("rgb(10, 20, 30)", "#ffffff")).toBe("#0a141e");
+    expect(blendHex("transparent", "#ffffff")).toBeNull();
+  });
+
+  it("tells the keyboard from the screen's own height", () => {
+    // A 360×800 dp phone: the keyboard leaves about 460 of 732 px.
+    expect(keyboardUp(458, 732)).toBe(true);
+    expect(keyboardUp(732, 732)).toBe(false);
+    expect(keyboardUp(700, 732)).toBe(false);
+    expect(keyboardUp(300, 0)).toBe(false);
+  });
+
+  it("knows which fields bring up the keyboard", () => {
+    const el = (html: string) => {
+      const d = document.createElement("div");
+      d.innerHTML = html;
+      return d.firstElementChild;
+    };
+    expect(typesText(el('<input type="search">'))).toBe(true);
+    expect(typesText(el("<input>"))).toBe(true);
+    expect(typesText(el("<textarea></textarea>"))).toBe(true);
+    expect(typesText(el("<textarea readonly></textarea>"))).toBe(false);
+    expect(typesText(el('<input type="checkbox">'))).toBe(false);
+    expect(typesText(el("<button>OK</button>"))).toBe(false);
+    expect(typesText(null)).toBe(false);
   });
 });
 

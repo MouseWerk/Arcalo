@@ -25,6 +25,16 @@ export function install(apk) {
   adb("install", "-r", "-t", "-g", apk);
 }
 
+/** Waits until the system has delivered its queued broadcasts. Right after the emulator's boot
+ *  `sys.boot_completed` is 1 while BOOT_COMPLETED still goes to every app (40 s on a CI runner);
+ *  Google Play services can miss its deadline then and be killed, and with it every app using
+ *  its font provider, the WebView included (the app's process gone during the first reload). */
+export function settle(timeout = 300000) {
+  const t0 = Date.now();
+  execFileSync(ADB, ["shell", "am", "wait-for-broadcast-idle"], { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 });
+  console.log(`the system's broadcasts were delivered after ${Date.now() - t0} ms`);
+}
+
 /** A phone of `w`×`h` dp at `density` (dpi / 160): `wm size` in pixels and `wm density`. */
 export function setScreen(w, h, density = 2) {
   shell(`wm size ${Math.round(w * density)}x${Math.round(h * density)}`);

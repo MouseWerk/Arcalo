@@ -15,7 +15,7 @@ import { t, useT, type TKey } from "../lib/i18n";
 import type { Settings, SettingsView } from "../lib/types";
 import { mobileApi, type UpdateStatus } from "./api";
 import { Ctx, errorText, useMobile, type MobileContext, type Toast, type ToastTone } from "./context";
-import { START, backAction, cssHex, current, navigate, syncDue, type Tab } from "./model";
+import { START, backAction, blendHex, cssHex, current, keyboardUp, navigate, syncDue, typesText, type Tab } from "./model";
 import { TodayScreen } from "./screens/Today";
 import { CaptureScreen } from "./screens/Capture";
 import { DailyScreen } from "./screens/Daily";
@@ -179,30 +179,72 @@ export function MobileApp() {
   }, [gs?.enabled, gs?.remote_url, sync, refresh, takeShared]);
 
   // The window behind the status and navigation bars has the colors of the header and of the
-  // tab bar (or of the screen, on a screen without tab bar), in every theme.
+  // tab bar (or of the screen, on a screen without tab bar), in every theme. While a sheet is
+  // open the status bar is dimmed like the screen under its scrim, and the navigation bar has
+  // the sheet's color, as the sheet ends there.
   const screen = current(route);
   const onTab = typeof screen === "string";
   useEffect(() => {
     if (!ready) return;
     let frame = 0;
+    let last = "";
     const apply = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const app = document.querySelector(".m-app");
         const bar = document.querySelector(".m-tabbar");
-        const top = app && cssHex(getComputedStyle(app).backgroundColor);
-        const bottom = (bar && cssHex(getComputedStyle(bar).backgroundColor)) || top;
-        if (top && bottom) void mobileApi.bars(document.documentElement.dataset.theme === "dark", top, bottom).catch(() => {});
+        const scrim = document.querySelector(".m-choice-scrim");
+        const sheet = document.querySelector(".m-choice-sheet");
+        const screenTop = app && cssHex(getComputedStyle(app).backgroundColor);
+        const top = scrim && screenTop ? blendHex(getComputedStyle(scrim).backgroundColor, screenTop) : screenTop;
+        const bottom = (sheet && cssHex(getComputedStyle(sheet).backgroundColor)) || (bar && cssHex(getComputedStyle(bar).backgroundColor)) || screenTop;
+        const dark = document.documentElement.dataset.theme === "dark";
+        const key = `${dark}${top}${bottom}`;
+        if (!top || !bottom || key === last) return;
+        last = key;
+        void mobileApi.bars(dark, top, bottom).catch(() => {});
       });
     };
     apply();
     const watch = new MutationObserver(apply);
     watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-theme-id"] });
+    // Sheets are portals on the body.
+    watch.observe(document.body, { childList: true });
     return () => {
       watch.disconnect();
       cancelAnimationFrame(frame);
     };
   }, [ready, onTab]);
+
+  // The keyboard up: the tab bar steps aside (it would ride on the keyboard and take the room of
+  // the field being typed in). Android shrinks the WebView, iOS the visual viewport; the screen's
+  // own height is the largest seen at the current width (a turn of the phone starts it anew).
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    let width = window.innerWidth;
+    let full = 0;
+    const check = () => {
+      const h = Math.min(window.innerHeight, vv?.height ?? window.innerHeight);
+      if (window.innerWidth !== width) {
+        width = window.innerWidth;
+        full = 0;
+      }
+      full = Math.max(full, h);
+      setTyping(keyboardUp(h, full) && typesText(document.activeElement));
+    };
+    check();
+    window.addEventListener("resize", check);
+    vv?.addEventListener("resize", check);
+    document.addEventListener("focusin", check);
+    document.addEventListener("focusout", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      vv?.removeEventListener("resize", check);
+      document.removeEventListener("focusin", check);
+      document.removeEventListener("focusout", check);
+    };
+  }, []);
 
   const installUpdate = useCallback(async () => {
     try {
@@ -272,7 +314,7 @@ export function MobileApp() {
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className={onTab ? "m-app" : "m-app m-app-stacked"} data-screen={typeof screen === "string" ? screen : screen.kind}>
+      <div className={`${onTab ? "m-app" : "m-app m-app-stacked"}${typing ? " m-typing" : ""}`} data-screen={typeof screen === "string" ? screen : screen.kind}>
         <main className="m-main">
           {screen === "today" && <TodayScreen />}
           {screen === "tasks" && <TasksScreen />}
