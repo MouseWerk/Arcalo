@@ -9,6 +9,7 @@ import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { classifyPaste, type ChatMessage, type PasteKind } from "./paste";
+import { filesToStore } from "../lib/pasted";
 import { t } from "../lib/i18n";
 import { onHidden } from "../lib/keepalive";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
@@ -216,7 +217,7 @@ export const SmartPaste = Extension.create<SmartPasteOptions>({
             // Ctrl+Shift+V (not Shift+Insert): ProseMirror pastes plain text.
             if (input?.shiftKey && input.lastKeyCode !== 45) return false;
             const data = event.clipboardData;
-            if (!data || data.files?.length) return false;
+            if (!data || filesToStore(data).length) return false;
             if (view.state.selection.$from.parent.type.spec.code) return false;
             const text = data.getData("text/plain");
             const kind = classifyPaste(text, data.getData("text/html"));
