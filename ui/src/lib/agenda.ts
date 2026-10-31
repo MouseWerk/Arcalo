@@ -79,8 +79,11 @@ export function rangeTitle(view: CalView, range: Range, anchor: Date): string {
   const a = range.days[0];
   const b = range.days[range.days.length - 1];
   const long = (d: Date) => d.toLocaleDateString(l, { day: "numeric", month: "long", year: "numeric" });
-  if (a.getFullYear() !== b.getFullYear()) return `${long(a)} – ${long(b)}`;
-  if (a.getMonth() !== b.getMonth()) return `${a.toLocaleDateString(l, { day: "numeric", month: "long" })} – ${long(b)}`;
+  // A week across two months or years names both months short („26. Okt. – 1. Nov. 2026“): the
+  // long form does not fit the heading of a narrow pane.
+  const short = (d: Date, year: boolean) => d.toLocaleDateString(l, { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) });
+  if (a.getFullYear() !== b.getFullYear()) return `${short(a, true)} – ${short(b, true)}`;
+  if (a.getMonth() !== b.getMonth()) return `${short(a, false)} – ${short(b, true)}`;
   return `${dayOfMonth(a)}–${long(b)}`;
 }
 
