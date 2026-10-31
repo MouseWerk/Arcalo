@@ -59,6 +59,14 @@ test("processes are killed only by the PIDs the run started", () => {
   assert.deepEqual(hits(all, /\b(pkill|killall|taskkill\s+\/IM)\b|kill\s+\$\(pgrep|xargs\s+kill/), []);
 });
 
+// An Xvfb that resets when its last client leaves closes the connection of an app that restarts
+// itself while the new process connects (it then fails with "Failed to initialize GTK").
+test("every Xvfb the suite starts does not reset when its last client leaves (-noreset)", () => {
+  const starts = hits(all, /\bXvfb\b["'`]?\s*,|\bXvfb\s+[:$]/);
+  assert.ok(starts.length > 0, "the harness starts no Xvfb any more: update this check");
+  assert.deepEqual(starts.filter((l) => !l.includes("-noreset")), []);
+});
+
 // The splash tests reload without waiting on purpose: they look at the page before it is ready.
 const reloadAllowed = new Set(["e2e/lib/harness.js", "e2e/tests/27-splash.test.js", "e2e/tests/250-branding.test.js"]);
 
