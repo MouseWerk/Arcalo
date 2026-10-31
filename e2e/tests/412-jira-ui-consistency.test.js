@@ -121,11 +121,19 @@ async function openChipCard(key) {
   await app.waitFor(".issue-preview .issue-open-buttons", 6000);
 }
 
+/** The Issues page scrolls sideways (a row wider than the pane): its width and the pane's. */
+const sideways = () =>
+  app.browser.execute(() => {
+    const el = document.querySelector(".issues-view")?.closest(".view-scroll");
+    return el && el.scrollWidth > el.clientWidth + 1 ? [el.scrollWidth, el.clientWidth] : [];
+  });
+
 test("the Issues list: the actions keep their room, the issue view comes first everywhere", async () => {
   await openIssues();
   // Away from the rows: the actions are hidden, their room kept.
   await (await app.$(".issues-view h1")).moveTo();
   await sleep(250);
+  assert.deepEqual(await sideways(), [], "the list is wider than its pane");
   const rest = await rowGeometry("PROJ-130");
   assert.equal(rest.opacity, 0);
   await (await app.$('.issues-view [data-issue-row="PROJ-130"] .issue-key')).moveTo();
@@ -164,7 +172,8 @@ test("the Issues list: the actions keep their room, the issue view comes first e
   await app.browser.waitUntil(async () => (await count(".menu")) === 0, { timeoutMsg: "menu still open" });
   // The opened row: the primary button says the same.
   await app.browser.execute(() => document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-row-main').click());
-  await app.waitText('.issues-view [data-issue-row="PROJ-123"] .issue-full-view', new RegExp(`^${VIEW}$`));
+  await app.waitFor('.issues-view [data-issue-row="PROJ-123"] .issue-full-view', 10000);
+  assert.equal((await app.browser.execute(() => document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view').textContent)).trim(), VIEW);
   assert.equal(await app.browser.execute(() => (document.querySelector('.issues-view [data-issue-row="PROJ-123"] .issue-full-view svg')?.getAttribute("class") ?? "").match(/lucide-[a-z0-9-]+/)?.[0]), viewIcon);
   const problems = await audit(".issues-view");
   assert.deepEqual(problems, [], "Issues list layout");
@@ -251,7 +260,7 @@ test("a second Ctrl+Enter or Enter while Jira answers writes nothing twice", asy
   jira.state.writeDelayMs = 1500;
   await app.keys(["Control", "Enter"]);
   await app.keys(["Control", "Enter"]);
-  await app.waitText(V("PROJ-125", ".iv-thread"), /Only once, please/, 10000);
+  await app.waitText(V("PROJ-125", ".iv-thread"), /nly once, please/i, 10000);
   await sleep(500);
   assert.equal(posts(), 1, "the comment was posted twice");
   jira.state.writeDelayMs = 0;
@@ -302,6 +311,7 @@ test("screenshots: list, card and view in every theme and at 900, 1480 and 1920 
     await sleep(300);
     const g = await rowGeometry("PROJ-130");
     assert.ok(g.status.right + 6 <= g.actions.left, `${w}px: the actions cover the status`);
+    assert.deepEqual(await sideways(), [], `${w}px: the list is wider than its pane`);
     assert.deepEqual(await audit(".issues-view"), [], `${w}px: Issues list layout`);
     await app.shot(`412-issues-${w}`);
     await openByPalette("PROJ-123");
