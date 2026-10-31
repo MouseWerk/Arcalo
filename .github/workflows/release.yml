@@ -137,14 +137,15 @@ jobs:
             bundles: deb,appimage
             updater: true
           - name: macOS (Apple Silicon)
-            os: macos-14
+            os: macos-15
             bundles: app,dmg
             target: aarch64-apple-darwin
             arch: aarch64
             updater: true
-          # Cross-compiled on the Apple Silicon runner (GitHub is retiring the Intel runners).
+          # Cross-compiled on the Apple Silicon runner (GitHub is retiring the Intel runners). macOS 15 runners:
+          # the macOS 14 images are retired on 2 November 2026; the app still targets macOS 11 (tauri.conf.json).
           - name: macOS (Intel)
-            os: macos-14
+            os: macos-15
             bundles: app,dmg
             target: x86_64-apple-darwin
             arch: x64

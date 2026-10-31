@@ -82,6 +82,9 @@ describe("visible ranges", () => {
     expect(rangeTitle("month", viewRange("month", fri), fri)).toBe("September 2026");
     expect(rangeTitle("workweek", viewRange("workweek", fri, 1), fri)).toBe("21.–25. September 2026");
     expect(rangeTitle("week", viewRange("week", new Date(2026, 8, 30), 1), new Date(2026, 8, 30))).toBe("28. September – 4. Oktober 2026");
+    // Compact, for a narrow pane: digits for the months.
+    expect(rangeTitle("week", viewRange("week", new Date(2026, 8, 30), 1), new Date(2026, 8, 30), true)).toBe("28.9. – 4.10.2026");
+    expect(rangeTitle("workweek", viewRange("workweek", fri, 1), fri, true)).toBe("21.–25.9.2026");
     expect(weekLabel(viewRange("week", fri, 1))).toBe("KW 39");
     // A week from Sunday: six of its days are in the week of its Monday.
     expect(weekLabel(viewRange("week", new Date(2026, 9, 14), 0))).toBe("KW 42");

@@ -72,15 +72,17 @@ export function step(view: CalView, anchor: Date, dir: -1 | 1): Date {
 const locale = dateLocale;
 
 /** Heading of the range: „Freitag, 25. September 2026“, „21.–27. September 2026“, „September 2026“. */
-export function rangeTitle(view: CalView, range: Range, anchor: Date): string {
+export function rangeTitle(view: CalView, range: Range, anchor: Date, compact = false): string {
   const l = locale();
-  if (view === "day") return anchor.toLocaleDateString(l, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  if (view === "month") return anchor.toLocaleDateString(l, { month: "long", year: "numeric" });
+  // Compact: digits for the months („26.10. – 1.11.2026“), for a heading in a narrow pane.
+  const month = compact ? "numeric" : "long";
+  if (view === "day") return anchor.toLocaleDateString(l, { weekday: compact ? "short" : "long", day: "numeric", month, year: "numeric" });
+  if (view === "month") return anchor.toLocaleDateString(l, { month: compact ? "short" : "long", year: "numeric" });
   const a = range.days[0];
   const b = range.days[range.days.length - 1];
-  const long = (d: Date) => d.toLocaleDateString(l, { day: "numeric", month: "long", year: "numeric" });
+  const long = (d: Date) => d.toLocaleDateString(l, { day: "numeric", month, year: "numeric" });
   if (a.getFullYear() !== b.getFullYear()) return `${long(a)} – ${long(b)}`;
-  if (a.getMonth() !== b.getMonth()) return `${a.toLocaleDateString(l, { day: "numeric", month: "long" })} – ${long(b)}`;
+  if (a.getMonth() !== b.getMonth()) return `${a.toLocaleDateString(l, { day: "numeric", month })} – ${long(b)}`;
   return `${dayOfMonth(a)}–${long(b)}`;
 }
 

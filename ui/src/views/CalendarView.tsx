@@ -395,6 +395,25 @@ export function CalendarView() {
     }
   };
 
+  // A narrow pane (split view, 900 px) shows the range with digits for the months instead of cutting it off.
+  const full = rangeTitle(view, range, anchor);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [compactTitle, setCompactTitle] = useState(false);
+  const [titleRoom, setTitleRoom] = useState(0);
+  useEffect(() => {
+    // The header, not the heading: its width follows the pane, not the text.
+    const h = titleRef.current?.closest<HTMLElement>(".calv-head");
+    if (!h) return;
+    const ro = new ResizeObserver(() => setTitleRoom(h.clientWidth));
+    ro.observe(h);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => setCompactTitle(false), [titleRoom, full]);
+  useLayoutEffect(() => {
+    const h = titleRef.current;
+    if (h && !compactTitle && h.scrollWidth > h.clientWidth) setCompactTitle(true);
+  });
+
   const skip = async (e: CalendarEvent) => {
     try {
       await api.calendarSetSkip(e.key, !e.skip);
@@ -404,14 +423,14 @@ export function CalendarView() {
     }
   };
 
-  const title = rangeTitle(view, range, anchor);
+  const title = compactTitle ? rangeTitle(view, range, anchor, true) : full;
   const pickerDay = isoDay(anchor);
 
   return (
     <div className={`calv ${current || currentBlock || draft ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label={t("nav.calendar")}>
       <header className="calv-head">
         <div className="calv-heading">
-          <h1>{title}</h1>
+          <h1 ref={titleRef} title={compactTitle ? full : undefined}>{title}</h1>
           {view !== "month" && view !== "agenda" && <span className="calv-kw">{weekLabel(range)}</span>}
           {view !== "month" && view !== "agenda" && (
             // The week shown (its last day: a day view opens its own week) as a Wochenrückblick.
