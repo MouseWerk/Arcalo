@@ -53,6 +53,8 @@ test("F6 cycles ribbon, sidebar, page and panel and reaches the „Rückgängig�
   const a = await app.invoke("page_create", { parentId: null, title: "F6 Eins", icon: null, content: "Eins\n" });
   const b = await app.invoke("page_create", { parentId: null, title: "F6 Zwei", icon: null, content: "Zwei\n" });
   await open(a.id);
+  // The previous test's page is still shown until the tab switches; its editor goes away under the click.
+  await app.waitText(".pane.active .tab.active", /F6 Eins/);
   await app.caretToEnd();
   const region = async () => app.browser.execute(() => {
     const el = document.activeElement;
