@@ -16,6 +16,9 @@
   user-select: text;
 }
 .iv:focus { outline: none; }
+/* The issue's text can be copied, its buttons not: a long press on a button (touch) is no text
+   selection with the system's copy menu. */
+.iv :is(button, [role="button"], [role="tab"], [role="option"]) { user-select: none; }
 
 /* ---- header */
 

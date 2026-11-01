@@ -68,15 +68,27 @@ for (const [W, H] of [
           device.dismissSystemDialogs();
           await sleep(700);
           const file = `${String(++n).padStart(2, "0")}-${name}`;
-          device.screencap(path.join(dir, `${file}.png`));
-          const seen = [...(await page.evaluate(stock.measureStockUi).catch((e) => [`(not measured: ${e.message})`])), ...(await page.evaluate(stock.nativeDialogs).catch(() => []))];
-          // The system bars in the app's colors (MobileApp sets them with every theme).
+          const png = path.join(dir, `${file}.png`);
+          // The system bars in the app's colors (MobileApp sets them with every theme); with the
+          // keyboard up the bottom is the keyboard's own bar.
           const want = await page.evaluate(appBarColors);
-          const got = device.barColors(path.join(dir, `${file}.png`));
-          // With the keyboard up the bottom is the keyboard's own bar.
-          for (const side of device.keyboardShown() ? ["top"] : ["top", "bottom"]) {
-            if (want[side] && !device.sameColor(want[side], got[side])) seen.push(`system bar ${side === "top" ? "status" : "navigation"}: ${got[side]} on the screen, the app's ${want[side]}`);
+          const sides = device.keyboardShown() ? ["top"] : ["top", "bottom"];
+          const wrong = (got) => sides.filter((side) => want[side] && !device.sameColor(want[side], got[side]));
+          device.screencap(png);
+          let got = device.barColors(png);
+          // The emulator shows a new frame late at times (run 41269351155: the first sheet's
+          // picture was byte for byte the screen before it, while the page had the sheet): the
+          // screen is taken again until it shows what the page says, for at most 5 s. The bars
+          // that never match are findings; a late screen is logged.
+          const t0 = Date.now();
+          while (wrong(got).length && Date.now() - t0 < 5000) {
+            await sleep(250);
+            device.screencap(png);
+            got = device.barColors(png);
           }
+          if (Date.now() - t0 > 100) console.log(`${W}x${H}-${theme}/${file}: the screen showed the page's bars after ${Date.now() - t0} ms${wrong(got).length ? " (never)" : ""}`);
+          const seen = [...(await page.evaluate(stock.measureStockUi).catch((e) => [`(not measured: ${e.message})`])), ...(await page.evaluate(stock.nativeDialogs).catch(() => []))];
+          for (const side of wrong(got)) seen.push(`system bar ${side === "top" ? "status" : "navigation"}: ${got[side]} on the screen, the app's ${want[side]}`);
           for (const f of seen) {
             found.add(f);
             if (!findings.has(f)) findings.set(f, new Set());
