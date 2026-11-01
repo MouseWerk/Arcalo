@@ -5,7 +5,7 @@
 // IssuePreview.
 
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { Decoration } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { blockDecorations, RELABEL, updateBlockDecorations } from "./incremental";
@@ -83,6 +83,22 @@ function build(block: PMNode, at: number): Decoration[] {
   return decos;
 }
 
+/** Where ArrowLeft/ArrowRight (dir -1/1) takes a caret next to a chip, or null for the browser's
+ *  own move. The seams hold word joiners: the browser steps over one of them as a character of its
+ *  own and the caret's place in the document stays the same, so a press next to a chip did nothing
+ *  now and then. Here every press moves one position. */
+export function chipArrowTarget(state: EditorState, decos: { find(from?: number, to?: number): Decoration[] } | undefined, dir: -1 | 1): number | null {
+  const sel = state.selection;
+  if (!sel.empty || !decos) return null;
+  const pos = sel.from;
+  const $pos = sel.$from;
+  if (!$pos.parent.isTextblock) return null;
+  const next = pos + dir;
+  // Leaving the block (or crossing a node) stays the browser's.
+  if (next < $pos.start() || next > $pos.end()) return null;
+  return decos.find(Math.min(pos, next), Math.max(pos, next)).length ? next : null;
+}
+
 export const IssueChips = Extension.create({
   name: "issueChips",
   addProseMirrorPlugins() {
@@ -97,6 +113,13 @@ export const IssueChips = Extension.create({
         props: {
           decorations(state) {
             return this.getState(state);
+          },
+          handleKeyDown(view, event) {
+            if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false;
+            const target = chipArrowTarget(view.state, issueChipsKey.getState(view.state), event.key === "ArrowLeft" ? -1 : 1);
+            if (target == null) return false;
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, target)).scrollIntoView());
+            return true;
           },
           handleClick(_view, _pos, event) {
             const el = (event.target as HTMLElement).closest<HTMLElement>("[data-issue]");

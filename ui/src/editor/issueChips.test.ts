@@ -2,10 +2,10 @@
 // outside the pill and nothing of the chip but the key in the text.
 
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { Schema } from "@tiptap/pm/model";
 import type { Decoration } from "@tiptap/pm/view";
-import { IssueChips, chipHead, chipTail, chipTitle, issueChipsKey } from "./issueChips";
+import { IssueChips, chipArrowTarget, chipHead, chipTail, chipTitle, issueChipsKey } from "./issueChips";
 import { useIssueIndex, type ChipIssue } from "../lib/jira";
 
 const issue: ChipIssue = {
@@ -60,5 +60,22 @@ describe("issue chips", () => {
     expect(chipTitle("Login fails on SSO")).toBe("Login fails on SSO");
     expect(chipTitle("Export of the audit log breaks for very large tenants")).toBe("Export of the audit log breaks for…");
     expect(chipTitle("A".repeat(50))).toBe(`${"A".repeat(35)}…`);
+  });
+
+  it("moves an arrow key one position next to a chip, and leaves the rest to the browser", () => {
+    useIssueIndex.setState({ projects: new Set(["PROJ"]), byKey: new Map([["PROJ-123", issue]]), version: 1 });
+    const plugin = IssueChips.config.addProseMirrorPlugins!.call({} as never)[0];
+    // "Siehe PROJ-123 jetzt": the key spans 7..15 (the paragraph starts at 1).
+    const at = (pos: number) => {
+      const st = EditorState.create({ schema, doc: schema.node("doc", null, [schema.node("paragraph", null, schema.text("Siehe PROJ-123 jetzt"))]), plugins: [plugin] });
+      const s2 = st.apply(st.tr.setSelection(TextSelection.create(st.doc, pos)));
+      return (dir: -1 | 1) => chipArrowTarget(s2, issueChipsKey.getState(s2), dir);
+    };
+    expect(at(6)(1)).toBe(7); // the space before the chip, onto its start
+    expect(at(7)(1)).toBe(8); // into the key
+    expect(at(15)(-1)).toBe(14);
+    expect(at(15)(1)).toBe(16); // past the tail
+    expect(at(3)(1)).toBeNull(); // plain text: the browser's
+    expect(at(1)(-1)).toBeNull(); // the block's start
   });
 });
