@@ -32,6 +32,23 @@ import {
 } from "../lib/voice";
 
 const SEGMENTS = 14;
+
+/**
+ * The bar's height on the root (`--voice-bar-h`) while it is shown: the toasts stand above the bar
+ * (components.css) instead of on it, where they covered its buttons and it theirs.
+ */
+function barHeight(el: HTMLDivElement | null) {
+  if (!el) return;
+  const root = document.documentElement.style;
+  const set = () => root.setProperty("--voice-bar-h", `${Math.ceil(el.offsetHeight)}px`);
+  set();
+  const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
+  ro?.observe(el);
+  return () => {
+    ro?.disconnect();
+    root.removeProperty("--voice-bar-h");
+  };
+}
 /** Where the microphone access is switched on, on this system. */
 const SILENT_HINT = IS_MAC ? "voice.silent.mac" : IS_LINUX ? "voice.silent.linux" : "voice.silent.win";
 
@@ -54,7 +71,7 @@ export function VoiceBar() {
   return (
     <>
       {dialog}
-      <div className="voice-bar" role="region" aria-label={t("voice.bar")}>
+      <div className="voice-bar" role="region" aria-label={t("voice.bar")} ref={barHeight}>
         {unfinished.map((u) => (
           <div key={u.name} className="voice-row voice-unfinished" data-file={u.name}>
             <AlertTriangle size={14} className="voice-icon warn" aria-hidden />

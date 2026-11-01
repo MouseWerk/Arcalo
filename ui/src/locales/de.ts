@@ -4684,7 +4684,7 @@ export const de: Catalog = {
   "jira.group.none.sprint": "Ohne Sprint",
   "jira.group.none.priority": "Ohne Priorität",
   "jira.refresh": "Aktualisieren",
-  "jira.searchPh": "Schlüssel, Titel, Bearbeiter suchen…",
+  "jira.searchPh": "Schlüssel, Titel oder Bearbeiter",
   "jira.f.site": "Site",
   "jira.f.project": "Projekt",
   "jira.f.status": "Status",

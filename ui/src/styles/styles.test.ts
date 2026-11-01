@@ -28,6 +28,22 @@ describe("stylesheets", () => {
     expect(rules.length).toBeGreaterThan(0);
     for (const s of rules) expect(s).toMatch(/:focus-visible/);
   });
+  it("table columns aligned in the Markdown keep their alignment in rendered Markdown (slides, previews, chat)", () => {
+    // `.prose td { text-align: left }` beats the `align` attribute marked writes for `---:`.
+    const css = readFileSync(resolve(dir, "editor.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(/\.prose :is\(th, td\)\[align="right"\]\s*\{\s*text-align:\s*right;/);
+    expect(css).toMatch(/\.prose :is\(th, td\)\[align="center"\]\s*\{\s*text-align:\s*center;/);
+  });
+  it("a menu the user opens stands above the toasts", () => {
+    const tokens = readFileSync(resolve(dir, "tokens.css"), "utf8");
+    const z = (name: string) => Number(new RegExp(`--z-${name}:\\s*(\\d+)`).exec(tokens)?.[1]);
+    expect(z("menu")).toBeGreaterThan(z("toast"));
+    expect(z("menu")).toBeLessThan(z("select"));
+  });
+  it("release notes headings are smaller than the dialog's title", () => {
+    const css = readFileSync(resolve(dir, "components.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(/\.update-notes\.prose :is\(h1, h2, h3, h4\)\s*\{\s*font-size:\s*var\(--fs-base\)/);
+  });
   it("no scroll area asks the engine for its own thin scrollbar", () => {
     const hits = readdirSync(dir)
       .filter((f) => f.endsWith(".css"))

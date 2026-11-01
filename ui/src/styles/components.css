@@ -291,6 +291,8 @@
 /* ----------------------------------------------------------------- toasts */
 
 .toasts { position: fixed; right: 16px; bottom: 40px; z-index: var(--z-toast); display: grid; gap: 8px; width: min(360px, calc(100vw - 32px)); }
+/* Above the voice bar while it is shown (its height: --voice-bar-h, set by the bar). */
+:root:has(.voice-bar) .toasts { bottom: max(40px, calc(var(--statusbar-h) + 12px + var(--voice-bar-h, 0px) + 8px)); }
 .toast {
   display: flex;
   align-items: flex-start;
@@ -312,6 +314,9 @@
 .update-toast .progress { margin-top: 8px; }
 .update-waiting-commands { font-family: var(--font-mono); font-variant-ligatures: none; color: var(--text); }
 .update-notes { max-height: min(50vh, 420px); overflow-y: auto; }
+/* The notes' sections („## Neu“, „## Behoben“) are headings below the dialog's title, not above it in size. */
+.update-notes.prose :is(h1, h2, h3, h4) { font-size: var(--fs-base); font-weight: var(--fw-semibold); margin: 16px 0 6px; }
+.update-notes.prose > :first-child { margin-top: 0; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 
 /* ----------------------------------------------------------------- tables */
@@ -475,7 +480,9 @@
 @keyframes skel-pulse { 50% { opacity: 0.5; } }
 
 /* ---- dialogs (1.12): room between stacked fields, so a hint does not run into the next label ---- */
-.dialog-body > .field + .field { margin-top: 12px; }
+/* A row of fields side by side (`.field-row`) is stacked like one field. */
+.dialog-body > :is(.field, .field-row) + :is(.field, .field-row) { margin-top: 12px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* ---- error details (1.12): SQLite's or the system's text behind „Details“ ---- */
 .toast-tech-toggle {
