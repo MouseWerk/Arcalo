@@ -338,12 +338,24 @@ for (const [W, H] of [
             await page.waitForFunction(() => !!document.querySelector(".ribbon") && document.body.classList.contains("ready") && !document.getElementById("splash"), undefined, { timeout: 60000 });
             // As wide as the screen (Android widened the page to 515 px to fit the setup's cards).
             assert.equal(await page.evaluate(() => window.innerWidth), W, "the full app's page is as wide as the screen");
-            // The data never went through the full app's setup: it opens first.
-            if (await page.$(".fr-close")) {
-              await shot("full-app-setup");
-              await page.click(".fr-close");
-              await page.waitForFunction(() => !document.querySelector(".fr-close"));
-            }
+            // The data never went through the full app's first run: its intro plays (it keeps the
+            // keys, so Strg+K would not reach the palette), then the setup. Both pictured, the
+            // setup checked to fit the screen, then closed.
+            await page.waitForSelector(".fr-intro");
+            await shot("full-app-intro");
+            await page.click(".fr-skip");
+            await page.waitForSelector(".fr-close");
+            await shot("full-app-setup");
+            const outside = await page.evaluate(() => {
+              const card = document.querySelector(".fr-card").getBoundingClientRect();
+              return [".fr-main", ".fr-step", ".fr-foot", ".fr-next"].filter((s) => {
+                const e = document.querySelector(s);
+                return e && e.getBoundingClientRect().right > card.right + 1;
+              });
+            });
+            assert.deepEqual(outside, [], "parts of the setup past the card's edge");
+            await page.click(".fr-close");
+            await page.waitForFunction(() => !document.querySelector(".fr-overlay"), undefined, { timeout: 15000 });
             await shot("full-app");
             await page.ctrl("k");
             await page.waitForSelector(".palette input");

@@ -17,20 +17,19 @@ body.ready .app { opacity: 1; }
   right: calc(16px + env(safe-area-inset-right));
   bottom: calc(40px + env(safe-area-inset-bottom));
 }
-/* The full app on a touch screen (Android, the iPad): no flash on a tap, no glow or stretch at
-   the ends of a scrolling area, and no desktop scrollbars beside the content (the system draws
-   its own while scrolling). A mouse keeps them. */
+/* The full app on Android and the iPad: no flash on a tap, no glow or stretch at the ends of a
+   scrolling area, and no desktop scrollbars beside the content (the system draws its own while
+   scrolling), as in the phone app (mobile.css). Not only under `(hover: none) and (pointer:
+   coarse)`: the Android emulator matched neither and showed the bars. */
 :root.platform-android {
   -webkit-tap-highlight-color: transparent;
 }
 :root.platform-android * {
   overscroll-behavior: contain;
 }
-@media (hover: none) and (pointer: coarse) {
-  :root.platform-android ::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-  }
+:root.platform-android ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 /* Windows 11 with a backdrop (Mica, Acrylic): see "window backdrop" at the end. */
 /* macOS: the window content reaches into the title bar (overlay); the traffic lights sit in the

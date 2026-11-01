@@ -53,8 +53,10 @@ smaller than the display on both sides, from `WindowMetrics`), split screen, an 
 The full app stays until the window is 48 dp below its line, so a window resized around the line does not
 switch back and forth; after three switches within 30 seconds the interface stays for the session.
 
-**Following the window.** The manifest keeps the activity when the size, the display, the density or the
-input devices change (`configChanges`), so the page stays and `ShellPlugin` announces the change to it (the
+**Following the window.** The manifest keeps the activity when the size, the display, the density, the
+input devices or the system's text (font size, bold text, language) change (`configChanges`): a new activity
+would show a second WebView with the app from its start, and Back would close the app. So the page stays,
+`ShellPlugin` sets the WebView's text zoom to the font size and announces the change to the page (the
 DOM event `arcalo-display`, also on a mouse or keyboard plugged in or out); the page also listens to its own
 `resize`. A change is decided once the window rests (0.6 s). Before the page goes over, the unsaved text is
 stored: the full app's editors (`flushAllEditors`) and the phone app's page editor (`lib/flush.ts`); while a

@@ -216,11 +216,35 @@ for (const [W, H] of [
       assert.deepEqual(geo.spinnerProblems(spinnerLog), []);
     });
 
-    // Last: Android may recreate the activity (and its WebView) when the font size changes.
+    // Last, as it changes a setting of the system. Android hands the new font size to the running
+    // app (the manifest keeps the activity, ShellPlugin sets the WebView's text zoom): the page
+    // this test drives stays the one on the screen, its text grows. A new activity showed a second
+    // WebView with the app from its start (the pictures were of that one, the checks of the old
+    // page), and Back then closed the app.
     test("keeps every label whole with the system's font at 130 %", async () => {
+      await tab(1);
+      // The width of the screen title's text (Heute) in CSS px, or whether it is wider than `min`.
+      const titleText = (min) => {
+        const h = [...document.querySelectorAll(".m-title")].find((e) => e.getBoundingClientRect().width > 0);
+        const r = document.createRange();
+        if (h) r.selectNodeContents(h);
+        const w = h ? r.getBoundingClientRect().width : 0;
+        return min == null ? w : w > min;
+      };
+      await page.evaluate(() => (window.__fontMark = true));
+      const before = await page.evaluate(titleText);
+      assert.ok(before > 0, "the title of Heute");
       device.shell("settings put system font_scale 1.3");
       try {
-        await sleep(1500);
+        await page
+          .waitForFunction(titleText, before * 1.2, { timeout: 15000 })
+          .catch(async (e) => {
+            const now = await page.evaluate(titleText).catch(() => null);
+            const state = await page.evaluate(() => ({ mark: window.__fontMark === true, visible: document.visibilityState })).catch((x) => x.message);
+            throw new Error(`the title's text stayed ${before} px wide (now ${now}) on the driven page ${JSON.stringify(state)}: ${e.message.split("\n")[0]}`);
+          });
+        const kept = await page.evaluate(() => ({ mark: window.__fontMark === true, visible: document.visibilityState === "visible" }));
+        assert.deepEqual(kept, { mark: true, visible: true }, "the same page, shown, after the font size changed");
         const cut = [];
         const look = async (name) => {
           await sleep(800);

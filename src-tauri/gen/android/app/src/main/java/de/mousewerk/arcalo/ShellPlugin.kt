@@ -32,6 +32,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.KeyStore
+import kotlin.math.roundToInt
 
 @InvokeArg
 class UriArgs {
@@ -81,6 +82,7 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         this.webView = webView
+        followFontScale(webView, activity.resources.configuration)
         take(activity.intent)
         val input = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
         input.registerInputDeviceListener(devices, Handler(Looper.getMainLooper()))
@@ -92,10 +94,20 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
         webView = null
     }
 
-    // The window's size, display or mode changed (the manifest keeps the activity, so the page
-    // stays).
+    // The window's size, display or mode changed, or the system's font size (the manifest keeps
+    // the activity, so the page stays).
     override fun onConfigurationChanged(newConfig: Configuration) {
+        webView?.let { followFontScale(it, newConfig) }
         announceDisplay()
+    }
+
+    /**
+     * The page's text at the system's font size (Einstellungen → Display → Schriftgröße). A new
+     * WebView takes it when it is made; the one kept through a change of the setting is told.
+     */
+    private fun followFontScale(view: WebView, config: Configuration) {
+        val zoom = (config.fontScale * 100).roundToInt()
+        if (view.settings.textZoom != zoom) view.settings.textZoom = zoom
     }
 
     /**
