@@ -33,6 +33,12 @@ export function settle(timeout = 300000) {
   const t0 = Date.now();
   execFileSync(ADB, ["shell", "am", "wait-for-broadcast-idle"], { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 });
   console.log(`the system's broadcasts were delivered after ${Date.now() - t0} ms`);
+  // Later in a run Play services also restarts itself (a configuration push, `phenotype.COMMITTED`),
+  // and Android kills the app with it: "depends on provider …FontsProvider in dying proc". The suite
+  // tests the app, not Play services: it is switched off on the emulator, before the app first starts.
+  shell("pm disable-user --user 0 com.google.android.gms");
+  execFileSync(ADB, ["shell", "am", "wait-for-broadcast-idle"], { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 });
+  console.log(`Play services switched off after ${Date.now() - t0} ms`);
 }
 
 /** A phone of `w`×`h` dp at `density` (dpi / 160): `wm size` in pixels and `wm density`. */
