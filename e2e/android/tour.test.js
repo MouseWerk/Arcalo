@@ -377,6 +377,8 @@ for (const [W, H] of [
             const V = (sel) => `[data-issue-view="PROJ-123"] ${sel}`;
             await page.waitForSelector(V(".iv-summary"), { timeout: 30000 });
             await page.waitForFunction((s) => !document.querySelector(s), V(".iv-refreshing"), { timeout: 30000 });
+            // Measured where the view comes to rest: it slides up 24 px when it opens (iv-sheet-in).
+            await page.evaluate(() => Promise.all(document.querySelector(".iv").getAnimations().map((a) => a.finished)));
             const box = await page.evaluate(() => {
               const r = document.querySelector(".iv").getBoundingClientRect();
               const main = document.querySelector(".iv-main").getBoundingClientRect();
