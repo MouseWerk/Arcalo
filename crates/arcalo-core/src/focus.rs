@@ -535,6 +535,13 @@ mod tests {
         FixedOffset::east_opt(2 * 3600).unwrap()
     }
 
+    /// Yesterday 09:00 in `cet()`: the sessions of a test (and a correction 15 minutes earlier)
+    /// stay on one day whatever the clock says (`now - 3 h` crossed midnight shortly after it).
+    fn yesterday_morning() -> DateTime<Utc> {
+        let day = (Utc::now().with_timezone(&cet()) - chrono::Duration::days(1)).date_naive();
+        day.and_hms_opt(9, 0, 0).unwrap().and_local_timezone(cet()).unwrap().with_timezone(&Utc)
+    }
+
     fn setup() -> (Database, String) {
         let (db, np) = crate::feed::seeded();
         let v = db.list_vorgaenge(np.id).unwrap()[0].vorgang_nr.clone();
@@ -550,7 +557,7 @@ mod tests {
     #[test]
     fn a_corrected_entry_keeps_the_correction_when_a_session_extends_it() {
         let (db, r) = setup();
-        let t0 = whole(Utc::now() - chrono::Duration::hours(3));
+        let t0 = yesterday_morning();
         begin(&db, &r, 25.0, "Konzept", t0);
         let e = finish(&db, t0 + chrono::Duration::minutes(25), &cet()).unwrap().entry.unwrap();
         // The user books 40 minutes instead, starting 15 minutes earlier.
@@ -573,7 +580,7 @@ mod tests {
     #[test]
     fn a_finished_session_books_a_draft_entry_and_later_ones_extend_it() {
         let (db, r) = setup();
-        let t0 = whole(Utc::now() - chrono::Duration::hours(3));
+        let t0 = yesterday_morning();
         let s = begin(&db, &r.to_lowercase(), 25.0, "Konzept schreiben", t0);
         assert_eq!(s.reference, r, "canonical spelling");
         assert!(start(&db, &FocusStart { minutes: 25.0, ..Default::default() }, t0).is_err(), "one at a time");

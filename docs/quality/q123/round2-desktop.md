@@ -57,6 +57,11 @@ finding; every finding is asserted at the end). Stops:
 | R16 | Issues list at 900 px: the search field read „Schlüssel, Titel, Bearbeiter suchen“ without its end. | The German text is 227 px, the field 216 px next to the three filters. | „Schlüssel, Titel oder Bearbeiter“ (the magnifier says „suchen“). | 440 placeholder audit |
 | R17 | Anhänge, a drawing's menu: „Bearbeiten“ (in Arcalo) and „Mit Standard-App öffnen“ (another program) had the same external-link icon; a PDF's „Ansehen“ too. | One icon for the first item whatever it does. | „Ansehen“ the eye (as in a note's file menu), „Bearbeiten“ the pen; „Öffnen“ in another program keeps the external-link icon. | 440 (the first two items differ) |
 
+Found on the way (CI 41258753003, red before the e2e step): `focus::tests` started their sessions at
+`now - 3 h`; at 01:03 UTC that is 00:03 in the tests' +02:00, the corrected entry 15 minutes earlier fell on the
+day before and the next session booked a second entry (2 instead of 1). The two tests that extend an entry now
+start yesterday at 09:00 (+02:00), so they no longer depend on the clock.
+
 The tour also checks on every stop: what is on top is not covered by something else (R13), no empty field's
 placeholder is cut (R14, R15), Esc closes what a stop opened, and Tab stays inside the issue view, the create
 dialog and the release notes.
