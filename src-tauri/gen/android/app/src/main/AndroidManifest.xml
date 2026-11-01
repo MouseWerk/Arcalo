@@ -19,7 +19,7 @@
              a second WebView with the app from the beginning, and Back would no longer reach the
              page and close the app (ShellPlugin.kt follows the font size). -->
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|fontWeightAdjust|smallestScreenSize|screenLayout|uiMode|density|navigation"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|fontWeightAdjustment|smallestScreenSize|screenLayout|uiMode|density|navigation"
             android:resizeableActivity="true"
             android:launchMode="singleTask"
             android:label="@string/main_activity_title"
