@@ -80,4 +80,7 @@ dialog and the release notes.
 
 ## Runs
 
-RUNS
+| Run | Result |
+|---|---|
+| local, 440 on `main` and while fixing (four runs) | R1 to R17; a few stops first aimed at menus that do not exist (see „Looked at, not changed“) |
+| local, 440 with the fixes | 7/7 tests, no findings; 420, 43, 32 and 412-jira-ui-consistency green |
