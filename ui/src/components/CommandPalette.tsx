@@ -95,6 +95,8 @@ export function CommandPalette() {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  // Where the focus was before the palette took it, for the way back.
+  const opener = useRef<Element | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const s = useApp.getState;
 
@@ -104,6 +106,7 @@ export function CommandPalette() {
     if (open) {
       setQ(initial);
       setSel(0);
+      if (!document.activeElement?.closest(".palette")) opener.current = document.activeElement;
       input.current?.focus();
       // Once more after the opener's own handling (a menu closing returns the focus to its button).
       setTimeout(() => document.activeElement !== input.current && input.current?.focus(), 10);
@@ -114,13 +117,13 @@ export function CommandPalette() {
   // made that pane the active one: the focus going back would make the old one active again.
   useEffect(() => {
     if (!open) return;
-    const opener = document.activeElement;
+    const from = opener.current;
     return () => {
       const back = () => {
         const now = document.activeElement;
         if (now && now !== document.body && !now.closest(".palette")) return;
-        if (opener?.closest(".pane:not(.active)")) return;
-        if (opener instanceof HTMLElement && opener.isConnected && opener.offsetParent !== null) opener.focus({ preventScroll: true });
+        if (from?.closest(".pane:not(.active)")) return;
+        if (from instanceof HTMLElement && from.isConnected && from.offsetParent !== null) from.focus({ preventScroll: true });
       };
       // After the command ran and React drew what it opened.
       requestAnimationFrame(() => requestAnimationFrame(back));
