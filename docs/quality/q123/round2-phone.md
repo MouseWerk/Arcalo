@@ -40,7 +40,21 @@ the 1.22 Jira issue view open: a fake Jira on the runner (`adb reverse`), the is
 checked as `153-issue-view-phone` checks it on the desktop (fills the screen, no sideways scrolling, details
 below the description, header buttons at least 44 px) and pictured with its details.
 
+## Checked on the pictures of run 41273682866 (all jobs green)
+
+- 130 % font: „font-130-gitsetup“ now shows the Git setup itself (before: Heute of the restarted app), its
+  title in two lines, uncut; the title of Heute grew on the driven page within the 15 s; no crash in the log.
+- Full app on the phone: „full-app-intro“ (the intro's first scene, centered), „full-app-setup“ (step 1 at
+  360 dp within the card: text, the three language cards and „Zurück · Überspringen · Weiter“ in one row),
+  „full-app“, „full-app-issue“ and „-details“ (the issue fills the screen, details below the description).
+- The tour's stock UI check found nothing (0 findings, also no desktop scrollbars), and no screen came late.
+
 ## Looked at, not changed
+
+- The Git setup's provider rows at 130 % cut their one-line description with „…“ („github.com oder GitHub
+  Ente…“); the name stays whole, and the description is a hint, as on the desktop.
+- The issue view's header on a 360 dp phone: the key („PROJ-123“) and the status button sit close together;
+  nothing is cut or overlaps.
 
 - Switching a phone to the full app opens the full app's setup (its data never went through it); the tour
   pictures it and closes it.
