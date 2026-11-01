@@ -1,7 +1,7 @@
 // Ctrl K: commands, pages, full-text search, "/zeit …" booking and "? question".
 // Ctrl O: quick switcher (pages only).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, CalendarPlus, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply, CalendarCheck,
@@ -98,11 +98,15 @@ export function CommandPalette() {
   const list = useRef<HTMLDivElement>(null);
   const s = useApp.getState;
 
-  useEffect(() => {
+  // Before the browser paints: keys typed right after Strg+K reach the field, not the note behind it
+  // (with the focus moved a moment later, the first characters were lost or typed into the editor).
+  useLayoutEffect(() => {
     if (open) {
       setQ(initial);
       setSel(0);
-      setTimeout(() => input.current?.focus(), 10);
+      input.current?.focus();
+      // Once more after the opener's own handling (a menu closing returns the focus to its button).
+      setTimeout(() => document.activeElement !== input.current && input.current?.focus(), 10);
     }
   }, [open, initial]);
   // The focus goes back where it was (the editor's caret, a tree row) when the palette closes,

@@ -48,3 +48,21 @@ describe("dialog focus trap", () => {
     expect(press({ key: "Tab", code: "Tab" })).toBe(false);
   });
 });
+
+describe("dialog focus on content that loads late", () => {
+  it("skips a disabled primary button and focuses the marked field once it appears", async () => {
+    const view = (loaded: boolean) =>
+      createElement(
+        Dialog,
+        { open: true, onClose: () => {}, title: "Statusbericht", footer: createElement("button", { className: "btn-primary", disabled: true }, "Erstellen") },
+        loaded ? createElement("input", { "aria-label": "Projekt", "data-autofocus": true }) : createElement("div", null, "Lädt …"),
+      );
+    mount(view(false));
+    await act(() => new Promise((r) => setTimeout(r, 30)));
+    // Nothing to focus yet: the dialog itself, not the disabled button.
+    expect(document.activeElement).toBe(document.querySelector(".dialog"));
+    act(() => root!.render(view(true)));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Projekt");
+  });
+});
