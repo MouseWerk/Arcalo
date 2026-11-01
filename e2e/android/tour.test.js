@@ -97,14 +97,17 @@ for (const [W, H] of [
             if (!at) continue;
             await page.clickAt(at.x, at.y);
             // What it opened is on the picture (a picture of the closed screen hid that a menu
-            // never opened, or opened only after the screenshot).
+            // never opened, or opened only after the screenshot): a sheet or menu laid out with a
+            // size, as the sheet's own step waits for it.
             await page
               .waitForFunction(
-                (k) => {
-                  const b = [...document.querySelectorAll("[aria-haspopup]")].filter((x) => x.getBoundingClientRect().width > 0)[k];
-                  return b?.getAttribute("aria-expanded") === "true" || !!document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]');
-                },
-                i,
+                () =>
+                  [...document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="menu"]')].some((e) => {
+                    const r = e.getBoundingClientRect();
+                    const s = getComputedStyle(e);
+                    return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
+                  }),
+                undefined,
                 { timeout: 5000 },
               )
               .catch(() => {
@@ -332,8 +335,15 @@ for (const [W, H] of [
             await tab(1);
             await page.click('.m-head-actions [aria-label="Einstellungen"]');
             await page.click(".m-seg-opt", { text: /^Vollständig$/ });
-            await page.waitForFunction(() => !!document.querySelector(".ribbon") && document.body.classList.contains("ready"), undefined, { timeout: 60000 });
-            await sleep(1500);
+            await page.waitForFunction(() => !!document.querySelector(".ribbon") && document.body.classList.contains("ready") && !document.getElementById("splash"), undefined, { timeout: 60000 });
+            // As wide as the screen (Android widened the page to 515 px to fit the setup's cards).
+            assert.equal(await page.evaluate(() => window.innerWidth), W, "the full app's page is as wide as the screen");
+            // The data never went through the full app's setup: it opens first.
+            if (await page.$(".fr-close")) {
+              await shot("full-app-setup");
+              await page.click(".fr-close");
+              await page.waitForFunction(() => !document.querySelector(".fr-close"));
+            }
             await shot("full-app");
             await page.ctrl("k");
             await page.waitForSelector(".palette input");

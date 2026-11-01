@@ -40,6 +40,12 @@ describe.each(["index.html", "mobile.html"])("%s", (page) => {
     expect(html).not.toMatch(/<style[\s>]/i);
     expect(html.match(/<script(?![^>]*\bsrc=)[^>]*>/gi) ?? []).toEqual([]);
   });
+  // Android's WebView widens the page to fit anything wider than the screen unless the scale
+  // may not go below 1: the full app on a phone was 515 px wide on a 360 px screen, cut off.
+  it("keeps the page as wide as the screen", () => {
+    const html = readFileSync(resolve(__dirname, "../..", page), "utf8");
+    expect(html).toMatch(/<meta name="viewport" content="width=device-width, initial-scale=1\.0, minimum-scale=1\.0" \/>/);
+  });
 });
 
 describe("mobile.html", () => {

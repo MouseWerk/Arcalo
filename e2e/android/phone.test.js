@@ -237,6 +237,17 @@ for (const [W, H] of [
         await page.click('.m-head-actions [aria-label="Einstellungen"]');
         await visible(".m-screen .m-section");
         await look("settings");
+        // The Git setup's long title („Git-Synchronisierung einrichten“) wraps, uncut.
+        await page.click(".m-gs-entry .m-btn-primary");
+        await visible(".m-gs");
+        await look("gitsetup");
+        const title = await page.evaluate(() => {
+          const h = document.querySelector(".m-gs .m-title");
+          return { text: h.textContent, cut: h.scrollWidth > h.clientWidth + 1 };
+        });
+        if (title.cut) cut.push(`gitsetup: the title „${title.text}“ is cut to „…“`);
+        device.back();
+        await page.waitForSelector(".m-gs-entry");
         device.back();
         await sleep(500);
         assert.deepEqual(cut, []);

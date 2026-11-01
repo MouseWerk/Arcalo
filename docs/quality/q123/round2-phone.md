@@ -20,7 +20,10 @@ and of the iOS safe areas were read from the pixels.
 | P3 | Schnellerfassung → Notiz: „Speichern“ lay half under the keyboard. | The note field kept its 8 lines, the form scrolled under the keyboard. | The capture's form is a column in which the field gives way down to two touch heights. | tour: „Speichern“ ends above the keyboard |
 | P4 | With the Leistungsart sheet open, the status bar stayed bright above the dimmed screen, and the navigation bar under the sheet had the screen's color instead of the sheet's (light and dark, both sizes; iOS colors its safe areas from the same call). | The bar colors were set from the shell and the tab bar only, never for the scrim and the sheet. | `MobileApp` watches the body for sheets: status bar = the shell under the scrim (`blendHex`), navigation bar = the sheet's color; back to the screen's when it closes. | `model.test.ts`; the tour's bar check now expects the sheet's colors (`appBarColors`) on every sheet picture |
 | P5 | „Fällig“ on Heute and under Aufgaben was always empty on the tour, the tasks showed „due:today“ as text and stood under „Ohne Datum“. | The tour's seed wrote `due:today`, which is no syntax (only ISO days); the due, overdue and priority states were never pictured. | Seed with ISO days (today, yesterday, later), a priority, a task without date, a done task and two bookings of the week. | the tour's pictures |
-| P6 | The tour's „time-menu-standard“ picture showed the closed Zeit screen, not the Leistungsart sheet it was meant to show. | `menus()` took the picture after a fixed wait, without checking that anything opened. | `menus()` waits for the opener's `aria-expanded` or a modal dialog or menu, and fails the part when nothing opens. | tour |
+| P6 | The tour's „time-menu-standard“ picture showed the closed Zeit screen, not the Leistungsart sheet it was meant to show (and so the bar check of the first run of this round saw the screen's colors). | `menus()` took the picture after a fixed wait without checking that anything was drawn; the DOM had the sheet, the screen not yet. | `menus()` waits for a modal dialog or menu laid out with a size, as the sheet's own step does, and fails the part when nothing opens. | tour |
+| P7 | The full app („Oberfläche auf Android: Vollständig“) on a phone was 515 px wide on a 360 px screen: the splash off center, the setup's cards and title cut off at the right edge. | Android's WebView widens the layout viewport to fit content wider than `width=device-width` unless the scale may not go below 1; the setup's two columns of cards were wider than the phone. | `minimum-scale=1.0` in the viewport of `index.html` and `mobile.html`. | `splash.test.ts` (both pages); tour: the full app's `innerWidth` is the screen's |
+| P9 | The Git setup's title „Git-Synchronisierung einrichten“ reached the right edge of a 360 dp phone; with a larger system font it is cut to „…“. Headers without buttons kept only 8 px at their end. | Screen titles stay on one line with an ellipsis; the header's end padding is made for its buttons. | The setup's title wraps (balanced); a header without buttons keeps the screen's 16 px margin. | `phone.test.js`: at 130 % the setup's title is not cut |
+| P8 | The full app on Android flashed a blue tap highlight on every tap, its start page and widgets glowed at their ends and showed the desktop's 10 px and 6 px scrollbars. | The touch rules lived only in the phone app's `mobile.css`. | `app.css`: under `platform-android` (Android and iOS) no tap highlight and `overscroll-behavior: contain`; on a touch screen without a mouse no scrollbars. | the tour's stock UI check on the full app's pictures |
 
 ## Coverage added to the tour
 
@@ -32,6 +35,11 @@ checked as `153-issue-view-phone` checks it on the desktop (fills the screen, no
 below the description, header buttons at least 44 px) and pictured with its details.
 
 ## Looked at, not changed
+
+- Switching a phone to the full app opens the full app's setup (its data never went through it); the tour
+  pictures it and closes it.
+- The log of every reload shows „Cannot read properties of undefined (reading 'runCallback')“: an answer of
+  the shell arriving for the page that was just replaced; nothing on the screen depends on it.
 
 - English with the German date order reads „Saturday, 31. October 2026“: the regional date format is a
   setting of its own (`dateLocale`, en-DE), shared with the desktop.

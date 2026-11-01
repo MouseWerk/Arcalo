@@ -80,6 +80,10 @@ html.mobile body {
 .m-head:has(.m-head-back) {
   padding-left: var(--sp-1);
 }
+/* Without buttons at the end the title keeps the screen's margin there too. */
+.m-head:not(:has(.m-head-actions)) {
+  padding-right: var(--sp-4);
+}
 .m-head-titles {
   flex: 1;
   min-width: 0;
@@ -1459,8 +1463,12 @@ html.mobile body {
 }
 
 /* ---- guided setup of the sync (1.20): the picked provider or repository as a neutral tint */
+/* „Git-Synchronisierung einrichten“ fills a 360 dp phone's header: it wraps instead of being cut
+   to „…“ with a larger system font. */
 .m-gs .m-title {
   font-size: var(--fs-xl);
+  white-space: normal;
+  text-wrap: balance;
 }
 .m-gs-mark {
   font-size: var(--fs-sm);
