@@ -156,6 +156,20 @@ describe("Markdown of a note (link previews, dashboard, canvas)", () => {
     expect(cell.querySelector("td a.wikilink")?.getAttribute("data-target")).toBe("Notiz");
     expect(cell.querySelector("td a.wikilink")?.textContent).toBe("die Notiz");
   });
+
+  it("keeps image embeds in their paragraphs: one per line stacks, two on a line stand side by side", () => {
+    // Raw <img> at the start of a line was an HTML block of its own, and the next image ran into its line.
+    const root = document.createElement("div");
+    root.innerHTML = renderMarkdown("Text\n\n![[a.png]]\n\n![[b.png|240]]\n\n![[c.png|120]] ![[d.png|120]]\n");
+    const paras = [...root.querySelectorAll("p")].map((p) => [...p.querySelectorAll("img")].map((i) => i.dataset.attachment)).filter((p) => p.length);
+    expect(paras).toEqual([["a.png"], ["b.png"], ["c.png", "d.png"]]);
+    expect(root.querySelectorAll("img").length).toBe(4);
+    expect(root.querySelector('img[data-attachment="b.png"]')?.getAttribute("width")).toBe("240");
+    // A caption stays the alt text; no placeholder address is left over.
+    root.innerHTML = renderMarkdown("Text\n\n![[e.png|Plan *A*]]\n");
+    expect(root.querySelector("img")?.getAttribute("alt")).toBe("Plan *A*");
+    expect(root.innerHTML).not.toContain("arcalo-embed-");
+  });
 });
 
 describe("chat layout styles", () => {

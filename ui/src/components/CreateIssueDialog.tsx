@@ -114,7 +114,7 @@ function CreateIssueDialog({ req, onClose }: { req: CreateIssueRequest; onClose:
           <Select aria-label={t("jira.f.site")} value={site} onChange={(e) => setSite(e.target.value)} options={sites.map((x) => ({ value: x.id, label: x.name }))} />
         </Field>
       )}
-      <div className="jira-create-row">
+      <div className="field-row">
         <Field label={t("jira.f.project")}>
           <Select aria-label={t("jira.f.project")} value={project} disabled={!projects?.length} onChange={(e) => setProject(e.target.value)} options={(projects ?? []).map((p) => ({ value: p.key, label: p.name ? `${p.key} · ${p.name}` : p.key }))} placeholder={projects ? t("jira.noProjects") : t("dash.loading")} />
         </Field>

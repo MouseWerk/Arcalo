@@ -159,6 +159,9 @@
 .prose mark { background: var(--mark); color: inherit; border-radius: var(--r-xs); padding: 0 2px; }
 .prose table { border-collapse: collapse; margin: 1em 0; width: auto; font-size: 0.93em; }
 .prose th, .prose td { border: 1px solid var(--border-strong); padding: 6px 10px; text-align: left; vertical-align: top; min-width: 6em; }
+/* A column aligned in the Markdown (`---:`, `:---:`): rendered Markdown carries it as `align`, which loses to the rule above. */
+.prose :is(th, td)[align="right"] { text-align: right; }
+.prose :is(th, td)[align="center"] { text-align: center; }
 .prose th { background: var(--bg-hover); font-weight: var(--fw-semibold); }
 .prose td p, .prose th p { margin: 0; }
 .prose .selectedCell { background: var(--bg-selected); }
@@ -711,7 +714,8 @@
 .pdf-message { margin: auto; color: var(--text-3); font-size: var(--fs-md); }
 .pdf-message.is-error { color: var(--danger); }
 @media (max-width: 1000px) {
-  .pdf-search-input { width: 90px; }
+  /* „Search in the PDF“ fits (90 px cut it to „Search in the Pl“). */
+  .pdf-search-input { width: 112px; }
 }
 
 /* ---- typed properties and table/board views ---- */
@@ -1045,7 +1049,7 @@
 .pdf-tab-loading { display: grid; place-items: center; }
 @container pane (max-width: 860px) {
   .pdf-pane .pdf-zoom, .pdf-pane .pdf-sep { display: none; }
-  .pdf-pane .pdf-search-input { width: 100px; }
+  .pdf-pane .pdf-search-input { width: 112px; }
 }
 @container pane (max-width: 560px) {
   .pdf-pane .pdf-title { flex-basis: 100%; }

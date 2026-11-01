@@ -287,8 +287,11 @@ export function SlideView({ slide, className = "", label, light = false }: { sli
     // A slide of only images may fill its height; images with a width keep their aspect when
     // the height limit takes over (the width follows it instead of the image being squeezed).
     c.style.setProperty("--slide-h", `${Math.round(inner.height)}px`);
-    for (const img of c.querySelectorAll<HTMLImageElement>("img.slide-img[data-width]")) {
-      const want = Number(img.dataset.width);
+    // An image without a width (a drawing, a screenshot) is enlarged from its own size like the
+    // text, as one with a width is: a 240 px drawing was a sixth of the slide, a third of the note.
+    for (const img of c.querySelectorAll<HTMLImageElement>("img.slide-img")) {
+      if (!img.dataset.width && !img.naturalWidth) continue;
+      const want = img.dataset.width ? Number(img.dataset.width) : img.naturalWidth * IMAGE_WIDTH_SCALE;
       const maxH = parseFloat(getComputedStyle(img).maxHeight);
       const capped = img.naturalWidth && maxH ? Math.min(want, (maxH * img.naturalWidth) / img.naturalHeight) : want;
       img.style.width = `${Math.round(capped)}px`;
@@ -394,8 +397,16 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
     <div className={`presenter ${overlay ? "presenter-overlay" : ""}`} role="region" aria-label={t("present.presenter")} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
       <div className="presenter-main">
         <div className="presenter-label">
-          {t("present.current")} <span className="num">{deck.slides.length ? deck.index + 1 : 0} / {deck.slides.length}</span>
-          {cur && <span className="faint ellipsis"> · {cur.title}</span>}
+          <span>{t("present.current")}</span>
+          <span className="num">{deck.slides.length ? deck.index + 1 : 0} / {deck.slides.length}</span>
+          {cur && (
+            <>
+              <span className="presenter-sep" aria-hidden>
+                ·
+              </span>
+              <span className="faint ellipsis">{cur.title}</span>
+            </>
+          )}
         </div>
         <SlideView slide={cur} className={`presenter-current ${deck.beamer ? "beamer" : ""}`} light={deck.beamer} label={t("present.currentPreview")} />
       </div>
@@ -408,7 +419,11 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
         <div className="presenter-label">
           {next ? (
             <>
-              {t("present.next")} · <span className="ellipsis">{next.title}</span>
+              <span>{t("present.next")}</span>
+              <span className="presenter-sep" aria-hidden>
+                ·
+              </span>
+              <span className="ellipsis">{next.title}</span>
             </>
           ) : (
             t("present.last")
@@ -420,7 +435,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
           {notes ? (
             <div ref={(el) => void (el && highlightCodeBlocks(el))} dangerouslySetInnerHTML={{ __html: notes }} />
           ) : (
-            <p className="faint">
+            <p className="faint presenter-hint">
               {t("present.noNotes")} <code>{t("present.noNotesCallout")}</code> {t("present.noNotesOr")} <code>{t("present.noNotesPrefix")}</code> {t("present.noNotesEnd")}
             </p>
           )}

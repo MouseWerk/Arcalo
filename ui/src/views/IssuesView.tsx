@@ -5,7 +5,7 @@
 // the issue view. The row actions (issue view, Jira, more) keep their place: the row reserves it, so
 // nothing moves or hides the status when they show on hover or focus.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CalendarPlus, CheckSquare, ListPlus, FileText, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
 import { openIssueView } from "../lib/issueFull";
 import { openStatusReport } from "../components/MeetingWork";
@@ -121,6 +121,9 @@ export function IssuesView() {
   const siteColor = (id: string) => sites.find((x) => x.id === id)?.color ?? "var(--accent)";
   const shown = useMemo(() => filterIssues(list ?? [], q), [list, q]);
   const groups = useMemo(() => groupIssues(shown, pref.group, { site: siteName, empty: t(`jira.group.none.${pref.group}` as TKey) }), [shown, pref.group, sites]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The groups are grids of their own: the key column takes the longest key's width in all of them,
+  // so the summaries start at the same place in every group.
+  const keyWidth = useMemo(() => `${Math.max(7, ...shown.map((i) => i.key.length))}ch`, [shown]);
   const today = isoDay(new Date());
   const lastSync = sites.map((x) => x.sync?.synced_at).filter(Boolean).sort().pop() ?? null;
   const failing = sites.filter((x) => x.enabled && x.sync?.error);
@@ -229,7 +232,7 @@ export function IssuesView() {
           </EmptyState>
         ) : (
           groups.map((g) => (
-            <section key={g.id} className="issues-group" aria-label={g.label || t("jira.title")}>
+            <section key={g.id} className="issues-group" aria-label={g.label || t("jira.title")} style={{ "--issue-key-w": keyWidth } as CSSProperties}>
               {g.label && (
                 <h2 className="issues-group-title">
                   {pref.group === "site" && <span className="issues-site-dot" style={{ background: siteColor(g.id) }} aria-hidden />}

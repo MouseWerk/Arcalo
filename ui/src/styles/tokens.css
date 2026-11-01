@@ -113,10 +113,11 @@
   --z-overlay: 50;
   --z-anchored: 60;
   --z-hovercard: 65;
-  --z-menu: 70;
   --z-panel: 75;
   --z-viewer: 76;
   --z-toast: 80;
+  /* A menu was just opened by the user: above the toasts (a toast covered a row menu's items). */
+  --z-menu: 85;
   --z-select: 90;
   --z-fullscreen: 900;
   --z-top: 1000;

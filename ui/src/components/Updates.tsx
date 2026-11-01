@@ -379,7 +379,7 @@ export function UpdateToast() {
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 {t("upd.whatsNew")}
               </Button>
-              <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("upd.later")} size="sm" onClick={(e) => openMenuAt(e, laterItems(available.version))} />
+              <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("upd.moreOptions")} size="sm" onClick={(e) => openMenuAt(e, laterItems(available.version))} />
             </div>
           </>
         )}

@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Archive, Copy, ExternalLink, File, FileAudio, FileCode2, FileSpreadsheet, FileText, FileVideo, FolderOpen, Image as ImageIcon, MoreHorizontal, Paperclip,
+  Archive, Copy, ExternalLink, Eye, File, FileAudio, FileCode2, FileSpreadsheet, FileText, FileVideo, FolderOpen, Image as ImageIcon, MoreHorizontal, Paperclip,
   PenTool, Pencil, Presentation, RefreshCw, Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import { api, attachmentUrl } from "../lib/api";
@@ -177,7 +177,7 @@ export function AttachmentsView() {
   };
 
   const rowMenu = (f: AttachmentInfo): MenuEntry[] => [
-    { label: f.kind === "pdf" ? t("att.view") : f.kind === "drawing" ? t("links.editShort") : t("links.open"), icon: ExternalLink, onSelect: () => openAttachmentFile(f) },
+    { label: f.kind === "pdf" ? t("att.view") : f.kind === "drawing" ? t("links.editShort") : t("links.open"), icon: f.kind === "pdf" ? Eye : f.kind === "drawing" ? PenTool : ExternalLink, onSelect: () => openAttachmentFile(f) },
     ...(f.kind === "pdf" || f.kind === "drawing"
       ? [{ label: t("att.openDefault"), icon: ExternalLink, onSelect: () => api.openAttachment(f.name).catch((e) => s().error(t("att.openFailed"), e)) } as MenuEntry]
       : []),
