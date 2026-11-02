@@ -17,6 +17,11 @@ jobs:
   core:
     name: Core, UI and end-to-end tests (Linux)
     runs-on: ubuntu-24.04
+    # Without debug info, as in the soak and the local checks (CLAUDE.md): clippy, the tests and the e2e build
+    # with full debug info filled the runner's disk (run 41506310144: "No space left on device" linking arcalo).
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.94.1
