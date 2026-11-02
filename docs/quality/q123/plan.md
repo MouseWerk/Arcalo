@@ -47,6 +47,15 @@ and emulator). Clean when nothing needed a fix.
 
 Earlier rounds on `1f299d6e`, `0f380d54`, `4b33fa84`, `06deb59f` and `d622f293` each ended with a finding above.
 
+### More runs (owner: „Lasse noch paar Bug Runs laufen“)
+
+| Commit | Runs | Result |
+|--------|------|--------|
+| `94d96ec3` | soak 41423114242 (10x), CI 41379048770 | soak clean; CI: e2e 320 deleted the wrong page (two quick-search opens applied out of order), fixed in `d7b688ae` |
+| `d7b688ae` | soak 41441089945 (5x), 41454277402 (10x), CI 41437061084 attempts 1–3 | 14 of 15 clean, CI green 3 times; e2e 36: a dropdown closed by the scroll of a new scale, fixed in `5864a084` |
+| `5864a084` | soak 41506318807 (10x), CI 41506310144 | soak clean; CI: the Linux runner's disk full while linking (debug info), fixed in `4c1163ba` |
+| `4c1163ba` | CI 41519959719 attempts 1–2 | green both times (the app is the same as `5864a084`) |
+
 ## Not covered
 
 - On real devices: Windows clipboard into Word, Outlook and Teams and Excel cells into a note (`images.md`); the
