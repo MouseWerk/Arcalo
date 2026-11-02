@@ -57,6 +57,7 @@ import { checkFirstRun } from "./onboarding/state";
 import { refreshI18n, t, useT } from "./lib/i18n";
 import { isComposing } from "./lib/ime";
 import { copyText } from "./lib/clipboard";
+import { inOrder } from "./lib/inorder";
 
 export function App() {
   useT();
@@ -243,8 +244,9 @@ export function App() {
       on("nav://briefing", () => openBriefing()),
       // Its notification while the app is in front: offered here too.
       on("briefing://notified", () => offerBriefing()),
-      // A result chosen in the quick-search window (it may have created the page).
-      on<SearchTarget>("search://open", async (t) => {
+      // A result chosen in the quick-search window (it may have created the page). In the order they
+      // came: one still waiting for the tree must not act after a later one (and replace its tab).
+      on<SearchTarget>("search://open", inOrder(async (t: SearchTarget) => {
         const st = useApp.getState();
         if (t.kind === "page") {
           if (!st.pages.has(t.page_id)) await st.refreshTree();
@@ -257,7 +259,7 @@ export function App() {
           await st.refreshTimer();
           stopTimer();
         }
-      }),
+      })),
       // Quick capture (its own window): new pages appear in the tree; the queue reports here.
       on<{ page_id: number; title: string; created: boolean; late: boolean }>("capture://stored", async (c) => {
         const st = useApp.getState();
