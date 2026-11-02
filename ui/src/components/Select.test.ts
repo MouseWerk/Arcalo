@@ -145,6 +145,30 @@ describe("<Select>", () => {
     expect(active()).toBe("Überschrift 1");
   });
 
+  it("stays open through a new scale arriving (a resize and the scroll it causes), closes on a scroll", async () => {
+    const trigger = mount("h2", () => {});
+    const frame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    const scroll = () =>
+      act(() => {
+        host!.dispatchEvent(new Event("scroll"));
+      });
+    trigger.focus();
+    key(trigger, " ");
+    expect(list()).not.toBeNull();
+    // The webview's zoom: the window gets a new size and the scrolling area around the trigger
+    // keeps its place at the new scale, both reported in one frame.
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    scroll();
+    expect(list()).not.toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    // A scroll of its own in a later frame moves the trigger away: the list closes.
+    await frame();
+    scroll();
+    expect(list()).toBeNull();
+  });
+
   it("chooses with the mouse and closes on a click outside", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));

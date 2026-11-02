@@ -30,6 +30,9 @@ Found while merging and soaking, each fixed at the root:
 - e2e 321 clicked the previous page's editor during the tab switch; the Android tour measured the issue view during
   its opening slide.
 - An arrow key before a Jira chip stepped over a word joiner and left the caret where it was (soak, e2e 104).
+- A dropdown opened again right after choosing a new interface scale closed when the scale arrived: the webview's
+  zoom also scrolls the settings to keep their place, and that scroll counted as the person's (soak, e2e 36;
+  q122 F22 handled the resize only).
 
 ## Rounds
 

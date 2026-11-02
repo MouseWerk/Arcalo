@@ -202,6 +202,7 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   const open = () => app.browser.execute((s) => document.querySelector(s).getAttribute("aria-expanded") === "true", scale);
   const active = () => app.browser.execute((s) => document.getElementById(document.querySelector(s).getAttribute("aria-activedescendant") ?? "")?.textContent, scale);
   assert.equal(await value(), "100");
+  const dpr = await app.browser.execute(() => window.devicePixelRatio);
   await app.browser.execute((s) => document.querySelector(s).focus(), scale);
   await app.keys(["ArrowDown"]);
   await app.browser.waitUntil(open, { timeoutMsg: "ArrowDown did not open" });
@@ -226,12 +227,14 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   // type-ahead's 700 ms between two keys on a busy machine, and then starts a new search.
   await burst("11");
   assert.equal(await active(), "110 %");
-  await app.keys(["Enter"]);
+  // Enter, and Space opens it again at once: the new scale reaches the window a moment later (the
+  // webview's zoom, a resize and the settings keeping their place), which leaves the list open.
+  await burst(" ");
   await app.browser.waitUntil(async () => (await value()) === "110");
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.appearance.ui_scale === 110, { timeoutMsg: "not saved" });
+  await app.browser.waitUntil(() => app.browser.execute((d) => Math.abs(window.devicePixelRatio - d * 1.1) < 0.01, dpr), { timeoutMsg: "the new scale did not arrive" });
+  assert.equal(await open(), true, "the new scale arriving closed the list");
   // A click outside closes it.
-  await app.keys([" "]);
-  await app.browser.waitUntil(open);
   await app.click(".pane.active > .pane-content:not([hidden]) .settings-head h1");
   await app.browser.waitUntil(async () => !(await open()), { timeoutMsg: "click outside did not close" });
   // Back to 100 %: typing a whole label while closed picks it, like a native select.

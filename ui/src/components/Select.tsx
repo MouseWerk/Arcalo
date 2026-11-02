@@ -171,6 +171,10 @@ export function Select({ value, onChange, options, children, disabled, className
   // A window that changes its size (also a new scale of the interface, which arrives a moment
   // after it was chosen) places the open list again instead of closing it.
   const [resized, setResized] = useState(0);
+  // A new size also scrolls the areas whose content it lays out again (the settings keep their
+  // place at the new scale): the engine reports those scrolls in the same frame, right after the
+  // resize. They are not the person scrolling and must not close the list either.
+  const resizing = useRef(false);
 
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
@@ -201,8 +205,12 @@ export function Select({ value, onChange, options, children, disabled, className
     const inside = (t: EventTarget | null) => t instanceof Node && (pop.current?.contains(t) || trigger.current?.contains(t));
     const onDown = (e: MouseEvent) => !inside(e.target) && setOpen(false);
     // Only a scroll that moves the trigger closes the list (not the list itself, nor another
-    // area such as the assistant panel scrolling to its newest message).
-    const onScroll = (e: Event) => e.target instanceof Node && !pop.current?.contains(e.target) && trigger.current && e.target.contains(trigger.current) && setOpen(false);
+    // area such as the assistant panel scrolling to its newest message, nor a resize's own).
+    const onScroll = (e: Event) => {
+      if (!(e.target instanceof Node) || pop.current?.contains(e.target) || !trigger.current || !e.target.contains(trigger.current)) return;
+      if (resizing.current) setResized((n) => n + 1);
+      else setOpen(false);
+    };
     const close = () => setOpen(false);
     const onKey = (e: KeyboardEvent) => {
       if (isComposing(e)) return;
@@ -263,7 +271,11 @@ export function Select({ value, onChange, options, children, disabled, className
     window.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
-    const onResize = () => setResized((n) => n + 1);
+    const onResize = () => {
+      resizing.current = true;
+      requestAnimationFrame(() => (resizing.current = false));
+      setResized((n) => n + 1);
+    };
     window.addEventListener("resize", onResize);
     window.addEventListener("blur", close);
     return () => {
