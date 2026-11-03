@@ -1,0 +1,34 @@
+# q124 plan: bug hunts until no medium or high bug is found
+
+Owner, 2026-11-03: „Run so many till we don't find medium to high bugs anymore“. After q123 (three clean rounds,
+then more soak runs) the existing tests pass reliably; this round looks for what they do not cover. Each hunt
+writes new tests against the real app, rates every finding, and fixes the medium and high ones at the root.
+
+## Severity
+
+| Level | Meaning | Examples |
+|-------|---------|----------|
+| High | Data lost or wrong, a crash, a security or privacy problem, the app unusable | an edit not saved, a booking with the wrong time, a secret in a log, a hang |
+| Medium | A common flow broken or misleading, or a visible defect in a main view | a command that does nothing, a wrong number shown, a dialog that cannot be closed, cut text in a main view |
+| Low | Rare, cosmetic or with an easy way around | a 2 px misalignment, an awkward wording, a delay under a second |
+
+Low findings are listed, not required to be fixed in this round.
+
+## Exit criterion
+
+A full hunt round over every area below finds no medium or high bug, and the desktop soak (5 runs) and the whole CI
+are green on the same commit. Any medium or high finding is fixed, and the next round starts.
+
+## Areas
+
+| # | Area |
+|---|------|
+| H1 | Editor core: typing, undo/redo, lists, tables, links and backlinks, slash menu, paste of text and HTML, the source view, large notes |
+| H2 | Data safety: save, crash and restart, Git sync, backups and restore, encryption, the Markdown mirror, imports (Obsidian, bookmarks) |
+| H3 | Work features: tasks, calendar and Outlook/ICS, meetings, time tracking and its exports (Jira, SAP CATS, CSV, JSON), projects, the start page |
+| H4 | Search, quick search, command palette, AI chat and the assistant (fake providers), voice notes, settings and their undo, keyboard and accessibility |
+
+## Rounds
+
+| Round | Commit | Findings (high / medium / low) | Fixed in | Clean |
+|-------|--------|--------------------------------|----------|-------|
