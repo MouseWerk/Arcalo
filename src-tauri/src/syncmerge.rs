@@ -234,6 +234,15 @@ pub fn apply(
             .count();
         let tracked = by_file.keys().filter(|k| is_page_path(k)).count();
         let refuse_deletions = gitsync::mass_deletion(deletions, tracked);
+        // Pages with a note here, and the ones this pull deletes or moves away (by their note here).
+        let with_file: HashSet<i64> = by_file.values().copied().collect();
+        let leaving: HashSet<i64> = changes
+            .iter()
+            .filter_map(|c| {
+                let path = if c.theirs.is_none() && !c.conflict { Some(&c.path) } else { c.from.as_ref() };
+                by_file.get(&path?.to_lowercase()).copied()
+            })
+            .collect();
         // Folders renamed or moved there: the folder's page follows (its notes follow below).
         for (old, new) in folder_moves(changes, &by_file, &by_folder, &only) {
             let Some(&id) = by_folder.get(&old) else { continue };
@@ -314,6 +323,15 @@ pub fn apply(
                             }
                         }
                         (None, false) if refuse_deletions => out.kept.push(id),
+                        // Trashed already, with its parent deleted there as well.
+                        (None, false) if db.page(id)?.deleted_at.is_some() => {}
+                        // Its subpages stay there (one edited here, which the server kept): the
+                        // page stays as their folder, as there; its text is kept as a version.
+                        (None, false) if keeps_subpages(db, id, &with_file, &leaving)? => {
+                            db.snapshot_page(id)?;
+                            db.save_page_content(id, "")?;
+                            out.pages.push(id);
+                        }
                         (None, false) => {
                             db.trash_page(id)?;
                             out.trashed.push(id);
@@ -480,6 +498,23 @@ pub fn apply_file_renames(
         pages.extend(changed);
     }
     Ok(pages)
+}
+
+/// Whether a page the server deleted has subpages that stay: a page with a note of its own below
+/// it that this pull neither deletes nor moves away (`with_file`, `leaving`). Trashing the page
+/// would take them along, although the server still has them.
+fn keeps_subpages(db: &Database, id: i64, with_file: &HashSet<i64>, leaving: &HashSet<i64>) -> Result<bool> {
+    let pages = db.list_pages()?;
+    let mut below = vec![id];
+    while let Some(parent) = below.pop() {
+        for p in pages.iter().filter(|p| p.parent_id == Some(parent)) {
+            if with_file.contains(&p.id) && !leaving.contains(&p.id) {
+                return Ok(true);
+            }
+            below.push(p.id);
+        }
+    }
+    Ok(false)
 }
 
 /// A page deleted here that the other computer edited since: the trashed page of that name below
@@ -1200,6 +1235,79 @@ mod tests {
         let out = pcs.sync(&b, "b");
         assert!(out.trashed.is_empty(), "{out:?}");
         assert_eq!(b.page_doc(on_b.id).unwrap().content, "wichtige Ergänzung von B");
+    }
+
+    /// A page deleted on one computer together with its subpages: the other computer takes both
+    /// deletions over. Before, trashing the page took the subpage along and the subpage's own
+    /// deletion then failed („liegt bereits im Papierkorb“), so that computer took nothing over
+    /// from the server any more.
+    #[test]
+    fn a_page_deleted_there_with_its_subpages_is_taken_over() {
+        let Some(pcs) = Pcs::new("delete-tree") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..8 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let eltern = a.create_page(None, "Eltern", None).unwrap();
+        a.save_page_content(eltern.id, "Elterntext").unwrap();
+        let kind = a.create_page(Some(eltern.id), "Kind", None).unwrap();
+        a.save_page_content(kind.id, "v1").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        a.trash_page(eltern.id).unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        let eltern_b = b.list_trash().unwrap();
+        assert_eq!(eltern_b.len(), 1, "{out:?}");
+        assert_eq!((eltern_b[0].page.title.as_str(), eltern_b[0].descendants), ("Eltern", 1));
+        assert_eq!(out.trashed, [eltern_b[0].page.id]);
+        assert_eq!(tree(&a), tree(&b));
+    }
+
+    /// A page deleted there whose subpage was edited here: the subpage stays with this side's
+    /// text on both computers (the edit wins, as for a single note), below its folder. Before, the
+    /// parent's deletion trashed the edited subpage here and the next sync deleted it everywhere.
+    #[test]
+    fn a_subpage_edited_here_stays_when_its_page_was_deleted_there() {
+        for a_first in [true, false] {
+            let Some(pcs) = Pcs::new(if a_first { "edit-below-a" } else { "edit-below-b" }) else { return };
+            let a = Database::open_in_memory().unwrap();
+            for i in 0..8 {
+                let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+                a.save_page_content(p.id, "x").unwrap();
+            }
+            let eltern = a.create_page(None, "Eltern", None).unwrap();
+            a.save_page_content(eltern.id, "Elterntext").unwrap();
+            let kind = a.create_page(Some(eltern.id), "Kind", None).unwrap();
+            a.save_page_content(kind.id, "v1").unwrap();
+            pcs.sync(&a, "a");
+            let b = Database::open_in_memory().unwrap();
+            pcs.sync(&b, "b");
+            let kind_b = b.page_by_title("Kind").unwrap().unwrap();
+            b.save_page_content(kind_b.id, "wichtig von B").unwrap();
+            a.trash_page(eltern.id).unwrap();
+            let order: [(&Database, &str); 4] = if a_first {
+                [(&a, "a"), (&b, "b"), (&a, "a"), (&b, "b")]
+            } else {
+                [(&b, "b"), (&a, "a"), (&b, "b"), (&a, "a")]
+            };
+            for (db, pc) in order {
+                pcs.sync(db, pc);
+            }
+            for db in [&a, &b] {
+                let k = db.page_by_title("Kind").unwrap().expect("the edited subpage is there");
+                assert_eq!(db.page_doc(k.id).unwrap().content, "wichtig von B");
+                let parent = db.page(k.parent_id.unwrap()).unwrap();
+                assert_eq!((parent.title.as_str(), db.page_doc(parent.id).unwrap().content.as_str()), ("Eltern", ""));
+            }
+            assert_eq!(tree(&a), tree(&b));
+            // B kept the page's text as a version.
+            let versions = b.list_versions(b.page_by_title("Eltern").unwrap().unwrap().id).unwrap();
+            let texts: Vec<String> = versions.iter().map(|v| b.version_content(v.id).unwrap()).collect();
+            assert!(texts.iter().any(|t| t == "Elterntext"), "{texts:?}");
+        }
     }
 
     /// Titles a file name cannot hold (`:`, `?`, `/`, a trailing dot) reach the other computer as
