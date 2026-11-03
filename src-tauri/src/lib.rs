@@ -1797,6 +1797,9 @@ pub(crate) fn run_git_sync_with(
     {
         taken_over = take_over_pulled(app, &state, out);
     }
+    if res.is_ok() {
+        take_over_titles(app, &state);
+    }
     // The pages hold the pulled notes: the next sync starts from the mirror again (a failed
     // take-over leaves them waiting, so the next sync brings them once more).
     if res.is_ok() && taken_over {
@@ -1843,11 +1846,26 @@ pub(crate) fn run_git_sync_with(
     res
 }
 
+/// Gives pages the titles another computer gave them where the file names cannot hold them
+/// (`syncmerge::take_over_titles`); the tree shows them at once.
+fn take_over_titles(app: &AppHandle, state: &AppState) {
+    let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
+    match syncmerge::take_over_titles(&state.db(), &titles) {
+        Ok(renamed) if !renamed.is_empty() => {
+            devlog::info("git", format!("{} page titles taken over from the server", renamed.len()));
+            let _ = app.emit("gitsync://pulled", &syncmerge::Pulled { moved: renamed, ..Default::default() });
+        }
+        Ok(_) => {}
+        Err(e) => devlog::warn("git", format!("page titles from the server not taken over: {e}")),
+    }
+}
+
 /// Takes over the notes a sync pulled from the server (and the attachments they embed) and
 /// tells the UI (`gitsync://pulled`: pages to reload, conflicts to show). Returns whether the
 /// notes were taken over.
 fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> bool {
-    let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
+    let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
+    let pulled = syncmerge::apply(&state.db(), &out.remote_changes, &titles, Local::now());
     match pulled {
         Ok(mut p) => {
             // Anything not taken over here keeps the pull waiting for the next sync.

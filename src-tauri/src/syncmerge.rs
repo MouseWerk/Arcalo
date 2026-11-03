@@ -92,6 +92,7 @@ fn folder_page(
     dir: Option<&str>,
     by_file: &HashMap<String, i64>,
     by_folder: &mut HashMap<String, i64>,
+    titles: &HashMap<String, String>,
     out: &mut Pulled,
 ) -> Result<Option<i64>> {
     let Some(dir) = dir.filter(|d| !d.is_empty()) else { return Ok(None) };
@@ -100,8 +101,10 @@ fn folder_page(
         by_folder.insert(key, id);
         return Ok(Some(id));
     }
-    let parent = folder_page(db, parent_dir(dir), by_file, by_folder, out)?;
-    let page = db.create_page(parent, dir.rsplit('/').next().unwrap_or(dir), Some("folder"))?;
+    let parent = folder_page(db, parent_dir(dir), by_file, by_folder, titles, out)?;
+    let name = dir.rsplit('/').next().unwrap_or(dir);
+    let title = titles.get(&key).filter(|t| names_title(name, t)).map_or(name, String::as_str);
+    let page = db.create_page(parent, title, Some("folder"))?;
     out.created.push(page.id);
     by_folder.insert(key, page.id);
     Ok(Some(page.id))
@@ -200,7 +203,17 @@ fn folder_moves(
 /// becomes a conflict. A note the server moved or renamed moves here too: the page keeps its
 /// id, versions, time entries and links. Files outside the notes (the sync's README, time
 /// sheets, attachments) are skipped.
-pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> Result<Pulled> {
+pub fn apply(
+    db: &Database,
+    changes: &[RemoteChange],
+    titles: &HashMap<String, String>,
+    now: DateTime<Local>,
+) -> Result<Pulled> {
+    // The title of the page at a path: the one the titles file names for it (`Q3: Ziele` for
+    // `Q3- Ziele.md`), else the file name.
+    let title_of = |path: &str, name: &str| -> String {
+        titles.get(&path.to_lowercase()).filter(|t| names_title(name, t)).cloned().unwrap_or_else(|| name.to_owned())
+    };
     db.atomic(|| {
         let paths = vault::page_paths(db)?;
         let mut by_file: HashMap<String, i64> =
@@ -224,14 +237,14 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
         // Folders renamed or moved there: the folder's page follows (its notes follow below).
         for (old, new) in folder_moves(changes, &by_file, &by_folder, &only) {
             let Some(&id) = by_folder.get(&old) else { continue };
-            let parent = folder_page(db, parent_dir(&new), &by_file, &mut by_folder, &mut out)?;
+            let parent = folder_page(db, parent_dir(&new), &by_file, &mut by_folder, titles, &mut out)?;
             let page = db.page(id)?;
             if page.parent_id != parent && db.move_page(id, parent, i64::MAX).is_err() {
                 continue;
             }
             let name = new.rsplit('/').next().unwrap_or(&new);
             if !names_title(name, &page.title) {
-                db.rename_page(id, name)?;
+                db.rename_page(id, &title_of(&new, name))?;
             }
             out.moved.push(id);
             named.insert(id);
@@ -260,13 +273,13 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
             // Moved or renamed there: the page of the old path moves here as well.
             let moved = c.from.as_deref().and_then(|f| by_file.get(&alias(f).to_lowercase()).copied());
             if let (Some(id), Some(from)) = (moved, c.from.as_deref()) {
-                let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                let parent = folder_page(db, dir, &by_file, &mut by_folder, titles, &mut out)?;
                 let page = db.page(id)?;
                 // Never into its own subpages (a loop): then it keeps its place here.
                 let placed = page.parent_id == parent || db.move_page(id, parent, i64::MAX).is_ok();
                 let name = stem(&c.path);
                 if stem(from) != name && !names_title(&name, &page.title) {
-                    db.rename_page(id, &name)?;
+                    db.rename_page(id, &title_of(&path, &name))?;
                 }
                 if placed {
                     out.moved.push(id);
@@ -332,7 +345,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                         // An unreadable canvas from another computer (or Obsidian) stays on the server.
                         continue;
                     }
-                    let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                    let parent = folder_page(db, dir, &by_file, &mut by_folder, titles, &mut out)?;
                     // Deleted here while the other computer edited it: the edit brings it back, as
                     // the page from the trash when it was deleted on its own.
                     let came_back = mine.is_none() && base.is_some();
@@ -345,13 +358,17 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                             id
                         }
                         None if canvas => {
-                            let page = db.create_page(parent, &stem(&c.path), Some(arcalo_core::canvas::ICON))?;
+                            let page = db.create_page(
+                                parent,
+                                &title_of(&path, &stem(&c.path)),
+                                Some(arcalo_core::canvas::ICON),
+                            )?;
                             db.make_canvas(page.id, theirs)?;
                             out.created.push(page.id);
                             page.id
                         }
                         None => {
-                            let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
+                            let page = db.create_page(parent, &title_of(&path, &stem(&c.path)), Some("file-text"))?;
                             db.save_page_content(page.id, theirs)?;
                             out.created.push(page.id);
                             page.id
@@ -381,6 +398,30 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
         }
         store(db, &conflicts)?;
         Ok(out)
+    })
+}
+
+/// Pages whose title their file name cannot hold (`Q3: Ziele` in `Q3- Ziele.md`) get the title
+/// the other computer gave them ([`vault::TITLES_FILE`], `titles`: its entries that differ from
+/// this computer's mirror, see [`vault::pulled_titles`]): pages taken over before the file existed
+/// carry the file name's version, and a rename there that keeps the file name changes no note.
+/// Runs after every sync, also one that pulled no note. Returns the pages renamed.
+pub fn take_over_titles(db: &Database, titles: &HashMap<String, String>) -> Result<Vec<i64>> {
+    if titles.is_empty() {
+        return Ok(vec![]);
+    }
+    db.atomic(|| {
+        let mut renamed = vec![];
+        for p in vault::page_paths(db)? {
+            let entry =
+                p.file.iter().chain(p.folder.iter()).find_map(|path| Some((path, titles.get(&path.to_lowercase())?)));
+            let Some((path, title)) = entry else { continue };
+            if &db.page(p.page_id)?.title != title && names_title(vault::path_stem(path), title) {
+                db.rename_page(p.page_id, title)?;
+                renamed.push(p.page_id);
+            }
+        }
+        Ok(renamed)
     })
 }
 
@@ -720,6 +761,11 @@ fn keep_beside(repo: &std::path::Path, dst: &std::path::Path, name: &str) -> Res
 mod tests {
     use super::*;
 
+    /// [`super::apply`] without a titles file.
+    fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> Result<Pulled> {
+        super::apply(db, changes, &HashMap::new(), now)
+    }
+
     fn change(
         path: &str,
         base: Option<&str>,
@@ -1013,9 +1059,12 @@ mod tests {
             std::fs::create_dir_all(&files).unwrap();
             let own = dir.join("mirror");
             arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
-            let pulled = apply(db, &self.push(pc, &own, &hold_paths(db)), Local::now()).unwrap();
-            // As the shell: the pages hold the pulled notes.
+            let changes = self.push(pc, &own, &hold_paths(db));
+            // As the shell: the pages hold the pulled notes and the server's titles.
+            let titles = vault::pulled_titles(&dir.join("git-sync"), &own);
+            let mut pulled = super::apply(db, &changes, &titles, Local::now()).unwrap();
             gitsync::taken_over(&dir.join("git-sync"));
+            pulled.moved.extend(take_over_titles(db, &titles).unwrap());
             pulled
         }
 
@@ -1151,6 +1200,94 @@ mod tests {
         let out = pcs.sync(&b, "b");
         assert!(out.trashed.is_empty(), "{out:?}");
         assert_eq!(b.page_doc(on_b.id).unwrap().content, "wichtige Ergänzung von B");
+    }
+
+    /// Titles a file name cannot hold (`:`, `?`, `/`, a trailing dot) reach the other computer as
+    /// they are, and the links to them work there. Before, the page was named after its file there
+    /// („Q3- Ziele“) and every link to it found nothing.
+    #[test]
+    fn titles_the_file_names_cannot_hold_reach_the_other_computer() {
+        let Some(pcs) = Pcs::new("titles") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let mut ids = vec![];
+        for t in ["Q3: Ziele", "Was tun?", "A/B-Test", "Version 2.", "Projekt: Alpha"] {
+            let p = a.create_page(None, t, None).unwrap();
+            a.save_page_content(p.id, &format!("Text von {t}")).unwrap();
+            ids.push(p.id);
+        }
+        // A folder-only page (no text) whose name loses its colon, with a subpage.
+        let ordner = a.create_page(None, "Ablage: 2026", Some("folder")).unwrap();
+        let plan = a.create_page(Some(ordner.id), "Plan?", None).unwrap();
+        a.save_page_content(plan.id, "Schritte").unwrap();
+        let index = a.create_page(None, "Index", None).unwrap();
+        let links = "[[Q3: Ziele]] [[Was tun?]] [[A/B-Test]] [[Version 2.]] [[Projekt: Alpha]] [[Plan?]]";
+        a.save_page_content(index.id, links).unwrap();
+        pcs.sync(&a, "a");
+
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        assert_eq!(tree(&a), tree(&b));
+        let unresolved = |db: &Database| {
+            let page = db.page_by_title("Index").unwrap().unwrap();
+            let content = db.page_doc(page.id).unwrap().content;
+            db.unresolved_links(db.outgoing_links(page.id, &content).unwrap()).unwrap()
+        };
+        assert!(unresolved(&b).is_empty(), "{:?}", unresolved(&b));
+
+        // A computer that took the pages over before the titles file existed has the file names'
+        // versions; its next sync gives them the titles.
+        let c = Database::open_in_memory().unwrap();
+        let dir = pcs.base.join("c");
+        std::fs::create_dir_all(dir.join("attachments")).unwrap();
+        arcalo_core::mirror::write_mirror(&c, &dir.join("mirror"), &dir.join("attachments"), &Local).unwrap();
+        let changes = pcs.push("c", &dir.join("mirror"), &[]);
+        apply(&c, &changes, Local::now()).unwrap();
+        gitsync::taken_over(&dir.join("git-sync"));
+        assert!(c.page_by_title("Q3- Ziele").unwrap().is_some(), "{:?}", tree(&c));
+        let out = pcs.sync(&c, "c");
+        assert_eq!(out.moved.len(), 7, "{out:?}");
+        assert_eq!(tree(&c), tree(&a));
+        assert!(unresolved(&c).is_empty(), "{:?}", unresolved(&c));
+
+        // A rename that keeps the file name („Q3- Ziele.md“) reaches the others as well.
+        a.rename_page(ids[0], "Q3? Ziele").unwrap();
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
+        assert!(b.page_by_title("Q3? Ziele").unwrap().is_some(), "{:?}", tree(&b));
+        assert_eq!(tree(&b), tree(&a));
+        assert_eq!(tree(&c), tree(&a));
+
+        // New titled pages on two computers at once: both titles arrive everywhere.
+        let x = a.create_page(None, "Frage: A", None).unwrap();
+        a.save_page_content(x.id, "von A").unwrap();
+        let y = b.create_page(None, "Frage: B", None).unwrap();
+        b.save_page_content(y.id, "von B").unwrap();
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        pcs.sync(&a, "a");
+        pcs.sync(&c, "c");
+        assert_eq!(tree(&a), tree(&b));
+        assert_eq!(tree(&c), tree(&a));
+        assert!(a.page_by_title("Frage: B").unwrap().is_some(), "{:?}", tree(&a));
+
+        // Settled: further syncs change nothing and commit nothing.
+        let commits = || {
+            let out = std::process::Command::new("git")
+                .args(["rev-list", "--all", "--count"])
+                .current_dir(pcs.base.join("remote.git"))
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
+        let before = commits();
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&c, "c"), (&a, "a")] {
+            let out = pcs.sync(db, pc);
+            assert!(out.moved.is_empty() && out.created.is_empty() && out.pages.is_empty(), "{pc}: {out:?}");
+        }
+        assert_eq!(commits(), before, "no commits back and forth");
     }
 
     #[test]

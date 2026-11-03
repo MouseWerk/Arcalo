@@ -579,6 +579,82 @@ pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
     Ok(out)
 }
 
+/// The Markdown mirror's list of titles its file and folder names do not hold (`Q3: Ziele` is
+/// written as `Q3- Ziele.md`, a long title is cut, `Notiz (2).md` is the second „Notiz“). Without
+/// it the Git sync made such a page „Q3- Ziele“ on every other computer, where the links to
+/// „Q3: Ziele“ found nothing. JSON `{"titles": {path: title}}`, paths as in [`PagePath`]; written
+/// only when a page needs it.
+pub const TITLES_FILE: &str = ".arcalo-titles.json";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TitlesFile {
+    #[serde(default)]
+    titles: std::collections::BTreeMap<String, String>,
+}
+
+/// The last segment of a mirror path without its extension (`a/Notiz (2).md` → `Notiz (2)`).
+pub fn path_stem(path: &str) -> &str {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let lower = name.to_ascii_lowercase();
+    let ext = [".md", ".canvas"].into_iter().find(|e| lower.ends_with(e)).map_or(0, str::len);
+    &name[..name.len() - ext]
+}
+
+/// The [`TITLES_FILE`] of a mirror written from `snap`; `None` when every name holds its title.
+pub fn titles_file(snap: &VaultSnapshot) -> Option<String> {
+    let mut planned = Vec::new();
+    Planner::new(None, true).plan(&|id| !snap.content(id).is_empty(), &snap.tree, "", &mut planned);
+    let mut titles: std::collections::HashMap<i64, &str> = std::collections::HashMap::new();
+    fn walk<'a>(nodes: &'a [PageNode], out: &mut std::collections::HashMap<i64, &'a str>) {
+        for n in nodes {
+            out.insert(n.page.id, n.page.title.as_str());
+            walk(&n.children, out);
+        }
+    }
+    walk(&snap.tree, &mut titles);
+    let mut file = TitlesFile::default();
+    for p in &planned {
+        let Some(title) = titles.get(&p.page_id) else { continue };
+        for path in p.file.iter().chain(p.folder.iter()) {
+            if path_stem(path) != *title {
+                file.titles.insert(path.clone(), (*title).to_owned());
+            }
+        }
+    }
+    (!file.titles.is_empty()).then(|| serde_json::to_string_pretty(&file).unwrap_or_default() + "\n")
+}
+
+/// The titles of a [`TITLES_FILE`] text by lower-case path (an unreadable file has none).
+pub fn parse_titles(text: &str) -> std::collections::HashMap<String, String> {
+    serde_json::from_str::<TitlesFile>(text)
+        .map(|f| f.titles.into_iter().map(|(k, v)| (k.to_lowercase(), v)).collect())
+        .unwrap_or_default()
+}
+
+/// The [`TITLES_FILE`] in the folder `dir` (a mirror or the Git sync's working tree).
+pub fn read_titles(dir: &Path) -> std::collections::HashMap<String, String> {
+    fs::read_to_string(dir.join(TITLES_FILE)).map(|t| parse_titles(&t)).unwrap_or_default()
+}
+
+/// The titles of the Git sync's working tree `repo` after a sync that this computer's mirror
+/// `source` (what the sync started from) does not name the same way: what came from the server.
+/// A page renamed here while the sync ran keeps its new title.
+pub fn pulled_titles(repo: &Path, source: &Path) -> std::collections::HashMap<String, String> {
+    let own = read_titles(source);
+    let mut titles = read_titles(repo);
+    titles.retain(|path, title| own.get(path) != Some(title));
+    titles
+}
+
+/// Both computers changed the [`TITLES_FILE`]: every path of both, this computer's title where
+/// both name one (an entry no page uses any more is never applied, see the Git sync's take-over).
+pub fn merge_titles(theirs: &str, mine: &str) -> String {
+    let parse = |t: &str| serde_json::from_str::<TitlesFile>(t).unwrap_or_default();
+    let mut merged = parse(theirs);
+    merged.titles.extend(parse(mine).titles);
+    serde_json::to_string_pretty(&merged).unwrap_or_default() + "\n"
+}
+
 /// What an export needs from the database, read at once: the page tree and every page's
 /// Markdown (one query, not one per page). Writing the files then needs no database, so
 /// the Markdown mirror is written without holding the database.
@@ -1065,6 +1141,48 @@ mod tests {
         export_vault(&db, &out, &tmp("own-names-att")).unwrap();
         assert!(out.join("README.md").is_file() && out.join("Zeiterfassung/Unterseite.md").is_file());
         assert!(out.join("attachments (2).md").is_file());
+    }
+
+    /// The mirror names the titles its file names lose ([`TITLES_FILE`]), and only those.
+    #[test]
+    fn the_mirror_keeps_the_titles_file_names_cannot_hold() {
+        let db = Database::open_in_memory().unwrap();
+        let mirror = tmp("titles");
+        let att = tmp("titles-att");
+        let plain = db.create_page(None, "Einfach", None).unwrap();
+        db.save_page_content(plain.id, "x").unwrap();
+        crate::mirror::write_mirror(&db, &mirror, &att, &chrono::Local).unwrap();
+        assert!(!mirror.join(TITLES_FILE).exists(), "no file while every name holds its title");
+        let q = db.create_page(None, "Q3: Ziele", None).unwrap();
+        db.save_page_content(q.id, "x").unwrap();
+        let sub = db.create_page(Some(q.id), "Plan?", None).unwrap();
+        db.save_page_content(sub.id, "y").unwrap();
+        let long = "L".repeat(130);
+        db.create_page(None, &long, None).unwrap();
+        crate::mirror::write_mirror(&db, &mirror, &att, &chrono::Local).unwrap();
+        let titles = read_titles(&mirror);
+        let want: std::collections::HashMap<String, String> = [
+            ("q3- ziele.md", "Q3: Ziele"),
+            ("q3- ziele", "Q3: Ziele"),
+            ("q3- ziele/plan-.md", "Plan?"),
+            (format!("{}.md", "l".repeat(120)).as_str(), long.as_str()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        assert_eq!(titles, want);
+        assert_eq!(path_stem("Q3- Ziele/Plan-.md"), "Plan-");
+        assert_eq!(path_stem("Tafel (2).canvas"), "Tafel (2)");
+
+        // What this computer's mirror names the same way is no title from the server.
+        let repo = tmp("titles-repo");
+        let theirs = r#"{"titles": {"Q3- Ziele.md": "Q3? Ziele", "Neu- 1.md": "Neu: 1"}}"#;
+        fs::write(repo.join(TITLES_FILE), merge_titles(theirs, &fs::read_to_string(mirror.join(TITLES_FILE)).unwrap()))
+            .unwrap();
+        let pulled = pulled_titles(&repo, &mirror);
+        assert_eq!(pulled.len(), 1, "{pulled:?}");
+        assert_eq!(pulled.get("neu- 1.md").map(String::as_str), Some("Neu: 1"));
+        assert!(parse_titles("kein JSON").is_empty());
     }
 
     #[test]

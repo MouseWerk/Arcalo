@@ -778,6 +778,9 @@ fn protected(src: &Path, companion: bool) -> Vec<String> {
         DB_FILE.to_owned(),
         LEGACY_DB_FILE.to_owned(),
         crate::settings_sync::FILE.to_owned(),
+        // Written only while a page needs it; a computer without one (or whose pages still carry
+        // the file names' versions, taken over before the file existed) keeps the server's.
+        crate::vault::TITLES_FILE.to_owned(),
     ];
     if !src.join(README_FILE).exists() {
         p.push(README_FILE.to_owned());
@@ -3178,6 +3181,14 @@ fn merge_remote(
         if path == crate::settings_sync::FILE && mine_id != theirs_id {
             if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
                 fs::write(repo.join(path), crate::settings_sync::merge_text(Some(&t), &m))?;
+                git.check(Some(repo), &["add", "--", path])?;
+            }
+            continue;
+        }
+        // The titles the file names do not hold, changed on both sides: path by path.
+        if path == crate::vault::TITLES_FILE && mine_id != theirs_id {
+            if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
+                fs::write(repo.join(path), crate::vault::merge_titles(&t, &m))?;
                 git.check(Some(repo), &["add", "--", path])?;
             }
             continue;
