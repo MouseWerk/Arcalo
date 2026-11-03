@@ -472,7 +472,7 @@ export function NoteEditor({
         onVoice: caps().voice ? () => void startVoice({ pageId: doc.id }) : undefined,
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
-        taskNextDue: (text) => api.taskNextDue(text),
+        taskNext: (text) => api.taskNext(text),
         onZeitLost: (res) =>
           useApp.getState().toast({ tone: "warning", title: tr("ne.lineLost"), detail: tr("ne.lineLostDetail", { h: res.hours, target: res.target }) }),
       }),

@@ -7,7 +7,7 @@ import { parseDue } from "../lib/capture";
 import { renderMarkdown } from "../lib/markdown";
 import { t } from "../lib/i18n";
 import { taskGroup, type TaskGroup } from "../lib/tasks";
-import type { GitSyncStatus, PageNode, Task, TimeEntryRow } from "../lib/types";
+import type { GitSyncStatus, NextOccurrence, PageNode, Task, TimeEntryRow } from "../lib/types";
 import type { UpdateStatus } from "./api";
 
 // ------------------------------------------------------------------ navigation
@@ -319,14 +319,17 @@ const DUE_DATE_RE = /((?:due|fällig):|\u{1F4C5}\s?)(\d{4}-\d{2}-\d{2})/iu;
  * subtasks, as the desktop's editor does: open, with the date `due` in place of the old one (or
  * added), without its bookings, its block id and an Obsidian done date.
  */
-export function withNextOccurrence(md: string, line: number, due: string): string {
+export function withNextOccurrence(md: string, line: number, next: NextOccurrence): string {
   const lines = md.split("\n");
   const m = TASK_LINE.exec(lines[line] ?? "");
   if (!m) return md;
   const cr = lines[line].endsWith("\r") ? "\r" : "";
   let text = m[5].replace(/\r$/, "").replace(/<time-entry\b[^>]*>[^<]*<\/time-entry>/g, "");
+  const due = next.due;
   const dated = DUE_DATE_RE.test(text);
   text = text.replace(DUE_DATE_RE, (_all, prefix: string) => `${prefix}${due}`);
+  // A monthly task from the 31st keeps its day (`every:monthly,31`), as the core writes it.
+  if (next.rule_from && next.rule_to) text = text.replace(next.rule_from, () => next.rule_to!);
   text = text.replace(/\s*\u{2705}\s?\d{4}-\d{2}-\d{2}/gu, "").replace(/\s+\^[A-Za-z0-9-]+\s*$/, "").replace(/ {2,}/g, " ").trimEnd();
   if (!dated) text = `${text} due:${due}`;
   const item = `${m[1]} ]${text.trim() ? ` ${text.trim()}` : ""}${cr}`;

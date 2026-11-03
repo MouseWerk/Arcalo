@@ -589,7 +589,7 @@ fn daily_note(state: State<AppState>, date: Option<NaiveDate>) -> Result<Page> {
 /// Per day `from..=to` (local): daily note, booked minutes and open tasks due, for the calendar.
 #[tauri::command(async)]
 fn daily_overview(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<Vec<DayOverview>> {
-    calendar::daily_overview(&state.reader(), from, to, &Local)
+    calendar::daily_overview(&state.reader(), &state.settings(), from, to, &Local)
 }
 
 #[tauri::command(async)]
@@ -660,11 +660,17 @@ fn tasks_undo(app: AppHandle, state: State<AppState>, change: arcalo_core::taske
     Ok(())
 }
 
-/// The next due date of a repeating task done today (its text after the checkbox); the editor
-/// adds the next occurrence itself.
+/// The next due date of a repeating task done today (its text after the checkbox).
 #[tauri::command]
 fn task_next_due(text: String) -> Option<String> {
     arcalo_core::taskedit::next_due_of(&text, chrono::Local::now().date_naive())
+}
+
+/// The next occurrence of a repeating task done today (its text after the checkbox): its due date
+/// and the rule it keeps its day of the month with; the editor adds the occurrence itself.
+#[tauri::command]
+fn task_next(text: String) -> Option<arcalo_core::taskedit::NextOccurrence> {
+    arcalo_core::taskedit::next_occurrence_of(&text, chrono::Local::now().date_naive())
 }
 
 /// The next due dates of a rule, for the repeat dialog.
@@ -1508,6 +1514,7 @@ fn time_chip_book(
         description: text,
         date: date.map_or(arcalo_core::zeit::DateSpec::Today, arcalo_core::zeit::DateSpec::On),
         start: None,
+        end: None,
     };
     let ctx = tracking::SlashContext { default_ref: None, page_id: Some(page_id) };
     let mut out =
@@ -5151,6 +5158,7 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         tasks_edit,
         tasks_undo,
         task_next_due,
+        task_next,
         task_recur_preview,
         search_workspace,
         vault_import,

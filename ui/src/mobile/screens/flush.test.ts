@@ -9,7 +9,7 @@ import { PageBody } from "./Notes";
 
 vi.mock("../../lib/api", async (orig) => {
   const m = await orig<typeof import("../../lib/api")>();
-  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn(), taskNextDue: vi.fn() } };
+  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn(), taskNext: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

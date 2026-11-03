@@ -27,6 +27,8 @@ import {
   withNextOccurrence,
 } from "./model";
 import type { PageNode, Task, TimeEntryRow } from "../lib/types";
+
+const occ = (due: string) => ({ due, rule_from: null, rule_to: null });
 import type { UpdateStatus } from "./api";
 import { setLang } from "../lib/i18n";
 
@@ -340,11 +342,15 @@ describe("tasks in a page (A19)", () => {
 
   it("adds the next occurrence of a repeating task below it and its subtasks", () => {
     const md = '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Danach';
-    expect(withNextOccurrence(md, 0, "2026-10-19")).toBe(
+    expect(withNextOccurrence(md, 0, occ("2026-10-19"))).toBe(
       '- [x] Bericht every:weekly due:2026-10-12 <time-entry id="4" hours="1">Text</time-entry> \u{2705} 2026-10-12 ^abc\n  - [ ] Teil\n\n  Notiz dazu\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach',
     );
     // Without a date: one is added; Windows line ends stay.
-    expect(withNextOccurrence("- [x] Gießen wdh:täglich\r\nEnde", 0, "2026-10-13")).toBe("- [x] Gießen wdh:täglich\r\n- [ ] Gießen wdh:täglich due:2026-10-13\r\nEnde");
+    expect(withNextOccurrence("- [x] Gießen wdh:täglich\r\nEnde", 0, occ("2026-10-13"))).toBe("- [x] Gießen wdh:täglich\r\n- [ ] Gießen wdh:täglich due:2026-10-13\r\nEnde");
+    // The rule the core gives: a monthly task from the 31st keeps its day.
+    expect(withNextOccurrence("- [x] Miete every:monthly due:2026-01-31", 0, { due: "2026-02-28", rule_from: "every:monthly", rule_to: "every:monthly,31" })).toBe(
+      "- [x] Miete every:monthly due:2026-01-31\n- [ ] Miete every:monthly,31 due:2026-02-28",
+    );
     expect(mayRepeat("Bericht every:weekly")).toBe(true);
     expect(mayRepeat("Bericht jede Woche")).toBe(false);
   });

@@ -23,6 +23,7 @@ import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
 import { ImageClipboard } from "./imageClipboard";
 import type { ClipData } from "../lib/clipboard";
+import type { NextOccurrence } from "../lib/types";
 import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
@@ -686,8 +687,8 @@ export interface SchemaOptions {
   zeitLeistungsarten?: (query: string) => Promise<ZeitSuggestItem[]>;
   /** Smart paste of a lone URL: the page's title (null: keep the URL). */
   fetchTitle?: (url: string) => Promise<string | null>;
-  /** A repeating task ticked off: the due date of its next occurrence (null: none). */
-  taskNextDue?: (text: string) => Promise<string | null>;
+  /** A repeating task ticked off: its next occurrence (null: none). */
+  taskNext?: (text: string) => Promise<NextOccurrence | null>;
   /** Typing aids (Settings → Editor), read on every keystroke. */
   typing?: () => TypingPrefs;
   /** Live view of a page embed `![[Seite#Abschnitt]]` (none: a placeholder). */
@@ -789,7 +790,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
     IssueChips,
     DueWords,
-    RecurringTasks.configure({ nextDue: o.taskNextDue ?? null }),
+    RecurringTasks.configure({ next: o.taskNext ?? null }),
     FindInPage,
     Callouts,
     HtmlInline,
