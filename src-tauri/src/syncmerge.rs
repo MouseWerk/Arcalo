@@ -1353,6 +1353,39 @@ mod tests {
         }
     }
 
+    /// Emptying the text of a page with subpages turns it into a folder (its file goes): the
+    /// other computer keeps the page and its subpages. Before, it trashed the page with all of
+    /// them, and its next sync deleted the subpages on every computer.
+    #[test]
+    fn a_page_emptied_there_keeps_its_subpages() {
+        let Some(pcs) = Pcs::new("emptied") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..6 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let eltern = a.create_page(None, "Eltern", None).unwrap();
+        a.save_page_content(eltern.id, "Einleitung").unwrap();
+        for t in ["Kind 1", "Kind 2"] {
+            let k = a.create_page(Some(eltern.id), t, None).unwrap();
+            a.save_page_content(k.id, t).unwrap();
+        }
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        a.save_page_content(eltern.id, "").unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        assert!(out.trashed.is_empty(), "{out:?}");
+        let on_b = b.page_by_title("Eltern").unwrap().unwrap();
+        assert_eq!(b.page_doc(on_b.id).unwrap().content, "");
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        assert_eq!(tree(&a), tree(&b));
+        assert_eq!(a.list_pages().unwrap().len(), 9);
+        assert!(a.list_trash().unwrap().is_empty() && b.list_trash().unwrap().is_empty());
+    }
+
     /// Titles a file name cannot hold (`:`, `?`, `/`, a trailing dot) reach the other computer as
     /// they are, and the links to them work there. Before, the page was named after its file there
     /// („Q3- Ziele“) and every link to it found nothing.
