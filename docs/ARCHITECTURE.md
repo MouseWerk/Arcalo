@@ -244,7 +244,8 @@ page, on a blocking thread).
   manager moves its entry (`renamed_kept`: the new name kept, the old one removed). The sync changes no
   note for it; `FileRename` tells the user about the second version.
   Moves and renames are pulled
-  as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
+  as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names;
+  empty notes pair only under their own file name, so the first subpage of an empty page is never taken for it)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
   at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
   The mirror reserves the sync's own top-level names (`README`, `Zeiterfassung`, `attachments`, as file and folder:

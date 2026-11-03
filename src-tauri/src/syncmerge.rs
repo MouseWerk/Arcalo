@@ -97,7 +97,9 @@ fn folder_page(
 ) -> Result<Option<i64>> {
     let Some(dir) = dir.filter(|d| !d.is_empty()) else { return Ok(None) };
     let key = dir.to_lowercase();
-    if let Some(&id) = by_folder.get(&key).or_else(|| by_file.get(&format!("{key}.md"))) {
+    // Never a page in the trash (nothing can be created below it).
+    let live = |id: &i64| db.page(*id).is_ok_and(|p| p.deleted_at.is_none());
+    if let Some(&id) = by_folder.get(&key).or_else(|| by_file.get(&format!("{key}.md"))).filter(|id| live(id)) {
         by_folder.insert(key, id);
         return Ok(Some(id));
     }
@@ -243,6 +245,11 @@ pub fn apply(
                 by_file.get(&path?.to_lowercase()).copied()
             })
             .collect();
+        // Whether this pull brings a note below the folder of the note `lower`.
+        let arriving_below = |lower: &str| {
+            let folder = format!("{}/", without_ext(lower));
+            changes.iter().any(|c| c.theirs.is_some() && c.path.to_lowercase().starts_with(&folder))
+        };
         // Folders renamed or moved there: the folder's page follows (its notes follow below).
         for (old, new) in folder_moves(changes, &by_file, &by_folder, &only) {
             let Some(&id) = by_folder.get(&old) else { continue };
@@ -325,12 +332,15 @@ pub fn apply(
                         (None, false) if refuse_deletions => out.kept.push(id),
                         // Trashed already, with its parent deleted there as well.
                         (None, false) if db.page(id)?.deleted_at.is_some() => {}
-                        // Its subpages stay there (one edited here, which the server kept): the
-                        // page stays as their folder, as there; its text is kept as a version.
-                        (None, false) if keeps_subpages(db, id, &with_file, &leaving)? => {
-                            db.snapshot_page(id)?;
-                            db.save_page_content(id, "")?;
-                            out.pages.push(id);
+                        // Its subpages stay there (one edited here, which the server kept), or
+                        // there are new ones (the first subpage of an empty page): the page stays
+                        // as their folder, as there; its text is kept as a version.
+                        (None, false) if keeps_subpages(db, id, &with_file, &leaving)? || arriving_below(&lower) => {
+                            if !current.is_empty() {
+                                db.snapshot_page(id)?;
+                                db.save_page_content(id, "")?;
+                                out.pages.push(id);
+                            }
                         }
                         (None, false) => {
                             db.trash_page(id)?;
@@ -1307,6 +1317,39 @@ mod tests {
             let versions = b.list_versions(b.page_by_title("Eltern").unwrap().unwrap().id).unwrap();
             let texts: Vec<String> = versions.iter().map(|v| b.version_content(v.id).unwrap()).collect();
             assert!(texts.iter().any(|t| t == "Elterntext"), "{texts:?}");
+        }
+    }
+
+    /// The first subpage of an empty page: on the other computer the page stays and gets the
+    /// subpage below it. Before, with text in the subpage the take-over failed there for good („Die
+    /// übergeordnete Seite liegt im Papierkorb“: the empty page's file was gone, so it was trashed
+    /// first); an empty subpage was taken for the page itself, which lost its name there.
+    #[test]
+    fn the_first_subpage_of_an_empty_page_reaches_the_other_computer() {
+        for text in ["Inhalt", ""] {
+            let Some(pcs) = Pcs::new(if text.is_empty() { "first-sub-empty" } else { "first-sub" }) else { return };
+            let a = Database::open_in_memory().unwrap();
+            for i in 0..4 {
+                let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+                a.save_page_content(p.id, "x").unwrap();
+            }
+            let projekte = a.create_page(None, "Projekte", None).unwrap();
+            pcs.sync(&a, "a");
+            let b = Database::open_in_memory().unwrap();
+            pcs.sync(&b, "b");
+            let on_b = b.page_by_title("Projekte").unwrap().unwrap();
+            let erstes = a.create_page(Some(projekte.id), "Erstes", None).unwrap();
+            a.save_page_content(erstes.id, text).unwrap();
+            pcs.sync(&a, "a");
+            let out = pcs.sync(&b, "b");
+            assert!(out.trashed.is_empty() && out.moved.is_empty(), "{text:?}: {out:?}");
+            let sub = b.page_by_title("Erstes").unwrap().unwrap();
+            assert_eq!(sub.parent_id, Some(on_b.id), "{text:?}");
+            assert_eq!(b.page_doc(sub.id).unwrap().content, text);
+            pcs.sync(&a, "a");
+            pcs.sync(&b, "b");
+            assert_eq!(tree(&a), tree(&b));
+            assert!(a.list_trash().unwrap().is_empty() && b.list_trash().unwrap().is_empty());
         }
     }
 
