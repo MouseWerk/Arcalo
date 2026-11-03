@@ -426,7 +426,7 @@ pub fn part<Tz: TimeZone>(ctx: &Ctx<Tz>, p: &Part) -> Result<serde_json::Value> 
         Part::Proposal { week_start } => json(proposal(ctx, *week_start)?),
         Part::Review { date } => json(review(ctx, *date)?),
         Part::TimerRefs => json(timer_refs(ctx)?),
-        Part::Month { from, to } => json(calendar::daily_overview(ctx.db, *from, *to, ctx.tz)?),
+        Part::Month { from, to } => json(calendar::daily_overview(ctx.db, ctx.settings, *from, *to, ctx.tz)?),
         Part::Suggestions => json(suggestions(ctx)?),
         Part::Resurface { seed } => json(notes::resurface(ctx, *seed)?),
         Part::Writing { days } => json(notes::writing(ctx, *days)?),
@@ -442,7 +442,7 @@ fn today<Tz: TimeZone>(ctx: &Ctx<Tz>) -> Result<TodayData> {
     let day = ctx.today;
     let from = ctx.day_start(day);
     let to = ctx.day_start(day + Duration::days(1));
-    let overview = calendar::daily_overview(ctx.db, day, day, ctx.tz)?.into_iter().next();
+    let overview = calendar::daily_overview(ctx.db, ctx.settings, day, day, ctx.tz)?.into_iter().next();
     let key = day.format("%Y-%m-%d").to_string();
     let mut list =
         ctx.db.list_tasks(&TaskFilter { status: TaskStatus::Open, due_before: Some(key), ..Default::default() })?;

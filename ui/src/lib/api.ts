@@ -83,6 +83,7 @@ export const api = {
   tasksUndo: (change: T.TaskChange) => call<void>("tasks_undo", { change }),
   /** Next due date of a repeating task done today (its Markdown after the checkbox), or null. */
   taskNextDue: (text: string) => call<string | null>("task_next_due", { text }),
+  taskNext: (text: string) => call<T.NextOccurrence | null>("task_next", { text }),
   taskRecurPreview: (recur: T.Recurrence, due: string | null) => call<string[]>("task_recur_preview", { recur, due }),
   search: (query: string, limit = 30) => call<T.SearchHit[]>("search_workspace", { query, limit }),
   /** Exact and meaning hits (Suche nach Bedeutung); exact only when it is off or offline. */

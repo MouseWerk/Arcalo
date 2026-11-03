@@ -222,6 +222,18 @@ fn edit_line(line: &str, t: &ParsedTask, edit: &TaskEdit) -> String {
 /// The Obsidian Tasks marker for the day a task was done; dropped from a new occurrence.
 const OBSIDIAN_DONE: &str = "\u{2705}";
 
+/// The rule of a task's next occurrence when it must change: a monthly or yearly rule from the
+/// 29th to 31st keeps its day (`every:monthly` from 31 January: `every:monthly,31`, so March is
+/// the 31st again). Only the plain `every:` form is rewritten; an imported Obsidian marker stays
+/// as written. The range of the rule's first part in `line`, and the rule to write there.
+fn pinned_rule(line: &str, t: &ParsedTask) -> Option<(Range<usize>, Recurrence)> {
+    let rule = t.recur.as_ref()?;
+    let base = t.due.as_deref().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+    let first = t.marks.recur.first()?;
+    let pinned = rule.pinned(base.filter(|_| !rule.when_done)?)?;
+    line.get(first.clone()).is_some_and(|m| m.starts_with("every:")).then(|| (first.clone(), pinned))
+}
+
 /// The next occurrence of a repeating task done on `today`: the same line, open, with the next
 /// due date, without the bookings (`/zeit` chips stay with the done task), block id and done date.
 /// `None` for a task without a rule or when the series ended.
@@ -240,14 +252,8 @@ fn next_line(line: &str, t: &ParsedTask, today: NaiveDate) -> Option<(String, Na
     if let Some(b) = &t.marks.block_id {
         edits.push((b.clone(), String::new()));
     }
-    // A monthly or yearly rule from the 29th to 31st keeps its day (`every:monthly` from 31
-    // January: `every:monthly,31`, so March is the 31st again). Only the plain `every:` form is
-    // rewritten; an imported Obsidian marker stays as written.
-    if let (Some(base), Some(first)) = (due.filter(|_| !rule.when_done), t.marks.recur.first())
-        && let Some(pinned) = rule.pinned(base)
-        && line.get(first.clone()).is_some_and(|m| m.starts_with("every:"))
-    {
-        edits.push((first.clone(), pinned.tokens()));
+    if let Some((first, pinned)) = pinned_rule(line, t) {
+        edits.push((first, pinned.tokens()));
         edits.extend(t.marks.recur.iter().skip(1).map(|r| (r.clone(), String::new())));
     }
     for c in crate::chips::chips(line) {
@@ -391,11 +397,35 @@ fn resolve(tasks: &[ParsedTask], r: &TaskRef) -> Option<usize> {
 }
 
 /// The due date of the next occurrence of a task with this text (Markdown after the checkbox),
-/// done on `today`; for the editor, which adds the next occurrence itself.
+/// done on `today`.
 pub fn next_due_of(text: &str, today: NaiveDate) -> Option<String> {
-    let t = parse_tasks(&format!("- [ ] {text}")).pop()?;
+    next_occurrence_of(text, today).map(|n| n.due)
+}
+
+/// What the next occurrence of a repeating task changes, for the editors, which add it themselves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NextOccurrence {
+    /// Its due date (`YYYY-MM-DD`).
+    pub due: String,
+    /// The rule as written in the task (`every:monthly`) when the next occurrence must write
+    /// another one (`every:monthly,31`, see [`pinned_rule`]); `None` when it stays.
+    pub rule_from: Option<String>,
+    pub rule_to: Option<String>,
+}
+
+/// The next occurrence of a task with this text (Markdown after the checkbox), done on `today`,
+/// as [`edit_page`] adds it.
+pub fn next_occurrence_of(text: &str, today: NaiveDate) -> Option<NextOccurrence> {
+    let line = format!("- [ ] {text}");
+    let t = parse_tasks(&line).pop()?;
     let due = t.due.as_deref().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
-    Some(t.recur?.next_due(due, today)?.format("%Y-%m-%d").to_string())
+    let next = t.recur.as_ref()?.next_due(due, today)?;
+    let pinned = pinned_rule(&line, &t);
+    Some(NextOccurrence {
+        due: next.format("%Y-%m-%d").to_string(),
+        rule_from: pinned.as_ref().map(|(r, _)| line[r.clone()].to_owned()),
+        rule_to: pinned.map(|(_, p)| format!("every:{}", p.spec())),
+    })
 }
 
 impl Database {
@@ -630,6 +660,43 @@ mod tests {
         );
         let obsidian = "- [ ] C \u{1F501} every month \u{1F4C5} 2026-01-31\n";
         assert_eq!(next(at(obsidian, "2026-01-31")), "- [ ] C \u{1F501} every month \u{1F4C5} 2026-02-28");
+    }
+
+    #[test]
+    fn the_editors_get_the_rule_of_the_next_occurrence_as_the_task_view_writes_it() {
+        // The editor and the phone add the next occurrence themselves: they get the pinned rule too.
+        let n = next_occurrence_of("Miete every:monthly due:2026-01-31", day("2026-01-31")).unwrap();
+        assert_eq!(
+            (n.due.as_str(), n.rule_from.as_deref(), n.rule_to.as_deref()),
+            ("2026-02-28", Some("every:monthly"), Some("every:monthly,31"))
+        );
+        let n = next_occurrence_of("B every:jeden Monat until:2026-12-31 due:2026-01-30", day("2026-01-30")).unwrap();
+        assert_eq!(
+            (n.rule_from.as_deref(), n.rule_to.as_deref()),
+            (Some("every:jeden Monat"), Some("every:monthly,30"))
+        );
+        // Applied to the line, it is the line the task view writes.
+        for (text, today) in [
+            ("Miete every:monthly due:2026-01-31", "2026-01-31"),
+            ("B every:jeden Monat until:2026-12-31 due:2026-01-30", "2026-01-30"),
+            ("Jahrestag every:yearly due:2024-02-29", "2024-02-29"),
+            ("A every:monthly due:2026-01-28", "2026-01-28"),
+            ("W every:weekly due:2026-01-31", "2026-01-31"),
+        ] {
+            let n = next_occurrence_of(text, day(today)).unwrap();
+            let mut line = text.replacen(&text[text.find("due:").unwrap()..], &format!("due:{}", n.due), 1);
+            if let (Some(from), Some(to)) = (&n.rule_from, &n.rule_to) {
+                line = line.replacen(from.as_str(), to, 1);
+            }
+            let view = edit_page(&format!("- [ ] {text}\n"), &[0], &TaskEdit::Done { done: true }, day(today)).content;
+            assert_eq!(format!("- [ ] {line}"), view.lines().nth(1).unwrap(), "{text}");
+        }
+        // Nothing changes for a rule with its day, a rule from done, or no rule at all.
+        let n = next_occurrence_of("A every:monthly due:2026-01-28", day("2026-01-28")).unwrap();
+        assert_eq!((n.due.as_str(), n.rule_from, n.rule_to), ("2026-02-28", None, None));
+        assert_eq!(next_occurrence_of("x every:monthly,done due:2026-01-31", day("2026-01-31")).unwrap().rule_to, None);
+        assert_eq!(next_occurrence_of("x due:2026-01-31", day("2026-01-31")), None);
+        assert_eq!(next_due_of("Miete every:monthly due:2026-01-31", day("2026-01-31")).as_deref(), Some("2026-02-28"));
     }
 
     #[test]

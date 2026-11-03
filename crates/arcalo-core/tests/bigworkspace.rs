@@ -401,10 +401,12 @@ fn big_workspace() {
     let t = db.load_settings().unwrap().thresholds;
     let tl = chrono::Local;
     time("daily_overview week", 5, || {
-        arcalo_core::calendar::daily_overview(&db, monday, monday + Duration::days(6), &tl).unwrap()
+        arcalo_core::calendar::daily_overview(&db, &Default::default(), monday, monday + Duration::days(6), &tl)
+            .unwrap()
     });
     time("daily_overview 6 weeks", 5, || {
-        arcalo_core::calendar::daily_overview(&db, monday, monday + Duration::days(41), &tl).unwrap()
+        arcalo_core::calendar::daily_overview(&db, &Default::default(), monday, monday + Duration::days(41), &tl)
+            .unwrap()
     });
     time("open_task_counts", 5, || db.open_task_counts(&today.to_string(), Some(100)).unwrap());
     time("all_budgets", 5, || arcalo_core::tracking::all_budgets(&db, &t).unwrap());

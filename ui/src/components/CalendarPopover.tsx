@@ -183,7 +183,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
               const info = days.get(iso);
               const minutes = info?.booked_minutes ?? 0;
               const weekday = ((d.getDay() + 6) % 7) + 1;
-              const tone = dayTone(d, minutes, target, workdays, today, trackedSince);
+              const tone = dayTone(d, minutes, info?.target_minutes ?? 0, today, trackedSince);
               const label = [
                 dateLong(iso + "T12:00:00"),
                 info?.has_note ? t("capture.daily") : null,
@@ -222,7 +222,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
                   <span className="cal-num">{d.getDate()}</span>
                   <span className="cal-hours">{hoursLabel(minutes)}</span>
                   <span className="cal-bar" aria-hidden>
-                    {minutes > 0 && <span style={{ width: `${Math.min(1, minutes / Math.max(1, target * 60)) * 100}%` }} />}
+                    {minutes > 0 && <span style={{ width: `${Math.min(1, minutes / Math.max(1, info?.target_minutes || target * 60)) * 100}%` }} />}
                   </span>
                   <span className="cal-marks" aria-hidden>
                     {info?.has_note && <span className="cal-dot" />}

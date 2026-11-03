@@ -19,17 +19,21 @@ describe("calendar", () => {
     expect(isoDay(addMonths(new Date(2026, 0, 15), -1))).toBe("2025-12-15");
   });
 
-  it("tints past workdays below the target", () => {
+  it("tints past days below their own target", () => {
     const today = new Date(2026, 8, 24);
-    const wd = [1, 2, 3, 4, 5];
-    expect(dayTone(new Date(2026, 8, 23), 300, 8, wd, today)).toBe("below");
-    expect(dayTone(new Date(2026, 8, 23), 480, 8, wd, today)).toBe("met");
-    expect(dayTone(new Date(2026, 8, 24), 0, 8, wd, today)).toBe("none");
-    expect(dayTone(new Date(2026, 8, 20), 0, 8, wd, today)).toBe("none");
+    expect(dayTone(new Date(2026, 8, 23), 300, 480, today)).toBe("below");
+    expect(dayTone(new Date(2026, 8, 23), 480, 480, today)).toBe("met");
+    expect(dayTone(new Date(2026, 8, 24), 0, 480, today)).toBe("none");
+    // A day without a target (weekend, public holiday, vacation) is never below it.
+    expect(dayTone(new Date(2026, 8, 20), 0, 0, today, "2026-09-01")).toBe("none");
+    expect(dayTone(new Date(2026, 8, 21), 120, 0, today, "2026-09-01")).toBe("none");
+    // A half vacation day or a short Friday: its own target counts, not the daily one.
+    expect(dayTone(new Date(2026, 8, 18), 240, 240, today)).toBe("met");
+    expect(dayTone(new Date(2026, 8, 18), 200, 240, today)).toBe("below");
     // Empty workdays count only from the first booking on.
-    expect(dayTone(new Date(2026, 8, 22), 0, 8, wd, today)).toBe("none");
-    expect(dayTone(new Date(2026, 8, 22), 0, 8, wd, today, "2026-09-21")).toBe("below");
-    expect(dayTone(new Date(2026, 8, 18), 0, 8, wd, today, "2026-09-21")).toBe("none");
+    expect(dayTone(new Date(2026, 8, 22), 0, 480, today)).toBe("none");
+    expect(dayTone(new Date(2026, 8, 22), 0, 480, today, "2026-09-21")).toBe("below");
+    expect(dayTone(new Date(2026, 8, 18), 0, 480, today, "2026-09-21")).toBe("none");
   });
 
   it("formats hours as everywhere else (Settings → Zeiterfassung „Stunden als“)", () => {

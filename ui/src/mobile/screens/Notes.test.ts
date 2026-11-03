@@ -8,7 +8,7 @@ import { PageBody } from "./Notes";
 
 vi.mock("../../lib/api", async (orig) => {
   const m = await orig<typeof import("../../lib/api")>();
-  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn(), taskNextDue: vi.fn() } };
+  return { ...m, api: { ...m.api, savePage: vi.fn(), page: vi.fn(), taskNext: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -189,7 +189,7 @@ describe("Task boxes in a page (A19)", () => {
   beforeEach(() => {
     vi.mocked(api.savePage).mockReset();
     vi.mocked(api.page).mockReset();
-    vi.mocked(api.taskNextDue).mockReset();
+    vi.mocked(api.taskNext).mockReset();
     vi.mocked(api.page).mockImplementation(async () => doc(stored));
     vi.mocked(api.savePage).mockImplementation(async (_id, content) => {
       stored = content;
@@ -242,10 +242,10 @@ describe("Task boxes in a page (A19)", () => {
 
   it("a repeating task gets its next occurrence below it, as on the desktop", async () => {
     stored = "- [ ] Bericht every:weekly due:2026-10-12\n  - [ ] Zahlen holen\n- [ ] Danach\n";
-    vi.mocked(api.taskNextDue).mockResolvedValue("2026-10-19");
+    vi.mocked(api.taskNext).mockResolvedValue({ due: "2026-10-19", rule_from: null, rule_to: null });
     await read(stored);
     await tap(boxes()[0]);
-    expect(api.taskNextDue).toHaveBeenCalledWith("Bericht every:weekly due:2026-10-12");
+    expect(api.taskNext).toHaveBeenCalledWith("Bericht every:weekly due:2026-10-12");
     expect(api.savePage).toHaveBeenCalledWith(
       7,
       "- [x] Bericht every:weekly due:2026-10-12\n  - [ ] Zahlen holen\n- [ ] Bericht every:weekly due:2026-10-19\n- [ ] Danach\n",

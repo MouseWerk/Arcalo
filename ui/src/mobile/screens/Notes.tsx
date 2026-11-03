@@ -351,14 +351,14 @@ export function PageBody(p: { doc: PageDoc; editing: boolean; conflict?: boolean
     if (!out) return gone();
     let next = out.md;
     if (out.done && mayRepeat(out.text)) {
-      const due = await api.taskNextDue(out.text).catch(() => null);
+      const upcoming = await api.taskNext(out.text).catch(() => null);
       // The page changed while the date was asked for (a sync): ticked off on that text.
       if (latest.current !== start) {
         const again = toggleTask(latest.current, index);
         if (!again || again.text !== out.text || !again.done) return gone();
         out = again;
       }
-      next = due ? withNextOccurrence(out.md, out.line, due) : out.md;
+      next = upcoming ? withNextOccurrence(out.md, out.line, upcoming) : out.md;
     }
     latest.current = next;
     setText(next);
