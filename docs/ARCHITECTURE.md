@@ -258,8 +258,8 @@ page, on a blocking thread).
   `vault::page_paths` (the export's naming, case-insensitive) and takes pulled notes over through `save_page_content` after
   a snapshot (new files become pages below the page of their folder, a folder without a page here gets one,
   deletions go to the trash (a page whose subpages stay there, one edited here, stays as their folder and its text
-  becomes a version; a subpage trashed with its page already is skipped), attachments the repository has and the
-  data folder lacks are copied). A moved note moves
+  becomes a version; a subpage trashed with its page already is skipped; one this pull moves elsewhere leaves the
+  page first), attachments the repository has and the data folder lacks are copied). A moved note moves
   its page (same id, versions, time entries, links; renamed when the file name changed beyond the mirror's „ (2)“), a
   folder-only page whose notes all moved to one new folder follows them, and one whose subpages all went is trashed. A
   page deleted here that came back is restored from the trash when it was trashed on its own (`Pulled.restored`, a

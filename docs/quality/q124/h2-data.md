@@ -4,11 +4,12 @@ Area: saving, crash and restart, the database and its migrations, Git sync, back
 encryption, the Markdown mirror, attachments, the trash, imports, the data folder, the command line
 next to the running app. Severity scale and exit criterion: `plan.md`.
 
-Findings: 2 high, 1 medium, 6 low. All high and medium ones are fixed at the root with tests.
+Findings: 3 high, 1 medium, 6 low. All high and medium ones are fixed at the root with tests.
 
 Tests added: Rust `src-tauri/src/syncmerge.rs` (`titles_the_file_names_cannot_hold_reach_the_other_computer`,
 `a_page_deleted_there_with_its_subpages_is_taken_over`, `a_subpage_edited_here_stays_when_its_page_was_deleted_there`,
-`a_page_emptied_there_keeps_its_subpages`, `the_first_subpage_of_an_empty_page_reaches_the_other_computer`; real git on a
+`a_page_emptied_there_keeps_its_subpages`, `the_first_subpage_of_an_empty_page_reaches_the_other_computer`,
+`a_subpage_moved_out_before_its_page_was_deleted_stays`; real git on a
 bare repository, two and three computers), `crates/arcalo-core/src/vault.rs`
 (`the_mirror_keeps_the_titles_file_names_cannot_hold`), e2e `e2e/tests/462-sync-structure.test.js` (the built app
 against a bare repository changed by a second clone).
@@ -58,7 +59,20 @@ the existing sync e2e tests (20, 46, 47, 230, 302, 304) on the fixed build.
 - Tests: `the_first_subpage_of_an_empty_page_reaches_the_other_computer` (with and without text in the
   subpage; failed with the error above, and with „Projekte“ renamed); e2e 462.
 
-## H2-3. Titles a file name cannot hold changed on every other computer, and links to them broke. MEDIUM, FIXED
+## H2-3. A subpage moved out of a page that was then deleted went to the trash everywhere. HIGH, FIXED
+
+- Symptom: on computer A a subpage is moved out of its page (into another page) and the old page is deleted
+  afterwards („keep this one, delete the rest“). On computer B the moved subpage ends in the trash, and B's next
+  sync deletes it on the server and on A.
+- Root cause: the pull lists the changes by path; the old page's deletion („Alt.md“) comes before the subpage's
+  move („Ziel/Behalten.md“), and trashing the old page took the subpage, still below it here, along. The move then
+  moved a page in the trash.
+- Fix: before a page from the server's deletions is trashed, the pages below it that this pull moves elsewhere are
+  taken out (`release_moving`); their own change then puts them in place. (Taking all moves first instead created a
+  second page for a new folder page that the move needs, so the order stays.)
+- Test: `a_subpage_moved_out_before_its_page_was_deleted_stays` (failed: „Behalten“ in B's trash).
+
+## H2-4. Titles a file name cannot hold changed on every other computer, and links to them broke. MEDIUM, FIXED
 
 - Symptom: a page „Q3: Ziele“ (also „Was tun?“, „A/B-Test“, „Version 2.“, a title longer than 120 characters,
   a folder page „Ablage: 2026“) is „Q3- Ziele“ on every other computer that syncs through Git. Links `[[Q3: Ziele]]`

@@ -245,6 +245,9 @@ pub fn apply(
                 by_file.get(&path?.to_lowercase()).copied()
             })
             .collect();
+        // Pages this pull moves (by their note here).
+        let moving: HashSet<i64> =
+            changes.iter().filter_map(|c| by_file.get(&c.from.as_ref()?.to_lowercase()).copied()).collect();
         // Whether this pull brings a note below the folder of the note `lower`.
         let arriving_below = |lower: &str| {
             let folder = format!("{}/", without_ext(lower));
@@ -343,6 +346,9 @@ pub fn apply(
                             }
                         }
                         (None, false) => {
+                            // A subpage moved out there before the page was deleted leaves it first;
+                            // its own change puts it in its new place.
+                            release_moving(db, id, &moving)?;
                             db.trash_page(id)?;
                             out.trashed.push(id);
                         }
@@ -525,6 +531,26 @@ fn keeps_subpages(db: &Database, id: i64, with_file: &HashSet<i64>, leaving: &Ha
         }
     }
     Ok(false)
+}
+
+/// Moves the pages below `id` that this pull moves elsewhere (`moving`) to the top level for now,
+/// so trashing `id` does not take them along.
+fn release_moving(db: &Database, id: i64, moving: &HashSet<i64>) -> Result<()> {
+    if moving.is_empty() {
+        return Ok(());
+    }
+    let pages = db.list_pages()?;
+    let mut below = vec![id];
+    while let Some(parent) = below.pop() {
+        for p in pages.iter().filter(|p| p.parent_id == Some(parent)) {
+            if moving.contains(&p.id) {
+                db.move_page(p.id, None, i64::MAX)?;
+            } else {
+                below.push(p.id);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A page deleted here that the other computer edited since: the trashed page of that name below
@@ -1384,6 +1410,44 @@ mod tests {
         assert_eq!(tree(&a), tree(&b));
         assert_eq!(a.list_pages().unwrap().len(), 9);
         assert!(a.list_trash().unwrap().is_empty() && b.list_trash().unwrap().is_empty());
+    }
+
+    /// A subpage moved out of a page that was deleted afterwards (keep one, delete the rest): the
+    /// other computer moves it and trashes the page without it. Before, the page went to the trash
+    /// first and took the subpage along; the next sync deleted it on every computer.
+    #[test]
+    fn a_subpage_moved_out_before_its_page_was_deleted_stays() {
+        let Some(pcs) = Pcs::new("move-out") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..12 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let alt = a.create_page(None, "Alt", None).unwrap();
+        a.save_page_content(alt.id, "alt").unwrap();
+        let behalten = a.create_page(Some(alt.id), "Behalten", None).unwrap();
+        a.save_page_content(behalten.id, "behalten").unwrap();
+        let weg = a.create_page(Some(alt.id), "Weg", None).unwrap();
+        a.save_page_content(weg.id, "weg").unwrap();
+        let ziel = a.create_page(None, "Ziel", None).unwrap();
+        a.save_page_content(ziel.id, "ziel").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Behalten").unwrap().unwrap();
+        a.move_page(behalten.id, Some(ziel.id), 0).unwrap();
+        a.trash_page(alt.id).unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        let kept = b.page_by_title("Behalten").unwrap().expect("not in the trash");
+        assert_eq!(kept.id, on_b.id, "{out:?}");
+        assert_eq!(kept.parent_id, b.page_by_title("Ziel").unwrap().map(|p| p.id));
+        let trash = b.list_trash().unwrap();
+        assert_eq!(trash.iter().map(|e| (e.page.title.as_str(), e.descendants)).collect::<Vec<_>>(), [("Alt", 1)]);
+        pcs.sync(&b, "b");
+        pcs.sync(&a, "a");
+        assert_eq!(tree(&a), tree(&b));
+        assert!(a.page_by_title("Behalten").unwrap().is_some());
     }
 
     /// Titles a file name cannot hold (`:`, `?`, `/`, a trailing dot) reach the other computer as
