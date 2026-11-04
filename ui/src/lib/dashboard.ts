@@ -725,7 +725,8 @@ export function reviewDay(today: Date, workdays: number[], lastWorkday: boolean)
 /** The parts a widget shows (none for widgets that live on what the UI already has). */
 export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, workdays: number[] = [1, 2, 3, 4, 5], time = true): Part[] {
   const c = configOf(w);
-  const monday = isoDay(weekStart(today, 1));
+  // The first day of the week as the settings start it (Monday or Sunday), as the timesheet counts it.
+  const monday = isoDay(weekStart(today));
   // Time tracking off: nothing is loaded for the hidden time widgets.
   if (!widgetShown(w.kind, time, c)) return [];
   switch (w.kind as WidgetKind) {
@@ -763,7 +764,7 @@ export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, wor
       return [{ kind: "timer_refs" }];
     case "calendar": {
       const first = new Date(today.getFullYear(), today.getMonth(), 1);
-      const start = weekStart(first, 1);
+      const start = weekStart(first);
       return [{ kind: "month", from: isoDay(start), to: isoDay(addDays(start, 41)) }];
     }
     case "suggestions":

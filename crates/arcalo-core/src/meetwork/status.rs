@@ -89,9 +89,10 @@ pub struct Period {
     pub to: Option<NaiveDate>,
 }
 
-/// The days of `p` as of `today` (both inclusive).
-pub fn resolve(p: &Period, today: NaiveDate) -> Result<(NaiveDate, NaiveDate)> {
-    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+/// The days of `p` as of `today` (both inclusive); weeks start on `week_start` (Settings →
+/// Zeiterfassung), as the timesheet counts them.
+pub fn resolve(p: &Period, today: NaiveDate, week_start: crate::prefs::WeekStart) -> Result<(NaiveDate, NaiveDate)> {
+    let monday = week_start.first_day(today);
     let first = today.with_day(1).unwrap_or(today);
     let out = match p.kind {
         PeriodKind::ThisWeek => (monday, monday + Duration::days(6)),
@@ -130,7 +131,8 @@ pub fn resolve(p: &Period, today: NaiveDate) -> Result<(NaiveDate, NaiveDate)> {
 pub fn period_label(p: &Period, from: NaiveDate, to: NaiveDate) -> String {
     match p.kind {
         PeriodKind::ThisWeek | PeriodKind::LastWeek => {
-            let w = from.iso_week();
+            // A week from Sunday counts as the ISO week of its Monday (six of its seven days).
+            let w = if from.weekday() == chrono::Weekday::Sun { from + Duration::days(1) } else { from }.iso_week();
             trf!("KW {}/{}", "Week {} {}", w.week(), w.year())
         }
         PeriodKind::Month | PeriodKind::LastMonth => {
@@ -471,7 +473,7 @@ pub fn build<Tz: TimeZone>(
     today: NaiveDate,
     tz: &Tz,
 ) -> Result<StatusReport> {
-    let (from, to) = resolve(&req.period, today)?;
+    let (from, to) = resolve(&req.period, today, settings.time.week_start)?;
     if req.scope.kind == ScopeKind::Jira && settings.jira.active().next().is_none() {
         return Err(Error::State(
             tr!("Jira ist nicht eingerichtet (Einstellungen → Jira).", "Jira is not set up (Settings → Jira).").into(),

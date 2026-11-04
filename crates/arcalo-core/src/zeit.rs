@@ -397,6 +397,33 @@ fn parse_date(s: &str, today: NaiveDate) -> Result<DateSpec> {
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Ok(DateSpec::On(d));
     }
+    // "22/09/2026", "22/9/26" or "22/09", the month first with the US date format ("09/22/2026").
+    if s.contains('/') {
+        let parts: Vec<&str> = s.split('/').collect();
+        let num = |p: &str| p.parse::<u32>().ok().filter(|_| (1..=2).contains(&p.len()));
+        let date = match parts.as_slice() {
+            [a, b] | [a, b, _] => num(a).zip(num(b)).and_then(|(a, b)| {
+                let (d, m) = if crate::i18n::month_first() { (b, a) } else { (a, b) };
+                match parts.get(2) {
+                    Some(y) if y.len() == 2 || y.len() == 4 => {
+                        let y: i32 = y.parse().ok()?;
+                        NaiveDate::from_ymd_opt(if y < 100 { 2000 + y } else { y }, m, d)
+                    }
+                    Some(_) => None,
+                    // Without a year: the most recent such day, as with "22.09.".
+                    None => NaiveDate::from_ymd_opt(today.year(), m, d)
+                        .map(|x| if x > today { x.with_year(today.year() - 1).unwrap_or(x) } else { x }),
+                }
+            }),
+            _ => None,
+        };
+        return date.map(DateSpec::On).ok_or_else(|| {
+            Error::Parse(trf!(
+                "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @mo, @2026-09-22 oder @22.09.)",
+                "Invalid date “@{s}” (e.g. @today, @yesterday, @mon, @2026-09-22 or @22.09.)"
+            ))
+        });
+    }
     let trimmed = s.trim_end_matches('.');
     // "22.09.2026" or "22.9.26".
     if trimmed.matches('.').count() == 2 {
@@ -438,6 +465,29 @@ mod tests {
         assert_eq!(parse_date("30.12.", jan2).unwrap(), DateSpec::On(NaiveDate::from_ymd_opt(2026, 12, 30).unwrap()));
         assert_eq!(parse_date("22.9.26", jan2).unwrap(), DateSpec::On(NaiveDate::from_ymd_opt(2026, 9, 22).unwrap()));
         assert!(parse_date("22.9.0026", jan2).is_err());
+    }
+
+    #[test]
+    fn dates_with_slashes_follow_the_date_format() {
+        use crate::prefs::DateFormat;
+        let today = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+        let on = |y, m, d| DateSpec::On(NaiveDate::from_ymd_opt(y, m, d).unwrap());
+        crate::i18n::with_date_format(DateFormat::EnUs, || {
+            assert_eq!(parse_date("11/04/2026", today).unwrap(), on(2026, 11, 4));
+            assert_eq!(parse_date("11/4/26", today).unwrap(), on(2026, 11, 4));
+            assert_eq!(parse_date("12/24", today).unwrap(), on(2025, 12, 24), "the most recent such day");
+            assert!(parse_date("13/04/2026", today).is_err());
+            let c = parse("/time NP-8801/1020 1h Review @11/04/2026", today).unwrap();
+            assert_eq!(c.date.resolve(today), NaiveDate::from_ymd_opt(2026, 11, 4).unwrap());
+        });
+        for f in [DateFormat::EnGb, DateFormat::De, DateFormat::Iso] {
+            crate::i18n::with_date_format(f, || {
+                assert_eq!(parse_date("11/04/2026", today).unwrap(), on(2026, 4, 11), "{f:?}");
+                assert_eq!(parse_date("4/11", today).unwrap(), on(2026, 11, 4), "{f:?}");
+            });
+        }
+        assert!(parse_date("1/2/3/4", today).is_err());
+        assert!(parse_date("11/04/202", today).is_err());
     }
 
     fn today() -> NaiveDate {

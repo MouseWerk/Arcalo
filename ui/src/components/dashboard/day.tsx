@@ -6,7 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sun, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
-import { addDays, dateLocale, isoDay, isoWeek, weekStart } from "../../lib/format";
+import { addDays, dateLocale, formatPrefs, isoDay, isoWeek, weekStart } from "../../lib/format";
 import { cityOf, offsetLabel, uses12h, zoneTime } from "../../lib/worldclock";
 import { t } from "../../lib/i18n";
 import { bookingPrefill, isAllDayLike, sourceColor, sourceName, timeRange } from "../../lib/agenda";
@@ -721,7 +721,9 @@ export function CalendarWidget({ widget }: WidgetProps) {
   const cursor = addMonths(today, offset);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
-  const grid = useMemo(() => monthGrid(year, month, 1), [year, month]);
+  // Weeks start as the settings say (Monday or Sunday).
+  const startsOn = formatPrefs().weekStartsOn;
+  const grid = useMemo(() => monthGrid(year, month, startsOn), [year, month, startsOn]);
   // The widget's part covers this month; other months load on their own.
   const [other, setOther] = useState<MonthData | null>(null);
   const range = useMemo(() => [isoDay(grid[0][0]), isoDay(grid[5][6])] as const, [grid]);
@@ -739,7 +741,7 @@ export function CalendarWidget({ widget }: WidgetProps) {
   const days = useMemo(() => new Map((list ?? []).map((d) => [d.date, timeOn ? d : { ...d, booked_minutes: 0 }])), [list, timeOn]);
   const todayIso = isoDay(today);
   const trackedSince = [...days.values()].find((d) => d.booked_minutes > 0)?.date;
-  const weekdays = useMemo(() => Array.from({ length: 7 }, (_, i) => fmt(addDays(weekStart(today, 1), i), { weekday: "short" }).slice(0, 2)), []);
+  const weekdays = useMemo(() => Array.from({ length: 7 }, (_, i) => fmt(addDays(weekStart(new Date(), startsOn), i), { weekday: "short" }).slice(0, 2)), [startsOn]);
   return (
     <div className="dw-cal">
       <div className="dw-cal-head">

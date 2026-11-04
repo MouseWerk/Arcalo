@@ -11,7 +11,7 @@ use crate::db::Database;
 use crate::i18n::with_lang;
 use crate::issues::{Issue, JiraSite, SiteKind};
 use crate::model::{EntrySource, NewTimeEntry};
-use crate::prefs::Language;
+use crate::prefs::{Language, WeekStart};
 use crate::settings::Settings;
 
 fn day(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -488,13 +488,40 @@ fn which_meetings_get_prepared_by_themselves() {
 fn periods() {
     let today = day(2026, 10, 2); // a Friday
     let p = |kind| Period { kind, from: None, to: None };
-    assert_eq!(status::resolve(&p(PeriodKind::ThisWeek), today).unwrap(), (day(2026, 9, 28), day(2026, 10, 4)));
-    assert_eq!(status::resolve(&p(PeriodKind::LastWeek), today).unwrap(), (day(2026, 9, 21), day(2026, 9, 27)));
-    assert_eq!(status::resolve(&p(PeriodKind::Month), today).unwrap(), (day(2026, 10, 1), day(2026, 10, 31)));
-    assert_eq!(status::resolve(&p(PeriodKind::LastMonth), today).unwrap(), (day(2026, 9, 1), day(2026, 9, 30)));
-    assert_eq!(status::resolve(&p(PeriodKind::Month), day(2026, 12, 5)).unwrap().1, day(2026, 12, 31));
+    assert_eq!(
+        status::resolve(&p(PeriodKind::ThisWeek), today, WeekStart::Monday).unwrap(),
+        (day(2026, 9, 28), day(2026, 10, 4))
+    );
+    assert_eq!(
+        status::resolve(&p(PeriodKind::LastWeek), today, WeekStart::Monday).unwrap(),
+        (day(2026, 9, 21), day(2026, 9, 27))
+    );
+    assert_eq!(
+        status::resolve(&p(PeriodKind::Month), today, WeekStart::Monday).unwrap(),
+        (day(2026, 10, 1), day(2026, 10, 31))
+    );
+    assert_eq!(
+        status::resolve(&p(PeriodKind::LastMonth), today, WeekStart::Monday).unwrap(),
+        (day(2026, 9, 1), day(2026, 9, 30))
+    );
+    assert_eq!(
+        status::resolve(&p(PeriodKind::Month), day(2026, 12, 5), WeekStart::Monday).unwrap().1,
+        day(2026, 12, 31)
+    );
     let custom = Period { kind: PeriodKind::Custom, from: Some(day(2026, 10, 5)), to: Some(day(2026, 10, 1)) };
-    assert!(status::resolve(&custom, today).is_err());
+    assert!(status::resolve(&custom, today, WeekStart::Monday).is_err());
+    // Weeks from Sunday (q124 R4D-3): this week holds today, also on a Sunday.
+    assert_eq!(
+        status::resolve(&p(PeriodKind::ThisWeek), today, WeekStart::Sunday).unwrap(),
+        (day(2026, 9, 27), day(2026, 10, 3))
+    );
+    assert_eq!(
+        status::resolve(&p(PeriodKind::LastWeek), day(2026, 10, 4), WeekStart::Sunday).unwrap(),
+        (day(2026, 9, 27), day(2026, 10, 3))
+    );
+    with_lang(Language::De, || {
+        assert_eq!(status::period_label(&p(PeriodKind::ThisWeek), day(2026, 9, 27), day(2026, 10, 3)), "KW 40/2026");
+    });
     with_lang(Language::De, || {
         assert_eq!(status::period_label(&p(PeriodKind::ThisWeek), day(2026, 9, 28), day(2026, 10, 4)), "KW 40/2026");
         assert_eq!(status::period_label(&p(PeriodKind::Month), day(2026, 10, 1), day(2026, 10, 31)), "Oktober 2026");

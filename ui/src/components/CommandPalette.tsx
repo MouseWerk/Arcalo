@@ -25,7 +25,7 @@ import { createCanvas } from "../views/canvas/create";
 import { requestAddProperty } from "../views/PageProperties";
 import { requestPageCommand } from "../lib/pageModes";
 import { stopTimer, toggleTimerPause } from "./Sidebar";
-import { fmtMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
+import { fmtMinutes, isoDay, shownWeek, weekStart } from "../lib/format";
 import type { SearchHit } from "../lib/types";
 import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
@@ -544,7 +544,7 @@ export function CommandPalette() {
 export function askWeeklyReport(now = new Date()) {
   const from = isoDay(weekStart(now));
   const to = isoDay(now);
-  const kw = isoWeek(now);
+  const kw = shownWeek(weekStart(now));
   const text = t("palette.reportPrompt", { kw, from, to });
   const title = t("palette.reportTitle", { kw });
   useApp.getState().set({ panelOpen: true, panelTab: "assistant", pendingAsk: { text, display: title, pageTitle: title, tools: true } });
