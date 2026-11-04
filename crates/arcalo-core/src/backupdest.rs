@@ -963,6 +963,7 @@ pub fn fetch_verified(backup: &Path, to: &Path, act: &Activity) -> std::result::
         }
         check_sqlite(&part)
             .map_err(|e| Failure::new(Problem::Checksum, e.to_string(), backup.display().to_string()))?;
+        check_schema(&part).map_err(|e| Failure::new(Problem::Other, e.to_string(), backup.display().to_string()))?;
         replace(&part, to).map_err(fail)
     })();
     if res.is_err() {
@@ -982,6 +983,25 @@ pub fn check_sqlite(path: &Path) -> Result<()> {
             "Die Sicherung ist beschädigt ({res}): {}",
             "The backup is damaged ({res}): {}",
             path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Refuses a backup written by a newer Arcalo (a later schema than this build knows): put in
+/// place, it would stop every start („Neuere Datenbank“) with the workspace set aside. After a
+/// return to an earlier version the backup folder holds such backups of the newer one.
+pub fn check_schema(path: &Path) -> Result<()> {
+    use rusqlite::OpenFlags;
+    let conn = crate::cipher::open_conn(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    let known = crate::db::schema_known();
+    if version.max(0) as usize > known {
+        return Err(Error::State(trf!(
+            "Die Sicherung stammt von einer neueren Arcalo-Version (Schema v{version}, diese kennt v{known}) und lässt \
+             sich erst nach einem Update wiederherstellen",
+            "The backup comes from a newer Arcalo version (schema v{version}, this one knows v{known}) and can only be \
+             restored after an update"
         )));
     }
     Ok(())
@@ -1788,6 +1808,47 @@ mod tests {
         assert_ne!(used.path, bad.display().to_string(), "the damaged newest one was skipped");
         let db = Database::open(&db_file).unwrap();
         assert!(db.page_by_title("Im Netz gesichert").unwrap().is_some());
+        drop(db);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// After a return to an earlier version the backup folder holds backups of the newer one. Put in
+    /// place, such a backup stopped every start („Neuere Datenbank“, no way out but quitting) with
+    /// the workspace set aside: it is refused when chosen, and the start-up recovery takes the
+    /// newest backup this version can open.
+    #[test]
+    fn a_backup_of_a_newer_version_is_never_put_in_place() {
+        let root = tmp("newer");
+        let (data, backups) = (root.join("data"), root.join("data").join("backups"));
+        fs::create_dir_all(&backups).unwrap();
+        let db_file = data.join(crate::datadir::DB_FILE);
+        {
+            let db = Database::open(&db_file).unwrap();
+            db.create_page(None, "Mein Stand", None).unwrap();
+            crate::backup::backup_to(&db, &backups, 10).unwrap();
+        }
+        let older = crate::backup::list_backups(&backups).unwrap().remove(0);
+        // The newer version's daily backup, one schema ahead.
+        let newer_path = backups.join("arcalo-29990101-000000.db");
+        fs::copy(&older.path, &newer_path).unwrap();
+        {
+            let c = rusqlite::Connection::open(&newer_path).unwrap();
+            c.pragma_update(None, "user_version", (crate::db::schema_known() + 1) as i64).unwrap();
+        }
+        let f = stage_restore(&newer_path, &data, &Activity::new(None)).unwrap_err();
+        assert!(f.message.contains("neueren Arcalo-Version") || f.message.contains("newer Arcalo version"), "{f:?}");
+        assert!(!data.join(PENDING_RESTORE).exists(), "nothing staged");
+        assert!(apply_pending_restore(&data, Utc::now()).unwrap().is_none());
+        assert!(Database::open(&db_file).unwrap().page_by_title("Mein Stand").unwrap().is_some());
+
+        // The start-up recovery skips it for the newest one it can open.
+        fs::write(&db_file, b"kaputt").unwrap();
+        let found = crate::backup::list_backups(&backups).unwrap();
+        assert_eq!(found[0].path, newer_path.display().to_string(), "the newer one is the newest");
+        let used = restore_newest(&db_file, &found, Utc::now()).unwrap();
+        assert_eq!(used.path, older.path);
+        let db = Database::open(&db_file).unwrap();
+        assert!(db.page_by_title("Mein Stand").unwrap().is_some());
         drop(db);
         let _ = fs::remove_dir_all(&root);
     }

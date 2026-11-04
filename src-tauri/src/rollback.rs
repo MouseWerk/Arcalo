@@ -54,7 +54,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
         return;
     }
     let record = RollbackRecord::load(dir);
-    let check = st::begin_start(dir, version, record.as_ref());
+    let check = st::begin_start(dir, version, record.as_ref(), Utc::now());
     if test_var("ARCALO_TEST_FAIL_START").is_some() {
         crate::devlog::warn("update", "test: start fails on purpose");
         std::process::exit(3);
@@ -67,7 +67,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
         StartCheck::OfferRollback { from, to, failures } => {
             crate::devlog::error("update", format!("{failures} starts of {to} failed in a row, offering {from}"));
             let Some(record) = record else { return };
-            if !ask(&from, &to) {
+            if !ask(&from, &to, record.created) {
                 crate::devlog::info("update", "rollback declined");
                 st::reset_failures(dir, version);
                 return;
@@ -104,15 +104,17 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
     }
 }
 
-fn ask(from: &str, to: &str) -> bool {
+fn ask(from: &str, to: &str, updated: chrono::DateTime<Utc>) -> bool {
     if let Some(answer) = test_var("ARCALO_TEST_ROLLBACK_ANSWER") {
         return answer.eq_ignore_ascii_case("yes");
     }
+    let local = updated.with_timezone(&chrono::Local);
+    let (de, en) = (local.format("%d.%m.%Y, %H:%M"), local.format("%Y-%m-%d %H:%M"));
     let text = trf!(
         "Arcalo {to} konnte zweimal nicht starten – zu {from} zurückkehren?\n\nDie Datenbank wird auf den Stand vor dem Update \
-         zurückgesetzt; Änderungen seit dem Update gehen verloren. Version {to} wird danach übersprungen.",
-        "Arcalo {to} could not start twice – return to {from}?\n\nThe database is put back to its state before the update; \
-         changes made since the update are lost. Version {to} is skipped from then on."
+         ({de}) zurückgesetzt; Änderungen seit dem Update gehen verloren. Version {to} wird danach übersprungen.",
+        "Arcalo {to} could not start twice – return to {from}?\n\nThe database is put back to its state before the update \
+         ({en}); changes made since the update are lost. Version {to} is skipped from then on."
     );
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Warning)

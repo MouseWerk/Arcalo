@@ -25,6 +25,11 @@ const RECORD_FILE: &str = "rollback.json";
 /// Failed starts in a row before the rollback is offered.
 pub const FAILURES_BEFORE_ROLLBACK: u32 = 2;
 
+/// Days after an update in which failed starts offer the return by themselves. Later the version
+/// has run for a while and a failed start has another cause; the return would put back a
+/// database of long ago (Settings → Über still offers it, with its date).
+pub const ROLLBACK_OFFER_DAYS: i64 = 7;
+
 /// Quits that postponed the same update for running terminal commands before the window names
 /// the commands, so the user can end them (the update never does).
 pub const POSTPONED_BEFORE_NOTICE: u32 = 3;
@@ -174,7 +179,10 @@ pub enum StartCheck {
 }
 
 /// Called early at every start: counts the failed starts of `version` and writes „starting“.
-pub fn begin_start(data_dir: &Path, version: &str, record: Option<&RollbackRecord>) -> StartCheck {
+/// The return is offered only when it can return (the database backup and the copy of the
+/// previous version are there: without the copy the failing version would go on running on the
+/// database of before the update) and the update is recent ([`ROLLBACK_OFFER_DAYS`]).
+pub fn begin_start(data_dir: &Path, version: &str, record: Option<&RollbackRecord>, now: DateTime<Utc>) -> StartCheck {
     let path = data_dir.join(HEALTH_FILE);
     // The marker of 1.14 and earlier (old name) counts until the new one is written.
     let legacy = data_dir.join(crate::identity::legacy(HEALTH_FILE));
@@ -188,7 +196,11 @@ pub fn begin_start(data_dir: &Path, version: &str, record: Option<&RollbackRecor
     let health = Health { version: version.to_string(), healthy: false, failures };
     let _ = write_atomic(&path, &serde_json::to_string(&health).unwrap_or_default());
     match record {
-        Some(r) if failures >= FAILURES_BEFORE_ROLLBACK && same(&r.to, version) => {
+        Some(r)
+            if failures >= FAILURES_BEFORE_ROLLBACK
+                && r.can_return(version)
+                && now - r.created < chrono::TimeDelta::days(ROLLBACK_OFFER_DAYS) =>
+        {
             StartCheck::OfferRollback { from: r.from.clone(), to: r.to.clone(), failures }
         }
         _ if failures > 0 => StartCheck::Failed { failures },
@@ -373,20 +385,49 @@ mod tests {
         let dir = tmp("health");
         let r = record(&dir, CopyKind::Test);
         // First start of the new version.
-        assert_eq!(begin_start(&dir, "1.9.1", Some(&r)), StartCheck::Normal);
+        assert_eq!(begin_start(&dir, "1.9.1", Some(&r), Utc::now()), StartCheck::Normal);
         // It crashed before „healthy“: the next start counts one failure.
-        assert_eq!(begin_start(&dir, "1.9.1", Some(&r)), StartCheck::Failed { failures: 1 });
+        assert_eq!(begin_start(&dir, "1.9.1", Some(&r), Utc::now()), StartCheck::Failed { failures: 1 });
         // Twice in a row: the third start asks.
         assert_eq!(
-            begin_start(&dir, "1.9.1", Some(&r)),
+            begin_start(&dir, "1.9.1", Some(&r), Utc::now()),
             StartCheck::OfferRollback { from: "1.9.0".into(), to: "1.9.1".into(), failures: 2 }
         );
         // „Nein“: counting starts again.
         reset_failures(&dir, "1.9.1");
-        assert_eq!(begin_start(&dir, "1.9.1", Some(&r)), StartCheck::Failed { failures: 1 });
+        assert_eq!(begin_start(&dir, "1.9.1", Some(&r), Utc::now()), StartCheck::Failed { failures: 1 });
         // A healthy start clears it.
         mark_healthy(&dir, "1.9.1");
-        assert_eq!(begin_start(&dir, "1.9.1", Some(&r)), StartCheck::Normal);
+        assert_eq!(begin_start(&dir, "1.9.1", Some(&r), Utc::now()), StartCheck::Normal);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The return after failed starts puts back the database of before the update. It was
+    /// offered for a record without a copy of the previous version (the failing version then went
+    /// on running on the old database, every change since the update gone, and was marked bad)
+    /// and for an update of months ago (a start that fails then has another cause; the return
+    /// took away everything written since).
+    #[test]
+    fn the_return_is_offered_only_when_it_returns_and_the_update_is_recent() {
+        let dir = tmp("health3");
+        let fail_twice = |r: &RollbackRecord, now: DateTime<Utc>| {
+            reset_failures(&dir, "1.9.1");
+            begin_start(&dir, "1.9.1", Some(r), now);
+            begin_start(&dir, "1.9.1", Some(r), now)
+        };
+        let none = record(&dir, CopyKind::None);
+        assert_eq!(fail_twice(&none, Utc::now()), StartCheck::Failed { failures: 2 }, "no copy to return to");
+        let mut gone = record(&dir, CopyKind::AppImage);
+        gone.copy = Some(copy_dir(&dir, "1.9.0").join("Arcalo.AppImage"));
+        assert_eq!(fail_twice(&gone, Utc::now()), StartCheck::Failed { failures: 2 }, "the copy is missing");
+        let r = record(&dir, CopyKind::Test);
+        let offer = StartCheck::OfferRollback { from: "1.9.0".into(), to: "1.9.1".into(), failures: 2 };
+        assert_eq!(fail_twice(&r, r.created + Duration::days(ROLLBACK_OFFER_DAYS - 1)), offer);
+        assert_eq!(
+            fail_twice(&r, r.created + Duration::days(90)),
+            StartCheck::Failed { failures: 2 },
+            "an update of long ago"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -394,18 +435,18 @@ mod tests {
     fn failures_without_a_record_or_of_another_version_offer_nothing() {
         let dir = tmp("health2");
         for _ in 0..3 {
-            begin_start(&dir, "1.9.1", None);
+            begin_start(&dir, "1.9.1", None, Utc::now());
         }
-        assert_eq!(begin_start(&dir, "1.9.1", None), StartCheck::Failed { failures: 3 });
+        assert_eq!(begin_start(&dir, "1.9.1", None, Utc::now()), StartCheck::Failed { failures: 3 });
         let mut r = record(&dir, CopyKind::Test);
         r.to = "1.9.2".into();
         assert_eq!(
-            begin_start(&dir, "1.9.1", Some(&r)),
+            begin_start(&dir, "1.9.1", Some(&r), Utc::now()),
             StartCheck::Failed { failures: 4 },
             "the record is for another version"
         );
         // Another version (the old one started again): its count starts at zero.
-        assert_eq!(begin_start(&dir, "1.9.0", None), StartCheck::Normal);
+        assert_eq!(begin_start(&dir, "1.9.0", None, Utc::now()), StartCheck::Normal);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
