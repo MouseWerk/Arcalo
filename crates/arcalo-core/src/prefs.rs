@@ -465,6 +465,18 @@ impl DailyTitle {
 // ---------------------------------------------------------------------- time
 
 choice!(WeekStart { #[default] Monday = "monday", Sunday = "sunday" } default Monday);
+
+impl WeekStart {
+    /// The first day (Monday or Sunday) of the week that holds `d`.
+    pub fn first_day(self, d: chrono::NaiveDate) -> chrono::NaiveDate {
+        use chrono::Datelike;
+        let into = match self {
+            WeekStart::Monday => d.weekday().num_days_from_monday(),
+            WeekStart::Sunday => d.weekday().num_days_from_sunday(),
+        };
+        d - chrono::Days::new(u64::from(into))
+    }
+}
 choice!(RoundMode { #[default] Up = "up", Nearest = "nearest" } default Up);
 choice!(HoursDisplay { #[default] Decimal = "decimal", Clock = "clock" } default Decimal);
 choice!(CatsDelimiter { #[default] Semicolon = "semicolon", Comma = "comma", Tab = "tab" } default Semicolon);

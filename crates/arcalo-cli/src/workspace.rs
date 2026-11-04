@@ -155,6 +155,7 @@ impl Workspace {
         let settings = db.load_settings().unwrap_or_default();
         i18n::set_lang(settings.locale.lang());
         i18n::set_number_format(settings.locale.number_format);
+        i18n::set_date_format(settings.locale.date_format);
         Ok(Workspace { db, loc, encrypted, settings })
     }
 

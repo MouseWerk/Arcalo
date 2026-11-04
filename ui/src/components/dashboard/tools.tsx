@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
 import { useTimeTracking } from "../../lib/timetracking";
-import { fmtDate, fmtHours, fmtMinutes, isoDay, numberLocale, relative, weekStart } from "../../lib/format";
+import { fmtDate, fmtHours, fmtMinutes, isoDay, numberLocale, relative, weekStart, weekdayLabels } from "../../lib/format";
 import { currentLang, t } from "../../lib/i18n";
 import { configOf, weekBars } from "../../lib/dashboard";
 import { bars, displayProblem, groupLabel, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
@@ -226,12 +226,13 @@ export function SuggestionsWidget({ widget }: WidgetProps) {
       {() => {
         const d = data!;
         const now = new Date();
-        const monday = weekStart(now, 1);
+        const monday = weekStart(now);
         const week = weekBars(
           d.week_minutes.map((m, i) => ({ date: isoDay(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)), booked_minutes: m })),
           monday,
           d.week_targets ?? [],
           now,
+          weekdayLabels(),
         );
         const list = buildSuggestions({
           now,

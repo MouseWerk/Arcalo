@@ -2408,6 +2408,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     let active = new_cal.active_sources(arcalo_core::calsync::outlook::available());
     let relocalize = arcalo_core::i18n::set_lang(settings.locale.lang());
     arcalo_core::i18n::set_number_format(settings.locale.number_format);
+    arcalo_core::i18n::set_date_format(settings.locale.date_format);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     // Another saved Jira search: its issues are read now.
     let jira_resync: Vec<String> = if previous.jira.queries != settings.jira.queries {
@@ -4917,6 +4918,7 @@ pub fn run() {
             if let Ok(mut s) = db.load_settings() {
                 arcalo_core::i18n::set_lang(s.locale.lang());
                 arcalo_core::i18n::set_number_format(s.locale.number_format);
+                arcalo_core::i18n::set_date_format(s.locale.date_format);
                 let page = |t: &str| db.page_by_title(t).ok().flatten().is_some();
                 if arcalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.lang(), page) {
                     let _ = db.save_settings(&s);
