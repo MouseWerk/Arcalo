@@ -6,7 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sun, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
-import { addDays, dateLocale, formatPrefs, isoDay, isoWeek, weekStart } from "../../lib/format";
+import { addDays, dateLocale, formatPrefs, isoDay, shownWeek, weekStart } from "../../lib/format";
 import { cityOf, offsetLabel, uses12h, zoneTime } from "../../lib/worldclock";
 import { t } from "../../lib/i18n";
 import { bookingPrefill, isAllDayLike, sourceColor, sourceName, timeRange } from "../../lib/agenda";
@@ -239,7 +239,7 @@ export function TodayWidget({ widget }: WidgetProps) {
               <div className="dw-today-hello">
                 <div className="dw-today-greet">{greeting(date.getHours())}</div>
                 <div className="muted dw-today-date">
-                  {fmt(date, { weekday: "long", day: "numeric", month: "long" })} · {t("dash.kw", { n: isoWeek(date) })}
+                  {fmt(date, { weekday: "long", day: "numeric", month: "long" })} · {t("dash.kw", { n: shownWeek(weekStart(date)) })}
                 </div>
               </div>
               {on("hours") && (
@@ -596,7 +596,7 @@ export function ClockWidget({ widget }: WidgetProps) {
           {fmt(now, { hour: h12 ? "numeric" : "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hour12: h12 })}
         </div>
         <div className="dw-clock-date">{fmt(now, { weekday: "long", day: "numeric", month: "long" })}</div>
-        {c.week !== false && <div className="faint small num">{t("dash.kwYear", { n: isoWeek(now), y: now.getFullYear() })}</div>}
+        {c.week !== false && <div className="faint small num">{t("dash.kwYear", { n: shownWeek(weekStart(now)), y: now.getFullYear() })}</div>}
       </div>
       {zones.length > 0 && (
         <ul className="dw-zones" aria-label={t("dash.clock.zones")}>

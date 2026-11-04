@@ -517,3 +517,17 @@ fn a_week_with_thousands_of_open_tasks_stays_fast() {
     // well over a second on their own.
     assert!(took < std::time::Duration::from_millis(700), "week review {took:?}");
 }
+
+#[test]
+fn english_days_follow_the_date_format() {
+    use crate::prefs::DateFormat;
+    let d = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+    crate::i18n::with_lang(Language::En, || {
+        let label = |f| crate::i18n::with_date_format(f, || day_label(d));
+        assert_eq!(label(DateFormat::EnUs), "Mon 10/05");
+        assert_eq!(label(DateFormat::EnGb), "Mon 05/10");
+        assert_eq!(label(DateFormat::Iso), "Mon 10-05");
+        assert_eq!(label(DateFormat::De), "Mon 05.10.");
+    });
+    crate::i18n::with_lang(Language::De, || assert_eq!(day_label(d), "Mo 05.10."));
+}

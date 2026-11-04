@@ -12,6 +12,8 @@
 //!
 //! Durations accept `2.5h`, `2,5h`, `2.5std`, `90m`, `90min`, `1h30m` and `1:30`; a time span
 //! `9:00-10:30` (also `9.00–10.30`, over midnight `22:00-01:00`) gives start and duration.
+//! Dates: `@heute`, `@gestern`, a weekday, `@2026-09-22`, `@22.09.2026`, `@22.09.` and with slashes
+//! `@22/09/2026` (`@09/22/2026` with the US date format of the settings, [`crate::i18n::month_first`]).
 //! Unquoted trailing words become the description. `/time` is an alias.
 //! With a default reference (a page linked to a Vorgang) the reference may be left
 //! out: `/zeit 1.5h Abstimmung`. A first token that is a duration means "no reference".

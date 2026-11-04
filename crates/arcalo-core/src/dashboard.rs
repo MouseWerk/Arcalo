@@ -831,8 +831,8 @@ fn suggestions<Tz: TimeZone>(ctx: &Ctx<Tz>) -> Result<SuggestionData> {
     let today = ctx.today.format("%Y-%m-%d").to_string();
     let counts = ctx.db.open_task_counts(&today, None)?;
     let statuses: Vec<BudgetStatus> = ctx.budgets()?.iter().map(|b| b.status.clone()).collect();
-    let monday = ctx.today - Duration::days(ctx.today.weekday().num_days_from_monday() as i64);
-    let w = week(ctx, monday)?;
+    // The week as the settings start it, as the UI lays out `week_minutes`.
+    let w = week(ctx, ctx.settings.time.week_start.first_day(ctx.today))?;
     Ok(SuggestionData {
         open_tasks: counts.open,
         overdue: counts.overdue,
