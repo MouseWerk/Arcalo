@@ -35,6 +35,10 @@ before(async () => {
     s.daily_target_hours = 8;
     return s;
   });
+  // Last Monday booked: there is a past to keep (a workspace without bookings sets its target).
+  const p = await app.invoke("project_create", { code: "PRJ-475", name: "Soll" });
+  const np = await app.invoke("netzplan_create", { projectId: p.id, netzplanNr: "NP-4750", wbsElement: "NP-4750-1", description: "Betrieb", plannedHours: 100 });
+  await app.invoke("time_entry_create", { netzplanId: np.id, vorgangNr: null, leistungsart: null, startTime: new Date(day(0).getTime() + 8 * 3600000).toISOString(), durationMinutes: 480, description: "Arbeit" });
 });
 after(async () => app?.close());
 

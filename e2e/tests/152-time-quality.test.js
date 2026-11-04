@@ -37,6 +37,12 @@ before(async () => {
     s.time.default_leistungsart = { "NP-1510": "PM" };
     return s;
   });
+  // These targets for every day, last week too („Für alle Tage übernehmen“; a change of the
+  // target otherwise counts from today on once something is booked before).
+  await patchSettings((s) => {
+    s.time.balance.target_history = [];
+    return s;
+  });
   await app.invoke("absence_save", { from: iso(day(0)), to: iso(day(0)), kind: "vacation", half: false, note: "" });
 });
 after(async () => app?.close());

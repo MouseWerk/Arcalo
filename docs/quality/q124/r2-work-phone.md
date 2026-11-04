@@ -42,7 +42,9 @@ Severity as in the plan; wrong numbers count as high.
   through it, `DayTargets`, `balance`, the vacation account) keeps the past as it was. A save records the change
   (`record_target_change`, called by the settings page's save and `arcalo settings set`): the days up to
   yesterday keep the old target; a second change the same day (or its undo) keeps the target of before the first;
-  the first setup records nothing (its target is the starting point). The settings page cannot add to the
+  the first setup and a workspace with nothing booked before today record nothing (`keeps_past`: the target is
+  set, not changed; the e2e tests that set targets before booking keep working, `152-time-quality`, which books
+  first, applies them to every day as a user would). The settings page cannot add to the
   history; it shows the last earlier target („Früheres Soll: Bis 31.03.2026 galten 40,00 h pro Woche …“) with
   „Für alle Tage übernehmen“ for a target that was simply wrong. Settings step 19 → 20 (`target-history`).
 - Tests: `worktime::tests::a_changed_target_counts_from_its_day_and_past_months_keep_theirs` (January to March in

@@ -390,7 +390,7 @@ fn a_changed_target_counts_from_its_day_and_past_months_keep_theirs() {
     let mut rewritten = next.clone();
     rewritten.time.balance.target_history.clear();
     assert_eq!(balance(&db, &rewritten, &Utc, today, now, 4).unwrap().minutes, 62 * 120);
-    record_target_change(&s, &mut next, today, false);
+    record_target_change(&s, &mut next, today, true);
     assert_eq!(next.time.balance.target_history.len(), 1);
     assert_eq!(next.time.balance.target_history[0].until, d(2026, 3, 31));
     let b = balance(&db, &next, &Utc, today, now, 4).unwrap();
@@ -405,18 +405,18 @@ fn a_changed_target_counts_from_its_day_and_past_months_keep_theirs() {
     // A second change the same day (or its undo) keeps the target of before the first.
     let mut again = next.clone();
     again.daily_target_hours = 7.0;
-    record_target_change(&next, &mut again, today, false);
+    record_target_change(&next, &mut again, today, true);
     assert_eq!(again.time.balance.target_history, next.time.balance.target_history);
     // Own weekday targets equal to the current ones change nothing.
     let mut own = next.clone();
     own.time.balance.weekday_hours = vec![6.0, 6.0, 6.0, 6.0, 6.0, 0.0, 0.0];
-    record_target_change(&next, &mut own, d(2026, 5, 4), false);
+    record_target_change(&next, &mut own, d(2026, 5, 4), true);
     assert_eq!(own.time.balance.target_history.len(), 1);
     // A later change adds a period; the settings page cannot add one, only clear them.
     let mut later = own.clone();
     later.time.balance.weekday_hours = vec![8.0, 8.0, 8.0, 8.0, 4.0, 0.0, 0.0];
     later.time.balance.target_history.push(TargetPeriod { until: d(2030, 1, 1), minutes: vec![0; 7] });
-    record_target_change(&own, &mut later, d(2026, 6, 1), false);
+    record_target_change(&own, &mut later, d(2026, 6, 1), true);
     let h = &later.time.balance.target_history;
     assert_eq!(h.iter().map(|p| p.until).collect::<Vec<_>>(), [d(2026, 3, 31), d(2026, 5, 31)]);
     assert_eq!(h[1].minutes, [360, 360, 360, 360, 360, 0, 0]);
@@ -425,13 +425,18 @@ fn a_changed_target_counts_from_its_day_and_past_months_keep_theirs() {
     // „Für alle Tage übernehmen“: the page sends an empty history.
     let mut all = later.clone();
     all.time.balance.target_history.clear();
-    record_target_change(&later, &mut all, d(2026, 6, 1), false);
+    record_target_change(&later, &mut all, d(2026, 6, 1), true);
     assert!(all.time.balance.target_history.is_empty());
     assert_eq!(weekday_minutes(&all, d(2026, 3, 2)), 480, "a Monday in March: the current target");
-    // The first setup sets the starting point: nothing recorded.
+    // The past is kept once something is booked before today, never in the first setup.
+    let tz = chrono::FixedOffset::east_opt(7200).unwrap();
+    assert!(keeps_past(&db, today, &tz, false).unwrap());
+    assert!(!keeps_past(&db, today, &tz, true).unwrap(), "the first setup");
+    assert!(!keeps_past(&db, d(2026, 1, 1), &tz, false).unwrap(), "nothing booked before 1 January");
+    // Without a past to keep (the setup, nothing booked) the target is set: nothing recorded.
     let mut setup = stored.clone();
     setup.daily_target_hours = 7.5;
-    record_target_change(&stored, &mut setup, today, true);
+    record_target_change(&stored, &mut setup, today, false);
     assert!(setup.time.balance.target_history.is_empty());
     // Normalized: sorted, a broken entry dropped.
     let mut n = later.time.balance.clone();

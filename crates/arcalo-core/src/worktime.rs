@@ -259,16 +259,17 @@ pub fn current_week_minutes(settings: &Settings) -> [i64; 7] {
 /// A save of the settings from `stored` to `next` on `today`: when the target changed, the days
 /// up to yesterday keep the target they had, so the balance of past months stays as it was
 /// (the new target counts from today on). A second change on the same day keeps the target of
-/// before the first. The first setup (`in_setup`) records nothing: the target chosen there is
-/// the target from the start. The history can only be cleared from the settings page („Für
-/// alle Tage übernehmen“: a shorter list than stored), never extended by it.
-pub fn record_target_change(stored: &Settings, next: &mut Settings, today: NaiveDate, in_setup: bool) {
+/// before the first. Without `keep_past` ([`keeps_past`]: the first setup, nothing booked
+/// before today) nothing is recorded: the target chosen then is the target from the start. The
+/// history can only be cleared from the settings page („Für alle Tage übernehmen“: a shorter
+/// list than stored), never extended by it.
+pub fn record_target_change(stored: &Settings, next: &mut Settings, today: NaiveDate, keep_past: bool) {
     let kept = &stored.time.balance.target_history;
     if next.time.balance.target_history.len() >= kept.len() {
         next.time.balance.target_history = kept.clone();
     }
     let before = current_week_minutes(stored);
-    if in_setup || before == current_week_minutes(next) {
+    if !keep_past || before == current_week_minutes(next) {
         return;
     }
     let Some(until) = today.pred_opt() else { return };
@@ -277,6 +278,21 @@ pub fn record_target_change(stored: &Settings, next: &mut Settings, today: Naive
         return;
     }
     history.push(TargetPeriod { until, minutes: before.to_vec() });
+}
+
+/// Whether a change of the target on `today` leaves the days before with their target: not in
+/// the first setup (`in_setup`) and only when something is booked before today (a workspace
+/// without bookings has no past to keep; its target is set, not changed).
+pub fn keeps_past<Tz: TimeZone>(db: &Database, today: NaiveDate, tz: &Tz, in_setup: bool) -> Result<bool> {
+    if in_setup {
+        return Ok(false);
+    }
+    let start = crate::feed::day_start(today, tz);
+    Ok(db.conn().query_row(
+        "SELECT EXISTS(SELECT 1 FROM time_entries WHERE start_time < ?1)",
+        [crate::db::ts(start)],
+        |r| r.get(0),
+    )?)
 }
 
 /// Holidays by date.
