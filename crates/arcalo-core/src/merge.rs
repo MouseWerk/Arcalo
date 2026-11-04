@@ -598,7 +598,7 @@ mod tests {
         for (n, line) in base.lines().enumerate() {
             grown.push_str(&line.replace("Eintrag 0 mit", "Eintrag 0 (dort) mit"));
             grown.push('\n');
-            if n == 10_002 {
+            if n == 15_002 {
                 grown.extend((0..3_000).map(|i| format!("- Neu {i}\n")));
             }
         }
