@@ -1,7 +1,7 @@
 // q124 round 2, H1: mixed content (lists with tasks, a table, code with tabs, a callout, a quote,
 // links, text in other scripts) copied or cut from one note and pasted into another arrives as the
 // same Markdown, and pasted back where it was cut gives the first note again. (A line break inside
-// a paragraph comes back as a hard break, `  ` at the line's end: R2A low in r2-editor-export.md.)
+// a paragraph comes back as a hard break, `  ` at the line's end: R2A-11 in r2-editor-export.md.)
 
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";

@@ -186,7 +186,7 @@ function editAndSave(md: string, needle: string, text: string): string {
   return out;
 }
 
-// R2A-1..R2A-5 (docs/quality/q124/r2-editor-export.md): an edit in a list rewrote the whole list
+// R2A-1..R2A-6 (docs/quality/q124/r2-editor-export.md): an edit in a list rewrote the whole list
 // from a document that had read it wrong, or wrote blocks inside items so that they left the item.
 describe("an edited list keeps its blocks", () => {
   it("code under a numbered item keeps its indentation (it gained a space per save)", () => {
