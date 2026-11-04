@@ -1415,6 +1415,8 @@ mod tests {
                 parse(&cal(&body), (from, to), &local, ALL).unwrap().iter().map(|e| (e.start, e.end)).collect();
             have.sort();
             assert_eq!(have, want, "seed {seed}: window {from} – {to}\n{body}");
+            total += want.len();
         }
+        assert!(total > 1000, "the cases have occurrences: {total}");
     }
 }
