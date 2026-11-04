@@ -201,6 +201,9 @@ fn holidays_absences_and_targets_per_weekday() {
         assert_eq!(r.days[3].holiday.as_deref(), Some("Ascension Day"));
         let md = report_markdown(&r, &Berlin, None);
         assert!(md.contains("| Day | Booked | Target | Difference |"), "{md}");
+        // Day and month in the order of the date format (German by default, R4D-4).
+        assert!(md.contains("| Thu 14.05. (Ascension Day) |"), "{md}");
+        let md = crate::i18n::with_date_format(crate::prefs::DateFormat::EnUs, || report_markdown(&r, &Berlin, None));
         assert!(md.contains("| Thu 05/14 (Ascension Day) |"), "{md}");
     });
 }
