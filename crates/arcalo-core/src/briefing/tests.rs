@@ -298,6 +298,16 @@ fn the_whole_briefing_from_the_stores() {
     assert!(b.time.is_none());
     assert_eq!(b.jira.as_ref().unwrap().blocked_total, 1);
     assert!(b.private, "a #privat task keeps the text local");
+    // q124 R2D-2: a task without a marker on a page that is private (by its front matter tags or
+    // a marker elsewhere in its text) is text of that page as well.
+    db.save_page_content(p.id, "---\ntags: [privat]\n---\n- [ ] Arzt anrufen due:2026-10-02\n").unwrap();
+    let b = briefing(&db, today, &Berlin, &s, &sources, now).unwrap();
+    assert!(describe(&b, &Berlin).contains("Arzt anrufen"));
+    assert!(b.private, "a task of a page tagged private keeps the text local");
+    db.save_page_content(p.id, "Termine beim #privat Arzt\n\n- [ ] Arzt anrufen due:2026-10-02\n").unwrap();
+    assert!(briefing(&db, today, &Berlin, &s, &sources, now).unwrap().private, "a marker in the page's text");
+    db.save_page_content(p.id, "- [ ] Arzt anrufen due:2026-10-02\n").unwrap();
+    assert!(!briefing(&db, today, &Berlin, &s, &sources, now).unwrap().private, "a public task stays as it was");
 
     // The cached text of the day comes along; one of another day does not.
     let cached = BriefingSummary { date: today, text: "- Angebot".into(), model: "m".into(), at: now, local: false };

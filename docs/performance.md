@@ -27,7 +27,15 @@ ARCALO_BIG_DIR=/tmp/big ARCALO_BIG_SQL=queries.sql cargo test -p arcalo-core --t
 # start, pages, typing, views, IPC and memory. Build the UI and the app first
 # (`npm --prefix ui run build`, `cargo build -p arcalo --features custom-protocol`).
 cd e2e && ARCALO_APP=$PWD/../target/debug/arcalo node bench/bigworkspace.mjs after
+
+# The very large workspace (q124): 11,000 pages, a folder chain 40 deep, a note of 20,000 lines,
+# 50,000 bookings, 60,000 tasks; then the UI benchmark on it with its long note.
+ARCALO_HUGE_DIR=/tmp/huge cargo test -p arcalo-core --test bigworkspace huge_workspace -- --ignored --nocapture
+cd e2e && ARCALO_BIG_BASE=/tmp/huge BENCH_LARGE_TITLE="Sehr lange Notiz" BENCH_LARGE_END="Abschnitt 399" \
+  BENCH_LARGE_MIN_TEXT=40 ARCALO_APP=$PWD/../target/debug/arcalo node bench/bigworkspace.mjs huge
 ```
+
+The numbers of the very large workspace are in `docs/quality/q124/r2-search-ai-perf.md`.
 
 `e2e/lib/bigworkspace.js` builds the workspace on first use (cached in the temp folder,
 `ARCALO_BIG_BASE` to choose) and hands each run a fresh copy. The UI benchmark records times in

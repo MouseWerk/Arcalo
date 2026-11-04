@@ -501,8 +501,10 @@ pub fn build<Tz: TimeZone>(
     changed.sort_by(|a, b| b.3.cmp(&a.3));
     let mut notes = vec![];
     let mut decisions = vec![];
+    // The pages whose text goes into the report (decisions, noted risks, task texts): a private
+    // one (a marker in the text or among the tags, front matter included) keeps the summary local.
+    let mut used: Vec<i64> = changed.iter().map(|p| p.0).collect();
     for (id, title, content, updated) in &changed {
-        private |= marked(content);
         if notes.len() < MAX_ROWS {
             notes.push(ReportNote { page_id: *id, title: title.clone(), updated: updated.clone() });
         }
@@ -521,6 +523,9 @@ pub fn build<Tz: TimeZone>(
     for (id, title, _, _) in &pages {
         for t in db.list_tasks(&TaskFilter { status: TaskStatus::Open, page_id: Some(*id), ..Default::default() })? {
             let Some(due) = t.due.clone() else { continue };
+            if due <= horizon {
+                used.push(*id);
+            }
             if due < today_s {
                 risks.push(Risk {
                     kind: "overdue".into(),
@@ -568,6 +573,8 @@ pub fn build<Tz: TimeZone>(
             risks.push(Risk { kind: "noted".into(), text: format!("{} ({title})", clip(&r, 200)) });
         }
     }
+    used.dedup();
+    private |= !crate::ai::privacy::private_pages(db, used, &markers)?.is_empty();
     deadlines.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.text.cmp(&b.text)));
     deadlines.truncate(MAX_ROWS);
     risks.truncate(MAX_ROWS);

@@ -316,6 +316,12 @@ impl AiClient {
         self.checked(acc, req, header_cost, warnings)
     }
 
+    /// Whether `e` is the error of an empty answer ([`AiClient::checked`]), in either language:
+    /// a model that spends a short answer on thinking still answers.
+    pub fn is_empty_answer(e: &Error) -> bool {
+        matches!(e, Error::State(m) if m.starts_with("Leere Antwort des KI-Servers") || m.starts_with("Empty answer from the AI server"))
+    }
+
     /// The completion, or an error for an empty answer (nothing to show, nothing to bill).
     fn checked(
         &self,
@@ -642,10 +648,19 @@ mod tests {
             client.checked(acc, &req, None, vec![]).unwrap_err().to_string()
         };
         assert!(empty(Some("length")).contains("Leere Antwort des KI-Servers (Grund: length)"));
+        let error = |reason: Option<&str>| {
+            let mut acc = StreamAccumulator::new(StreamTimer::start_at(Instant::now()));
+            acc.finish_reason = reason.map(Into::into);
+            client.checked(acc, &req, None, vec![]).unwrap_err()
+        };
+        assert!(AiClient::is_empty_answer(&error(Some("length"))));
         crate::i18n::with_lang(crate::prefs::Language::En, || {
             assert!(empty(Some("length")).contains("Empty answer from the AI server (reason: length)"));
             assert!(empty(None).ends_with("Empty answer from the AI server"));
+            // q124 R2D-4: the provider test knows the English one too.
+            assert!(AiClient::is_empty_answer(&error(Some("length"))) && AiClient::is_empty_answer(&error(None)));
         });
+        assert!(!AiClient::is_empty_answer(&Error::State("Verbindungsfehler".into())));
         // A cancelled request may end without text.
         let mut acc = StreamAccumulator::new(StreamTimer::start_at(Instant::now()));
         acc.finish_reason = Some("cancelled".into());

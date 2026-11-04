@@ -586,3 +586,169 @@ fn semantic_search() {
         arcalo_core::semantic::search(&db, &mut index, "abstimmung", Some(&q), 30).unwrap()
     });
 }
+
+/// The very large workspace of q124 H8: the large workspace plus 5,000 pages (10,000 in all), a
+/// folder chain 40 levels deep, a note of 20,000 lines and 48,000 more bookings (50,000 in all).
+const HUGE_PAGES: usize = 5_000;
+const HUGE_DEPTH: usize = 40;
+const HUGE_NOTE_LINES: usize = 20_000;
+const HUGE_BOOKINGS: usize = 48_000;
+
+/// A note of `lines` lines like a long log: headings, paragraphs, lists, tasks, links and tags.
+fn huge_note(rng: &mut Rng, lines: usize) -> String {
+    let mut s = String::from("# Sehr lange Notiz\n");
+    for l in 1..lines {
+        let line = match l % 50 {
+            0 => format!("## Abschnitt {}", l / 50),
+            1 | 25 => String::new(),
+            10 => format!("- [ ] Punkt {l} {}", rng.words(4)),
+            20 => format!("Siehe [[{}]] #log{}", title(l % PAGES), l % 9),
+            n if n % 3 == 0 => format!("- {}", rng.words(6)),
+            _ => rng.words(9),
+        };
+        s.push_str(&line);
+        s.push('\n');
+    }
+    s
+}
+
+fn extend_huge(dir: &std::path::Path) {
+    let started = Instant::now();
+    let db = Database::open(dir.join(arcalo_core::datadir::DB_FILE)).unwrap();
+    let today = Utc::now().date_naive();
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    db.atomic(|| {
+        // 100 folders of 48 pages each; then a chain of folders 40 deep, five pages on every level.
+        let mut ids = Vec::with_capacity(HUGE_PAGES);
+        for f in 0..100 {
+            let folder = db.create_page(None, &format!("Archiv {f:03}"), None)?.id;
+            for k in 0..(HUGE_PAGES - HUGE_DEPTH * 5) / 100 {
+                let i = PAGES + f * 100 + k;
+                ids.push((db.create_page(Some(folder), &format!("Archivseite {f:03}-{k:02}"), None)?.id, i));
+            }
+        }
+        let mut parent = None;
+        for d in 0..HUGE_DEPTH {
+            let p = db.create_page(parent, &format!("Ebene {d:02}"), None)?.id;
+            for k in 0..5 {
+                ids.push((db.create_page(Some(p), &format!("Tiefe {d:02}-{k}"), None)?.id, PAGES * 2 + d * 5 + k));
+            }
+            parent = Some(p);
+        }
+        for (id, i) in &ids {
+            db.save_page(*id, &page_body(*i, &mut rng, today))?;
+        }
+        let long = db.create_page(None, "Sehr lange Notiz", None)?;
+        db.save_page(long.id, &huge_note(&mut rng, HUGE_NOTE_LINES))?;
+        Ok(())
+    })
+    .unwrap();
+    eprintln!("huge pages: {:.1?}", started.elapsed());
+    db.atomic(|| {
+        let wbs: Vec<i64> = db.list_netzplaene(None)?.iter().map(|n| n.id).collect();
+        // Spread over three years of workdays, about 60 a day.
+        let days: Vec<NaiveDate> = (0..3 * 365)
+            .map(|d| today - Duration::days(d))
+            .filter(|d| !matches!(d.weekday(), Weekday::Sat | Weekday::Sun))
+            .collect();
+        for k in 0..HUGE_BOOKINGS {
+            let date = days[k % days.len()];
+            let slot = (k / days.len()) as u32;
+            let start = Utc.from_utc_datetime(&date.and_hms_opt(6 + slot / 6, (slot % 6) * 10, 0).unwrap());
+            db.insert_time_entry(&NewTimeEntry {
+                netzplan_id: wbs[k % wbs.len()],
+                vorgang_nr: Some(format!("10{}0", k % 5)),
+                leistungsart: Some("DEV".into()),
+                start_time: start,
+                duration_minutes: 10,
+                description: rng.words(5),
+                source: EntrySource::Manual,
+                page_id: None,
+            })?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    eprintln!("huge bookings: {:.1?}", started.elapsed());
+}
+
+/// The very large workspace (`ARCALO_HUGE_DIR`): generated once from the large one, then the
+/// reads of the main views are timed.
+#[test]
+#[ignore = "generates a very large workspace; run explicitly (see the module docs)"]
+fn huge_workspace() {
+    let dir = PathBuf::from(std::env::var("ARCALO_HUGE_DIR").expect("ARCALO_HUGE_DIR"));
+    if !dir.join(arcalo_core::datadir::DB_FILE).exists() {
+        generate(&dir);
+        extend_huge(&dir);
+    }
+    let db = Database::open(dir.join(arcalo_core::datadir::DB_FILE)).unwrap();
+    let count = |sql: &str| db.conn().query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+    println!(
+        "core huge: {} pages, {} bookings, {} tasks",
+        count("SELECT count(*) FROM pages"),
+        count("SELECT count(*) FROM time_entries"),
+        count("SELECT count(*) FROM tasks")
+    );
+    let long = count("SELECT id FROM pages WHERE title = 'Sehr lange Notiz'");
+    let content: String = db.conn().query_row("SELECT content FROM pages WHERE id = ?1", [long], |r| r.get(0)).unwrap();
+    time("page_tree", 3, || db.page_tree().unwrap());
+    time("search 'abstimmung'", 3, || arcalo_core::search::search(&db, "abstimmung", 30).unwrap());
+    time("search 'tiefe'", 3, || arcalo_core::search::search(&db, "tiefe", 30).unwrap());
+    time("search 'punkt 1999'", 3, || arcalo_core::search::search(&db, "punkt 1999", 30).unwrap());
+    time("tasks open", 3, || db.list_tasks(&Default::default()).unwrap());
+    time("page_doc long note", 3, || db.page_doc(long).unwrap());
+    time("save long note unchanged", 3, || db.save_page(long, &content).unwrap());
+    let mut n = 0;
+    time("save long note, one line changed", 3, || {
+        n += 1;
+        db.save_page(long, &content.replacen("Abschnitt 200", &format!("Abschnitt 200 {n}"), 1)).unwrap()
+    });
+    let tl = chrono::Local;
+    let today = chrono::Local::now().date_naive();
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let t = db.load_settings().unwrap().thresholds;
+    let day = |d: NaiveDate| Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap());
+    let range = |from: NaiveDate, to: NaiveDate| arcalo_core::db::EntryFilter {
+        from: Some(day(from)),
+        to: Some(day(to)),
+        ..Default::default()
+    };
+    time("entries week", 3, || db.list_time_entries(&range(monday, monday + Duration::days(7))).unwrap());
+    time("entries year", 3, || db.list_time_entries(&range(today - Duration::days(366), today)).unwrap());
+    let year = db.list_time_entries(&range(today - Duration::days(366), today)).unwrap();
+    println!("core huge: {} bookings in the last year", year.len());
+    for format in ["sap_cats", "csv", "json"] {
+        let f = arcalo_core::export::ExportFormat::parse(format).unwrap();
+        time(&format!("export year {format}"), 3, || {
+            arcalo_core::export::export(&year, f, &Default::default()).unwrap()
+        });
+    }
+    time("time_summary year", 3, || {
+        arcalo_core::report::time_summary(&db, today - Duration::days(365), today, &tl).unwrap()
+    });
+    time("all_budgets", 3, || arcalo_core::tracking::all_budgets(&db, &t).unwrap());
+    let settings = db.load_settings().unwrap();
+    // The reviews of last week: the generator created and edited every page today.
+    let past = today - Duration::days(7);
+    time("week_review", 3, || {
+        arcalo_core::weekreview::week_review(&db, past, &tl, &settings, None, Utc::now()).unwrap()
+    });
+    let opts = arcalo_core::dayreview::ReviewOptions::from_settings(&settings, None, Utc::now());
+    time("day_review", 3, || arcalo_core::dayreview::day_review(&db, past, &tl, &opts).unwrap());
+    time("daily_overview 6 weeks", 3, || {
+        arcalo_core::calendar::daily_overview(&db, &Default::default(), monday, monday + Duration::days(41), &tl)
+            .unwrap()
+    });
+    let zone = arcalo_core::calsync::tz::Zone::Iana(chrono_tz::Europe::Berlin);
+    let opts = arcalo_core::weekplan::ProposeOptions { rest_of_today: false, sources: None };
+    time("week proposal", 3, || {
+        arcalo_core::weekplan::propose(&db, monday - Duration::days(7), Utc::now(), &zone, &opts).unwrap()
+    });
+    let sources: Vec<String> = (0..CALENDARS).map(|c| format!("ics:big{c}")).collect();
+    let week = db.calendar_events(day(monday), day(monday + Duration::days(7)), &sources).unwrap();
+    time(&format!("calendar_wbs_memory of {} appointments", week.len()), 3, || {
+        week.iter().filter(|e| db.calendar_wbs_memory(e).unwrap().is_some()).count()
+    });
+    time("search 'nicht' (in every booking text)", 3, || arcalo_core::search::search(&db, "nicht", 30).unwrap());
+}
