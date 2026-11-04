@@ -526,8 +526,24 @@ mod tests {
     #[test]
     fn random_rules_follow_their_definition() {
         let specs = [
-            "daily", "3d", "weekly", "2w", "mo,we,fr", "2w,tu,th", "sa,su", "monthly", "2m", "3m", "monthly,15",
-            "monthly,31", "monthly,30", "2m,29", "yearly", "2y", "yearly,15", "yearly,29",
+            "daily",
+            "3d",
+            "weekly",
+            "2w",
+            "mo,we,fr",
+            "2w,tu,th",
+            "sa,su",
+            "monthly",
+            "2m",
+            "3m",
+            "monthly,15",
+            "monthly,31",
+            "monthly,30",
+            "2m,29",
+            "yearly",
+            "2y",
+            "yearly,15",
+            "yearly,29",
         ];
         for seed in 1..=3000u64 {
             let mut rng = crate::testrng::Rng::new(seed);

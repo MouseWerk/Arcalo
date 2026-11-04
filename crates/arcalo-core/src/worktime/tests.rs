@@ -489,7 +489,8 @@ fn every_view_counts_the_same_minutes() {
             })
             .unwrap();
         }
-        let now = berlin.from_local_datetime(&(last + Duration::days(1)).and_hms_opt(9, 0, 0).unwrap()).unwrap().to_utc();
+        let now =
+            berlin.from_local_datetime(&(last + Duration::days(1)).and_hms_opt(9, 0, 0).unwrap()).unwrap().to_utc();
         let today = last + Duration::days(1);
 
         // The bookings by the local day of their start.
@@ -517,7 +518,8 @@ fn every_view_counts_the_same_minutes() {
         for w in 0..4 {
             let r = crate::weekreview::week_review(&db, monday + Duration::weeks(w), &berlin, &s, Some(vec![]), now)
                 .unwrap();
-            let days: i64 = (0..7).map(|i| by_day.get(&(monday + Duration::days(w * 7 + i))).copied().unwrap_or(0)).sum();
+            let days: i64 =
+                (0..7).map(|i| by_day.get(&(monday + Duration::days(w * 7 + i))).copied().unwrap_or(0)).sum();
             assert_eq!(r.time.booked_minutes, days, "seed {seed}: week {w}");
             weeks_booked += r.time.booked_minutes;
             weeks_target += r.time.target_minutes;
@@ -546,16 +548,17 @@ fn every_view_counts_the_same_minutes() {
         // The exports (in the computer's zone, as the app writes them).
         let mut local_days: BTreeMap<String, i64> = BTreeMap::new();
         for r in &rows {
-            *local_days.entry(r.entry.start_time.with_timezone(&chrono::Local).format("%Y%m%d").to_string()).or_default() +=
-                r.entry.duration_minutes.unwrap();
+            *local_days
+                .entry(r.entry.start_time.with_timezone(&chrono::Local).format("%Y%m%d").to_string())
+                .or_default() += r.entry.duration_minutes.unwrap();
         }
         let opts = ExportOptions { cats_decimal_point: true, ..Default::default() };
         let csv = export(&rows, ExportFormat::Csv, &opts).unwrap().content;
         let csv_total: i64 = csv.lines().skip(1).map(|l| l.split(',').nth(8).unwrap().parse::<i64>().unwrap()).sum();
         assert_eq!(csv_total, total, "seed {seed}: CSV");
-        let json: serde_json::Value = serde_json::from_str(&export(&rows, ExportFormat::Json, &opts).unwrap().content).unwrap();
-        let json_total: i64 =
-            json.as_array().unwrap().iter().map(|r| r["duration_minutes"].as_i64().unwrap()).sum();
+        let json: serde_json::Value =
+            serde_json::from_str(&export(&rows, ExportFormat::Json, &opts).unwrap().content).unwrap();
+        let json_total: i64 = json.as_array().unwrap().iter().map(|r| r["duration_minutes"].as_i64().unwrap()).sum();
         assert_eq!(json_total, total, "seed {seed}: JSON");
         let cats = export(&rows, ExportFormat::SapCats, &opts).unwrap().content;
         let header: Vec<&str> = cats.lines().next().unwrap().split(';').collect();
