@@ -417,10 +417,25 @@ function PageHeader({
   const s = useApp.getState;
   useEffect(() => setTitle(doc.title), [doc.title]);
 
+  // A title typed and the tab closed by key (Ctrl+W) before the field lost the focus: the field
+  // is gone without a blur, the page is renamed all the same.
+  const typed = useRef<{ id: number; old: string; title: string } | null>(null);
+  typed.current = title !== doc.title ? { id: doc.id, old: doc.title, title: title.trim() } : null;
+  const sent = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      const t = typed.current;
+      if (!t || !t.title || t.title === t.old || t.title === sent.current) return;
+      renamePageWithUndo(t.id, t.old, t.title).catch((e) => useApp.getState().error(tr("page.renameFailed"), e));
+    },
+    [],
+  );
+
   const commitTitle = async () => {
     setTitleHint(false);
     const t = title.trim();
     if (!t || t === doc.title) return setTitle(doc.title);
+    sent.current = t;
     try {
       // As in the tree: links follow, and the toast takes it back.
       await renamePageWithUndo(doc.id, doc.title, t);
