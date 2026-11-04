@@ -1371,12 +1371,16 @@ impl Database {
         Ok(n == 1)
     }
 
-    /// Records a posted worklog. The entry was deleted while it was being posted: the worklog
+    /// Records a posted worklog. An entry edited while it was being posted stays pending: the
+    /// worklog got the values from before the edit and is updated at the next run
+    /// ([`Self::worklog_changed`]). The entry was deleted while it was being posted: the worklog
     /// is queued for deletion too (no orphan in Jira), and its booking takes it back when it
     /// comes back ([`Self::issue_relink`]).
     pub fn worklog_posted(&self, entry_id: i64, worklog_id: &str) -> Result<()> {
         let n = self.conn().execute(
-            "UPDATE time_entry_issues SET worklog_state = 'posted', worklog_id = ?2, error = NULL, next_try = NULL WHERE entry_id = ?1",
+            "UPDATE time_entry_issues SET worklog_id = ?2, error = NULL, next_try = NULL,
+               worklog_state = CASE worklog_state WHEN 'pending' THEN 'pending' ELSE 'posted' END
+             WHERE entry_id = ?1",
             params![entry_id, worklog_id],
         )?;
         if n == 0 {
@@ -1433,12 +1437,27 @@ impl Database {
             .optional()?)
     }
 
-    /// The entry changed after its worklog was posted: the worklog is updated at the next run.
-    /// Returns whether one is due now.
+    /// The site of an entry's worklog that Jira has or may be getting right now (posted, or its
+    /// first post on its way), if any.
+    pub fn entry_worklog_site(&self, entry_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT site FROM time_entry_issues
+                 WHERE entry_id = ?1 AND (worklog_id IS NOT NULL OR worklog_state = 'posting')",
+                [entry_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The entry changed after its worklog was posted, or while it was being posted (that post
+    /// carries the values from before): the worklog is updated at the next run. Returns whether
+    /// one is due now.
     pub fn worklog_changed(&self, entry_id: i64) -> Result<bool> {
         let n = self.conn().execute(
             "UPDATE time_entry_issues SET worklog_state = 'pending', attempts = 0, next_try = NULL, error = NULL
-             WHERE entry_id = ?1 AND worklog_id IS NOT NULL",
+             WHERE entry_id = ?1 AND (worklog_id IS NOT NULL OR worklog_state = 'posting')",
             [entry_id],
         )?;
         Ok(n == 1)
@@ -1477,7 +1496,7 @@ impl Database {
         if !worklog_differs(before, after) {
             return Ok(false);
         }
-        let Some((site, _, _)) = self.entry_worklog(after.id)? else { return Ok(false) };
+        let Some(site) = self.entry_worklog_site(after.id)? else { return Ok(false) };
         Ok(logs_work(settings, &site) && self.worklog_changed(after.id)?)
     }
 

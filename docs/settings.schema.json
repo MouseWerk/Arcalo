@@ -327,6 +327,14 @@
           "description": "State for public holidays (`BY`, `NW`, …); empty: none.",
           "type": "string"
         },
+        "target_history": {
+          "default": [],
+          "description": "The targets before each change of the target (daily target, workdays or the target per weekday), oldest first: the days up to a change keep the target they had ([`record_target_change`]). Empty: the current target applies to every day.",
+          "items": {
+            "$ref": "#/definitions/TargetPeriod"
+          },
+          "type": "array"
+        },
         "vacation_days": {
           "default": 30.0,
           "description": "Vacation days per year.",
@@ -2103,6 +2111,29 @@
         }
       ]
     },
+    "TargetPeriod": {
+      "description": "The target per weekday that applied up to a change of the target.",
+      "properties": {
+        "minutes": {
+          "description": "Minutes Monday..Sunday.",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "until": {
+          "description": "The last day this target applied (the day before the change).",
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "minutes",
+        "until"
+      ],
+      "type": "object"
+    },
     "ThemeColors": {
       "description": "The main colors of a custom theme; the UI derives the remaining tokens (hover, strong borders, soft tints, shadows) from them.",
       "properties": {
@@ -2182,6 +2213,7 @@
             "opening_hours": 0.0,
             "start": null,
             "state": "",
+            "target_history": [],
             "vacation_days": 30.0,
             "weekday_hours": []
           },
@@ -3248,6 +3280,7 @@
           "opening_hours": 0.0,
           "start": null,
           "state": "",
+          "target_history": [],
           "vacation_days": 30.0,
           "weekday_hours": []
         },
@@ -3285,7 +3318,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 19,
+      "default": 20,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

@@ -1,10 +1,10 @@
 // Settings → Zeiterfassung → „Saldo und Urlaub“: target hours per weekday, start and opening
 // balance of the overtime balance, vacation days and the state for public holidays.
 
-import { Select, Switch } from "../../components/ui";
+import { Button, Select, Switch } from "../../components/ui";
 import { DateInput } from "../../components/DateInput";
 import { useT, type TKey } from "../../lib/i18n";
-import { weekdayLabels } from "../../lib/format";
+import { fmtDate, fmtDuration, weekdayLabels } from "../../lib/format";
 import type { BalancePrefs } from "../../lib/types";
 import { Group, NumberInput, Row, type SectionProps } from "./common";
 
@@ -24,6 +24,8 @@ export function BalancePrefGroup({ draft, update }: SectionProps) {
   const own = b.weekday_hours.length === 7;
   const targets = weekdayTargets(b, draft.daily_target_hours, draft.workdays);
   const labels = weekdayLabels(1);
+  // A change of the target counts from its day on; the last change before it is named here.
+  const earlier = b.target_history?.at(-1);
   return (
     <Group title={t("work.bp.title")} description={t("work.bp.desc")}>
       <Row label={t("work.bp.ownTargets")} description={t("work.bp.ownTargetsDesc")}>
@@ -39,6 +41,11 @@ export function BalancePrefGroup({ draft, update }: SectionProps) {
               </label>
             ))}
           </div>
+        </Row>
+      )}
+      {earlier && (
+        <Row label={t("work.bp.history")} description={t("work.bp.historyDesc", { date: fmtDate(`${earlier.until}T12:00:00`), hours: fmtDuration(earlier.minutes.reduce((a, m) => a + m, 0)) })}>
+          <Button onClick={() => set({ target_history: [] })}>{t("work.bp.historyAll")}</Button>
         </Row>
       )}
       <Row label={t("work.bp.start")} description={t("work.bp.startDesc")}>

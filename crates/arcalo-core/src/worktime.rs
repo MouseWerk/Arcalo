@@ -38,6 +38,20 @@ pub struct BalancePrefs {
     pub carry_over: f64,
     /// State for public holidays (`BY`, `NW`, …); empty: none.
     pub state: String,
+    /// The targets before each change of the target (daily target, workdays or the target per
+    /// weekday), oldest first: the days up to a change keep the target they had
+    /// ([`record_target_change`]). Empty: the current target applies to every day.
+    pub target_history: Vec<TargetPeriod>,
+}
+
+/// The target per weekday that applied up to a change of the target.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TargetPeriod {
+    /// The last day this target applied (the day before the change).
+    pub until: NaiveDate,
+    /// Minutes Monday..Sunday.
+    pub minutes: Vec<i64>,
 }
 
 impl Default for BalancePrefs {
@@ -49,6 +63,7 @@ impl Default for BalancePrefs {
             vacation_days: 30.0,
             carry_over: 0.0,
             state: String::new(),
+            target_history: vec![],
         }
     }
 }
@@ -71,6 +86,14 @@ impl BalancePrefs {
         if !holidays::is_state(&self.state) {
             self.state.clear();
         }
+        self.target_history.retain(|p| p.minutes.len() == 7);
+        for p in &mut self.target_history {
+            for m in &mut p.minutes {
+                *m = (*m).clamp(0, 24 * 60);
+            }
+        }
+        self.target_history.sort_by_key(|p| p.until);
+        self.target_history.dedup_by_key(|p| p.until);
         self
     }
 }
@@ -206,18 +229,70 @@ pub fn save_range(
 
 // ------------------------------------------------------------------ targets
 
-/// The target of `d`'s weekday in minutes (before holidays and absences).
+/// The target of `d`'s weekday in minutes (before holidays and absences): the target that
+/// applied on `d` (a day before a change of the target keeps its old one, see
+/// [`BalancePrefs::target_history`]).
 pub fn weekday_minutes(settings: &Settings, d: NaiveDate) -> i64 {
     let i = d.weekday().num_days_from_monday() as usize;
+    match settings.time.balance.target_history.iter().find(|p| d <= p.until) {
+        Some(p) => p.minutes.get(i).copied().unwrap_or(0),
+        None => current_week_minutes(settings)[i],
+    }
+}
+
+/// The current target Monday..Sunday in minutes: the own target per weekday, else the daily
+/// target on the workdays.
+pub fn current_week_minutes(settings: &Settings) -> [i64; 7] {
     let hours = &settings.time.balance.weekday_hours;
-    let h = if hours.len() == 7 {
-        hours[i]
-    } else if settings.workdays.contains(&(i as u32 + 1)) {
-        settings.daily_target_hours
-    } else {
-        0.0
-    };
-    (h.max(0.0) * 60.0).round() as i64
+    std::array::from_fn(|i| {
+        let h = if hours.len() == 7 {
+            hours[i]
+        } else if settings.workdays.contains(&(i as u32 + 1)) {
+            settings.daily_target_hours
+        } else {
+            0.0
+        };
+        (h.max(0.0) * 60.0).round() as i64
+    })
+}
+
+/// A save of the settings from `stored` to `next` on `today`: when the target changed, the days
+/// up to yesterday keep the target they had, so the balance of past months stays as it was
+/// (the new target counts from today on). A second change on the same day keeps the target of
+/// before the first. Without `keep_past` ([`keeps_past`]: the first setup, nothing booked
+/// before today) nothing is recorded: the target chosen then is the target from the start. The
+/// history can only be cleared from the settings page („Für alle Tage übernehmen“: a shorter
+/// list than stored), never extended by it.
+pub fn record_target_change(stored: &Settings, next: &mut Settings, today: NaiveDate, keep_past: bool) {
+    let kept = &stored.time.balance.target_history;
+    if next.time.balance.target_history.len() >= kept.len() {
+        next.time.balance.target_history = kept.clone();
+    }
+    let before = current_week_minutes(stored);
+    if !keep_past || before == current_week_minutes(next) {
+        return;
+    }
+    let Some(until) = today.pred_opt() else { return };
+    let history = &mut next.time.balance.target_history;
+    if history.last().is_some_and(|p| p.until >= until) {
+        return;
+    }
+    history.push(TargetPeriod { until, minutes: before.to_vec() });
+}
+
+/// Whether a change of the target on `today` leaves the days before with their target: not in
+/// the first setup (`in_setup`) and only when something is booked before today (a workspace
+/// without bookings has no past to keep; its target is set, not changed).
+pub fn keeps_past<Tz: TimeZone>(db: &Database, today: NaiveDate, tz: &Tz, in_setup: bool) -> Result<bool> {
+    if in_setup {
+        return Ok(false);
+    }
+    let start = crate::feed::day_start(today, tz);
+    Ok(db.conn().query_row(
+        "SELECT EXISTS(SELECT 1 FROM time_entries WHERE start_time < ?1)",
+        [crate::db::ts(start)],
+        |r| r.get(0),
+    )?)
 }
 
 /// Holidays by date.

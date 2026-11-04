@@ -407,7 +407,7 @@ function useWeekTargets(week: Date): { targets: number[]; off: Map<string, strin
     return () => void un.then((f) => f());
   }, []);
   // What the targets depend on besides the absences.
-  const rule = JSON.stringify([settings?.time?.balance?.state, settings?.daily_target_hours, settings?.workdays, settings?.time?.balance?.weekday_hours]);
+  const rule = JSON.stringify([settings?.time?.balance?.state, settings?.daily_target_hours, settings?.workdays, settings?.time?.balance?.weekday_hours, settings?.time?.balance?.target_history]);
   useEffect(() => {
     let live = true;
     const from = isoDay(week);
