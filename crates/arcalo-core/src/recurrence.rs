@@ -298,16 +298,17 @@ impl Recurrence {
                 let monday = d - Duration::days(wd.into());
                 monday.checked_add_signed(Duration::weeks(n.into()) + Duration::days(self.weekdays[0].into()))
             }
-            Unit::Month => {
-                // The chosen day may still lie ahead in this month (`monthly,15` due on the 10th).
+            Unit::Month | Unit::Year => {
+                // The chosen day may still lie ahead in this month (`monthly,15` or `yearly,15`
+                // due on the 10th).
                 if let Some(day) = self.month_day
                     && let Some(this) = add_months(d, 0, day.into()).filter(|this| *this > d)
                 {
                     return Some(this);
                 }
-                add_months(d, n, self.month_day.map_or(d.day(), u32::from))
+                let months = if self.unit == Unit::Year { n.checked_mul(12)? } else { n };
+                add_months(d, months, self.month_day.map_or(d.day(), u32::from))
             }
-            Unit::Year => add_months(d, n.checked_mul(12)?, self.month_day.map_or(d.day(), u32::from)),
         }
     }
 
@@ -485,6 +486,99 @@ mod tests {
             r("monthly").preview(Some(d("2026-01-31")), d("2026-01-20"), 3),
             [d("2026-02-28"), d("2026-03-31"), d("2026-04-30")]
         );
+    }
+
+    /// The occurrences of `rule` from `base` by its definition, written without `step`: the
+    /// day every `n` days or weeks, the chosen weekdays of every `n`th week (counted from the
+    /// base's week), the day of every `n`th month or year (a shorter month takes its last
+    /// day; a day still ahead in the base's month comes first).
+    fn reference(rule: &Recurrence, base: NaiveDate, until: NaiveDate) -> Vec<NaiveDate> {
+        let n = rule.interval as i64;
+        let monday = |x: NaiveDate| x - Duration::days(x.weekday().num_days_from_monday().into());
+        let day = rule.month_day.map_or(base.day(), u32::from);
+        let mut out = vec![];
+        let mut d = base + Duration::days(1);
+        while d <= until {
+            let ok = match rule.unit {
+                Unit::Day => (d - base).num_days() % n == 0,
+                Unit::Week if rule.weekdays.is_empty() => (d - base).num_days() % (7 * n) == 0,
+                Unit::Week => {
+                    (monday(d) - monday(base)).num_days() / 7 % n == 0
+                        && rule.weekdays.contains(&(d.weekday().num_days_from_monday() as u8))
+                }
+                Unit::Month | Unit::Year => {
+                    let step = if rule.unit == Unit::Year { 12 * n } else { n };
+                    let months = (d.year() - base.year()) as i64 * 12 + d.month() as i64 - base.month() as i64;
+                    months % step == 0 && add_months(d, 0, day) == Some(d)
+                }
+            };
+            if ok {
+                out.push(d);
+            }
+            d += Duration::days(1);
+        }
+        out
+    }
+
+    /// Random rules, due dates and days of ticking off: the next date is the first occurrence
+    /// after the day it was done (none skipped, never back in time), the end is kept, and the
+    /// preview is what ticking off one after the other writes.
+    #[test]
+    fn random_rules_follow_their_definition() {
+        let specs = [
+            "daily",
+            "3d",
+            "weekly",
+            "2w",
+            "mo,we,fr",
+            "2w,tu,th",
+            "sa,su",
+            "monthly",
+            "2m",
+            "3m",
+            "monthly,15",
+            "monthly,31",
+            "monthly,30",
+            "2m,29",
+            "yearly",
+            "2y",
+            "yearly,15",
+            "yearly,29",
+        ];
+        for seed in 1..=3000u64 {
+            let mut rng = crate::testrng::Rng::new(seed);
+            let mut rule = r(specs[rng.range(0, specs.len() as i64 - 1) as usize]);
+            let due = d("2024-01-01") + Duration::days(rng.range(0, 1500));
+            let done = due + Duration::days(rng.range(-40, 400));
+            if rng.chance(20) {
+                rule.until = Some((due + Duration::days(rng.range(0, 500))).format("%Y-%m-%d").to_string());
+            }
+            let end = rule.until.as_deref().map(d);
+            // The series as ticking off writes it: from the 29th to 31st its day is kept.
+            let written = rule.pinned(due).unwrap_or_else(|| rule.clone());
+            let all = reference(&written, due, d("2050-01-01"));
+            let want = all.iter().copied().find(|x| *x > done).filter(|x| end.is_none_or(|u| *x <= u));
+            assert_eq!(rule.next_due(Some(due), done), want, "seed {seed}: {} due {due} done {done}", rule.tokens());
+
+            // Ticked off on each due date: the preview's dates.
+            let preview = rule.preview(Some(due), due, 6);
+            let mut cur = due;
+            let mut line = rule.clone();
+            let mut ticks = vec![];
+            while ticks.len() < 6 {
+                if let Some(p) = line.pinned(cur) {
+                    line = p;
+                }
+                let Some(next) = line.next_due(Some(cur), cur) else { break };
+                assert!(next > cur, "seed {seed}: never back in time");
+                ticks.push(next);
+                cur = next;
+            }
+            assert_eq!(preview, ticks, "seed {seed}: {} from {due}", rule.tokens());
+            let mut by_def: Vec<NaiveDate> = all.iter().copied().filter(|x| end.is_none_or(|u| *x <= u)).collect();
+            by_def.truncate(6);
+            assert_eq!(preview, by_def, "seed {seed}: {} from {due}", rule.tokens());
+        }
     }
 
     #[test]

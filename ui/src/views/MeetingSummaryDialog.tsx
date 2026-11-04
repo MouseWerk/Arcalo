@@ -7,7 +7,7 @@ import { Check, Copy, FilePlus2, ListEnd, RotateCcw } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Button, Dialog } from "../components/ui";
-import { renderMarkdown } from "../lib/markdown";
+import { renderAiMarkdown } from "../lib/markdown";
 import { usd } from "../lib/format";
 import { bookingSuggestion, meetingSummaryInstruction, summaryPageContent, summaryPageTitle } from "../lib/aitext";
 import { useAiTransform } from "../lib/useAiTransform";
@@ -150,7 +150,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
             <span />
           </div>
         ) : (
-          <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(result) }} />
+          <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderAiMarkdown(result) }} />
         )}
         {ai.cancelled && <div className="faint small">{t("assist.cancelled")}</div>}
       </div>

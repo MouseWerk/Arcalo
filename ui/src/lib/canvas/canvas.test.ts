@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { copyPayload, pastePayload, readPayload } from "./clipboard";
 import { alignNodes, anchor, arrowHead, autoSides, distributeNodes, edgePath, fitView, groupChildren, moveNodes, movingIds, nearestSide, resizeRect, snap, snapRect, visibleNodes, zoomAt } from "./geometry";
 import { CanvasHistory } from "./history";
+import { mergeCanvas } from "./merge";
 import { cardKind, colorValue, parseCanvas, patchNode, removeItems, serializeCanvas, withNode, type CanvasDoc, type CanvasNode } from "./model";
 
 const node = (id: string, x: number, y: number, width = 100, height = 50, extra: Partial<CanvasNode> = {}): CanvasNode => ({ id, type: "text", text: id, x, y, width, height, ...extra });
@@ -165,5 +166,52 @@ describe("canvas clipboard", () => {
     expect(e.label).toBe("x");
     const dup = pastePayload(doc, copyPayload(doc, ["c"]), { offset: { x: 20, y: 20 } });
     expect(dup.doc.nodes[dup.doc.nodes.length - 1]).toMatchObject({ x: 920, y: 20, text: "c" });
+  });
+});
+
+describe("canvas merge (the same board in two panes)", () => {
+  const doc = (nodes: CanvasNode[], edges: CanvasDoc["edges"] = []): CanvasDoc => ({ nodes, edges });
+  const ids = (d: CanvasDoc) => d.nodes.map((n) => n.id);
+
+  it("keeps a card deleted in the other pane deleted and a card added here", () => {
+    const base = doc([node("a", 0, 0), node("b", 100, 0)], [{ id: "e", fromNode: "a", toNode: "b" }]);
+    const theirs = removeItems(base, new Set(["a"]));
+    const mine = withNode(patchNode(base, "b", { x: 300 }), node("c", 500, 0));
+    const merged = mergeCanvas(base, mine, theirs);
+    expect(ids(merged)).toEqual(["b", "c"]);
+    expect(merged.nodes[0].x).toBe(300);
+    expect(merged.edges).toEqual([]);
+  });
+
+  it("takes what only the other side changed, keeps this side's version of a card both changed", () => {
+    const base = doc([node("a", 0, 0), node("b", 100, 0)]);
+    const theirs = withNode(patchNode(patchNode(base, "a", { text: "dort" }), "b", { x: 7 }), node("t", 9, 9));
+    const mine = patchNode(base, "b", { x: 42 });
+    const merged = mergeCanvas(base, mine, theirs);
+    expect(ids(merged)).toEqual(["a", "b", "t"]);
+    expect(merged.nodes.find((n) => n.id === "a")?.text).toBe("dort");
+    expect(merged.nodes.find((n) => n.id === "b")?.x).toBe(42);
+    // A card deleted here stays deleted when the other side did not touch it; one it changed comes back.
+    expect(ids(mergeCanvas(base, removeItems(base, new Set(["a"])), patchNode(base, "b", { x: 1 })))).toEqual(["b"]);
+    expect(ids(mergeCanvas(base, removeItems(base, new Set(["a"])), patchNode(base, "a", { x: 1 })))).toEqual(["a", "b"]);
+  });
+
+  it("puts cards added there after their neighbour (groups stay below the cards)", () => {
+    const base = doc([node("g", 0, 0, 400, 400, { type: "group" }), node("a", 10, 10)]);
+    const theirs = withNode(base, node("h", 500, 0, 400, 400, { type: "group" }));
+    expect(ids(mergeCanvas(base, withNode(base, node("m", 1, 1)), theirs))).toEqual(["g", "h", "a", "m"]);
+  });
+
+  it("history rebased onto the other pane's change: undo takes back only this pane's step", () => {
+    const h = new CanvasHistory();
+    const start = doc([node("a", 0, 0), node("b", 100, 0)]);
+    // This pane moved b; then the other pane deleted a and the board took that over.
+    h.record(serializeCanvas(start));
+    const moved = patchNode(start, "b", { x: 300 });
+    const next = removeItems(moved, new Set(["a"]));
+    h.rebase((state) => serializeCanvas(mergeCanvas(moved, parseCanvas(state), next)));
+    const back = parseCanvas(h.undo(serializeCanvas(next))!);
+    expect(ids(back)).toEqual(["b"]);
+    expect(back.nodes[0].x).toBe(100);
   });
 });

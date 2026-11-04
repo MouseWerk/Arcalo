@@ -81,7 +81,7 @@ fn switching_log_work_off_drops_the_waiting_worklogs_of_the_site() {
     store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
     let a = log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 a", now(), &cet(), &Thresholds::default()).unwrap();
     let b = log_slash_command(&db, "/zeit NP-8801/1020 30m PROJ-5 b", now(), &cet(), &Thresholds::default()).unwrap();
-    db.worklog_claim(b.entry.id).unwrap();
+    assert!(db.worklog_claim(b.entry.id).unwrap().is_some());
     db.worklog_posted(b.entry.id, "77").unwrap();
     assert_eq!(db.worklogs_due(now()).unwrap().len(), 1);
     assert_eq!(db.worklogs_cancel_site("acme").unwrap(), 1);
@@ -257,6 +257,20 @@ fn search_pages_continue_until_the_end() {
     let end = json!({ "startAt": 2, "total": 3, "issues": [cloud_issue()] });
     assert_eq!(parse_search_page(&end, SiteKind::Server, &PageAt::Start(2), "c", "https://a", None).1, None);
     assert_eq!(sprint_field_of(&json!([{ "id": "x" }, { "id": "customfield_7", "schema": { "custom": "com.pyxis.greenhopper.jira:gh-sprint" } }])).as_deref(), Some("customfield_7"));
+}
+
+#[test]
+fn the_worklogs_of_a_busy_issue_are_read_to_the_last_page() {
+    // A retry looks for its worklog among all of them: on an issue with more than one page
+    // (Cloud: 5000), the newest come last.
+    let w = json!({ "id": "1", "started": "2026-09-23T10:00:00.000+0000", "timeSpentSeconds": 60 });
+    let page = |start: u64, n: usize, total: u64| json!({ "startAt": start, "maxResults": 5000, "total": total, "worklogs": vec![w.clone(); n] });
+    assert_eq!(worklog_page_next(&page(0, 5000, 7200), 0), Some(5000));
+    assert_eq!(worklog_page_next(&page(5000, 2200, 7200), 5000), None);
+    // Server answers all at once; an empty page or no total ends it.
+    assert_eq!(worklog_page_next(&page(0, 30, 30), 0), None);
+    assert_eq!(worklog_page_next(&page(0, 0, 30), 0), None);
+    assert_eq!(worklog_page_next(&json!({ "worklogs": [w] }), 0), None);
 }
 
 #[test]
@@ -471,15 +485,15 @@ fn worklogs_are_never_posted_twice() {
         ("acme", "PROJ-5", 45, false)
     );
     // Two runs at once: only one gets it.
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     // A failure waits, then counts as a retry (look for the worklog first).
     db.worklog_failed(id, "offline", now()).unwrap();
     assert!(db.worklogs_due(now()).unwrap().is_empty(), "waits a minute");
     let later = now() + Duration::minutes(2);
     assert!(db.worklogs_due(later).unwrap()[0].retry);
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
-    assert!(!db.worklog_claim(id).unwrap(), "posted: never again");
+    assert!(db.worklog_claim(id).unwrap().is_none(), "posted: never again");
     assert!(db.worklogs_due(later + Duration::hours(5)).unwrap().is_empty());
     db.worklog_failed(id, "late error", later).unwrap();
     let e = &db.issue_entries(&[id]).unwrap()[0];
@@ -527,7 +541,7 @@ fn an_edit_while_its_worklog_is_being_posted_reaches_jira() {
     // The first post is on its way (45 min) when the user corrects the booking to 60 min.
     let due = db.worklogs_due(now()).unwrap();
     assert_eq!(due[0].work.minutes, 45);
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     assert!(edit(60), "the edit is due for Jira");
     db.worklog_posted(id, "10042").unwrap();
     let due = db.worklogs_due(now()).unwrap();
@@ -535,12 +549,12 @@ fn an_edit_while_its_worklog_is_being_posted_reaches_jira() {
     assert_eq!((due[0].worklog_id.as_deref(), due[0].work.minutes), (Some("10042"), 60));
 
     // The same while the update of a posted worklog is on its way.
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     assert!(edit(90));
     db.worklog_posted(id, "10042").unwrap();
     let due = db.worklogs_due(now()).unwrap();
     assert_eq!((due.len(), due[0].work.minutes), (1, 90));
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
     assert!(db.worklogs_due(now()).unwrap().is_empty(), "up to date: nothing more to send");
     assert!(!edit(90), "no change, nothing due");
@@ -759,7 +773,7 @@ fn a_posted_worklog_follows_edits_and_deletion() {
     let id = out.entry.id;
     assert!(db.entry_worklog(id).unwrap().is_none(), "not posted yet");
     assert!(!db.worklog_changed(id).unwrap(), "unposted: the post reads the entry as it is");
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
     assert_eq!(db.entry_worklog(id).unwrap(), Some(("acme".into(), "PROJ-5".into(), "10042".into())));
 
@@ -776,14 +790,14 @@ fn a_posted_worklog_follows_edits_and_deletion() {
         (due[0].worklog_id.as_deref(), due[0].work.minutes, due[0].work.comment.as_str(), due[0].retry),
         (Some("10042"), 60, "review and fixes", false)
     );
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     // A failed update waits and keeps the worklog id (never posted as a second worklog).
     db.worklog_failed(id, "offline", now()).unwrap();
     let e = &db.issue_entries(&[id]).unwrap()[0];
     assert_eq!((e.worklog_state.as_str(), e.worklog_id.as_deref()), ("failed", Some("10042")));
     db.worklog_retry_now(id).unwrap();
     assert_eq!(db.worklogs_due(now()).unwrap()[0].worklog_id.as_deref(), Some("10042"));
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
     assert!(db.worklogs_due(now() + Duration::hours(2)).unwrap().is_empty());
 
@@ -860,7 +874,7 @@ fn a_booking_that_comes_back_takes_its_worklog_back() {
     let out =
         log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 review", now(), &cet(), &Thresholds::default()).unwrap();
     let id = out.entry.id;
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
     // As `jira::delete_entry` does it (chip removed, the undo toast closed).
     let delete = |id: i64| {
@@ -882,7 +896,7 @@ fn a_booking_that_comes_back_takes_its_worklog_back() {
     // Brought up to date (not posted as a second worklog).
     let due = db.worklogs_due(now()).unwrap();
     assert_eq!((due[0].worklog_id.as_deref(), due[0].retry), (Some("10042"), false));
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
 
     // Back after Jira removed it: posted once more (`update_or_post`), the new id is stored.
@@ -891,7 +905,7 @@ fn a_booking_that_comes_back_takes_its_worklog_back() {
     db.worklog_deleted(del[0].id).unwrap();
     db.restore_time_entry(&before).unwrap();
     assert_eq!(db.worklogs_due(now()).unwrap()[0].worklog_id.as_deref(), Some("10042"));
-    assert!(db.worklog_claim(id).unwrap());
+    assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10043").unwrap();
     assert_eq!(db.entry_worklog(id).unwrap(), Some(("acme".into(), "PROJ-5".into(), "10043".into())));
 
@@ -900,7 +914,7 @@ fn a_booking_that_comes_back_takes_its_worklog_back() {
     let other =
         log_slash_command(&db, "/zeit NP-8801/1020 15m PROJ-5 call", now(), &cet(), &Thresholds::default()).unwrap();
     let oid = other.entry.id;
-    assert!(db.worklog_claim(oid).unwrap());
+    assert!(db.worklog_claim(oid).unwrap().is_some());
     assert!(!delete(oid), "nothing posted yet");
     db.worklog_posted(oid, "10050").unwrap();
     let del = db.worklog_deletes_due(now()).unwrap();
@@ -1073,4 +1087,298 @@ async fn the_client_loads_descriptions_only_for_an_opened_issue() {
     let get = lines.iter().find(|l| l.contains("/issue/PROJ-1")).expect("the issue");
     assert!(!fields(search).iter().any(|f| f == "description" || f == "comment"), "{search}");
     assert!(fields(get).iter().any(|f| f == "description") && fields(get).iter().any(|f| f == "comment"), "{get}");
+}
+
+// ------------------------------------------------------------------ worklog sync, property test
+
+/// Jira for the property test: its worklogs, and calls that may fail before they take effect
+/// (refused, offline) or after (a timeout: Jira stored it, the answer was lost).
+/// A worklog in [`FlakyJira`]: start, seconds and comment.
+type JiraWorklog = (DateTime<Utc>, i64, String);
+
+struct FlakyJira {
+    logs: std::cell::RefCell<BTreeMap<u64, JiraWorklog>>,
+    next_id: std::cell::Cell<u64>,
+    rng: std::cell::RefCell<crate::testrng::Rng>,
+    /// Percent of calls that fail (half of them after taking effect).
+    fail: std::cell::Cell<u64>,
+}
+
+enum Roll {
+    Ok,
+    Before,
+    After,
+}
+
+impl FlakyJira {
+    fn roll(&self) -> Roll {
+        let mut rng = self.rng.borrow_mut();
+        if !rng.chance(self.fail.get()) {
+            Roll::Ok
+        } else if rng.chance(50) {
+            Roll::Before
+        } else {
+            Roll::After
+        }
+    }
+    fn down() -> Error {
+        Error::Remote { status: 503, message: "down".into() }
+    }
+}
+
+impl IssueProvider for FlakyJira {
+    fn site(&self) -> &str {
+        "acme"
+    }
+    async fn whoami(&self) -> Result<Account> {
+        match self.roll() {
+            Roll::Ok => Ok(Account { id: "me".into(), ..Default::default() }),
+            _ => Err(Self::down()),
+        }
+    }
+    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<Issue>> {
+        Ok(vec![])
+    }
+    async fn get(&self, key: &str) -> Result<Issue> {
+        Err(Error::not_found("issue", key))
+    }
+    async fn projects(&self) -> Result<Vec<RemoteProject>> {
+        Ok(vec![])
+    }
+    async fn create(&self, _new: &NewIssue) -> Result<String> {
+        Ok("PROJ-9".into())
+    }
+    async fn comment(&self, _key: &str, _body: &str) -> Result<()> {
+        Ok(())
+    }
+    async fn transition(&self, _key: &str, to: &str) -> Result<String> {
+        Ok(to.into())
+    }
+    async fn log_work(&self, work: &WorkLog) -> Result<String> {
+        let roll = self.roll();
+        if matches!(roll, Roll::Before) {
+            return Err(Self::down());
+        }
+        let id = self.next_id.get() + 1;
+        self.next_id.set(id);
+        self.logs.borrow_mut().insert(id, (work.started, worklog_seconds(work.minutes), work.comment.clone()));
+        match roll {
+            Roll::Ok => Ok(id.to_string()),
+            _ => Err(Error::State("timeout".into())),
+        }
+    }
+    async fn worklogs(&self, _key: &str) -> Result<Vec<RemoteWorklog>> {
+        match self.roll() {
+            Roll::Ok => Ok(self
+                .logs
+                .borrow()
+                .iter()
+                .map(|(id, (started, seconds, _))| RemoteWorklog {
+                    id: id.to_string(),
+                    started: *started,
+                    seconds: *seconds,
+                    author: "me".into(),
+                })
+                .collect()),
+            _ => Err(Self::down()),
+        }
+    }
+    async fn update_work(&self, id: &str, work: &WorkLog) -> Result<()> {
+        let id: u64 = id.parse().unwrap();
+        let roll = self.roll();
+        if matches!(roll, Roll::Before) {
+            return Err(Self::down());
+        }
+        let mut logs = self.logs.borrow_mut();
+        let Some(w) = logs.get_mut(&id) else { return Err(Error::Remote { status: 404, message: String::new() }) };
+        *w = (work.started, worklog_seconds(work.minutes), work.comment.trim().to_owned());
+        match roll {
+            Roll::Ok => Ok(()),
+            _ => Err(Error::State("timeout".into())),
+        }
+    }
+    async fn delete_work(&self, _key: &str, id: &str) -> Result<()> {
+        let roll = self.roll();
+        if matches!(roll, Roll::Before) {
+            return Err(Self::down());
+        }
+        // A worklog that is gone already counts as deleted (as the client takes a 404).
+        self.logs.borrow_mut().remove(&id.parse().unwrap());
+        match roll {
+            Roll::Ok => Ok(()),
+            _ => Err(Error::State("timeout".into())),
+        }
+    }
+    async fn sprint(&self, _project: &str) -> Result<Option<Sprint>> {
+        Ok(None)
+    }
+}
+
+/// Bookings with an issue key, edited, deleted and restored at random moments (also while their
+/// worklog is on its way), against a Jira whose calls fail before or after taking effect, and an
+/// app that stops in the middle of a run. Once Jira answers again and the runner is done, Jira
+/// has exactly one worklog per booking with the booking's start, length and comment: none
+/// posted twice, none left behind by a deleted booking, no edit lost.
+#[test]
+fn worklog_sync_never_posts_twice_or_loses_an_edit() {
+    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    for seed in 1..=200u64 {
+        let mut rng = crate::testrng::Rng::new(seed);
+        let db = setup();
+        let mut s = db.load_settings().unwrap();
+        s.time.enabled = true;
+        s.jira.sites.push(JiraSite {
+            id: "acme".into(),
+            name: "Acme".into(),
+            url: "https://acme.atlassian.net".into(),
+            enabled: true,
+            log_work: true,
+            ..Default::default()
+        });
+        db.save_settings(&s).unwrap();
+        store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
+        let jira = FlakyJira {
+            logs: Default::default(),
+            next_id: Default::default(),
+            rng: std::cell::RefCell::new(crate::testrng::Rng::new(seed * 7919)),
+            fail: std::cell::Cell::new(rng.range(10, 60) as u64),
+        };
+        let mut live: Vec<i64> = vec![];
+        let mut deleted: Vec<TimeEntry> = vec![];
+        let mut clock = now();
+        let mut trace: Vec<String> = vec![];
+
+        // One user action: book, edit, delete or bring a deleted booking back.
+        let act = |rng: &mut crate::testrng::Rng,
+                   live: &mut Vec<i64>,
+                   deleted: &mut Vec<TimeEntry>,
+                   trace: &mut Vec<String>| {
+            match rng.range(0, 9) {
+                0..=2 => {
+                    // Starts on a few minutes only, so equal bookings happen.
+                    let at = now() - Duration::minutes(rng.range(0, 4) * 15);
+                    let minutes = *rng.pick(&[15, 30, 45]);
+                    let line = format!("/zeit NP-8801/1020 {minutes}m PROJ-5 b{}", rng.range(0, 2));
+                    let out = log_slash_command(&db, &line, at, &cet(), &Thresholds::default()).unwrap();
+                    trace.push(format!("book {} {minutes}m", out.entry.id));
+                    live.push(out.entry.id);
+                }
+                3..=6 if !live.is_empty() => {
+                    let id = *rng.pick(live);
+                    let before = db.time_entry(id).unwrap();
+                    let start = before.start_time + Duration::minutes(*rng.pick(&[0, 0, 15, -15]));
+                    let minutes = *rng.pick(&[15, 30, 45, 60]);
+                    let desc = format!("e{}", rng.range(0, 3));
+                    let after = db.update_time_entry(id, Some("1020"), None, start, minutes, &desc).unwrap();
+                    trace.push(format!("edit {id} {minutes}m {desc}"));
+                    db.booking_edited(&before, &after, &s).unwrap();
+                }
+                7..=8 if !live.is_empty() => {
+                    let i = rng.range(0, live.len() as i64 - 1) as usize;
+                    let id = live.remove(i);
+                    deleted.push(db.time_entry(id).unwrap());
+                    trace.push(format!("delete {id}"));
+                    db.delete_booking(id, false, &s).unwrap();
+                }
+                9 if !deleted.is_empty() => {
+                    let i = rng.range(0, deleted.len() as i64 - 1) as usize;
+                    // A booking whose id a later booking took (the newest one deleted, the next
+                    // one booked) is not brought back: its kept link is that booking's (R3D-L1).
+                    if deleted[i + 1..].iter().any(|d| d.id == deleted[i].id) || live.contains(&deleted[i].id) {
+                        return;
+                    }
+                    let e = deleted.remove(i);
+                    let back = db.restore_time_entry(&e).unwrap();
+                    trace.push(format!("restore {} as {}", e.id, back.id));
+                    live.push(back.id);
+                }
+                _ => {}
+            }
+        };
+
+        // A run as `jira::post_worklogs` does it; the user acts between its steps (an action
+        // between claim and answer is one made while the request is on its way), and the app
+        // may stop at any point.
+        let run = |rng: &mut crate::testrng::Rng,
+                   live: &mut Vec<i64>,
+                   deleted: &mut Vec<TimeEntry>,
+                   trace: &mut Vec<String>,
+                   clock: DateTime<Utc>,
+                   busy: bool| {
+            let mut account = None;
+            for listed in db.worklogs_due(clock).unwrap() {
+                if busy && rng.chance(30) {
+                    act(rng, live, deleted, trace);
+                }
+                let Some(p) = db.worklog_claim(listed.entry_id).unwrap() else { continue };
+                if busy && rng.chance(30) {
+                    act(rng, live, deleted, trace);
+                }
+                if busy && rng.chance(5) {
+                    trace.push("quit before sending".into());
+                    return;
+                }
+                let out = rt.block_on(send_worklog(&jira, &p, &mut account, |s| db.worklog_record(p.entry_id, s)));
+                trace.push(format!("sent {} -> {:?}", p.entry_id, out.as_ref().map_err(|e| e.to_string())));
+                if busy && rng.chance(30) {
+                    act(rng, live, deleted, trace);
+                }
+                if busy && rng.chance(5) {
+                    trace.push("quit before the answer".into());
+                    return;
+                }
+                match out {
+                    Ok(id) => db.worklog_posted(p.entry_id, &id).unwrap(),
+                    Err(e) => db.worklog_failed(p.entry_id, &e.to_string(), clock).unwrap(),
+                }
+            }
+            for d in db.worklog_deletes_due(clock).unwrap() {
+                if !db.worklog_delete_wanted(d.id).unwrap() {
+                    continue;
+                }
+                let out = rt.block_on(delete_worklog(&jira, &d, &mut account));
+                trace.push(format!(
+                    "delete worklog {:?} {:?} -> {:?}",
+                    d.worklog_id,
+                    d.sent.as_ref().map(|s| (s.started, s.minutes)),
+                    out.as_ref().map_err(|e| e.to_string())
+                ));
+                match out {
+                    Ok(()) => db.worklog_deleted(d.id).unwrap(),
+                    Err(e) => db.worklog_delete_failed(d.id, &e.to_string(), clock).unwrap(),
+                }
+            }
+        };
+
+        for _ in 0..rng.range(5, 25) {
+            if rng.chance(50) {
+                act(&mut rng, &mut live, &mut deleted, &mut trace);
+            } else {
+                clock += Duration::hours(2);
+                trace.push("run".into());
+                run(&mut rng, &mut live, &mut deleted, &mut trace, clock, true);
+            }
+        }
+        // Jira answers again: the runner catches up.
+        jira.fail.set(0);
+        for _ in 0..6 {
+            clock += Duration::hours(2);
+            run(&mut rng, &mut live, &mut deleted, &mut trace, clock, false);
+        }
+        assert!(db.worklogs_due(clock + Duration::days(1)).unwrap().is_empty(), "seed {seed}: all sent");
+
+        let mut want: Vec<(DateTime<Utc>, i64, String)> = live
+            .iter()
+            .map(|id| {
+                let e = db.time_entry(*id).unwrap();
+                (e.start_time, worklog_seconds(e.duration_minutes.unwrap()), e.description.trim().to_owned())
+            })
+            .collect();
+        let mut have: Vec<(DateTime<Utc>, i64, String)> = jira.logs.borrow().values().cloned().collect();
+        want.sort();
+        have.sort();
+        assert_eq!(have, want, "seed {seed}: Jira has one worklog per booking\n{}", trace.join("\n"));
+        let ids: HashSet<String> = db.issue_entries(&live).unwrap().into_iter().filter_map(|e| e.worklog_id).collect();
+        assert_eq!(ids.len(), live.len(), "seed {seed}: each booking knows its own worklog\n{}", trace.join("\n"));
+    }
 }

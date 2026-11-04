@@ -23,7 +23,7 @@ import { sourceColor } from "../lib/agenda";
 import { openDayReview, openTimesheetDay } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL } from "../lib/dayreview";
-import { renderMarkdown } from "../lib/markdown";
+import { renderAiMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import { useAi } from "../lib/aiswitch";
 import {
@@ -281,7 +281,7 @@ export function WeekReviewView() {
                       <span />
                     </div>
                   ) : (
-                    <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(ai.text) }} />
+                    <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderAiMarkdown(ai.text) }} />
                   )}
                   {summaryText && <div className="faint small rv-summary-hint">{t("week.summaryHint")}</div>}
                 </div>

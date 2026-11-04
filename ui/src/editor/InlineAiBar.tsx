@@ -8,7 +8,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ArrowUp, CornerDownLeft, RotateCcw, Replace, Sparkles, Square, X } from "lucide-react";
 import { Button, IconButton } from "../components/ui";
-import { renderMarkdown } from "../lib/markdown";
+import { renderAiMarkdown } from "../lib/markdown";
 import { writePresets, inlinePresets, transformInstruction, writeInstruction } from "../lib/aitext";
 import { useApp } from "../store/app";
 import { useAiTransform } from "../lib/useAiTransform";
@@ -239,7 +239,7 @@ export function InlineAiBar({
               <span />
             </div>
           ) : (
-            <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(ai.text) }} />
+            <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderAiMarkdown(ai.text) }} />
           )}
           {ai.cancelled && <div className="faint small">{t("assist.cancelled")}</div>}
         </div>

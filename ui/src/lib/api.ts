@@ -406,6 +406,8 @@ export const api = {
   captureReady: () => call<void>("capture_ready"),
   /** Meeting running now, recent captures, queued captures. */
   captureContext: () => call<T.CaptureContext>("capture_context"),
+  captureDraftGet: () => call<string | null>("capture_draft_get"),
+  captureDraftSet: (draft: string | null) => call<void>("capture_draft_set", { draft }),
   /** Takes the newest capture back (within 30 s). */
   captureUndo: () => call<T.RecentCapture>("capture_undo"),
   /** Hides the capture window and opens the page in the main window. */

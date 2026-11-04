@@ -23,7 +23,7 @@ import { briefingCounts, briefingSettings, missingLabel, shows } from "../lib/br
 import { openIssue } from "../lib/jiraActions";
 import { IssueOpenButtons } from "../components/issue/IssueOpenButtons";
 import { useTimeTracking } from "../lib/timetracking";
-import { renderMarkdown } from "../lib/markdown";
+import { renderAiMarkdown } from "../lib/markdown";
 import { useT, type TKey } from "../lib/i18n";
 import type { Briefing, BriefingIssue, BriefingMeeting, BriefingSection, BriefingSectionId, BriefingSummary, BriefingTask } from "../lib/types";
 import { SECTION_ICON, SECTION_LABEL, SectionsEditor, unavailableSections } from "./settings/BriefingSection";
@@ -282,7 +282,7 @@ function AiCard({ b, summary, writing, error, onWrite }: { b: Briefing; summary:
             <div className="faint small">{error}</div>
           </div>
         ) : text ? (
-          <div className="prose prose-chat bf-ai-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text.text) }} />
+          <div className="prose prose-chat bf-ai-text" dangerouslySetInnerHTML={{ __html: renderAiMarkdown(text.text) }} />
         ) : (
           <Button size="sm" icon={Sparkles} onClick={onWrite}>
             {t("brief.write")}

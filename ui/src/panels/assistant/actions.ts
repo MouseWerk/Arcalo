@@ -8,6 +8,7 @@ import { flushAllEditors, reloadEditors } from "../../editor/NoteEditor";
 import { useApp } from "../../store/app";
 import { currentPage, privateTag, useChat } from "../../store/chat";
 import { copyText as writeClipboard } from "../../lib/clipboard";
+import { withoutRemoteImages } from "../../lib/aitext";
 
 export function copyText(text: string, done?: () => void) {
   const s = useApp.getState();
@@ -24,7 +25,9 @@ export const answerTitle = (text: string) => text.split("\n").find((l) => l.trim
  * Inserts the answer into the open page: below the block with the cursor (one undo step), or at
  * the end when the page has no cursor; without an editor through the saved page.
  */
-export async function insertIntoPage(text: string) {
+export async function insertIntoPage(answer: string) {
+  // Remote images of the answer become links (they would load in the page at once).
+  const text = withoutRemoteImages(answer);
   const s = useApp.getState();
   const page = currentPage();
   if (!page) {
@@ -53,7 +56,8 @@ export async function insertIntoPage(text: string) {
 }
 
 /** „Als Seite speichern“ / „In neue Seite einfügen“ (weekly report with its title). */
-export async function saveAnswerAsPage(text: string, pageTitle?: string, priv = useChat.getState().private) {
+export async function saveAnswerAsPage(answer: string, pageTitle?: string, priv = useChat.getState().private) {
+  const text = withoutRemoteImages(answer);
   const s = useApp.getState();
   const content = priv ? `${text.trim()}\n\n${privateTag()}\n` : text;
   try {

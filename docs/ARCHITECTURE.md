@@ -449,7 +449,8 @@ page, on a blocking thread).
   to `<data dir>/capture-queue.json`; it is retried after 5 s and on every 30 s tick (with its original time), a page that
   vanished meanwhile falls back to the inbox, and the main window gets `capture://queued` / `capture://stored` (late) /
   `capture://failed` (with the text) toasts. `ARCALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
-  The draft (text and target) lives in `localStorage` (`arcalo.capture.draft`). The popup windows disable the native
+  The draft (text and target) lives in the database (meta `capture.draft`, `capture_draft_get`/`_set`, saved 400 ms after
+  typing), so an encrypted workspace keeps it encrypted; one an earlier version left in `localStorage` moves there. The popup windows disable the native
   drag-and-drop handler, so dropped files reach the page and are stored via `attachment_store`.
 - macOS popups: transparent through `macOSPrivateApi` (tauri feature `macos-private-api`; fine outside the Mac App
   Store) and without the system shadow (it is computed from the transparent content and can stay rectangular);
@@ -1084,7 +1085,9 @@ full app on a phone) it is a full-screen sheet; below 860 px the details go unde
 - Images live as files in `<data_dir>/attachments/`, named by the first 16 hex digits of their SHA-256 (same image, same file),
   and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `arcalo-asset:` URI scheme, which
   only answers plain file names inside that folder (no separators, `..` or hidden files; canonical path checked). Regular
-  `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes every
+  `![alt](https://…)` images of notes load directly (CSP `img-src https:`); text a model wrote never does: rendered answers
+  turn remote images into links and drop other remote sources (`withoutRemoteLoads`), and answers written into pages (UI
+  `withoutRemoteImages`, core `transform::clean_output`) carry links instead. Vault import copies images by name; export writes every
   referenced file (`attachment_manager::export_files`: embeds, `[[file.ext]]` and `[text](file)` links, drawing previews) to `attachments/`.
 - Vault import (`vault::plan_import` + `apply_import`, shell `vault_import`): the files are read and attachments copied
   off the main thread without the database lock (`vault://progress` events every 25 files, `vault_import_cancel` stops at
@@ -1119,7 +1122,10 @@ full app on a phone) it is a full-screen sheet; below 860 px the details go unde
     comes percent-encoded in the `x-arcalo-name` header. „Datei einfügen“ uses the dialog plugin and `attachment_import`, which
     copies by path (streamed, temp file + rename) without loading the file into the webview.
   - A click on a chip opens the file with the default app (`attachment_open`); programs and scripts (`attachments::is_executable`)
-    are only shown in the file manager, never started.
+    are only shown in the file manager, never started; so are help files, app packages, shell links and searches, Excel
+    add-ins, disk images and macOS Terminal/Automator files (a copy in the attachments folder has lost its download mark).
+  - Windows (`navigation.rs`): every window loads only the app's own addresses (`on_navigation`); a link the UI does not
+    handle and a new-window request open http(s)/mailto addresses outside (`ARCALO_TEST_OPEN_LOG` in tests), others are refused.
   - PDFs (`ui/src/lib/pdf.ts`, `PdfViewer.tsx`): pdf.js (`pdfjs-dist`, legacy build for older WebViews) is a lazy chunk loaded
     when a PDF card scrolls into view or the viewer opens. Parsing runs in one shared Web Worker: `scripts/pdfjs-assets.mjs`
     copies the worker to `public/pdfjs/pdf.worker.js` (a `.js` name, so every WebView serves it as JavaScript), and the CSP

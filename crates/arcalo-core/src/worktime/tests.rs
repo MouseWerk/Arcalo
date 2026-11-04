@@ -444,3 +444,136 @@ fn a_changed_target_counts_from_its_day_and_past_months_keep_theirs() {
     n.target_history.push(TargetPeriod { until: d(2020, 1, 1), minutes: vec![1, 2] });
     assert_eq!(n.normalized().target_history, later.time.balance.target_history);
 }
+
+/// Random bookings (over midnight and the clock changes in Europe/Berlin, on holidays and
+/// absence days, with a target change in between): every view counts the same minutes. The day
+/// and week review, the balance, the phone's „Heute“ and the per-day sums all go back to the
+/// bookings by the local day of their start; the exports (CSV, JSON, SAP CATS) carry the same
+/// total, CATS per day as the rounded day total.
+#[test]
+fn every_view_counts_the_same_minutes() {
+    use crate::export::{ExportFormat, ExportOptions, export};
+    let berlin = chrono_tz::Europe::Berlin;
+    for seed in 1..=40u64 {
+        let mut rng = crate::testrng::Rng::new(seed);
+        let (db, np, mut s) = world();
+        // Four weeks around a clock change (29 March or 25 October 2026).
+        let monday = if rng.chance(50) { d(2026, 3, 16) } else { d(2026, 10, 12) };
+        let last = monday + Duration::days(27);
+        s.time.balance.start = Some(monday);
+        if rng.chance(50) {
+            s.time.balance.target_history =
+                vec![TargetPeriod { until: monday + Duration::days(rng.range(0, 20)), minutes: vec![360; 7] }];
+        }
+        // The reviews read the stored settings, as in the app.
+        db.save_settings(&s).unwrap();
+        for _ in 0..rng.range(0, 4) {
+            let kind = *rng.pick(&[AbsenceKind::Vacation, AbsenceKind::Sick, AbsenceKind::Comp, AbsenceKind::Other]);
+            let day = monday + Duration::days(rng.range(0, 27));
+            db.absence_put(&Absence { date: day, kind, half: rng.chance(30), note: String::new() }).unwrap();
+        }
+        for _ in 0..rng.range(5, 60) {
+            let day = monday + Duration::days(rng.range(0, 27));
+            let wall = day.and_hms_opt(rng.range(0, 23) as u32, *rng.pick(&[0, 7, 15, 30, 45]), 0).unwrap();
+            let start = berlin.from_local_datetime(&wall).earliest().map(|t| t.to_utc());
+            let Some(start) = start else { continue };
+            db.insert_time_entry(&NewTimeEntry {
+                netzplan_id: np,
+                vorgang_nr: None,
+                leistungsart: None,
+                start_time: start,
+                duration_minutes: rng.range(1, 600),
+                description: format!("b{}", rng.range(0, 3)),
+                source: EntrySource::Manual,
+                page_id: None,
+            })
+            .unwrap();
+        }
+        let now =
+            berlin.from_local_datetime(&(last + Duration::days(1)).and_hms_opt(9, 0, 0).unwrap()).unwrap().to_utc();
+        let today = last + Duration::days(1);
+
+        // The bookings by the local day of their start.
+        let rows = db.list_time_entries(&crate::db::EntryFilter::default()).unwrap();
+        let mut by_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
+        for r in &rows {
+            *by_day.entry(r.entry.start_time.with_timezone(&berlin).date_naive()).or_default() +=
+                r.entry.duration_minutes.unwrap();
+        }
+        let total: i64 = by_day.values().sum();
+        let booked = booked_by_day(&db, &berlin, monday, last, now).unwrap();
+        assert_eq!(booked.values().sum::<i64>(), total, "seed {seed}: booked_by_day");
+        let targets = DayTargets::load(&db, &s, monday, last).unwrap();
+        let opts = crate::dayreview::ReviewOptions::from_settings(&s, Some(vec![]), now);
+        for i in 0..28 {
+            let day = monday + Duration::days(i);
+            let want = by_day.get(&day).copied().unwrap_or(0);
+            assert_eq!(booked.get(&day).copied().unwrap_or(0), want, "seed {seed}: {day}");
+            let r = crate::dayreview::day_review(&db, day, &berlin, &opts).unwrap();
+            assert_eq!(r.time.booked_minutes, want, "seed {seed}: day review {day}");
+            assert_eq!(r.time.target_minutes, targets.get(day), "seed {seed}: day review target {day}");
+        }
+        let mut weeks_booked = 0;
+        let mut weeks_target = 0;
+        for w in 0..4 {
+            let r = crate::weekreview::week_review(&db, monday + Duration::weeks(w), &berlin, &s, Some(vec![]), now)
+                .unwrap();
+            let days: i64 =
+                (0..7).map(|i| by_day.get(&(monday + Duration::days(w * 7 + i))).copied().unwrap_or(0)).sum();
+            assert_eq!(r.time.booked_minutes, days, "seed {seed}: week {w}");
+            weeks_booked += r.time.booked_minutes;
+            weeks_target += r.time.target_minutes;
+        }
+        assert_eq!(weeks_booked, total);
+        assert_eq!(weeks_target, targets.minutes().iter().sum::<i64>(), "seed {seed}: week targets");
+        // The balance up to yesterday (today has nothing booked yet).
+        let b = balance(&db, &s, &berlin, today, now, 4).unwrap();
+        assert_eq!(b.booked_minutes, total, "seed {seed}: balance booked");
+        let holidays = holiday_map(monday, last, &s.time.balance.state);
+        let absences: HashMap<NaiveDate, Absence> =
+            db.absences(monday, last).unwrap().into_iter().map(|a| (a.date, a)).collect();
+        let target: i64 = (0..28)
+            .map(|i| monday + Duration::days(i))
+            .map(|day| day_target(weekday_minutes(&s, day), holidays.contains_key(&day), absences.get(&day), true))
+            .sum();
+        assert_eq!(b.target_minutes, target, "seed {seed}: balance target");
+        assert_eq!(b.minutes, total - target, "seed {seed}: balance");
+        // The phone's „Heute“ on the last day of the bookings.
+        let evening = berlin.from_local_datetime(&last.and_hms_opt(23, 0, 0).unwrap()).unwrap().to_utc();
+        let t = crate::companion::today(&db, &s, evening, &berlin).unwrap();
+        assert_eq!(t.booked_minutes, by_day.get(&last).copied().unwrap_or(0), "seed {seed}: phone today");
+        let week: i64 = (0..7).map(|i| by_day.get(&(last - Duration::days(i))).copied().unwrap_or(0)).sum();
+        assert_eq!(t.week_minutes, week, "seed {seed}: phone week");
+
+        // The exports (in the computer's zone, as the app writes them).
+        let mut local_days: BTreeMap<String, i64> = BTreeMap::new();
+        for r in &rows {
+            *local_days
+                .entry(r.entry.start_time.with_timezone(&chrono::Local).format("%Y%m%d").to_string())
+                .or_default() += r.entry.duration_minutes.unwrap();
+        }
+        let opts = ExportOptions { cats_decimal_point: true, ..Default::default() };
+        let csv = export(&rows, ExportFormat::Csv, &opts).unwrap().content;
+        let csv_total: i64 = csv.lines().skip(1).map(|l| l.split(',').nth(8).unwrap().parse::<i64>().unwrap()).sum();
+        assert_eq!(csv_total, total, "seed {seed}: CSV");
+        let json: serde_json::Value =
+            serde_json::from_str(&export(&rows, ExportFormat::Json, &opts).unwrap().content).unwrap();
+        let json_total: i64 = json.as_array().unwrap().iter().map(|r| r["duration_minutes"].as_i64().unwrap()).sum();
+        assert_eq!(json_total, total, "seed {seed}: JSON");
+        let cats = export(&rows, ExportFormat::SapCats, &opts).unwrap().content;
+        let header: Vec<&str> = cats.lines().next().unwrap().split(';').collect();
+        let (date_col, hours_col) = (
+            header.iter().position(|c| *c == "WORKDATE").unwrap(),
+            header.iter().position(|c| *c == "CATSHOURS").unwrap(),
+        );
+        let mut cats_days: BTreeMap<String, i64> = BTreeMap::new();
+        for l in cats.lines().skip(1) {
+            let cols: Vec<&str> = l.split(';').collect();
+            let cents: i64 = cols[hours_col].replace('.', "").parse().unwrap();
+            *cats_days.entry(cols[date_col].to_owned()).or_default() += cents;
+        }
+        let want: BTreeMap<String, i64> =
+            local_days.iter().map(|(k, m)| (k.clone(), (m * 100 + 30).div_euclid(60))).collect();
+        assert_eq!(cats_days, want, "seed {seed}: CATS hours per day");
+    }
+}

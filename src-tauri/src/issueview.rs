@@ -363,9 +363,10 @@ pub async fn jira_full_worklog_add(
     })?;
     let minutes = (seconds + 30) / 60;
     let settings = state.settings();
-    let mut entry_id = None;
     if book {
         settings.require_time_tracking()?;
+    }
+    let book_it = || -> Result<i64> {
         let text = comment.split_whitespace().collect::<Vec<_>>().join(" ");
         let line = format!("/zeit {minutes}m {key} {text}");
         let out = {
@@ -374,24 +375,38 @@ pub async fn jira_full_worklog_add(
             let end = started + chrono::Duration::minutes(minutes);
             arcalo_core::tracking::log_slash_command_in(&db, line.trim(), end, &Local, &settings.thresholds, ctx)?
         };
-        entry_id = Some(out.entry.id);
         let _ = app.emit("data://entries", ());
-    }
+        Ok(out.entry.id)
+    };
+    let mut entry_id = None;
     let mut worklog_id = None;
     if book && issues::logs_work(&settings, &site.id) {
-        // The booking's worklog goes out now, so the view read below shows it.
+        entry_id = Some(book_it()?);
+        // The booking's worklog goes out now, so the view read below shows it (a failed post is
+        // retried by the runner, never posted twice).
         crate::jira::run_worklogs(&app).await;
     } else {
+        // Posted first: a post that fails books nothing, so trying again makes no second booking.
         let id = client(&state, &site)?
             .log_work(&WorkLog { key: key.clone(), started, minutes, comment: comment.trim().to_owned() })
             .await?;
-        if let Some(e) = entry_id {
+        if book {
+            let e = book_it()?;
             // The booking knows its worklog: it is never posted again.
             state.db().worklog_posted(e, &id)?;
+            entry_id = Some(e);
         }
         worklog_id = Some(id);
     }
-    let view = fetch(&app, &site, &key).await?;
+    // Done from here on: Jira not answering now shows the last copy with the error, never an
+    // error that invites logging the same work again.
+    let view = match fetch(&app, &site, &key).await {
+        Ok(v) => v,
+        Err(e) => match state.reader().issue_full_get(Some(&site.id), &key)? {
+            Some(c) => view_of(&state, c.issue, c.fetched_at, Some(e.to_string()))?,
+            None => return Err(e),
+        },
+    };
     Ok(WorklogResult { view, worklog_id, entry_id })
 }
 

@@ -522,6 +522,18 @@ pub fn parse_worklogs(v: &Value) -> Vec<RemoteWorklog> {
         .unwrap_or_default()
 }
 
+/// Worklogs asked for per request (Jira's own limit for this list).
+const WORKLOG_PAGE: usize = 5000;
+
+/// Where the next page of an issue's worklogs starts (`startAt` of the page plus its length,
+/// while that is below `total`); `None` after the last page.
+pub fn worklog_page_next(v: &Value, start: usize) -> Option<usize> {
+    let len = v["worklogs"].as_array().map_or(0, Vec::len);
+    let at = v["startAt"].as_u64().map_or(start, |s| s as usize);
+    let total = v["total"].as_u64()? as usize;
+    (len > 0 && at + len < total).then_some(at + len)
+}
+
 /// The first message of Jira's error body (`errorMessages`, then `errors`).
 fn jira_message(body: &str) -> Option<String> {
     let v: Value = serde_json::from_str(body).ok()?;
@@ -946,8 +958,19 @@ impl IssueProvider for JiraClient {
     }
 
     async fn worklogs(&self, key: &str) -> Result<Vec<RemoteWorklog>> {
-        let v = self.get_json(&api_url(&self.base, self.kind, &format!("issue/{key}/worklog"))).await?;
-        Ok(parse_worklogs(&v))
+        // All pages: an issue many people book on (meetings, support) has thousands, and the
+        // newest, the one a retry looks for, come last.
+        let mut out = vec![];
+        let mut start = 0;
+        loop {
+            let path = format!("issue/{key}/worklog?startAt={start}&maxResults={WORKLOG_PAGE}");
+            let v = self.get_json(&api_url(&self.base, self.kind, &path)).await?;
+            out.extend(parse_worklogs(&v));
+            match worklog_page_next(&v, start) {
+                Some(n) => start = n,
+                None => return Ok(out),
+            }
+        }
     }
 
     async fn update_work(&self, id: &str, work: &WorkLog) -> Result<()> {
