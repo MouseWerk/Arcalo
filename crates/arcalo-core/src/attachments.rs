@@ -121,11 +121,54 @@ const EXECUTABLE_EXTENSIONS: &[&str] = &[
     "pyw",
     "pl",
     "rb",
+    // Windows: help files with scripts, app packages and ClickOnce, shell links and searches,
+    // troubleshooting packs, Excel add-ins, scriptlets, disk images (a mounted image loses the
+    // download mark of its files), Java Web Start.
+    "chm",
+    "hlp",
+    "msix",
+    "msixbundle",
+    "appx",
+    "appxbundle",
+    "appinstaller",
+    "appref-ms",
+    "settingcontent-ms",
+    "library-ms",
+    "search-ms",
+    "searchconnector-ms",
+    "diagcab",
+    "xll",
+    "ws",
+    "wsc",
+    "sct",
+    "psd1",
+    "psc1",
+    "ps1xml",
+    "mst",
+    "ocx",
+    "website",
+    "iso",
+    "img",
+    "vhd",
+    "vhdx",
+    "jnlp",
+    // macOS: Terminal settings and Automator, installer packages, scripts, file locations.
+    "terminal",
+    "workflow",
+    "pkg",
+    "mpkg",
+    "scpt",
+    "scptd",
+    "applescript",
+    "fileloc",
 ];
 
 /// Whether opening `name` with the default app could run code.
+/// The whole extension counts (`appref-ms` has a dash, which [`file_extension`] does not take),
+/// and Windows ignores dots and spaces at the end of a name (`setup.exe.` is `setup.exe`).
 pub fn is_executable(name: &str) -> bool {
-    file_extension(name).is_some_and(|e| EXECUTABLE_EXTENSIONS.contains(&e.as_str()))
+    let name = name.trim_end_matches(['.', ' ']);
+    name.rsplit_once('.').is_some_and(|(_, e)| EXECUTABLE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
 fn ext_for_mime(mime: &str) -> Option<&'static str> {
@@ -535,6 +578,26 @@ mod tests {
         }
         assert!(is_executable("setup.EXE") && is_executable("start.bat") && is_executable("x.lnk"));
         assert!(!is_executable("Angebot.pdf") && !is_executable("daten.xlsx") && !is_executable("Notiz"));
+        // q124 R3C-3: help files, app packages, shell links, add-ins, disk images and the like run
+        // code too (a copy in the attachments folder has lost the download mark Windows warns by).
+        for name in [
+            "Rechnung.chm",
+            "a.appref-ms",
+            "b.settingcontent-ms",
+            "c.SEARCH-MS",
+            "d.diagcab",
+            "e.xll",
+            "f.msix",
+            "g.iso",
+            "h.vhdx",
+            "i.terminal",
+            "j.fileloc",
+            "k.exe.",
+            "l.bat ",
+        ] {
+            assert!(is_executable(name), "{name}");
+        }
+        assert!(!is_executable("Bericht.docx") && !is_executable("bild.png") && !is_executable("a.exe.pdf"));
     }
 
     #[test]

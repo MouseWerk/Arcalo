@@ -1,3 +1,4 @@
+import { Marked, type Token } from "marked";
 import { t, type TKey } from "./i18n";
 import { zeitCommand } from "../editor/zeit-suggest";
 // Prompts and text helpers of the inline AI bar and the meeting summary.
@@ -52,49 +53,59 @@ function unfence(t: string): string {
   return inner.trimEnd();
 }
 
-const REMOTE = /^\s*<?\s*(?:[a-z][a-z\d+.-]*:|\/\/)/i;
-const LOCAL = /^\s*<?\s*(?:data:|blob:|arcalo-asset:|http:\/\/arcalo-asset\.localhost\/)/i;
+const LOCAL = /^\s*(?:data:|blob:|arcalo-asset:|http:\/\/arcalo-asset\.localhost\/|#)/i;
+const remoteSrc = (url: string) => /^\s*(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(url) && !LOCAL.test(url);
+const lexer = new Marked({ gfm: true });
 
 /**
  * A model's answer before it goes into a page: an image from another server becomes a link to it
- * (`![a](https://…)` → `[a](https://…)`, raw `<img src="https://…">` too), outside code. Shown in a
- * page, the image would be fetched at once, and its address can carry what the model read (a
- * private note, steered by text in a mail, a Jira issue or a web page).
+ * (`![a](https://…)` → `[a](https://…)`, also as a reference or as raw `<img>`), outside code. Shown
+ * in a page, the image would be fetched at once, and its address can carry what the model read (a
+ * private note, steered by text in a mail, a Jira issue or a web page). The page's own Markdown
+ * parser finds the images, so every form it shows as an image is caught.
  */
 export function withoutRemoteImages(md: string): string {
-  if (!/!\[|<img/i.test(md)) return md;
-  let fence: string | null = null;
-  return md
-    .split("\n")
-    .map((line) => {
-      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-      if (f && (!fence || (f[1][0] === fence[0] && f[1].length >= fence.length))) {
-        fence = fence ? null : f[1];
-        return line;
+  if (!/!\[|<im/i.test(md)) return md;
+  const swaps: [string, string][] = [];
+  const walk = (tokens: Token[] | undefined) => {
+    for (const tok of tokens ?? []) {
+      if (tok.type === "image" && remoteSrc(tok.href)) {
+        const label = (tok.text.trim() || tok.href).replace(/[[\]]/g, "");
+        swaps.push([tok.raw, `[${label}](<${tok.href.replace(/[<>\s]/g, encodeURIComponent)}>)`]);
+        continue;
       }
-      if (fence) return line;
-      return line
-        .split(/(`+[^`]*`+)/)
-        .map((part, i) => (i % 2 ? part : unimage(part)))
-        .join("");
-    })
-    .join("\n");
+      if (tok.type === "html" && /<im(?:g|age)\b/i.test(tok.raw)) swaps.push([tok.raw, rawImages(tok.raw)]);
+      const t = tok as Token & { tokens?: Token[]; items?: { tokens: Token[] }[]; header?: { tokens: Token[] }[]; rows?: { tokens: Token[] }[][] };
+      walk(t.tokens);
+      for (const item of t.items ?? []) walk(item.tokens);
+      for (const cell of t.header ?? []) walk(cell.tokens);
+      for (const row of t.rows ?? []) for (const cell of row) walk(cell.tokens);
+    }
+  };
+  walk(lexer.lexer(md));
+  let out = md;
+  let from = 0;
+  for (const [raw, swap] of swaps) {
+    const at = out.indexOf(raw, from);
+    if (at < 0) continue;
+    out = out.slice(0, at) + swap + out.slice(at + raw.length);
+    from = at + swap.length;
+  }
+  return out;
 }
 
-const remoteSrc = (url: string) => REMOTE.test(url) && !LOCAL.test(url);
-
-function unimage(text: string): string {
-  return text
-    .replace(/!\[([^\]\n]*)\]\(\s*(<[^>\n]*>|[^\s)]+)([^)\n]*)\)/g, (m, alt: string, url: string, rest: string) => (remoteSrc(url) ? `[${alt.trim() || url.replace(/^<|>$/g, "")}](${url}${rest})` : m))
-    .replace(/<img\b[^>]*>/gi, (tag) => {
-      const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
-      const url = src ? (src[1] ?? src[2] ?? src[3] ?? "") : "";
-      if (!url || !remoteSrc(url)) return tag;
-      const alt = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
-      const label = (alt?.[1] ?? alt?.[2] ?? "").trim() || url;
-      return `[${label.replace(/[[\]]/g, "")}](<${url.replace(/[<>\s]/g, encodeURIComponent)}>)`;
-    });
+/** Raw `<img … src="remote">` (also `<image>`, which HTML reads as `<img>`) → `[alt](<remote>)`. */
+function rawImages(html: string): string {
+  return html.replace(/<im(?:g|age)\b[^>]*>/gi, (tag) => {
+    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+    const url = src ? (src[1] ?? src[2] ?? src[3] ?? "") : "";
+    if (!url || !remoteSrc(url)) return tag;
+    const alt = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+    const label = (alt?.[1] ?? alt?.[2] ?? "").trim() || url;
+    return `[${label.replace(/[[\]]/g, "")}](<${url.replace(/[<>\s]/g, encodeURIComponent)}>)`;
+  });
 }
+
 
 // ------------------------------------------------------------ meeting summary
 

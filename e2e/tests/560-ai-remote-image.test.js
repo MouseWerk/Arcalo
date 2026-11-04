@@ -76,7 +76,7 @@ test("a remote image in an answer is a link, not an image the WebView fetches", 
     { timeout: 10000, timeoutMsg: "no page saved" },
   );
   const doc = await app.invoke("page_get", { id: page.id });
-  assert.ok(doc.content.includes(`[Logo](${LEAK})`), doc.content);
+  assert.ok(doc.content.includes(`[Logo](<${LEAK}>)`), doc.content);
   assert.doesNotMatch(doc.content, /!\[[^\]]*\]\(https:|<img/i, doc.content);
   assert.deepEqual(await app.consoleErrors(), []);
 });

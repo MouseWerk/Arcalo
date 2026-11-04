@@ -71,14 +71,18 @@ describe("answers of a model load nothing from other servers", () => {
   });
 
   it("an answer put into a page carries no remote image", () => {
-    expect(withoutRemoteImages(`A ![Logo](${LEAK}) B`)).toBe(`A [Logo](${LEAK}) B`);
-    expect(withoutRemoteImages(`![](${LEAK})`)).toBe(`[${LEAK}](${LEAK})`);
+    expect(withoutRemoteImages(`A ![Logo](${LEAK}) B`)).toBe(`A [Logo](<${LEAK}>) B`);
+    expect(withoutRemoteImages(`![](${LEAK})`)).toBe(`[${LEAK}](<${LEAK}>)`);
+    // Every form the page shows as an image: nested brackets, references, <image> (read as <img>), in lists and tables.
+    const forms = `![[a]](${LEAK})\n\n- ![x][1] und ![y]\n\n| a |\n| - |\n| ![t](${LEAK}) |\n\n<image src="${LEAK}">\n\n[1]: ${LEAK}\n[Y]: <${LEAK}>`;
+    expect(renderMarkdown(withoutRemoteImages(forms))).not.toMatch(/<img/);
+    expect(renderMarkdown(forms)).toMatch(/<img/);
     expect(withoutRemoteImages(`<img alt="Logo" src="${LEAK}">`)).toBe(`[Logo](<${LEAK.replace(/ /g, "%20")}>)`);
     // Code, attachments and inline data stay as they are.
     const kept = "```md\n![x](https://example.com/a.png)\n```\n\n`![y](https://example.com/b.png)`\n\n![[foto.png]] ![z](data:image/png;base64,AA==) ![w](bild.png)";
     expect(withoutRemoteImages(kept)).toBe(kept);
     // The inline AI bar, the reviews and the meeting summary insert what `cleanAiMarkdown` gives.
-    expect(cleanAiMarkdown("```markdown\n# T\n\n![a](https://evil.example/x.png)\n```")).toBe("# T\n\n[a](https://evil.example/x.png)");
+    expect(cleanAiMarkdown("```markdown\n# T\n\n![a](https://evil.example/x.png)\n```")).toBe("# T\n\n[a](<https://evil.example/x.png>)");
     expect(renderMarkdown(withoutRemoteImages(`![a](${LEAK})`))).not.toContain("<img");
   });
 });
