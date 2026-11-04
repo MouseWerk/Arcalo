@@ -181,6 +181,15 @@ export interface OpenOpts {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/**
+ * A field of a tab about to close that has the focus (a title, a property, a table cell typed in)
+ * stores its value on blur: blurred first, since a closed tab's field goes without one (Ctrl+W).
+ */
+function blurClosing(tabIds: string[]) {
+  if (typeof document === "undefined") return;
+  const el = document.activeElement;
+  if (el instanceof HTMLElement && tabIds.some((id) => el.closest(`[id="tabpanel-${id}"]`))) el.blur();
+}
 const MAX_PANES = 3;
 const sameLoc = (a: Loc, b: Loc) => a.kind === b.kind && a.pageId === b.pageId && a.tag === b.tag;
 const locOf = (t: Tab): Loc => ({ kind: t.kind, pageId: t.pageId, tag: t.tag });
@@ -397,6 +406,7 @@ export const useApp = create<State>((set, get) => ({
     const { panes, activePaneId, paneSizes } = get();
     const pane = panes.find((p) => p.tabs.some((t) => t.id === id));
     if (!pane) return;
+    blurClosing([id]);
     const idx = pane.tabs.findIndex((t) => t.id === id);
     const tabs = pane.tabs.filter((t) => t.id !== id);
     const activeTabId = id === pane.activeTabId ? (tabs[Math.min(idx, tabs.length - 1)]?.id ?? "") : pane.activeTabId;
@@ -452,7 +462,9 @@ export const useApp = create<State>((set, get) => ({
         tabs = [...tabs.slice(0, at), tab, ...tabs.slice(at)];
         return { ...p, tabs, activeTabId: tab.id };
       }
-      const activeTabId = p.activeTabId === tabId ? (tabs[0]?.id ?? "") : p.activeTabId;
+      // The moved tab's neighbour shows next, as when a tab closes.
+      const was = p.tabs.findIndex((t) => t.id === tabId);
+      const activeTabId = p.activeTabId === tabId ? (tabs[Math.min(was, tabs.length - 1)]?.id ?? "") : p.activeTabId;
       return { ...p, tabs, activeTabId };
     });
     set(layoutPatch(next, toPaneId, paneSizes));
@@ -470,6 +482,7 @@ export const useApp = create<State>((set, get) => ({
     const { panes, paneSizes } = get();
     const pane = panes.find((p) => p.tabs.some((t) => t.id === tabId));
     if (!pane) return;
+    blurClosing(pane.tabs.filter((t) => t.id !== tabId && !t.pinned).map((t) => t.id));
     const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs: p.tabs.filter((t) => t.id === tabId || t.pinned), activeTabId: tabId } : p));
     set(layoutPatch(next, pane.id, paneSizes));
   },
@@ -477,6 +490,7 @@ export const useApp = create<State>((set, get) => ({
     const { panes, activePaneId, paneSizes } = get();
     const pane = panes.find((p) => p.id === (paneId ?? activePaneId));
     if (!pane) return;
+    blurClosing(pane.tabs.filter((t) => !t.pinned).map((t) => t.id));
     const tabs = pane.tabs.filter((t) => t.pinned);
     const activeTabId = tabs.some((t) => t.id === pane.activeTabId) ? pane.activeTabId : (tabs[tabs.length - 1]?.id ?? "");
     const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs, activeTabId } : p));

@@ -164,6 +164,20 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     });
   }, [pageId, sourceMode, loaded]);
 
+  // Title, icon and star as the tree has them: renamed or marked elsewhere (the sidebar, another
+  // pane, a table, an undo), the header follows.
+  const treeTitle = useApp((st) => st.pages.get(pageId)?.title);
+  const treeIcon = useApp((st) => st.pages.get(pageId)?.icon);
+  const treeFavorite = useApp((st) => st.pages.get(pageId)?.favorite);
+  useEffect(() => {
+    if (treeTitle === undefined) return;
+    setDoc((cur) =>
+      cur && cur.id === pageId && (cur.title !== treeTitle || cur.icon !== treeIcon || cur.favorite !== treeFavorite)
+        ? { ...cur, title: treeTitle, icon: treeIcon ?? null, favorite: !!treeFavorite }
+        : cur,
+    );
+  }, [pageId, treeTitle, treeIcon, treeFavorite, loaded]);
+
   const parentId = useApp((st) => st.pages.get(pageId)?.parent_id ?? null);
   const hasChildren = useApp((st) => (st.pages.get(pageId)?.children.length ?? 0) > 0);
   const parentTitle = useApp((st) => (parentId != null ? (st.pages.get(parentId)?.title ?? "") : ""));
