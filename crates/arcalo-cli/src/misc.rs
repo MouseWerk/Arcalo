@@ -364,7 +364,11 @@ pub fn settings(ctx: &Ctx, cmd: SettingsCmd) -> Outcome<()> {
                 let stored = db.load_settings()?;
                 let mut s = Settings::for_save(all, &stored)?;
                 s.normalize();
-                let s = s.finish_save(&stored, |t| db.page_by_title(t).ok().flatten().is_some())?;
+                let mut s = s.finish_save(&stored, |t| db.page_by_title(t).ok().flatten().is_some())?;
+                let today = Local::now().date_naive();
+                let in_setup = db.onboarding_status(false).is_ok_and(|o| o.intro);
+                let keep_past = arcalo_core::worktime::keeps_past(db, today, &Local, in_setup)?;
+                arcalo_core::worktime::record_target_change(&stored, &mut s, today, keep_past);
                 db.save_settings(&s)?;
                 Ok((s, Change { settings: true, ..Default::default() }))
             })?;

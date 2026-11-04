@@ -44,7 +44,7 @@ pub struct Today {
     pub booked_minutes: i64,
     /// The day's target (Settings → Zeiterfassung, holidays and absences included).
     pub target_minutes: i64,
-    /// Booked this week (Monday to today).
+    /// Booked this week (its first day as set, Monday or Sunday, to today).
     pub week_minutes: i64,
     pub timer: Option<RunningTimer>,
     /// Open tasks due today or earlier, the oldest first.
@@ -62,8 +62,13 @@ pub const REFERENCE_AT: &str = "companion.reference_at";
 /// The start screen's data for the local day of `now` in `tz`.
 pub fn today<Tz: TimeZone>(db: &Database, settings: &Settings, now: DateTime<Utc>, tz: &Tz) -> Result<Today> {
     let date = now.with_timezone(tz).date_naive();
-    let monday = date - Duration::days(i64::from(date.weekday().num_days_from_monday()));
-    let booked = crate::worktime::booked_by_day(db, tz, monday, date, now)?;
+    // The week as the „Zeit“ tab and the desktop show it (Settings → Zeiterfassung → week start).
+    let into_week = match settings.time.week_start {
+        crate::prefs::WeekStart::Sunday => date.weekday().num_days_from_sunday(),
+        crate::prefs::WeekStart::Monday => date.weekday().num_days_from_monday(),
+    };
+    let week_start = date - Duration::days(i64::from(into_week));
+    let booked = crate::worktime::booked_by_day(db, tz, week_start, date, now)?;
     let booked_minutes = booked.get(&date).copied().unwrap_or(0);
     let week_minutes = booked.values().sum();
     let target_minutes = crate::worktime::gap_target(db, settings, date)?;
@@ -550,6 +555,27 @@ mod tests {
         assert_eq!(t.timer.as_ref().map(|r| r.reference.as_str()), Some("NP-8801/1020"));
         assert_eq!(t.timer.as_ref().map(|r| r.worked_minutes), Some(30));
         assert_eq!(t.booked_minutes, 150);
+    }
+
+    #[test]
+    fn the_week_on_today_starts_on_the_day_the_settings_say() {
+        let db = Database::open_in_memory().unwrap();
+        wbs(&db);
+        let t = Thresholds::default();
+        // Sunday 11 October 2026; bookings on Friday the 9th and on the Sunday itself.
+        let now = at("2026-10-11T15:00:00+02:00");
+        book(&db, "/zeit NP-8801 3h Freitag @2026-10-09", now, &tz(), &t).unwrap();
+        book(&db, "/zeit NP-8801 1h Sonntag", now, &tz(), &t).unwrap();
+        let mut settings = Settings::default();
+        let monday = today(&db, &settings, now, &tz()).unwrap();
+        assert_eq!((monday.booked_minutes, monday.week_minutes), (60, 240), "Monday 5 to Sunday 11");
+        // A week from Sunday: the week is that Sunday alone, as the „Zeit“ tab lists it.
+        settings.time.week_start = crate::prefs::WeekStart::Sunday;
+        let sunday = today(&db, &settings, now, &tz()).unwrap();
+        assert_eq!((sunday.booked_minutes, sunday.week_minutes), (60, 60));
+        // On the Saturday before, the week from Sunday the 4th holds Friday's booking.
+        let sat = today(&db, &settings, at("2026-10-10T15:00:00+02:00"), &tz()).unwrap();
+        assert_eq!(sat.week_minutes, 180, "Sunday 4 to Saturday 10: Friday's booking");
     }
 
     #[test]
