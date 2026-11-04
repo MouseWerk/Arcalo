@@ -184,6 +184,14 @@ for (const [W, H] of [
         }
         assert.equal(await page.$(".m-sheet"), null, "Back closed the capture");
       };
+      // The tab bar is tapped once the keyboard is down and the page has its full height again:
+      // a tap aimed while the WebView grew back landed beside the button (run 41870629053).
+      const full = await page.evaluate(() => window.innerHeight);
+      const capture = async () => {
+        await page.waitForFunction((h) => window.innerHeight === h && !document.querySelector(".m-typing"), full, { timeout: 10000 });
+        await page.click(".m-tab-capture");
+        await visible(".m-sheet textarea");
+      };
       await tab(1);
       await page.click(".m-tab-capture");
       await visible(".m-sheet textarea");
@@ -191,8 +199,7 @@ for (const [W, H] of [
       await page.click(".m-sheet textarea");
       await page.insertText("Entwurf: Rückruf beim Kunden");
       await closed();
-      await page.click(".m-tab-capture");
-      await visible(".m-sheet textarea");
+      await capture();
       await page.waitForFunction(() => document.querySelector(".m-sheet textarea")?.value === "Entwurf: Rückruf beim Kunden", undefined, { timeout: 10000 }).catch(() => {});
       assert.equal(await value(), "Entwurf: Rückruf beim Kunden", "the text typed before Back");
       assert.equal(await page.evaluate(() => document.querySelector(".m-seg-opt[aria-checked='true'], .m-seg-opt.on")?.textContent.trim() ?? null), "Aufgabe", "as a task again");
@@ -200,9 +207,8 @@ for (const [W, H] of [
       // field's focus brings up moves the button while a tap is aimed at it (run 41859894534).
       await page.evaluate(() => document.querySelector(".m-sheet .m-form-actions .m-btn-primary").click());
       await page.waitForFunction(() => !document.querySelector(".m-sheet"), undefined, { timeout: 10000 });
-      await page.click(".m-tab-capture");
-      await visible(".m-sheet textarea");
-      await sleep(1000);
+      assert.equal(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke("mobile_capture_draft_get", {})), null, "the draft after saving");
+      await capture();
       assert.equal(await value(), "", "the capture after saving");
       await closed();
     });
