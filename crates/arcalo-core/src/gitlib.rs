@@ -971,11 +971,14 @@ mod tests {
         // Commits folded into one (`fold_unpushed`): HEAD goes back, the index keeps the state.
         fs::write(work.join("Zwei.md"), "zwei\n").unwrap();
         ok(&g, &work, &["add", "-A"]);
+        let staged = ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]);
+        assert!(staged.contains("Zwei.md\0"), "{staged}");
         ok(&g, &work, &["-c", "user.name=Tester", "-c", "user.email=t@example.com", "commit", "-q", "-m", "Zwei"]);
         assert_eq!(ok(&g, &work, &["rev-parse", "--verify", "-q", "HEAD^"]).trim(), head);
+        assert_eq!(ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]), "");
         ok(&g, &work, &["reset", "-q", "--soft", &head]);
         assert_eq!(ok(&g, &work, &["rev-parse", "--verify", "-q", "HEAD"]).trim(), head);
-        assert_eq!(ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]), "Zwei.md\0");
+        assert_eq!(ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]), staged);
         assert!(work.join("Zwei.md").exists());
         let _ = fs::remove_dir_all(&base);
     }
