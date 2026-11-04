@@ -507,6 +507,28 @@ mod tests {
     ];
 
     /// What the step of 1.21 adds to settings without it.
+    /// What the step of 1.23 says for stored settings with a balance section.
+    const TARGET_HISTORY_NOTE: &str =
+        "target-history: time.balance.target_history = [] (the current target for every day, as before)";
+
+    #[test]
+    fn a_stored_target_applies_to_every_day_until_it_changes() {
+        let mut v = serde_json::json!({"version": 19, "daily_target_hours": 7.5, "time": {"balance": {"state": "BY"}}});
+        let m = migrate(&mut v);
+        assert_eq!(m.notes, [TARGET_HISTORY_NOTE]);
+        let s = Database::parse_settings(&v.to_string()).unwrap();
+        assert!(s.time.balance.target_history.is_empty());
+        let jan = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+        assert_eq!(crate::worktime::weekday_minutes(&s, jan), 450);
+        // A history stays as it is; settings without a balance section get nothing.
+        let kept = serde_json::json!([{"until": "2026-03-31", "minutes": [480, 480, 480, 480, 480, 0, 0]}]);
+        let mut mine = serde_json::json!({"version": 19, "time": {"balance": {"target_history": kept.clone()}}});
+        assert!(migrate(&mut mine).notes.is_empty());
+        assert_eq!(mine["time"]["balance"]["target_history"], kept);
+        let mut bare = serde_json::json!({"version": 19});
+        assert!(migrate(&mut bare).notes.is_empty());
+    }
+
     fn add_calendar_entries(v: &mut Value) {
         v["calendar"]["entries_outlook"] = Value::Bool(false);
         v["calendar"]["entry_target"] = Value::from("outlook");
@@ -586,6 +608,7 @@ mod tests {
                 "theme-ids: appearance.theme_light = arcalo-light, appearance.theme_dark = arcalo-dark",
                 "android-interface: appearance.android_interface = auto",
                 "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30",
+                TARGET_HISTORY_NOTE,
             ]
         );
         let s = Database::parse_settings(&v.to_string()).unwrap();
@@ -609,12 +632,14 @@ mod tests {
             m.notes,
             [
                 "android-interface: appearance.android_interface = auto",
-                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30"
+                "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30",
+                TARGET_HISTORY_NOTE,
             ]
         );
         before["version"] = Value::from(SETTINGS_VERSION);
         before["appearance"]["android_interface"] = Value::from("auto");
         add_calendar_entries(&mut before);
+        before["time"]["balance"]["target_history"] = Value::Array(vec![]);
         assert_eq!(v, before);
     }
 
@@ -648,6 +673,7 @@ mod tests {
                 "theme-ids: appearance.theme_light = arcalo-light, appearance.theme_dark = arcalo-dark",
                 "android-interface: appearance.android_interface = auto",
                 "calendar-entries: calendar.entries_outlook = false, calendar.entry_target = outlook, calendar.entry_minutes = 30",
+                TARGET_HISTORY_NOTE,
             ]
         );
         v.as_object_mut().unwrap().remove("version");
@@ -667,6 +693,7 @@ mod tests {
         before["appearance"]["theme_dark"] = Value::from("arcalo-dark");
         before["appearance"]["android_interface"] = Value::from("auto");
         add_calendar_entries(&mut before);
+        before["time"]["balance"]["target_history"] = Value::Array(vec![]);
         assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
         v.as_object_mut().unwrap().remove("network");
         before.as_object_mut().unwrap().remove("network");
