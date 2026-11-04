@@ -2482,9 +2482,8 @@ mod tests {
         }
     }
 
-    /// A page renamed on one computer while the other wrote links to its old title (a new page,
-    /// a conflict): the links follow the rename on the second computer and reach the first one
-    /// so. Before, they pointed nowhere on both computers, and following one made a new, empty
+    /// A page renamed on one computer while the other two wrote links to its old title (a new
+    /// page, a conflict): the links follow the rename on each of them and reach the others so. Before, they pointed nowhere on both computers, and following one made a new, empty
     /// page of the old title.
     #[test]
     fn links_written_here_follow_a_rename_there() {
@@ -2499,6 +2498,8 @@ mod tests {
         let b = Database::open_in_memory().unwrap();
         pcs.sync(&b, "b");
         let verweis_b = b.page_by_title("Verweis").unwrap().unwrap().id;
+        let c = Database::open_in_memory().unwrap();
+        pcs.sync(&c, "c");
 
         a.rename_page_linked(konzept.id, "Konzept 2026", true).unwrap();
         a.save_page_content(verweis.id, "siehe [[Konzept 2026]], von A ergänzt").unwrap();
@@ -2507,6 +2508,8 @@ mod tests {
         let text = "Bezug: [[Konzept|das Konzept]] und [[Konzept#Ziele]]\n\n`[[Konzept]]` bleibt Code";
         b.save_page_content(neu.id, text).unwrap();
         b.save_page_content(verweis_b, "siehe [[Konzept]], von B ergänzt").unwrap();
+        let von_c = c.create_page(None, "Neu auf C", None).unwrap();
+        c.save_page_content(von_c.id, "auch [[konzept]]").unwrap();
         let out = pcs.sync(&b, "b");
         assert_eq!(out.conflicts, [verweis_b], "{out:?}");
         assert!(out.pages.contains(&neu.id), "the editor reloads it: {out:?}");
@@ -2518,14 +2521,27 @@ mod tests {
         assert_eq!(b.page_doc(verweis_b).unwrap().content, "siehe [[Konzept 2026]], von B ergänzt");
         assert!(b.page_by_title("Konzept").unwrap().is_none());
 
-        // The rewrite reaches A with B's next sync; nothing flips back.
+        // The third computer takes the rename over after B's sync: its own link follows as well.
+        let out = pcs.sync(&c, "c");
+        assert!(out.pages.contains(&von_c.id), "{out:?}");
+        assert_eq!(c.page_doc(von_c.id).unwrap().content, "auch [[Konzept 2026]]");
+
+        // The rewrites reach the others with the next syncs; nothing flips back.
         pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
         pcs.sync(&a, "a");
-        let on_a = a.page_by_title("Neu auf B").unwrap().unwrap();
-        assert_eq!(a.page_doc(on_a.id).unwrap().content, linked);
-        let out = pcs.sync(&b, "b");
-        assert!(out.pages.is_empty() && out.created.is_empty(), "{out:?}");
-        assert!(a.page_by_title("Konzept").unwrap().is_none());
+        pcs.sync(&b, "b");
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&c, "c")] {
+            let on = |t: &str| db.page_doc(db.page_by_title(t).unwrap().unwrap().id).unwrap().content;
+            assert_eq!(on("Neu auf B"), linked, "{pc}");
+            assert_eq!(on("Neu auf C"), "auch [[Konzept 2026]]", "{pc}");
+            assert!(db.page_by_title("Konzept").unwrap().is_none(), "{pc}");
+        }
+        for pc in ["c", "a", "b"] {
+            let db = [(&a, "a"), (&b, "b"), (&c, "c")].into_iter().find(|(_, n)| *n == pc).unwrap().0;
+            let out = pcs.sync(db, pc);
+            assert!(out.pages.is_empty() && out.created.is_empty(), "{pc}: {out:?}");
+        }
     }
 
     /// A daily note of a computer that titles them in another format („04.11.2026“ against
@@ -2558,6 +2574,11 @@ mod tests {
         assert!(out.created.is_empty() && out.pages.is_empty(), "{out:?}");
         let out = pcs.sync(&a, "a");
         assert!(out.created.is_empty(), "{out:?}");
+        // The next day's note on B goes into the folders taken over, not into a second „2026“.
+        let next = b.daily_note(day.succ_opt().unwrap()).unwrap();
+        assert_eq!(next.title, "2026-11-05");
+        assert_eq!(next.parent_id, on_b.parent_id, "{:?}", tree(&b));
+        assert_eq!(b.list_pages().unwrap().iter().filter(|p| p.title == "2026").count(), 1);
     }
 
     /// A drawing renamed in the attachment manager on one computer while the other drew on it:
@@ -2621,33 +2642,4 @@ mod tests {
         assert!(!again.committed && again.renamed_files.is_empty(), "{again:?}");
         assert!(!r.run(&a, "a").committed);
     }
-
-    // PROBE-BEGIN
-
-    #[test]
-    fn probe_restore_from_trash_there() {
-        let Some(pcs) = Pcs::new("p-restore") else { return };
-        let a = Database::open_in_memory().unwrap();
-        filler(&a);
-        let x = a.create_page(None, "Notiz", None).unwrap();
-        a.save_page_content(x.id, "Inhalt").unwrap();
-        pcs.sync(&a, "a");
-        let b = Database::open_in_memory().unwrap();
-        pcs.sync(&b, "b");
-        let xb = b.page_by_title("Notiz").unwrap().unwrap();
-        b.snapshot_page(xb.id).unwrap();
-        a.trash_page(x.id).unwrap();
-        pcs.sync(&a, "a");
-        let out = pcs.sync(&b, "b");
-        eprintln!("B pulled delete {out:?}");
-        a.restore_page(x.id).unwrap();
-        pcs.sync(&a, "a");
-        let out = pcs.sync(&b, "b");
-        eprintln!("B pulled restore {out:?}");
-        eprintln!("B tree {:?}", tree(&b));
-        eprintln!("B trash {:?}", b.list_trash().unwrap().iter().map(|t| t.page.title.clone()).collect::<Vec<_>>());
-        let now = b.page_by_title("Notiz").unwrap().unwrap();
-        eprintln!("B same id {} versions {}", now.id == xb.id, b.list_versions(now.id).unwrap().len());
-    }
-    // PROBE-END
 }
