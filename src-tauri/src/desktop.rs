@@ -1159,6 +1159,19 @@ pub fn capture_context(app: AppHandle, state: State<AppState>) -> Result<Capture
     Ok(CaptureContext { meeting, recent, queued })
 }
 
+/// The text typed into the capture window and not saved yet (the UI's JSON), kept in the
+/// database: an encrypted workspace keeps it encrypted, unlike the WebView's storage.
+#[tauri::command(async)]
+pub fn capture_draft_get(state: State<AppState>) -> Result<Option<String>> {
+    cap::load_draft(&state.reader())
+}
+
+/// Stores the capture window's draft; `None` removes it.
+#[tauri::command(async)]
+pub fn capture_draft_set(state: State<AppState>, draft: Option<String>) -> Result<()> {
+    cap::save_draft(&state.db(), draft.as_deref())
+}
+
 /// Undoes the newest capture within [`cap::UNDO_SECONDS`]; returns it.
 #[tauri::command]
 pub fn capture_undo(app: AppHandle, state: State<AppState>) -> Result<RecentCapture> {

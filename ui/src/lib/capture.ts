@@ -268,22 +268,64 @@ export interface Draft {
   target: TargetChoice | null;
 }
 
-/** The text typed before the window was closed without saving (also across restarts). */
-export function loadDraft(): Draft | null {
+/**
+ * Where the draft is kept: the workspace's database (`capture_draft_get`/`_set`), so an encrypted
+ * workspace keeps it encrypted. The WebView's storage is a plain file in the user profile.
+ */
+export interface DraftStore {
+  get(): Promise<string | null>;
+  set(draft: string | null): Promise<void>;
+}
+
+const parseDraft = (raw: string | null | undefined): Draft | null => {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
     const d = raw ? (JSON.parse(raw) as Draft) : null;
-    return d && typeof d.text === "string" ? d : null;
+    return d && typeof d.text === "string" && d.text.trim() ? d : null;
   } catch {
     return null;
   }
+};
+
+/**
+ * The text typed before the window was closed without saving (also across restarts). A draft an
+ * earlier version left in the WebView's storage moves into the store and leaves that storage.
+ */
+export async function loadDraft(store: DraftStore): Promise<Draft | null> {
+  let legacy: string | null = null;
+  try {
+    legacy = localStorage.getItem(DRAFT_KEY);
+    if (legacy != null) localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  const old = parseDraft(legacy);
+  if (old) {
+    await store.set(JSON.stringify(old)).catch(() => {});
+    return old;
+  }
+  return parseDraft(await store.get().catch(() => null));
 }
 
-export function saveDraft(d: Draft | null) {
-  try {
-    if (!d || !d.text.trim()) localStorage.removeItem(DRAFT_KEY);
-    else localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-  } catch {
-    /* storage unavailable: the draft lives only while the window does */
-  }
+/** Saves drafts to `store`, the last one of a burst of typing after `delay` ms. */
+export function draftSaver(store: DraftStore, delay = 400) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending: string | null | undefined;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (pending === undefined) return Promise.resolve();
+    const v = pending;
+    pending = undefined;
+    return store.set(v).catch(() => {});
+  };
+  return {
+    save(d: Draft | null) {
+      pending = d && d.text.trim() ? JSON.stringify(d) : null;
+      clearTimeout(timer);
+      // Removing a draft (the capture was saved) is not delayed.
+      if (pending === null) void flush();
+      else timer = setTimeout(() => void flush(), delay);
+    },
+    flush,
+  };
 }

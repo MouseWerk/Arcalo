@@ -5395,6 +5395,10 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         #[cfg(desktop)]
         desktop::capture_context,
         #[cfg(desktop)]
+        desktop::capture_draft_get,
+        #[cfg(desktop)]
+        desktop::capture_draft_set,
+        #[cfg(desktop)]
         desktop::capture_undo,
         #[cfg(desktop)]
         desktop::capture_open,

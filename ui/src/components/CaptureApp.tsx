@@ -42,7 +42,7 @@ import {
   quickTargets,
   rankPages,
   sameTarget,
-  saveDraft,
+  draftSaver,
   tagToken,
   targetPhrase,
   wikiToken,
@@ -126,9 +126,11 @@ const time = (iso: string) => clockTime(iso);
 
 export function CaptureApp() {
   useT();
-  const draft = useMemo(loadDraft, []);
-  const [text, setText] = useState(draft?.text ?? "");
-  const [target, setTarget] = useState<TargetChoice>(draft?.target ?? DAILY);
+  // The draft is kept in the workspace's database (encrypted with it), read once at the start.
+  const drafts = useMemo(() => draftSaver({ get: api.captureDraftGet, set: api.captureDraftSet }), []);
+  const draftRead = useRef(false);
+  const [text, setText] = useState("");
+  const [target, setTarget] = useState<TargetChoice>(DAILY);
   const [last, setLast] = useState<TargetChoice | null>(null);
   const [prefs, setPrefs] = useState<CapturePrefs>(DEFAULT_PREFS);
   // „Zeiterfassung verwenden“: off, `/zeit` lines are text (no suggestions, no booking).
@@ -221,8 +223,12 @@ export function CaptureApp() {
 
   useEffect(() => {
     document.body.classList.add("capture-mode");
-    loadSettings().then((p) => {
-      if (!loadDraft()) setTarget(defaultTarget(p, null));
+    Promise.all([loadSettings(), loadDraft({ get: api.captureDraftGet, set: api.captureDraftSet })]).then(([p, d]) => {
+      draftRead.current = true;
+      if (d && !live.current.text.trim()) {
+        setText(d.text);
+        setTarget(d.target ?? DAILY);
+      } else if (!d) setTarget(defaultTarget(p, null));
     });
     refresh();
     focusRetry();
@@ -272,7 +278,9 @@ export function CaptureApp() {
   }, []);
 
   // The draft survives closing the window and restarting the app.
-  useEffect(() => saveDraft(text.trim() ? { text, target } : null), [text, target]);
+  useEffect(() => {
+    if (draftRead.current) drafts.save(text.trim() ? { text, target } : null);
+  }, [drafts, text, target]);
 
   // Auto-grow the field up to MAX_LINES, then the window up to MAX_HEIGHT.
   useLayoutEffect(() => {
@@ -473,7 +481,7 @@ export function CaptureApp() {
       setError(null);
       setNotice(null);
       setClip(null);
-      saveDraft(null);
+      drafts.save(null);
       const a = out.appended;
       // A page created now is a page from here on (the next capture goes to the same one).
       if (a && target.target.kind === "new_page") {

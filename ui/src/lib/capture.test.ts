@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DAILY,
+  draftSaver,
+  loadDraft,
   captureHint,
   captureKind,
   cycleTarget,
@@ -196,5 +198,44 @@ describe("tags, links and paste", () => {
     expect(insertBlock("", 0, "![[a.png]]")).toEqual({ text: "![[a.png]]", caret: 10 });
     expect(insertBlock("Text", 4, "![[a.png]]")).toEqual({ text: "Text\n![[a.png]]", caret: 15 });
     expect(insertBlock("vorher nachher", 6, "![[a.png]]")).toEqual({ text: "vorher\n![[a.png]]\n nachher", caret: 17 });
+  });
+});
+
+// q124 R3C-2: the draft lived in the WebView's storage, a plain file in the user profile, also
+// when the workspace is encrypted. It is kept in the database now; an old one moves there.
+describe("the capture draft", () => {
+  const memory = () => {
+    const s = { value: null as string | null, writes: 0 };
+    return { s, store: { get: async () => s.value, set: async (v: string | null) => void ((s.value = v), s.writes++) } };
+  };
+
+  it("is read from the database, and an old one leaves the WebView's storage", async () => {
+    const { s, store } = memory();
+    expect(await loadDraft(store)).toBeNull();
+    localStorage.setItem("arcalo.capture.draft", JSON.stringify({ text: "Gehalt 92.000", target: null }));
+    expect((await loadDraft(store))?.text).toBe("Gehalt 92.000");
+    expect(localStorage.getItem("arcalo.capture.draft")).toBeNull();
+    expect(JSON.parse(s.value!).text).toBe("Gehalt 92.000");
+    expect((await loadDraft(store))?.text).toBe("Gehalt 92.000");
+  });
+
+  it("is saved after a pause in typing, removed at once, and never put into the WebView's storage", async () => {
+    vi.useFakeTimers();
+    try {
+      const { s, store } = memory();
+      const saver = draftSaver(store, 400);
+      saver.save({ text: "G", target: null });
+      saver.save({ text: "Ge", target: null });
+      saver.save({ text: "Geheim", target: null });
+      expect(s.writes).toBe(0);
+      await vi.advanceTimersByTimeAsync(400);
+      expect([s.writes, JSON.parse(s.value!).text]).toEqual([1, "Geheim"]);
+      saver.save({ text: "  ", target: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect([s.writes, s.value]).toEqual([2, null]);
+      expect(Object.keys(localStorage).filter((k) => /draft/i.test(k))).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

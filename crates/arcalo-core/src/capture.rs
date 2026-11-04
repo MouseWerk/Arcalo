@@ -428,6 +428,27 @@ pub fn current_meeting(db: &Database, now: DateTime<Utc>, sources: &[String]) ->
         .max_by_key(|e| e.event.start))
 }
 
+// ------------------------------------------------------------------- draft
+
+/// Meta key of the text typed into the capture window and not saved yet.
+const DRAFT_KEY: &str = "capture.draft";
+
+/// The draft of the capture window (the UI's JSON: text and target), `None` when there is none.
+/// It lives in the database, so an encrypted workspace keeps it encrypted (the WebView's storage
+/// is a plain file in the user profile).
+pub fn load_draft(db: &Database) -> Result<Option<String>> {
+    Ok(db.meta_get(DRAFT_KEY)?.filter(|d| !d.is_empty()))
+}
+
+/// Stores the draft; `None` (or empty) removes it.
+pub fn save_draft(db: &Database, draft: Option<&str>) -> Result<()> {
+    let draft = draft.filter(|d| !d.trim().is_empty());
+    if draft.is_none() && load_draft(db)?.is_none() {
+        return Ok(());
+    }
+    db.meta_set(DRAFT_KEY, draft.unwrap_or_default())
+}
+
 // ------------------------------------------------------------------- queue
 
 /// A capture the database could not take; retried until it is stored.
@@ -540,6 +561,20 @@ mod tests {
 
     fn tz() -> FixedOffset {
         FixedOffset::east_opt(2 * 3600).unwrap()
+    }
+
+    #[test]
+    fn the_draft_lives_in_the_database() {
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(load_draft(&db).unwrap(), None);
+        save_draft(&db, None).unwrap();
+        assert_eq!(db.meta_get(DRAFT_KEY).unwrap(), None, "nothing written without a draft");
+        let d = r#"{"text":"Gehalt 92.000 #privat","target":null}"#;
+        save_draft(&db, Some(d)).unwrap();
+        assert_eq!(load_draft(&db).unwrap().as_deref(), Some(d));
+        save_draft(&db, Some("  ")).unwrap();
+        assert_eq!(load_draft(&db).unwrap(), None);
+        assert_eq!(db.meta_get(DRAFT_KEY).unwrap().as_deref(), Some(""), "the text itself is gone");
     }
 
     #[test]
