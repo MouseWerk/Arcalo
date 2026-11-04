@@ -607,7 +607,11 @@ mod tests {
         assert!(t.elapsed() < std::time::Duration::from_secs(2), "{:?}", t.elapsed());
         assert_eq!(r.conflicts, 0);
         let merged = r.merged().unwrap();
-        assert!(merged.contains("Eintrag 10000 (hier)") && merged.contains("Eintrag 0 (dort)") && merged.contains("- Neu 2999\n"));
+        assert!(
+            merged.contains("Eintrag 10000 (hier)")
+                && merged.contains("Eintrag 0 (dort)")
+                && merged.contains("- Neu 2999\n")
+        );
         assert_eq!(merged.lines().count(), base.lines().count() + 3_000);
     }
 
@@ -618,7 +622,8 @@ mod tests {
         for (a, b) in cases {
             let a: Vec<String> = a.chars().map(String::from).collect();
             let b: Vec<String> = b.chars().map(String::from).collect();
-            let (a, b): (Vec<&str>, Vec<&str>) = (a.iter().map(|s| s.as_str()).collect(), b.iter().map(|s| s.as_str()).collect());
+            let (a, b): (Vec<&str>, Vec<&str>) =
+                (a.iter().map(|s| s.as_str()).collect(), b.iter().map(|s| s.as_str()).collect());
             let pairs = myers(&a, &b, 100).unwrap();
             assert!(pairs.iter().all(|&(i, j)| a[i] == b[j]));
             assert!(pairs.windows(2).all(|w| w[0].0 < w[1].0 && w[0].1 < w[1].1));

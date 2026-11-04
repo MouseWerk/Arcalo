@@ -720,7 +720,9 @@ fn huge_workspace() {
     println!("core huge: {} bookings in the last year", year.len());
     for format in ["sap_cats", "csv", "json"] {
         let f = arcalo_core::export::ExportFormat::parse(format).unwrap();
-        time(&format!("export year {format}"), 3, || arcalo_core::export::export(&year, f, &Default::default()).unwrap());
+        time(&format!("export year {format}"), 3, || {
+            arcalo_core::export::export(&year, f, &Default::default()).unwrap()
+        });
     }
     time("time_summary year", 3, || {
         arcalo_core::report::time_summary(&db, today - Duration::days(366), today, &tl).unwrap()
