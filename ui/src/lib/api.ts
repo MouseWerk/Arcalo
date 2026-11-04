@@ -11,11 +11,10 @@ import { fromGraphTable } from "./graph";
 import { fromPageRows, type PageRow } from "./tree";
 import { fromTaskTable, type TaskTable } from "./tasks";
 import { IS_LINUX } from "./platform";
+import { callUnlocked } from "./security";
 
-// App-Sperre: a command refused while locked never settles (the app behind the lock screen is
-// unmounted; its last requests are simply dropped instead of showing errors).
-const call = <R>(cmd: string, args?: Record<string, unknown>) =>
-  invoke<R>(cmd, args).catch((e: unknown) => (e === "app-locked" ? new Promise<R>(() => {}) : Promise.reject(e)));
+// App-Sperre: a command refused while locked is sent again once the app is unlocked (`callUnlocked`).
+const call = <R>(cmd: string, args?: Record<string, unknown>) => callUnlocked<R>(cmd, args);
 
 /** Every window learns the system language („Wie das System“) with the settings. */
 function withSystemLang(v: T.SettingsView): T.SettingsView {

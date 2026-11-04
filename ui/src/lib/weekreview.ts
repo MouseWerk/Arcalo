@@ -3,7 +3,7 @@
 // helpers of the view and the start page widget: the week's Monday, moving by weeks, its title,
 // the share of the target booked and the meetings grouped by day.
 
-import { invoke } from "@tauri-apps/api/core";
+import { callUnlocked } from "./security";
 import { useApp } from "../store/app";
 import { addDays, dateLocale, fmtDuration, isoDay, weekStart } from "./format";
 import { t } from "./i18n";
@@ -110,8 +110,7 @@ export interface SavedReport {
 
 // -------------------------------------------------------------------- IPC
 
-const call = <R>(cmd: string, args?: Record<string, unknown>) =>
-  invoke<R>(cmd, args).catch((e: unknown) => (e === "app-locked" ? new Promise<R>(() => {}) : Promise.reject(e)));
+const call = <R>(cmd: string, args?: Record<string, unknown>) => callUnlocked<R>(cmd, args);
 
 export const weekApi = {
   review: (date: string) => call<WeekReview>("week_review", { date }),

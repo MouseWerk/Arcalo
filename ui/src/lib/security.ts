@@ -2,6 +2,7 @@
 // pieces of logic they share (tested in security.test.ts).
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type LockMode = "off" | "start" | "idle";
 export interface LockConfig {
@@ -122,3 +123,40 @@ export function pinProblem(pin: string, repeat: string): "short" | "long" | "mis
 
 /** The rejection of a command while locked. */
 export const isLockedError = (e: unknown) => e === LOCKED_ERROR || String(e) === LOCKED_ERROR;
+
+let waiting: Promise<void> | null = null;
+
+/** Settles when the app is unlocked (at once when it is not locked). */
+export function untilUnlocked(): Promise<void> {
+  waiting ??= new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      waiting = null;
+      ready.then((off) => off()).catch(() => {});
+      resolve();
+    };
+    const ready = listen<boolean>("applock://changed", (e) => {
+      if (!e.payload) done();
+    });
+    // Unlocked before the listener was in place: the status says so.
+    ready
+      .then(() => invoke<LockStatus>("applock_status"))
+      .then((st) => !st.locked && done())
+      .catch(() => {});
+  });
+  return waiting;
+}
+
+type Invoke = <R>(cmd: string, args?: Record<string, unknown>) => Promise<R>;
+
+/**
+ * `invoke` for the app's commands. A command refused while the app is locked never ran: it waits
+ * for the unlock and is sent then. A request on its way when the lock came (a chat being saved, the
+ * next step of an answer, a settings write) is done afterwards instead of never settling, which
+ * stopped every later save queued behind it for the rest of the session.
+ */
+export function callUnlocked<R>(cmd: string, args?: Record<string, unknown>, send: Invoke = invoke, unlocked: () => Promise<void> = untilUnlocked): Promise<R> {
+  return send<R>(cmd, args).catch((e: unknown) => (isLockedError(e) ? unlocked().then(() => callUnlocked<R>(cmd, args, send, unlocked)) : Promise.reject(e)));
+}

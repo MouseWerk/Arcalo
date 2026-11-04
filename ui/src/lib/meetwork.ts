@@ -2,11 +2,10 @@
 // The pages and mails are built by the core (`arcalo_core::meetwork`); this module holds the
 // calls, the types and the small decisions the views share (which period, which fallback).
 
-import { invoke } from "@tauri-apps/api/core";
+import { callUnlocked } from "./security";
 import type { Page } from "./types";
 
-const call = <R>(cmd: string, args?: Record<string, unknown>) =>
-  invoke<R>(cmd, args).catch((e: unknown) => (e === "app-locked" ? new Promise<R>(() => {}) : Promise.reject(e)));
+const call = <R>(cmd: string, args?: Record<string, unknown>) => callUnlocked<R>(cmd, args);
 
 // ------------------------------------------------------------------ types
 

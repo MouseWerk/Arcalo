@@ -14,6 +14,8 @@ import http from "node:http";
 
 export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null, embed = null, ...behaviour } = {}) {
   const requests = [];
+  // Chat answers streamed to their end.
+  let finished = 0;
   const opts = { modelsDelay: 0, firstByteDelay: 0, wordDelay: 5, chatError: null, breakAfter: null, ...behaviour };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const list = [...models];
@@ -75,6 +77,7 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       send({ choices: [{ delta: {}, finish_reason: "stop" }] });
       send({ choices: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } });
       res.write("data: [DONE]\n\n");
+      finished++;
       return res.end();
     }
     reply(404, { error: "not found" });
@@ -96,5 +99,5 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
   /** Every text sent for an embedding. */
   const embedded = () => requests.filter((r) => r.url.startsWith("/v1/embeddings")).flatMap((r) => r.body.input);
   const set = (patch) => Object.assign(opts, patch);
-  return open().then(() => ({ requests, chats, embedded, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close, set }));
+  return open().then(() => ({ requests, chats, embedded, finished: () => finished, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close, set }));
 }

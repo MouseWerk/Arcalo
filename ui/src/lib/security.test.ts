@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRecoveryInput, formatWait, isLockedError, pinProblem, recoveryComplete } from "./security";
+import { callUnlocked, formatRecoveryInput, formatWait, isLockedError, pinProblem, recoveryComplete } from "./security";
 
 describe("recovery key input", () => {
   it("groups, upper-cases and reads look-alikes as the code's letters", () => {
@@ -36,3 +36,36 @@ describe("app lock", () => {
     expect(isLockedError(new Error("other"))).toBe(false);
   });
 });
+
+// q124 R2D-6: a command refused while locked never settled. A chat save on its way when the lock
+// came stopped every later save queued behind it, so no answer was saved for the rest of the
+// session. Now it is sent again once the app is unlocked.
+describe("commands refused while locked", () => {
+  const fake = () => {
+    let locked = true;
+    let unlock = () => {};
+    const unlocked = () => new Promise<void>((r) => (unlock = () => ((locked = false), r())));
+    const ran: string[] = [];
+    const send = <R,>(cmd: string): Promise<R> => (locked ? Promise.reject("app-locked") : (ran.push(cmd), Promise.resolve(cmd as R)));
+    return { send, unlocked, ran, unlock: () => unlock() };
+  };
+
+  it("run once after the unlock, in their order", async () => {
+    const f = fake();
+    let chain: Promise<unknown> = Promise.resolve();
+    const results: unknown[] = [];
+    for (const cmd of ["chat_append", "chat_append_2"]) chain = chain.then(() => callUnlocked(cmd, {}, f.send, f.unlocked)).then((r) => results.push(r));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(f.ran).toEqual([]);
+    f.unlock();
+    await chain;
+    expect(f.ran).toEqual(["chat_append", "chat_append_2"]);
+    expect(results).toEqual(["chat_append", "chat_append_2"]);
+  });
+
+  it("pass other errors on at once", async () => {
+    const send = <R,>(): Promise<R> => Promise.reject("Seite nicht gefunden");
+    await expect(callUnlocked("page_get", {}, send, () => new Promise(() => {}))).rejects.toBe("Seite nicht gefunden");
+  });
+});
+
