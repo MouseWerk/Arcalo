@@ -1,6 +1,7 @@
 // The editor schema shared by the app and the Markdown round-trip tests.
 
-import { Extension, type Editor, type Extensions } from "@tiptap/core";
+import { Extension, InputRule, type Editor, type Extensions } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -723,7 +724,50 @@ const SourceTaskList = TaskList.extend({
     ...TaskList.config.markdownTokenizer,
     tokenize: (src: string, _tokens: unknown, lexer: unknown) => tokenizeTaskList(src, lexer as Parameters<typeof tokenizeTaskList>[1]) as never,
   },
+  addInputRules() {
+    return [...(this.parent?.() ?? []), bulletToTaskRule()];
+  },
 });
+
+/**
+ * `[ ] ` or `[x] ` typed at the start of a bullet item (`- [ ] ` as in Markdown) makes the item a task.
+ * TaskItem's own rule only wraps a paragraph, which a list item cannot hold as a task. The list is
+ * split around the item: the bullets before and after it stay bullets.
+ */
+function bulletToTaskRule(): InputRule {
+  return new InputRule({
+    find: /^\s*\[([ xX]?)\]\s$/,
+    handler: ({ state, range, match }) => {
+      const $from = state.doc.resolve(range.from);
+      const d = $from.depth;
+      if (d < 3 || range.from !== $from.start()) return null;
+      const item = $from.node(d - 1);
+      const list = $from.node(d - 2);
+      const { taskList, taskItem } = state.schema.nodes;
+      if (item.type.name !== "listItem" || list.type.name !== "bulletList" || $from.index(d - 1) !== 0 || !taskList || !taskItem) return null;
+      const tr = state.tr;
+      tr.delete(range.from, range.to);
+      const index = $from.index(d - 2);
+      const mapped = tr.doc.resolve(tr.mapping.map(range.from));
+      const curList = mapped.node(d - 2);
+      const curItem = curList.child(index);
+      const task = taskList.create(null, taskItem.create({ checked: /x/i.test(match[1] ?? "") }, curItem.content));
+      const before = Array.from({ length: index }, (_, i) => curList.child(i));
+      const after = Array.from({ length: curList.childCount - index - 1 }, (_, i) => curList.child(index + 1 + i));
+      // The bullets after the item are a list of their own now, written fresh (no source text, no gap).
+      const nodes = [
+        ...(before.length ? [curList.type.create(curList.attrs, before)] : []),
+        task,
+        ...(after.length ? [curList.type.create({ ...curList.attrs, src: null, gap: null }, after)] : []),
+      ];
+      const start = mapped.before(d - 2);
+      tr.replaceWith(start, start + curList.nodeSize, nodes);
+      // The caret stays at the start of the task's text.
+      const at = start + (before.length ? nodes[0].nodeSize : 0) + 3;
+      tr.setSelection(TextSelection.create(tr.doc, at));
+    },
+  });
+}
 
 export function buildExtensions(o: SchemaOptions = {}): Extensions {
   return [

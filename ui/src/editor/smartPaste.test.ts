@@ -27,6 +27,43 @@ describe("smart paste", () => {
     editor.destroy();
   });
 
+  // q124 H1-1: Word and Outlook copy a list as `•⇥Punkt` lines (and paragraphs in the HTML): a list, not a table.
+  const WORD_ITEM = (level: number, mark: string, text: string, list = "l0") =>
+    `<p class=MsoListParagraphCxSpMiddle style='margin-left:${18 * level}pt;text-indent:-18.0pt;mso-list:${list} level${level} lfo1'><![if !supportLists]><span style='font-family:Symbol;mso-fareast-font-family:Symbol'><span style='mso-list:Ignore'>${mark}<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></span></span><![endif]><span lang=DE>${text}<o:p></o:p></span></p>`;
+
+  it("pastes a Word list as a list with its levels, numbered and bulleted", () => {
+    const html =
+      `<html xmlns:o="urn:schemas-microsoft-com:office:office"><body><p class=MsoNormal>Vorher<o:p></o:p></p>\n` +
+      [WORD_ITEM(1, "·", "Erster"), WORD_ITEM(2, "o", "Unter <b>fett</b>"), WORD_ITEM(3, "§", "Tiefer"), WORD_ITEM(1, "·", "Zweiter")].join("\n") +
+      `\n<p class=MsoNormal>Mitte<o:p></o:p></p>\n` +
+      [WORD_ITEM(1, "1.", "Eins", "l1"), WORD_ITEM(2, "a.", "Unterpunkt", "l1"), WORD_ITEM(1, "2.", "Zwei", "l1")].join("\n") +
+      `\n</body></html>`;
+    const text = "Vorher\r\n·\tErster\r\no\tUnter fett\r\n§\tTiefer\r\n·\tZweiter\r\nMitte\r\n1.\tEins\r\na.\tUnterpunkt\r\n2.\tZwei\r\n";
+    const editor = setup("\n");
+    // Not taken as a table: the HTML paste of ProseMirror runs with the Word lists made real lists.
+    expect(paste(editor, "·\tErster\r\n·\tZweiter\r\n", html)).toBe(false);
+    expect(paste(editor, text, html)).toBe(false);
+    editor.view.pasteHTML(html);
+    expect(toMarkdown(editor)).toBe("Vorher\n\n- Erster\n  - Unter **fett**\n    - Tiefer\n- Zweiter\n\nMitte\n\n1. Eins\n   1. Unterpunkt\n2. Zwei\n");
+    editor.destroy();
+  });
+
+  it("pastes Word's list as plain text (no HTML) as a list", () => {
+    const editor = setup("\n");
+    expect(paste(editor, "•\tErster Punkt\r\n•\tZweiter Punkt\r\n")).toBe(true);
+    expect(toMarkdown(editor)).toBe("- Erster Punkt\n- Zweiter Punkt\n");
+    editor.destroy();
+    const numbered = setup("\n");
+    expect(paste(numbered, "1.\tEins\r\n2.\tZwei\r\n")).toBe(true);
+    expect(toMarkdown(numbered)).toBe("1. Eins\n2. Zwei\n");
+    numbered.destroy();
+    // Two columns that are no list markers stay a table.
+    const table = setup("\n");
+    paste(table, "Name\tWert\nA\t1\n");
+    expect(toMarkdown(table)).toBe("| Name | Wert |\n| ---- | ---- |\n| A    | 1    |\n");
+    table.destroy();
+  });
+
   it("turns a stack trace into a code block", () => {
     const editor = setup("\n");
     paste(editor, "Traceback (most recent call last):\n  File \"a.py\", line 1, in <module>\nNameError: x");

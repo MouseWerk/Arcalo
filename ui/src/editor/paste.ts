@@ -240,6 +240,85 @@ export function detectTrace(text: string): { language: string | null } | undefin
   return undefined;
 }
 
+// ------------------------------------------------------------- Word lists
+
+// What Word and Outlook put before a list item: a bullet (also Symbol/Wingdings code points), or a
+// number or letter with `.` or `)`. In the plain text the marker is followed by a tab.
+const BULLET_MARK = /^[•·◦▪▫■□‣⁃∙○●–—\-*o§]$/;
+const ORDERED_MARK = /^\(?(?:\d{1,3}|[a-zA-Z]|[ivxlcIVXLC]{1,6})[.)]$/;
+
+/** Rows split at tabs that are list items copied from Word or Outlook (`•⇥Punkt`, `1.⇥Eins`), as Markdown lines. */
+function listRows(rows: string[][]): string[] | null {
+  if (!rows.every((r) => r.length === 2 && (BULLET_MARK.test(r[0]) || ORDERED_MARK.test(r[0])))) return null;
+  let n = 0;
+  return rows.map(([mark, item]) => (ORDERED_MARK.test(mark) && !BULLET_MARK.test(mark) ? `${++n}. ${item}` : `- ${item}`));
+}
+
+/**
+ * Word and Outlook copy lists as paragraphs (`<p style="mso-list:l0 level2 lfo1">`) with the bullet or
+ * number as text in front: turned into real nested `<ul>`/`<ol>` lists, the marker dropped.
+ */
+export function wordListsToHtml(html: string): string {
+  if (!/mso-list/i.test(html) || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const items = [...doc.body.querySelectorAll<HTMLElement>("p, h1, h2, h3, h4, h5, h6")].filter((p) => /mso-list:\s*l\d+\s+level\d+/i.test(p.getAttribute("style") ?? ""));
+  if (!items.length) return html;
+  type Open = { list: HTMLElement; level: number; li: HTMLElement | null };
+  let stack: Open[] = [];
+  let listId = "";
+  let last: Element | null = null;
+  for (const p of items) {
+    const m = /mso-list:\s*(l\d+)\s+level(\d+)/i.exec(p.getAttribute("style") ?? "")!;
+    const level = Math.min(9, Number(m[2]));
+    // The marker: the `mso-list:Ignore` span (inside `<![if !supportLists]>`), or the first text of the paragraph.
+    const ignore = p.querySelector<HTMLElement>("[style*='mso-list:Ignore' i], [style*='mso-list: Ignore' i]");
+    let mark = (ignore?.textContent ?? "").replace(/[\s ]+/g, " ").trim();
+    if (ignore) {
+      let marker: Element = ignore;
+      while (marker.parentElement && marker.parentElement !== p && marker.parentElement.textContent?.trim() === ignore.textContent?.trim()) marker = marker.parentElement;
+      marker.remove();
+    } else {
+      const walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      let first = walker.nextNode();
+      while (first && !first.textContent?.trim()) first = walker.nextNode();
+      const lead = first ? /^[\s ]*(\S{1,6})[\s ]+/.exec(first.textContent ?? "") : null;
+      if (first && lead && (BULLET_MARK.test(lead[1]) || ORDERED_MARK.test(lead[1]))) {
+        mark = lead[1];
+        first.textContent = (first.textContent ?? "").slice(lead[0].length);
+      }
+    }
+    const ordered = ORDERED_MARK.test(mark) && !BULLET_MARK.test(mark);
+    // A list goes on while its paragraphs follow each other (only whitespace or comments between them).
+    let prev = p.previousSibling;
+    while (prev && (prev.nodeType === 8 || (prev.nodeType === 3 && !prev.textContent?.trim()))) prev = prev.previousSibling;
+    if (prev !== last || m[1] !== listId) stack = [];
+    listId = m[1];
+    while (stack.length && stack[stack.length - 1].level > level) stack.pop();
+    let top = stack[stack.length - 1];
+    if (!top || top.level < level || (top.list.tagName === "OL") !== ordered) {
+      if (top && top.level === level) stack.pop();
+      const list = doc.createElement(ordered ? "ol" : "ul");
+      const start = /^\(?(\d{1,3})[.)]$/.exec(mark);
+      if (ordered && start && start[1] !== "1") list.setAttribute("start", start[1]);
+      const parent = stack[stack.length - 1]?.li;
+      if (parent) parent.append(list);
+      else p.before(list);
+      top = { list, level, li: null };
+      stack.push(top);
+    }
+    const li = doc.createElement("li");
+    const para = doc.createElement(/^H\d$/.test(p.tagName) ? p.tagName.toLowerCase() : "p");
+    para.append(...p.childNodes);
+    li.append(para);
+    top.list.append(li);
+    top.li = li;
+    // `p` stays in place until the next item has looked at its neighbour; all are removed below.
+    last = p;
+  }
+  for (const p of items) p.remove();
+  return doc.body.innerHTML;
+}
+
 // --------------------------------------------------------------- classify
 
 /** What `text` (and the HTML flavor, if any) should become; null for a normal paste. */
@@ -251,6 +330,9 @@ export function classifyPaste(text: string, html = ""): PasteKind | null {
   const trace = text.includes("\n") ? detectTrace(text) : undefined;
   if (trace) return { kind: "code", code: text.replace(/\r\n?/g, "\n").replace(/\n+$/, ""), language: trace.language };
   const tsv = parseTsv(text);
+  // A list from Word or Outlook (`•⇥Punkt` per line) is no table: its HTML has the list, plain text becomes one.
+  const items = tsv ? listRows(tsv) : null;
+  if (items) return html ? null : { kind: "markdown", markdown: items.join("\n") + "\n" };
   if (tsv) return { kind: "table", rows: tsv };
   const table = html ? parseHtmlTable(html) : null;
   if (table) return { kind: "table", rows: table };

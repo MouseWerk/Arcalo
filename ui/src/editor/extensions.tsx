@@ -129,6 +129,23 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       return { type: "wikiLink", raw: m[0], target: m[1].trim(), anchor: m[2]?.trim() ?? null, alias: m[3]?.trim() ?? null };
     },
   },
+  // `[[Seite]]`, `[[Seite#Abschnitt|Alias]]` typed in full (without picking from the list) is a link too.
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /(?<![!\\[])\[\[([^[\]\n]+)\]\]$/,
+        handler: ({ state, range, match }) => {
+          const m = /^([^\]|#\n]*)(?:#([^\]|\n]+))?(?:\|([^\]\n]+))?$/.exec(match[1]);
+          if (!m || (!m[1].trim() && !m[2]?.trim())) return null;
+          // Inside a `code span` still being typed it stays text.
+          const $from = state.doc.resolve(range.from);
+          if (($from.parent.textBetween(0, $from.parentOffset, undefined, "￼").match(/`/g)?.length ?? 0) % 2) return null;
+          const attrs = { target: m[1].trim(), anchor: m[2]?.trim() || null, alias: m[3]?.trim() || null };
+          state.tr.replaceWith(range.from, range.to, this.type.create(attrs));
+        },
+      }),
+    ];
+  },
   parseMarkdown: (token) => ({ type: "wikiLink", attrs: { target: token.target, anchor: token.anchor, alias: token.alias } }),
   // Inside a table cell (marked by schema.ts) the alias pipe must be `\|`.
   renderMarkdown: (node, _h, ctx) =>
