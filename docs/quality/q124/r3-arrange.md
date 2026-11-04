@@ -102,12 +102,24 @@ the root with tests.
   selection (positions kept), duplicate (after the page, with the last edits), favorites, „Aufräumen“ with undo
   (core tests and 121/386-388).
 - Tabs and panes: open, close, duplicate, pin, drag within and between panes, „Andere/Alle Tabs schließen“, the
-  layout after a restart, kept tabs keeping undo and scroll (31, 280, 320, 370, 380 run on this branch). Read in the
-  code: a note open in two panes merges both sides' edits, a note moved to another pane right after typing takes over
-  the closed editor's save. There is no „Tab wieder öffnen“ (Ctrl+Shift+T is the timer).
+  layout after a restart, kept tabs keeping undo and scroll (31, 280, 320, 370, 380 run on this branch); a note
+  moved to the other pane right after typing shows and stores the typing (540). Read in the code: a note open in two
+  panes merges both sides' edits. There is no „Tab wieder öffnen“ (Ctrl+Shift+T is the timer).
 - Board and table: drag between columns several times (the card stays where it was dropped once every answer is
   in), undo of a drop, a cell cleared with Delete (undo toast), property edits through an open editor of the child
   (one writer), option renames.
 - Templates with placeholders (stray and unknown braces, frontmatter dropped), embeds `![[…]]` (live, renamed with
   the page), unlinked mentions „Verlinken“ (refused when the text moved), the outline and links panels following the
   focused pane, presentation (flushes editors first).
+
+## Tests added
+
+- e2e `540-arrange-panes`: a canvas in two panes (delete in each pane, undo in one), the title after a rename in the
+  sidebar, a title and a property typed and the tab closed with Ctrl+W, a note moved to the other pane right after
+  typing.
+- e2e `541-arrange-collections`: board cards dragged between columns four times stay where they were dropped; a
+  canvas below a board page is no card and keeps its file; a card dropped onto another lands right before it with a
+  canvas first in the folder.
+- Unit: `lib/canvas/canvas.test.ts` (merge and undo rebase), `store/app.test.ts` (blur before close, neighbour after
+  a move), core `properties::tests::a_canvas_below_a_collection_is_no_row`.
+- Existing e2e run on this branch without failures: 31, 39, 40, 130, 131, 132, 280, 281, 320, 370, 380, 388.
