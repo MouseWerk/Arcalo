@@ -715,7 +715,6 @@ export function ReviewWidget({ widget }: WidgetProps) {
 // ------------------------------------------------------------------ Kalender
 
 export function CalendarWidget({ widget }: WidgetProps) {
-  const settings = useApp((st) => st.settings?.settings);
   const { data } = useWidgetData<MonthData>(widget);
   const [offset, setOffset] = useState(0);
   const today = new Date();
@@ -739,8 +738,6 @@ export function CalendarWidget({ widget }: WidgetProps) {
   const timeOn = useTimeTracking();
   const days = useMemo(() => new Map((list ?? []).map((d) => [d.date, timeOn ? d : { ...d, booked_minutes: 0 }])), [list, timeOn]);
   const todayIso = isoDay(today);
-  const target = settings?.daily_target_hours ?? 8;
-  const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
   const trackedSince = [...days.values()].find((d) => d.booked_minutes > 0)?.date;
   const weekdays = useMemo(() => Array.from({ length: 7 }, (_, i) => fmt(addDays(weekStart(today, 1), i), { weekday: "short" }).slice(0, 2)), []);
   return (
@@ -760,7 +757,7 @@ export function CalendarWidget({ widget }: WidgetProps) {
           const iso = isoDay(d);
           const info = days.get(iso);
           const minutes = info?.booked_minutes ?? 0;
-          const tone = dayTone(d, minutes, target, workdays, today, trackedSince);
+          const tone = dayTone(d, minutes, info?.target_minutes ?? 0, today, trackedSince);
           const cls = ["dw-cal-day", d.getMonth() !== month && "outside", iso === todayIso && "today", info?.has_note && "has-note", tone !== "none" && `tone-${tone}`].filter(Boolean).join(" ");
           return (
             <button key={iso} type="button" className={cls} data-date={iso} title={[iso, info?.has_note ? t("dash.dailyNote") : null, minutes > 0 ? `${hoursLabel(minutes)} h` : null].filter(Boolean).join(" · ")} onClick={(e) => openDailyNote(iso, e.ctrlKey || e.metaKey)}>

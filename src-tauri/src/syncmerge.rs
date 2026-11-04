@@ -92,16 +92,21 @@ fn folder_page(
     dir: Option<&str>,
     by_file: &HashMap<String, i64>,
     by_folder: &mut HashMap<String, i64>,
+    titles: &HashMap<String, String>,
     out: &mut Pulled,
 ) -> Result<Option<i64>> {
     let Some(dir) = dir.filter(|d| !d.is_empty()) else { return Ok(None) };
     let key = dir.to_lowercase();
-    if let Some(&id) = by_folder.get(&key).or_else(|| by_file.get(&format!("{key}.md"))) {
+    // Never a page in the trash (nothing can be created below it).
+    let live = |id: &i64| db.page(*id).is_ok_and(|p| p.deleted_at.is_none());
+    if let Some(&id) = by_folder.get(&key).or_else(|| by_file.get(&format!("{key}.md"))).filter(|id| live(id)) {
         by_folder.insert(key, id);
         return Ok(Some(id));
     }
-    let parent = folder_page(db, parent_dir(dir), by_file, by_folder, out)?;
-    let page = db.create_page(parent, dir.rsplit('/').next().unwrap_or(dir), Some("folder"))?;
+    let parent = folder_page(db, parent_dir(dir), by_file, by_folder, titles, out)?;
+    let name = dir.rsplit('/').next().unwrap_or(dir);
+    let title = titles.get(&key).filter(|t| names_title(name, t)).map_or(name, String::as_str);
+    let page = db.create_page(parent, title, Some("folder"))?;
     out.created.push(page.id);
     by_folder.insert(key, page.id);
     Ok(Some(page.id))
@@ -200,7 +205,17 @@ fn folder_moves(
 /// becomes a conflict. A note the server moved or renamed moves here too: the page keeps its
 /// id, versions, time entries and links. Files outside the notes (the sync's README, time
 /// sheets, attachments) are skipped.
-pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> Result<Pulled> {
+pub fn apply(
+    db: &Database,
+    changes: &[RemoteChange],
+    titles: &HashMap<String, String>,
+    now: DateTime<Local>,
+) -> Result<Pulled> {
+    // The title of the page at a path: the one the titles file names for it (`Q3: Ziele` for
+    // `Q3- Ziele.md`), else the file name.
+    let title_of = |path: &str, name: &str| -> String {
+        titles.get(&path.to_lowercase()).filter(|t| names_title(name, t)).cloned().unwrap_or_else(|| name.to_owned())
+    };
     db.atomic(|| {
         let paths = vault::page_paths(db)?;
         let mut by_file: HashMap<String, i64> =
@@ -221,17 +236,34 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
             .count();
         let tracked = by_file.keys().filter(|k| is_page_path(k)).count();
         let refuse_deletions = gitsync::mass_deletion(deletions, tracked);
+        // Pages with a note here, and the ones this pull deletes or moves away (by their note here).
+        let with_file: HashSet<i64> = by_file.values().copied().collect();
+        let leaving: HashSet<i64> = changes
+            .iter()
+            .filter_map(|c| {
+                let path = if c.theirs.is_none() && !c.conflict { Some(&c.path) } else { c.from.as_ref() };
+                by_file.get(&path?.to_lowercase()).copied()
+            })
+            .collect();
+        // Pages this pull moves (by their note here).
+        let moving: HashSet<i64> =
+            changes.iter().filter_map(|c| by_file.get(&c.from.as_ref()?.to_lowercase()).copied()).collect();
+        // Whether this pull brings a note below the folder of the note `lower`.
+        let arriving_below = |lower: &str| {
+            let folder = format!("{}/", without_ext(lower));
+            changes.iter().any(|c| c.theirs.is_some() && c.path.to_lowercase().starts_with(&folder))
+        };
         // Folders renamed or moved there: the folder's page follows (its notes follow below).
         for (old, new) in folder_moves(changes, &by_file, &by_folder, &only) {
             let Some(&id) = by_folder.get(&old) else { continue };
-            let parent = folder_page(db, parent_dir(&new), &by_file, &mut by_folder, &mut out)?;
+            let parent = folder_page(db, parent_dir(&new), &by_file, &mut by_folder, titles, &mut out)?;
             let page = db.page(id)?;
             if page.parent_id != parent && db.move_page(id, parent, i64::MAX).is_err() {
                 continue;
             }
             let name = new.rsplit('/').next().unwrap_or(&new);
             if !names_title(name, &page.title) {
-                db.rename_page(id, name)?;
+                db.rename_page(id, &title_of(&new, name))?;
             }
             out.moved.push(id);
             named.insert(id);
@@ -260,13 +292,13 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
             // Moved or renamed there: the page of the old path moves here as well.
             let moved = c.from.as_deref().and_then(|f| by_file.get(&alias(f).to_lowercase()).copied());
             if let (Some(id), Some(from)) = (moved, c.from.as_deref()) {
-                let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                let parent = folder_page(db, dir, &by_file, &mut by_folder, titles, &mut out)?;
                 let page = db.page(id)?;
                 // Never into its own subpages (a loop): then it keeps its place here.
                 let placed = page.parent_id == parent || db.move_page(id, parent, i64::MAX).is_ok();
                 let name = stem(&c.path);
                 if stem(from) != name && !names_title(&name, &page.title) {
-                    db.rename_page(id, &name)?;
+                    db.rename_page(id, &title_of(&path, &name))?;
                 }
                 if placed {
                     out.moved.push(id);
@@ -301,7 +333,22 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                             }
                         }
                         (None, false) if refuse_deletions => out.kept.push(id),
+                        // Trashed already, with its parent deleted there as well.
+                        (None, false) if db.page(id)?.deleted_at.is_some() => {}
+                        // Its subpages stay there (one edited here, which the server kept), or
+                        // there are new ones (the first subpage of an empty page): the page stays
+                        // as their folder, as there; its text is kept as a version.
+                        (None, false) if keeps_subpages(db, id, &with_file, &leaving)? || arriving_below(&lower) => {
+                            if !current.is_empty() {
+                                db.snapshot_page(id)?;
+                                db.save_page_content(id, "")?;
+                                out.pages.push(id);
+                            }
+                        }
                         (None, false) => {
+                            // A subpage moved out there before the page was deleted leaves it first;
+                            // its own change puts it in its new place.
+                            release_moving(db, id, &moving)?;
                             db.trash_page(id)?;
                             out.trashed.push(id);
                         }
@@ -332,7 +379,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                         // An unreadable canvas from another computer (or Obsidian) stays on the server.
                         continue;
                     }
-                    let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                    let parent = folder_page(db, dir, &by_file, &mut by_folder, titles, &mut out)?;
                     // Deleted here while the other computer edited it: the edit brings it back, as
                     // the page from the trash when it was deleted on its own.
                     let came_back = mine.is_none() && base.is_some();
@@ -345,13 +392,17 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                             id
                         }
                         None if canvas => {
-                            let page = db.create_page(parent, &stem(&c.path), Some(arcalo_core::canvas::ICON))?;
+                            let page = db.create_page(
+                                parent,
+                                &title_of(&path, &stem(&c.path)),
+                                Some(arcalo_core::canvas::ICON),
+                            )?;
                             db.make_canvas(page.id, theirs)?;
                             out.created.push(page.id);
                             page.id
                         }
                         None => {
-                            let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
+                            let page = db.create_page(parent, &title_of(&path, &stem(&c.path)), Some("file-text"))?;
                             db.save_page_content(page.id, theirs)?;
                             out.created.push(page.id);
                             page.id
@@ -381,6 +432,30 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
         }
         store(db, &conflicts)?;
         Ok(out)
+    })
+}
+
+/// Pages whose title their file name cannot hold (`Q3: Ziele` in `Q3- Ziele.md`) get the title
+/// the other computer gave them ([`vault::TITLES_FILE`], `titles`: its entries that differ from
+/// this computer's mirror, see [`vault::pulled_titles`]): pages taken over before the file existed
+/// carry the file name's version, and a rename there that keeps the file name changes no note.
+/// Runs after every sync, also one that pulled no note. Returns the pages renamed.
+pub fn take_over_titles(db: &Database, titles: &HashMap<String, String>) -> Result<Vec<i64>> {
+    if titles.is_empty() {
+        return Ok(vec![]);
+    }
+    db.atomic(|| {
+        let mut renamed = vec![];
+        for p in vault::page_paths(db)? {
+            let entry =
+                p.file.iter().chain(p.folder.iter()).find_map(|path| Some((path, titles.get(&path.to_lowercase())?)));
+            let Some((path, title)) = entry else { continue };
+            if &db.page(p.page_id)?.title != title && names_title(vault::path_stem(path), title) {
+                db.rename_page(p.page_id, title)?;
+                renamed.push(p.page_id);
+            }
+        }
+        Ok(renamed)
     })
 }
 
@@ -439,6 +514,43 @@ pub fn apply_file_renames(
         pages.extend(changed);
     }
     Ok(pages)
+}
+
+/// Whether a page the server deleted has subpages that stay: a page with a note of its own below
+/// it that this pull neither deletes nor moves away (`with_file`, `leaving`). Trashing the page
+/// would take them along, although the server still has them.
+fn keeps_subpages(db: &Database, id: i64, with_file: &HashSet<i64>, leaving: &HashSet<i64>) -> Result<bool> {
+    let pages = db.list_pages()?;
+    let mut below = vec![id];
+    while let Some(parent) = below.pop() {
+        for p in pages.iter().filter(|p| p.parent_id == Some(parent)) {
+            if with_file.contains(&p.id) && !leaving.contains(&p.id) {
+                return Ok(true);
+            }
+            below.push(p.id);
+        }
+    }
+    Ok(false)
+}
+
+/// Moves the pages below `id` that this pull moves elsewhere (`moving`) to the top level for now,
+/// so trashing `id` does not take them along.
+fn release_moving(db: &Database, id: i64, moving: &HashSet<i64>) -> Result<()> {
+    if moving.is_empty() {
+        return Ok(());
+    }
+    let pages = db.list_pages()?;
+    let mut below = vec![id];
+    while let Some(parent) = below.pop() {
+        for p in pages.iter().filter(|p| p.parent_id == Some(parent)) {
+            if moving.contains(&p.id) {
+                db.move_page(p.id, None, i64::MAX)?;
+            } else {
+                below.push(p.id);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A page deleted here that the other computer edited since: the trashed page of that name below
@@ -719,6 +831,11 @@ fn keep_beside(repo: &std::path::Path, dst: &std::path::Path, name: &str) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// [`super::apply`] without a titles file.
+    fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> Result<Pulled> {
+        super::apply(db, changes, &HashMap::new(), now)
+    }
 
     fn change(
         path: &str,
@@ -1013,9 +1130,12 @@ mod tests {
             std::fs::create_dir_all(&files).unwrap();
             let own = dir.join("mirror");
             arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
-            let pulled = apply(db, &self.push(pc, &own, &hold_paths(db)), Local::now()).unwrap();
-            // As the shell: the pages hold the pulled notes.
+            let changes = self.push(pc, &own, &hold_paths(db));
+            // As the shell: the pages hold the pulled notes and the server's titles.
+            let titles = vault::pulled_titles(&dir.join("git-sync"), &own);
+            let mut pulled = super::apply(db, &changes, &titles, Local::now()).unwrap();
             gitsync::taken_over(&dir.join("git-sync"));
+            pulled.moved.extend(take_over_titles(db, &titles).unwrap());
             pulled
         }
 
@@ -1151,6 +1271,271 @@ mod tests {
         let out = pcs.sync(&b, "b");
         assert!(out.trashed.is_empty(), "{out:?}");
         assert_eq!(b.page_doc(on_b.id).unwrap().content, "wichtige Ergänzung von B");
+    }
+
+    /// A page deleted on one computer together with its subpages: the other computer takes both
+    /// deletions over. Before, trashing the page took the subpage along and the subpage's own
+    /// deletion then failed („liegt bereits im Papierkorb“), so that computer took nothing over
+    /// from the server any more.
+    #[test]
+    fn a_page_deleted_there_with_its_subpages_is_taken_over() {
+        let Some(pcs) = Pcs::new("delete-tree") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..8 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let eltern = a.create_page(None, "Eltern", None).unwrap();
+        a.save_page_content(eltern.id, "Elterntext").unwrap();
+        let kind = a.create_page(Some(eltern.id), "Kind", None).unwrap();
+        a.save_page_content(kind.id, "v1").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        a.trash_page(eltern.id).unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        let eltern_b = b.list_trash().unwrap();
+        assert_eq!(eltern_b.len(), 1, "{out:?}");
+        assert_eq!((eltern_b[0].page.title.as_str(), eltern_b[0].descendants), ("Eltern", 1));
+        assert_eq!(out.trashed, [eltern_b[0].page.id]);
+        assert_eq!(tree(&a), tree(&b));
+    }
+
+    /// A page deleted there whose subpage was edited here: the subpage stays with this side's
+    /// text on both computers (the edit wins, as for a single note), below its folder. Before, the
+    /// parent's deletion trashed the edited subpage here and the next sync deleted it everywhere.
+    #[test]
+    fn a_subpage_edited_here_stays_when_its_page_was_deleted_there() {
+        for a_first in [true, false] {
+            let Some(pcs) = Pcs::new(if a_first { "edit-below-a" } else { "edit-below-b" }) else { return };
+            let a = Database::open_in_memory().unwrap();
+            for i in 0..8 {
+                let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+                a.save_page_content(p.id, "x").unwrap();
+            }
+            let eltern = a.create_page(None, "Eltern", None).unwrap();
+            a.save_page_content(eltern.id, "Elterntext").unwrap();
+            let kind = a.create_page(Some(eltern.id), "Kind", None).unwrap();
+            a.save_page_content(kind.id, "v1").unwrap();
+            pcs.sync(&a, "a");
+            let b = Database::open_in_memory().unwrap();
+            pcs.sync(&b, "b");
+            let kind_b = b.page_by_title("Kind").unwrap().unwrap();
+            b.save_page_content(kind_b.id, "wichtig von B").unwrap();
+            a.trash_page(eltern.id).unwrap();
+            let order: [(&Database, &str); 4] = if a_first {
+                [(&a, "a"), (&b, "b"), (&a, "a"), (&b, "b")]
+            } else {
+                [(&b, "b"), (&a, "a"), (&b, "b"), (&a, "a")]
+            };
+            for (db, pc) in order {
+                pcs.sync(db, pc);
+            }
+            for db in [&a, &b] {
+                let k = db.page_by_title("Kind").unwrap().expect("the edited subpage is there");
+                assert_eq!(db.page_doc(k.id).unwrap().content, "wichtig von B");
+                let parent = db.page(k.parent_id.unwrap()).unwrap();
+                assert_eq!((parent.title.as_str(), db.page_doc(parent.id).unwrap().content.as_str()), ("Eltern", ""));
+            }
+            assert_eq!(tree(&a), tree(&b));
+            // B kept the page's text as a version.
+            let versions = b.list_versions(b.page_by_title("Eltern").unwrap().unwrap().id).unwrap();
+            let texts: Vec<String> = versions.iter().map(|v| b.version_content(v.id).unwrap()).collect();
+            assert!(texts.iter().any(|t| t == "Elterntext"), "{texts:?}");
+        }
+    }
+
+    /// The first subpage of an empty page: on the other computer the page stays and gets the
+    /// subpage below it. Before, with text in the subpage the take-over failed there for good („Die
+    /// übergeordnete Seite liegt im Papierkorb“: the empty page's file was gone, so it was trashed
+    /// first); an empty subpage was taken for the page itself, which lost its name there.
+    #[test]
+    fn the_first_subpage_of_an_empty_page_reaches_the_other_computer() {
+        for text in ["Inhalt", ""] {
+            let Some(pcs) = Pcs::new(if text.is_empty() { "first-sub-empty" } else { "first-sub" }) else { return };
+            let a = Database::open_in_memory().unwrap();
+            for i in 0..4 {
+                let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+                a.save_page_content(p.id, "x").unwrap();
+            }
+            let projekte = a.create_page(None, "Projekte", None).unwrap();
+            pcs.sync(&a, "a");
+            let b = Database::open_in_memory().unwrap();
+            pcs.sync(&b, "b");
+            let on_b = b.page_by_title("Projekte").unwrap().unwrap();
+            let erstes = a.create_page(Some(projekte.id), "Erstes", None).unwrap();
+            a.save_page_content(erstes.id, text).unwrap();
+            pcs.sync(&a, "a");
+            let out = pcs.sync(&b, "b");
+            assert!(out.trashed.is_empty() && out.moved.is_empty(), "{text:?}: {out:?}");
+            let sub = b.page_by_title("Erstes").unwrap().unwrap();
+            assert_eq!(sub.parent_id, Some(on_b.id), "{text:?}");
+            assert_eq!(b.page_doc(sub.id).unwrap().content, text);
+            pcs.sync(&a, "a");
+            pcs.sync(&b, "b");
+            assert_eq!(tree(&a), tree(&b));
+            assert!(a.list_trash().unwrap().is_empty() && b.list_trash().unwrap().is_empty());
+        }
+    }
+
+    /// Emptying the text of a page with subpages turns it into a folder (its file goes): the
+    /// other computer keeps the page and its subpages. Before, it trashed the page with all of
+    /// them, and its next sync deleted the subpages on every computer.
+    #[test]
+    fn a_page_emptied_there_keeps_its_subpages() {
+        let Some(pcs) = Pcs::new("emptied") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..6 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let eltern = a.create_page(None, "Eltern", None).unwrap();
+        a.save_page_content(eltern.id, "Einleitung").unwrap();
+        for t in ["Kind 1", "Kind 2"] {
+            let k = a.create_page(Some(eltern.id), t, None).unwrap();
+            a.save_page_content(k.id, t).unwrap();
+        }
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        a.save_page_content(eltern.id, "").unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        assert!(out.trashed.is_empty(), "{out:?}");
+        let on_b = b.page_by_title("Eltern").unwrap().unwrap();
+        assert_eq!(b.page_doc(on_b.id).unwrap().content, "");
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        assert_eq!(tree(&a), tree(&b));
+        assert_eq!(a.list_pages().unwrap().len(), 9);
+        assert!(a.list_trash().unwrap().is_empty() && b.list_trash().unwrap().is_empty());
+    }
+
+    /// A subpage moved out of a page that was deleted afterwards (keep one, delete the rest): the
+    /// other computer moves it and trashes the page without it. Before, the page went to the trash
+    /// first and took the subpage along; the next sync deleted it on every computer.
+    #[test]
+    fn a_subpage_moved_out_before_its_page_was_deleted_stays() {
+        let Some(pcs) = Pcs::new("move-out") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..12 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let alt = a.create_page(None, "Alt", None).unwrap();
+        a.save_page_content(alt.id, "alt").unwrap();
+        let behalten = a.create_page(Some(alt.id), "Behalten", None).unwrap();
+        a.save_page_content(behalten.id, "behalten").unwrap();
+        let weg = a.create_page(Some(alt.id), "Weg", None).unwrap();
+        a.save_page_content(weg.id, "weg").unwrap();
+        let ziel = a.create_page(None, "Ziel", None).unwrap();
+        a.save_page_content(ziel.id, "ziel").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Behalten").unwrap().unwrap();
+        a.move_page(behalten.id, Some(ziel.id), 0).unwrap();
+        a.trash_page(alt.id).unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        let kept = b.page_by_title("Behalten").unwrap().expect("not in the trash");
+        assert_eq!(kept.id, on_b.id, "{out:?}");
+        assert_eq!(kept.parent_id, b.page_by_title("Ziel").unwrap().map(|p| p.id));
+        let trash = b.list_trash().unwrap();
+        assert_eq!(trash.iter().map(|e| (e.page.title.as_str(), e.descendants)).collect::<Vec<_>>(), [("Alt", 1)]);
+        pcs.sync(&b, "b");
+        pcs.sync(&a, "a");
+        assert_eq!(tree(&a), tree(&b));
+        assert!(a.page_by_title("Behalten").unwrap().is_some());
+    }
+
+    /// Titles a file name cannot hold (`:`, `?`, `/`, a trailing dot) reach the other computer as
+    /// they are, and the links to them work there. Before, the page was named after its file there
+    /// („Q3- Ziele“) and every link to it found nothing.
+    #[test]
+    fn titles_the_file_names_cannot_hold_reach_the_other_computer() {
+        let Some(pcs) = Pcs::new("titles") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let mut ids = vec![];
+        for t in ["Q3: Ziele", "Was tun?", "A/B-Test", "Version 2.", "Projekt: Alpha"] {
+            let p = a.create_page(None, t, None).unwrap();
+            a.save_page_content(p.id, &format!("Text von {t}")).unwrap();
+            ids.push(p.id);
+        }
+        // A folder-only page (no text) whose name loses its colon, with a subpage.
+        let ordner = a.create_page(None, "Ablage: 2026", Some("folder")).unwrap();
+        let plan = a.create_page(Some(ordner.id), "Plan?", None).unwrap();
+        a.save_page_content(plan.id, "Schritte").unwrap();
+        let index = a.create_page(None, "Index", None).unwrap();
+        let links = "[[Q3: Ziele]] [[Was tun?]] [[A/B-Test]] [[Version 2.]] [[Projekt: Alpha]] [[Plan?]]";
+        a.save_page_content(index.id, links).unwrap();
+        pcs.sync(&a, "a");
+
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        assert_eq!(tree(&a), tree(&b));
+        let unresolved = |db: &Database| {
+            let page = db.page_by_title("Index").unwrap().unwrap();
+            let content = db.page_doc(page.id).unwrap().content;
+            db.unresolved_links(db.outgoing_links(page.id, &content).unwrap()).unwrap()
+        };
+        assert!(unresolved(&b).is_empty(), "{:?}", unresolved(&b));
+
+        // A computer that took the pages over before the titles file existed has the file names'
+        // versions; its next sync gives them the titles.
+        let c = Database::open_in_memory().unwrap();
+        let dir = pcs.base.join("c");
+        std::fs::create_dir_all(dir.join("attachments")).unwrap();
+        arcalo_core::mirror::write_mirror(&c, &dir.join("mirror"), &dir.join("attachments"), &Local).unwrap();
+        let changes = pcs.push("c", &dir.join("mirror"), &[]);
+        apply(&c, &changes, Local::now()).unwrap();
+        gitsync::taken_over(&dir.join("git-sync"));
+        assert!(c.page_by_title("Q3- Ziele").unwrap().is_some(), "{:?}", tree(&c));
+        let out = pcs.sync(&c, "c");
+        assert_eq!(out.moved.len(), 7, "{out:?}");
+        assert_eq!(tree(&c), tree(&a));
+        assert!(unresolved(&c).is_empty(), "{:?}", unresolved(&c));
+
+        // A rename that keeps the file name („Q3- Ziele.md“) reaches the others as well.
+        a.rename_page(ids[0], "Q3? Ziele").unwrap();
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
+        assert!(b.page_by_title("Q3? Ziele").unwrap().is_some(), "{:?}", tree(&b));
+        assert_eq!(tree(&b), tree(&a));
+        assert_eq!(tree(&c), tree(&a));
+
+        // New titled pages on two computers at once: both titles arrive everywhere.
+        let x = a.create_page(None, "Frage: A", None).unwrap();
+        a.save_page_content(x.id, "von A").unwrap();
+        let y = b.create_page(None, "Frage: B", None).unwrap();
+        b.save_page_content(y.id, "von B").unwrap();
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        pcs.sync(&a, "a");
+        pcs.sync(&c, "c");
+        assert_eq!(tree(&a), tree(&b));
+        assert_eq!(tree(&c), tree(&a));
+        assert!(a.page_by_title("Frage: B").unwrap().is_some(), "{:?}", tree(&a));
+
+        // Settled: further syncs change nothing and commit nothing.
+        let commits = || {
+            let out = std::process::Command::new("git")
+                .args(["rev-list", "--all", "--count"])
+                .current_dir(pcs.base.join("remote.git"))
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
+        let before = commits();
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&c, "c"), (&a, "a")] {
+            let out = pcs.sync(db, pc);
+            assert!(out.moved.is_empty() && out.created.is_empty() && out.pages.is_empty(), "{pc}: {out:?}");
+        }
+        assert_eq!(commits(), before, "no commits back and forth");
     }
 
     #[test]

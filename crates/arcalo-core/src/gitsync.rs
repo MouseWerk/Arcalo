@@ -778,6 +778,9 @@ fn protected(src: &Path, companion: bool) -> Vec<String> {
         DB_FILE.to_owned(),
         LEGACY_DB_FILE.to_owned(),
         crate::settings_sync::FILE.to_owned(),
+        // Written only while a page needs it; a computer without one (or whose pages still carry
+        // the file names' versions, taken over before the file existed) keeps the server's.
+        crate::vault::TITLES_FILE.to_owned(),
     ];
     if !src.join(README_FILE).exists() {
         p.push(README_FILE.to_owned());
@@ -2768,8 +2771,23 @@ fn note_renames(git: &Git, repo: &Path, from: &str, to: &str) -> Result<Vec<(Str
             found[i].0 = old.unwrap_or_default();
         }
     }
+    // An empty note is like every other empty note: paired across names, the first subpage of an
+    // empty page („Projekte.md“ → „Projekte/Erstes.md“) was taken for that page, which then lost
+    // its name on the other computer and its place in the tree. Empty notes count as moved only
+    // under their own file name.
+    let empty = |id: &str| EMPTY_BLOBS.contains(&id);
+    let mut i = 0;
+    found.retain(|(old, new)| {
+        let keep = !(empty(&ids[i].0) && empty(&ids[i].1)) || file_name(old) == file_name(new);
+        i += 1;
+        keep
+    });
     Ok(found)
 }
+
+/// The object ids of an empty file (SHA-1 and SHA-256 repositories).
+const EMPTY_BLOBS: [&str; 2] =
+    ["e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"];
 
 /// Writes `text` as `path` into the working tree and the index.
 fn put_path(git: &Git, repo: &Path, path: &str, text: &str) -> Result<()> {
@@ -3178,6 +3196,14 @@ fn merge_remote(
         if path == crate::settings_sync::FILE && mine_id != theirs_id {
             if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
                 fs::write(repo.join(path), crate::settings_sync::merge_text(Some(&t), &m))?;
+                git.check(Some(repo), &["add", "--", path])?;
+            }
+            continue;
+        }
+        // The titles the file names do not hold, changed on both sides: path by path.
+        if path == crate::vault::TITLES_FILE && mine_id != theirs_id {
+            if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
+                fs::write(repo.join(path), crate::vault::merge_titles(&t, &m))?;
                 git.check(Some(repo), &["add", "--", path])?;
             }
             continue;

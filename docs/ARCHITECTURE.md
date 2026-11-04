@@ -244,14 +244,22 @@ page, on a blocking thread).
   manager moves its entry (`renamed_kept`: the new name kept, the old one removed). The sync changes no
   note for it; `FileRename` tells the user about the second version.
   Moves and renames are pulled
-  as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
+  as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names;
+  empty notes pair only under their own file name, so the first subpage of an empty page is never taken for it)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
   at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
   The mirror reserves the sync's own top-level names (`README`, `Zeiterfassung`, `attachments`, as file and folder:
-  `vault::Planner`), so no page lands where the pull skips files. The shell (`syncmerge.rs`) maps paths to pages with
+  `vault::Planner`), so no page lands where the pull skips files. A title its file name cannot hold (`Q3: Ziele` in
+  `Q3- Ziele.md`, a cut long title, a trailing dot) is listed in the mirror's `.arcalo-titles.json` (path → title, written
+  only while a page needs it, kept in the working tree when the mirror has none, merged path by path when both sides
+  changed it): a pulled page takes that title, and `syncmerge::take_over_titles` gives it after every sync to pages that
+  carry the file name's version (taken over before 1.23 had the file) or were renamed there without a new file name
+  (`vault::pulled_titles`: only entries this computer's mirror does not name the same way). The shell (`syncmerge.rs`) maps paths to pages with
   `vault::page_paths` (the export's naming, case-insensitive) and takes pulled notes over through `save_page_content` after
   a snapshot (new files become pages below the page of their folder, a folder without a page here gets one,
-  deletions go to the trash, attachments the repository has and the data folder lacks are copied). A moved note moves
+  deletions go to the trash (a page whose subpages stay there, one edited here, stays as their folder and its text
+  becomes a version; a subpage trashed with its page already is skipped; one this pull moves elsewhere leaves the
+  page first), attachments the repository has and the data folder lacks are copied). A moved note moves
   its page (same id, versions, time entries, links; renamed when the file name changed beyond the mirror's „ (2)“), a
   folder-only page whose notes all moved to one new folder follows them, and one whose subpages all went is trashed. A
   page deleted here that came back is restored from the trash when it was trashed on its own (`Pulled.restored`, a

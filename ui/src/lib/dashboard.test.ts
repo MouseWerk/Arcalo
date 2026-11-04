@@ -252,7 +252,7 @@ describe("budget badge", () => {
 
 describe("week bars", () => {
   const monday = new Date(2026, 8, 21); // Mo 21.09.2026
-  const day = (date: string, booked_minutes: number): DayOverview => ({ date, booked_minutes, note_id: null, has_note: false, open_tasks: 0 });
+  const day = (date: string, booked_minutes: number): DayOverview => ({ date, booked_minutes, target_minutes: 480, note_id: null, has_note: false, open_tasks: 0 });
   const days = [day("2026-09-21", 480), day("2026-09-22", 360), day("2026-09-23", 600), day("2026-09-24", 120), day("2026-09-26", 60)];
 
   const targets = [480, 480, 480, 480, 480, 0, 0];

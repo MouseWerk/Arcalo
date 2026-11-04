@@ -589,7 +589,7 @@ fn daily_note(state: State<AppState>, date: Option<NaiveDate>) -> Result<Page> {
 /// Per day `from..=to` (local): daily note, booked minutes and open tasks due, for the calendar.
 #[tauri::command(async)]
 fn daily_overview(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<Vec<DayOverview>> {
-    calendar::daily_overview(&state.reader(), from, to, &Local)
+    calendar::daily_overview(&state.reader(), &state.settings(), from, to, &Local)
 }
 
 #[tauri::command(async)]
@@ -660,11 +660,17 @@ fn tasks_undo(app: AppHandle, state: State<AppState>, change: arcalo_core::taske
     Ok(())
 }
 
-/// The next due date of a repeating task done today (its text after the checkbox); the editor
-/// adds the next occurrence itself.
+/// The next due date of a repeating task done today (its text after the checkbox).
 #[tauri::command]
 fn task_next_due(text: String) -> Option<String> {
     arcalo_core::taskedit::next_due_of(&text, chrono::Local::now().date_naive())
+}
+
+/// The next occurrence of a repeating task done today (its text after the checkbox): its due date
+/// and the rule it keeps its day of the month with; the editor adds the occurrence itself.
+#[tauri::command]
+fn task_next(text: String) -> Option<arcalo_core::taskedit::NextOccurrence> {
+    arcalo_core::taskedit::next_occurrence_of(&text, chrono::Local::now().date_naive())
 }
 
 /// The next due dates of a rule, for the repeat dialog.
@@ -1508,6 +1514,7 @@ fn time_chip_book(
         description: text,
         date: date.map_or(arcalo_core::zeit::DateSpec::Today, arcalo_core::zeit::DateSpec::On),
         start: None,
+        end: None,
     };
     let ctx = tracking::SlashContext { default_ref: None, page_id: Some(page_id) };
     let mut out =
@@ -1797,6 +1804,9 @@ pub(crate) fn run_git_sync_with(
     {
         taken_over = take_over_pulled(app, &state, out);
     }
+    if res.is_ok() {
+        take_over_titles(app, &state);
+    }
     // The pages hold the pulled notes: the next sync starts from the mirror again (a failed
     // take-over leaves them waiting, so the next sync brings them once more).
     if res.is_ok() && taken_over {
@@ -1843,11 +1853,26 @@ pub(crate) fn run_git_sync_with(
     res
 }
 
+/// Gives pages the titles another computer gave them where the file names cannot hold them
+/// (`syncmerge::take_over_titles`); the tree shows them at once.
+fn take_over_titles(app: &AppHandle, state: &AppState) {
+    let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
+    match syncmerge::take_over_titles(&state.db(), &titles) {
+        Ok(renamed) if !renamed.is_empty() => {
+            devlog::info("git", format!("{} page titles taken over from the server", renamed.len()));
+            let _ = app.emit("gitsync://pulled", &syncmerge::Pulled { moved: renamed, ..Default::default() });
+        }
+        Ok(_) => {}
+        Err(e) => devlog::warn("git", format!("page titles from the server not taken over: {e}")),
+    }
+}
+
 /// Takes over the notes a sync pulled from the server (and the attachments they embed) and
 /// tells the UI (`gitsync://pulled`: pages to reload, conflicts to show). Returns whether the
 /// notes were taken over.
 fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> bool {
-    let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
+    let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
+    let pulled = syncmerge::apply(&state.db(), &out.remote_changes, &titles, Local::now());
     match pulled {
         Ok(mut p) => {
             // Anything not taken over here keeps the pull waiting for the next sync.
@@ -5182,6 +5207,7 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         tasks_edit,
         tasks_undo,
         task_next_due,
+        task_next,
         task_recur_preview,
         search_workspace,
         vault_import,
