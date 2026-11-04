@@ -12,7 +12,8 @@ const URL_LONG = `https://example.com/${"pfad/".repeat(60)}datei.pdf?x=${"1".rep
 const WORD = "W".repeat(300);
 const CODE = "```bash\n" + `echo ${"sehr-lange-zeile-".repeat(30)}\n` + "```";
 const TABLE = `| ${Array.from({ length: 12 }, (_, i) => `Spalte ${i + 1}`).join(" | ")} |\n|${" --- |".repeat(12)}\n| ${Array.from({ length: 12 }, (_, i) => `Wert ${i + 1}`).join(" | ")} |`;
-const ANSWER = `Hier: ${URL_LONG}\n\n${WORD}\n\nPfad \`C:\\Users\\${"ordner\\".repeat(30)}datei.txt\`\n\n${CODE}\n\n${TABLE}\n\n![Bild](https://example.com/bild.png)`;
+// (An image of the answer itself: a remote one becomes a link, see airemote.test.ts.)
+const ANSWER = `Hier: ${URL_LONG}\n\n${WORD}\n\nPfad \`C:\\Users\\${"ordner\\".repeat(30)}datei.txt\`\n\n${CODE}\n\n${TABLE}\n\n![Bild](data:image/png;base64,iVBORw0KGgo=)`;
 
 describe("chat Markdown", () => {
   it("puts every code block into a box with its language and a copy button", () => {

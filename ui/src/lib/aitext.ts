@@ -38,7 +38,10 @@ export function transformInstruction(presetOrText: string, presets: AiPreset[] =
 
 /** Removes a fence the model put around the whole answer (```markdown … ```), also while it streams. */
 export function cleanAiMarkdown(answer: string): string {
-  const t = answer.trim();
+  return withoutRemoteImages(unfence(answer.trim()));
+}
+
+function unfence(t: string): string {
   const m = /^```(markdown|md)?[ \t]*\n/i.exec(t);
   if (!m) return t;
   const body = t.slice(m[0].length);
@@ -47,6 +50,50 @@ export function cleanAiMarkdown(answer: string): string {
   const inner = closed ? body.slice(0, closed.index) : body;
   if (inner.includes("\n```")) return t;
   return inner.trimEnd();
+}
+
+const REMOTE = /^\s*<?\s*(?:[a-z][a-z\d+.-]*:|\/\/)/i;
+const LOCAL = /^\s*<?\s*(?:data:|blob:|arcalo-asset:|http:\/\/arcalo-asset\.localhost\/)/i;
+
+/**
+ * A model's answer before it goes into a page: an image from another server becomes a link to it
+ * (`![a](https://…)` → `[a](https://…)`, raw `<img src="https://…">` too), outside code. Shown in a
+ * page, the image would be fetched at once, and its address can carry what the model read (a
+ * private note, steered by text in a mail, a Jira issue or a web page).
+ */
+export function withoutRemoteImages(md: string): string {
+  if (!/!\[|<img/i.test(md)) return md;
+  let fence: string | null = null;
+  return md
+    .split("\n")
+    .map((line) => {
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (f && (!fence || (f[1][0] === fence[0] && f[1].length >= fence.length))) {
+        fence = fence ? null : f[1];
+        return line;
+      }
+      if (fence) return line;
+      return line
+        .split(/(`+[^`]*`+)/)
+        .map((part, i) => (i % 2 ? part : unimage(part)))
+        .join("");
+    })
+    .join("\n");
+}
+
+const remoteSrc = (url: string) => REMOTE.test(url) && !LOCAL.test(url);
+
+function unimage(text: string): string {
+  return text
+    .replace(/!\[([^\]\n]*)\]\(\s*(<[^>\n]*>|[^\s)]+)([^)\n]*)\)/g, (m, alt: string, url: string, rest: string) => (remoteSrc(url) ? `[${alt.trim() || url.replace(/^<|>$/g, "")}](${url}${rest})` : m))
+    .replace(/<img\b[^>]*>/gi, (tag) => {
+      const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+      const url = src ? (src[1] ?? src[2] ?? src[3] ?? "") : "";
+      if (!url || !remoteSrc(url)) return tag;
+      const alt = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+      const label = (alt?.[1] ?? alt?.[2] ?? "").trim() || url;
+      return `[${label.replace(/[[\]]/g, "")}](<${url.replace(/[<>\s]/g, encodeURIComponent)}>)`;
+    });
 }
 
 // ------------------------------------------------------------ meeting summary
