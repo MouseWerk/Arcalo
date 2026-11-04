@@ -37,6 +37,13 @@ export class CanvasHistory {
     return next;
   }
 
+  /** Rewrites every kept state (after the board took over a change made elsewhere, so undo and
+   *  redo take back only this view's own steps, not that change). */
+  rebase(map: (state: string) => string) {
+    this.past = this.past.map(map);
+    this.future = this.future.map(map);
+  }
+
   get canUndo() {
     return this.past.length > 0;
   }

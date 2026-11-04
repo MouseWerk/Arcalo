@@ -25,6 +25,7 @@ import { ConflictBanner } from "../ConflictView";
 import { Button, Dialog, IconButton, Input, Spinner, useMenu, type MenuEntry } from "../../components/ui";
 import { ViewHeader } from "../../components/ViewHeader";
 import { CanvasHistory } from "../../lib/canvas/history";
+import { mergeCanvas } from "../../lib/canvas/merge";
 import { CLIP_MIME, copyPayload, pastePayload, readPayload, type ClipPayload } from "../../lib/canvas/clipboard";
 import {
   alignNodes, boxOf, bounds, contains, distributeNodes, fitView, GRID, intersects, moveNodes, movingIds, nearestSide, resizeRect, snap, snapRect, visibleNodes, zoomAt,
@@ -100,6 +101,8 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
   const dirty = useRef(false);
   const saveTimer = useRef(0);
   const history = useRef(new CanvasHistory());
+  // Tells this view's saves apart from those of the same board in another pane.
+  const instance = useRef(Math.random().toString(36).slice(2));
   const [, bump] = useState(0);
   // The view lives in a ref: panning moves the layers directly (`applyView`) and renders only
   // when cards come into reach (culling) or after the view rests (minimap, toolbars).
@@ -170,7 +173,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     savedText.current = text;
     try {
       await trackSave(api.savePage(pageId, text));
-      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content: text } }));
+      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content: text, from: instance.current } }));
     } catch (e) {
       // Not stored: the next save tries again (the same text included).
       if (savedText.current === text) savedText.current = before;
@@ -218,7 +221,35 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     };
   }, [pageId, save]);
 
-  // Saved elsewhere (Git sync, a restored version): take it over unless there are local edits.
+  /**
+   * Takes over the board as stored elsewhere. Saved by another pane: merged card by card with
+   * the edits here that are not saved yet (which are then saved). Undo and redo keep taking back
+   * only this view's own steps.
+   */
+  const absorb = (text: string, merge: boolean) => {
+    if (text === savedText.current) return;
+    const current = docRef.current;
+    const theirs = parseCanvas(text);
+    const readable = isReadableCanvas(text);
+    if (dirty.current && (!merge || !readable)) return;
+    const next = dirty.current ? mergeCanvas(parseCanvas(savedText.current ?? ""), current, theirs) : theirs;
+    history.current.rebase((state) => serializeCanvas(mergeCanvas(current, parseCanvas(state), next)));
+    savedText.current = text;
+    setUnreadable(!readable);
+    setDoc(next);
+    const ids = new Set(next.nodes.map((n) => n.id));
+    setSel((s) => ([...s].every((id) => ids.has(id)) ? s : new Set([...s].filter((id) => ids.has(id)))));
+    if (dirty.current) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => void save(), SAVE_DELAY);
+    }
+    bump((n) => n + 1);
+  };
+  const absorbRef = useRef(absorb);
+  absorbRef.current = absorb;
+
+  // Saved elsewhere (Git sync, a restored version): taken over unless there are local edits.
+  // Saved by the same board in another pane: taken over, merged with the edits here.
   useEffect(() => {
     const reload = () => {
       if (dirty.current) return;
@@ -226,9 +257,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         .page(pageId)
         .then((d) => {
           if (dirty.current || d.content === savedText.current) return;
-          savedText.current = d.content;
-          setUnreadable(!isReadableCanvas(d.content));
-          setDoc(parseCanvas(d.content));
+          absorbRef.current(d.content, false);
           setPage(d);
         })
         .catch(() => {});
@@ -237,8 +266,17 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
       if (!ids || ids.includes(pageId)) reload();
     };
+    const onSaved = (e: Event) => {
+      const d = (e as CustomEvent<{ id: number; content?: string; from?: string }>).detail;
+      if (d.id !== pageId || d.from === instance.current || typeof d.content !== "string") return;
+      absorbRef.current(d.content, true);
+    };
     window.addEventListener("arcalo:reload-pages", onReload);
-    return () => window.removeEventListener("arcalo:reload-pages", onReload);
+    window.addEventListener("arcalo:page-saved", onSaved);
+    return () => {
+      window.removeEventListener("arcalo:reload-pages", onReload);
+      window.removeEventListener("arcalo:page-saved", onSaved);
+    };
   }, [pageId]);
 
   useEffect(() => {
