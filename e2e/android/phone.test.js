@@ -196,8 +196,9 @@ for (const [W, H] of [
       await page.waitForFunction(() => document.querySelector(".m-sheet textarea")?.value === "Entwurf: Rückruf beim Kunden", undefined, { timeout: 10000 }).catch(() => {});
       assert.equal(await value(), "Entwurf: Rückruf beim Kunden", "the text typed before Back");
       assert.equal(await page.evaluate(() => document.querySelector(".m-seg-opt[aria-checked='true'], .m-seg-opt.on")?.textContent.trim() ?? null), "Aufgabe", "as a task again");
-      // Saved: the next capture starts empty.
-      await page.click(".m-sheet .m-form-actions .m-btn-primary");
+      // Saved: the next capture starts empty. „Speichern“ pressed in the page: the keyboard the
+      // field's focus brings up moves the button while a tap is aimed at it (run 41859894534).
+      await page.evaluate(() => document.querySelector(".m-sheet .m-form-actions .m-btn-primary").click());
       await page.waitForFunction(() => !document.querySelector(".m-sheet"), undefined, { timeout: 10000 });
       await page.click(".m-tab-capture");
       await visible(".m-sheet textarea");

@@ -80,19 +80,20 @@ export function fresh() {
   dismissSystemDialogs();
 }
 
-/** Waits until the window manager has removed the app's task. `force-stop` of a running app only
- *  starts removing it („Force removing ActivityRecord{… t8 f}: app died“); the removal ends about a
- *  second later („Destroy timeout of remove-task, attempt to kill Task{… #8 …}“), and `dumpsys
- *  activity` no longer lists the task meanwhile. An `am start` in that second started the new
- *  process into the dying task, which killed it („Killing … remove task“, „failed to attach“), and
- *  `am start -W` then waited eleven minutes for a launch that never came (runs 41804267003, both
- *  attempts, and 41851198571). The log was cleared before the force-stop. */
+/** Waits until the window manager has removed the app's task. When `pm clear` meets the activity
+ *  still exiting after the force-stop („Force removing ActivityRecord{… t8 f} isExiting“), the task
+ *  is removed only about a second later („Destroy timeout of remove-task, attempt to kill
+ *  Task{… #8 …}“), and `dumpsys activity` no longer lists it meanwhile. An `am start` in that
+ *  second started the new process into the dying task, which killed it („Killing … remove task“,
+ *  „failed to attach“), and `am start -W` then waited eleven minutes for a launch that never came
+ *  (runs 41804267003, both attempts, and 41851198571). Without such an exiting activity the task
+ *  is gone at once. The log was cleared before the force-stop. */
 function taskGone(timeout = 15000) {
   const t0 = Date.now();
   const pkg = PKG.replace(/\./g, "\\.");
   for (;;) {
-    const log = adb("logcat", "-d", "-s", "ActivityTaskManager:I");
-    const dying = new Set([...log.matchAll(new RegExp(`Force removing ActivityRecord\\{\\S+ u0 ${pkg}/\\S+ t(\\d+)`, "g"))].map((m) => m[1]));
+    const log = adb("logcat", "-d", "-s", "ActivityTaskManager:I", "WindowManager:I");
+    const dying = new Set([...log.matchAll(new RegExp(`Force removing ActivityRecord\\{\\S+ u0 ${pkg}/\\S+ t(\\d+) f\\} isExiting`, "g"))].map((m) => m[1]));
     const left = [...dying].filter((task) => !new RegExp(`Destroy timeout of remove-task, attempt to kill Task\\{\\S+ #${task} `).test(log));
     if (!left.length) {
       if (dying.size) console.log(`the app's old task was removed after ${Date.now() - t0} ms`);
