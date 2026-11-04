@@ -95,6 +95,11 @@ test("closing without saving keeps the draft and its target", async () => {
   await openCapture(app);
   assert.equal(await value(), "Entwurf, noch nicht fertig");
   await app.waitText(".capture-chip.target", /Posteingang/);
+  // q124 R3C-2: the draft is kept in the workspace's database (encrypted with it), never in the
+  // WebView's storage, a plain file in the user profile.
+  const stored = async () => JSON.parse((await app.invoke("capture_draft_get")) ?? "null");
+  await app.browser.waitUntil(async () => (await stored())?.text === "Entwurf, noch nicht fertig", { timeoutMsg: "the draft is not in the database" });
+  assert.deepEqual(await app.browser.execute(() => Object.keys(localStorage).filter((k) => localStorage.getItem(k).includes("Entwurf"))), []);
   // It also survives a reload of the window (a restart of the app).
   await app.reload();
   await app.browser.waitUntil(async () => (await value()) === "Entwurf, noch nicht fertig", { timeoutMsg: "draft lost on reload" });
@@ -105,7 +110,8 @@ test("closing without saving keeps the draft and its target", async () => {
     el.select();
   });
   await app.keys(["Backspace"]);
-  assert.equal(await app.browser.execute(() => localStorage.getItem("arcalo.capture.draft")), null, "an empty field clears the draft");
+  await app.browser.waitUntil(async () => (await stored()) === null, { timeoutMsg: "an empty field does not clear the draft" });
+  assert.equal(await app.browser.execute(() => localStorage.getItem("arcalo.capture.draft")), null);
   assert.deepEqual(await app.consoleErrors(), []);
 });
 

@@ -676,6 +676,10 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
                 Some(dir) => b.data_directory(dir),
                 None => b,
             };
+            // Only the app loads in the window; other links open outside.
+            let b = b
+                .on_navigation(crate::navigation::guard(app.clone()))
+                .on_new_window(crate::navigation::new_window(app.clone()));
             let w = b.build()?;
             #[cfg(target_os = "macos")]
             macos::float_over_spaces(&w);
@@ -1157,6 +1161,19 @@ pub fn capture_context(app: AppHandle, state: State<AppState>) -> Result<Capture
     let recent = lock(&desktop(&app).captures).iter().rev().map(|(r, _)| r.clone()).collect();
     let queued = cap::load_queue(&state.data_dir.join(cap::QUEUE_FILE)).len();
     Ok(CaptureContext { meeting, recent, queued })
+}
+
+/// The text typed into the capture window and not saved yet (the UI's JSON), kept in the
+/// database: an encrypted workspace keeps it encrypted, unlike the WebView's storage.
+#[tauri::command(async)]
+pub fn capture_draft_get(state: State<AppState>) -> Result<Option<String>> {
+    cap::load_draft(&state.reader())
+}
+
+/// Stores the capture window's draft; `None` removes it.
+#[tauri::command(async)]
+pub fn capture_draft_set(state: State<AppState>, draft: Option<String>) -> Result<()> {
+    cap::save_draft(&state.db(), draft.as_deref())
 }
 
 /// Undoes the newest capture within [`cap::UNDO_SECONDS`]; returns it.

@@ -10,7 +10,7 @@ import { previewMarkdown } from "../../components/LinkPreview";
 import { routeNotes, waitText } from "../../lib/aierror";
 import { AiErrorNote } from "../../components/AiNotes";
 import { citedNumbers, linkCitations } from "../../lib/citations";
-import { onGrammarLoaded, renderChatMarkdown, renderChatMarkdownCached, renderMarkdown } from "../../lib/markdown";
+import { onGrammarLoaded, renderChatMarkdown, renderChatMarkdownCached, renderMarkdown, svgWithoutRemoteLoads } from "../../lib/markdown";
 import { h1, int, usd } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Turn } from "../../lib/chathistory";
@@ -46,8 +46,8 @@ async function drawDiagrams(root: HTMLElement) {
     const res = await renderDiagram(src);
     const view = box.querySelector<HTMLElement>(".mermaid-view");
     if (!view || !box.isConnected || !("svg" in res)) continue;
-    // Mermaid renders with securityLevel „strict“ (as in the editor).
-    view.innerHTML = res.svg;
+    // Mermaid renders with securityLevel „strict“ (as in the editor), without remote images.
+    view.innerHTML = svgWithoutRemoteLoads(res.svg);
     view.hidden = false;
     box.classList.add("drawn");
   }

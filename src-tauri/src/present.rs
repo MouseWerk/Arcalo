@@ -120,6 +120,8 @@ pub async fn presenter_open(app: AppHandle) -> Result<bool> {
         .title(arcalo_core::tr!("Referentenansicht – Arcalo", "Presenter view – Arcalo"))
         .position(pos.x + 40.0, pos.y + 40.0)
         .inner_size((size.width - 80.0).max(800.0), (size.height - 80.0).max(560.0))
+        .on_navigation(crate::navigation::guard(app.clone()))
+        .on_new_window(crate::navigation::new_window(app.clone()))
         .build()
         .map_err(state_err)?;
     let _ = p.maximize();

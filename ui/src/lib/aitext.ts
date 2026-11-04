@@ -1,3 +1,4 @@
+import { Marked, type Token } from "marked";
 import { t, type TKey } from "./i18n";
 import { zeitCommand } from "../editor/zeit-suggest";
 // Prompts and text helpers of the inline AI bar and the meeting summary.
@@ -38,7 +39,10 @@ export function transformInstruction(presetOrText: string, presets: AiPreset[] =
 
 /** Removes a fence the model put around the whole answer (```markdown … ```), also while it streams. */
 export function cleanAiMarkdown(answer: string): string {
-  const t = answer.trim();
+  return withoutRemoteImages(unfence(answer.trim()));
+}
+
+function unfence(t: string): string {
   const m = /^```(markdown|md)?[ \t]*\n/i.exec(t);
   if (!m) return t;
   const body = t.slice(m[0].length);
@@ -48,6 +52,60 @@ export function cleanAiMarkdown(answer: string): string {
   if (inner.includes("\n```")) return t;
   return inner.trimEnd();
 }
+
+const LOCAL = /^\s*(?:data:|blob:|arcalo-asset:|http:\/\/arcalo-asset\.localhost\/|#)/i;
+const remoteSrc = (url: string) => /^\s*(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(url) && !LOCAL.test(url);
+const lexer = new Marked({ gfm: true });
+
+/**
+ * A model's answer before it goes into a page: an image from another server becomes a link to it
+ * (`![a](https://…)` → `[a](https://…)`, also as a reference or as raw `<img>`), outside code. Shown
+ * in a page, the image would be fetched at once, and its address can carry what the model read (a
+ * private note, steered by text in a mail, a Jira issue or a web page). The page's own Markdown
+ * parser finds the images, so every form it shows as an image is caught.
+ */
+export function withoutRemoteImages(md: string): string {
+  if (!/!\[|<im/i.test(md)) return md;
+  const swaps: [string, string][] = [];
+  const walk = (tokens: Token[] | undefined) => {
+    for (const tok of tokens ?? []) {
+      if (tok.type === "image" && remoteSrc(tok.href)) {
+        const label = (tok.text.trim() || tok.href).replace(/[[\]]/g, "");
+        swaps.push([tok.raw, `[${label}](<${tok.href.replace(/[<>\s]/g, encodeURIComponent)}>)`]);
+        continue;
+      }
+      if (tok.type === "html" && /<im(?:g|age)\b/i.test(tok.raw)) swaps.push([tok.raw, rawImages(tok.raw)]);
+      const t = tok as Token & { tokens?: Token[]; items?: { tokens: Token[] }[]; header?: { tokens: Token[] }[]; rows?: { tokens: Token[] }[][] };
+      walk(t.tokens);
+      for (const item of t.items ?? []) walk(item.tokens);
+      for (const cell of t.header ?? []) walk(cell.tokens);
+      for (const row of t.rows ?? []) for (const cell of row) walk(cell.tokens);
+    }
+  };
+  walk(lexer.lexer(md));
+  let out = md;
+  let from = 0;
+  for (const [raw, swap] of swaps) {
+    const at = out.indexOf(raw, from);
+    if (at < 0) continue;
+    out = out.slice(0, at) + swap + out.slice(at + raw.length);
+    from = at + swap.length;
+  }
+  return out;
+}
+
+/** Raw `<img … src="remote">` (also `<image>`, which HTML reads as `<img>`) → `[alt](<remote>)`. */
+function rawImages(html: string): string {
+  return html.replace(/<im(?:g|age)\b[^>]*>/gi, (tag) => {
+    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+    const url = src ? (src[1] ?? src[2] ?? src[3] ?? "") : "";
+    if (!url || !remoteSrc(url)) return tag;
+    const alt = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+    const label = (alt?.[1] ?? alt?.[2] ?? "").trim() || url;
+    return `[${label.replace(/[[\]]/g, "")}](<${url.replace(/[<>\s]/g, encodeURIComponent)}>)`;
+  });
+}
+
 
 // ------------------------------------------------------------ meeting summary
 

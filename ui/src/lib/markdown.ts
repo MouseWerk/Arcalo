@@ -15,7 +15,7 @@ const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
  * `![[bild.png|300]]` becomes the stored image (its address is added after sanitizing, the
  * sanitizer allows no app addresses), other embeds (`![[Notiz]]`) a link.
  */
-export function renderMarkdown(md: string): string {
+export function renderMarkdown(md: string, forbid: string[] = []): string {
   // Image embeds go through Markdown as images with a placeholder address, so they keep the
   // paragraphs they stand in (raw `<img>` at the start of a line would be an HTML block of its own
   // and run inline into the next one); the stored image replaces the placeholder after sanitizing.
@@ -30,12 +30,87 @@ export function renderMarkdown(md: string): string {
       `<a data-wikilink data-target="${escapeHtml(target.trim())}" class="wikilink">${escapeHtml((alias ?? target).trim())}</a>`,
     );
   const html = marked.parse(withLinks, { async: false }) as string;
-  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ["data-wikilink", "data-target", "target"] }) as unknown as string;
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ["data-wikilink", "data-target", "target"], FORBID_TAGS: forbid }) as unknown as string;
   return clean.replace(new RegExp(`<img src="${EMBED_SRC}(\\d+)"`, "g"), (m, i: string) => {
     const e = embeds[Number(i)];
     if (!e) return m;
     return `<img data-attachment="${escapeHtml(e.name)}" src="${escapeHtml(attachmentUrl(e.name))}"${e.width ? ` width="${e.width}"` : ""}`;
   });
+}
+
+/**
+ * Text a model wrote (summaries, reviews, the briefing, the inline AI bar) as sanitized HTML:
+ * as `renderMarkdown`, without style sheets, forms or frames, and without anything that loads
+ * from another server by itself (`withoutRemoteLoads`).
+ */
+export function renderAiMarkdown(md: string): string {
+  return withoutRemoteLoads(renderMarkdown(md, AI_FORBID));
+}
+
+/** Tags a model's answer never brings along (a style sheet would restyle the app). */
+const AI_FORBID = ["style", "form", "iframe", "object", "embed", "script", "link", "meta", "base"];
+
+/** Whether the browser fetches `url` from another server (anything but the app's own files and inline data). */
+export function isRemoteUrl(url: string): boolean {
+  const u = url.trim().toLowerCase();
+  if (!u || u.startsWith("#") || u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("arcalo-asset:") || u.startsWith("http://arcalo-asset.localhost/")) return false;
+  // A scheme or a protocol-relative address leaves the app; a relative path stays on its origin.
+  return u.startsWith("//") || /^[a-z][a-z\d+.-]*:/.test(u);
+}
+
+/** Attributes through which an element loads something by itself. */
+const LOAD_ATTRS = ["src", "href", "xlink:href", "data", "poster", "background", "action", "formaction"];
+
+/**
+ * Sanitized HTML of a model's answer without any address that loads by itself: an answer must not
+ * be able to send what it read (private notes, also on a local model, steered by text in a mail,
+ * a Jira issue or a web page) to a server as the address of an image the moment it is shown. A
+ * remote image becomes a link with its address (opened only by a click); other remote sources,
+ * `srcset` and `url(…)` in styles are removed. Links stay links.
+ */
+export function withoutRemoteLoads(html: string): string {
+  if (!/<(img|image|video|audio|source|picture|input|svg|use|object|track|style)\b|url\s*\(|srcset|poster|background|\bdata\s*=/i.test(html)) return html;
+  // A parsed document has no window: nothing in it is fetched while it is cleaned.
+  const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, "text/html");
+  scrubRemote(doc, [...doc.body.querySelectorAll("*")]);
+  return doc.body.innerHTML;
+}
+
+/** `withoutRemoteLoads` for an SVG document (a diagram of an answer). */
+export function svgWithoutRemoteLoads(svg: string): string {
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.getElementsByTagName("parsererror").length) return "";
+  scrubRemote(doc, [doc.documentElement, ...doc.documentElement.querySelectorAll("*")]);
+  return new XMLSerializer().serializeToString(doc.documentElement);
+}
+
+function scrubRemote(doc: Document, elements: Element[]) {
+  for (const el of elements) {
+    el.removeAttribute("srcset");
+    const style = el.getAttribute("style");
+    if (style && /url\s*\(|image-set|@import/i.test(style)) el.removeAttribute("style");
+    if (el.localName === "style") {
+      el.textContent = (el.textContent ?? "").replace(/url\s*\([^)]*\)|@import[^;]*;?/gi, "none");
+      continue;
+    }
+    if (el.localName === "a" && el.namespaceURI === "http://www.w3.org/1999/xhtml") continue;
+    const src = el.getAttribute("src");
+    if (el.localName === "img" && src && isRemoteUrl(src)) {
+      const a = doc.createElement("a");
+      a.setAttribute("href", src);
+      a.setAttribute("title", src);
+      a.setAttribute("data-external", "");
+      a.setAttribute("rel", "noreferrer");
+      a.className = "ai-remote-image";
+      a.textContent = el.getAttribute("alt")?.trim() || src;
+      el.replaceWith(a);
+      continue;
+    }
+    for (const name of LOAD_ATTRS) {
+      const v = el.getAttribute(name);
+      if (v != null && isRemoteUrl(v)) el.removeAttribute(name);
+    }
+  }
 }
 
 /** The placeholder address of the n-th image embed while the Markdown is rendered. */
@@ -180,7 +255,7 @@ const CHAT_PURIFY = {
 export function renderChatMarkdown(md: string, copyLabel = "Code kopieren"): string {
   copyLabelNow = copyLabel;
   const html = chatMarked.parse(md, { async: false }) as string;
-  return DOMPurify.sanitize(html, CHAT_PURIFY) as unknown as string;
+  return withoutRemoteLoads(DOMPurify.sanitize(html, CHAT_PURIFY) as unknown as string);
 }
 
 // Rendered answers by text: a long conversation renders each finished answer once.
