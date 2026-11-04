@@ -203,13 +203,16 @@ export interface Conflict {
   /** Command ids sharing the combo. */
   commands: string[];
   /** Editor/system function or global shortcut it collides with. */
-  other?: TKey | "global.capture" | "global.palette" | "global.selection" | "global.mail";
+  other?: TKey | GlobalShortcut;
 }
+
+/** The global shortcuts of Settings → Desktop, Sprachnotizen and E-Mail. */
+export type GlobalShortcut = "global.capture" | "global.palette" | "global.selection" | "global.mail" | "global.search" | "global.voice";
 
 /** Combos used twice, or taken by the editor, the system (macOS) or a global shortcut. */
 export function findConflicts(
   map: Record<string, string>,
-  globals: { capture?: string | null; palette?: string | null; selection?: string | null; mail?: string | null } = {},
+  globals: { capture?: string | null; palette?: string | null; selection?: string | null; mail?: string | null; search?: string | null; voice?: string | null } = {},
   mac = IS_MAC,
 ): Conflict[] {
   const byCombo = new Map<string, string[]>();
@@ -223,6 +226,9 @@ export function findConflicts(
   const palette = g(globals.palette);
   const selection = g(globals.selection);
   const mail = g(globals.mail);
+  // The quick search and the voice note take their keys system-wide as well.
+  const search = g(globals.search);
+  const voice = g(globals.voice);
   for (const [combo, ids] of byCombo) {
     if (ids.length > 1) out.push({ combo, commands: ids });
     if (RESERVED[combo]) out.push({ combo, commands: ids, other: RESERVED[combo] });
@@ -233,6 +239,8 @@ export function findConflicts(
     if (capture && combo === capture) out.push({ combo, commands: ids, other: "global.capture" });
     if (selection && combo === selection) out.push({ combo, commands: ids, other: "global.selection" });
     if (mail && combo === mail) out.push({ combo, commands: ids, other: "global.mail" });
+    if (search && combo === search) out.push({ combo, commands: ids, other: "global.search" });
+    if (voice && combo === voice) out.push({ combo, commands: ids, other: "global.voice" });
     // The global palette shortcut may equal the in-app palette command.
     if (palette && combo === palette && !(ids.length === 1 && ids[0] === "palette")) out.push({ combo, commands: ids, other: "global.palette" });
   }

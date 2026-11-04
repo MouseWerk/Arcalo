@@ -346,6 +346,24 @@ fn private_pages_keep_the_summary_local() {
 }
 
 #[test]
+fn a_booking_typed_on_a_private_page_keeps_the_summary_local() {
+    // q124 H4-3: the page itself was not edited that week, its booking's description is in the text.
+    let db = Database::open_in_memory().unwrap();
+    let p = page_at(&db, "Arzt", berlin(2026, 9, 1, 8, 0));
+    db.save_page_content_at(p, "#privat", berlin(2026, 9, 1, 9, 0)).unwrap();
+    let prj = db.create_project("PRJ", "P").unwrap();
+    let np = db.create_netzplan(prj.id, "NP-1", "NP-1-1", "", 10.0).unwrap();
+    let id = book(&db, np.id, None, berlin(2026, 10, 6, 9, 0), 60, "Therapie");
+    let markers = vec!["#privat".to_owned()];
+    let r = week_review(&db, day(2026, 10, 5), &Berlin, &settings(), None, berlin(2026, 10, 9, 9, 0)).unwrap();
+    assert!(!is_private(&db, &r, &markers, &Berlin).unwrap());
+    db.conn().execute("UPDATE time_entries SET page_id = ?1 WHERE id = ?2", params![p, id]).unwrap();
+    assert!(is_private(&db, &r, &markers, &Berlin).unwrap());
+    // Without time tracking the bookings are not in the summary.
+    assert!(!is_private(&db, &r.clone().without_time(), &markers, &Berlin).unwrap());
+}
+
+#[test]
 fn the_report_is_filed_and_written_again_in_place() {
     let db = Database::open_in_memory().unwrap();
     let monday = day(2026, 10, 5);
