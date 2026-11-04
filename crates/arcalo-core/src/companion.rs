@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
-use rusqlite::{OpenFlags, OptionalExtension, params};
+use rusqlite::{OpenFlags, params};
 use serde::Serialize;
 
 use crate::calsync::CalendarEvent;
@@ -98,28 +98,9 @@ pub fn today<Tz: TimeZone>(db: &Database, settings: &Settings, now: DateTime<Utc
 }
 
 /// The daily note of `date`, created with `create`. A note of that day pulled from the desktop
-/// (a page titled like a daily note, without the daily mark: the repository carries the text,
-/// not the mark) becomes the daily note here instead of a second one beside it.
+/// becomes the daily note here instead of a second one beside it ([`Database::daily_note_found`]).
 pub fn daily(db: &Database, date: NaiveDate, create: bool) -> Result<Option<Page>> {
-    let key = date.format("%Y-%m-%d").to_string();
-    let marked: Option<i64> = db
-        .conn()
-        .query_row("SELECT id FROM pages WHERE daily_date = ?1 AND deleted_at IS NULL", [&key], |r| r.get(0))
-        .optional()?;
-    if let Some(id) = marked {
-        return Ok(Some(db.page(id)?));
-    }
-    let settings = db.load_settings().unwrap_or_default();
-    for title in [settings.notes.daily_title.title(date), key.clone()] {
-        if let Some(p) = db.page_by_title(&title)?
-            && p.daily_date.is_none()
-            && p.kind.is_none()
-        {
-            db.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![p.id, key])?;
-            return Ok(Some(db.page(p.id)?));
-        }
-    }
-    if create { Ok(Some(db.daily_note(date)?)) } else { Ok(None) }
+    if create { Ok(Some(db.daily_note(date)?)) } else { db.daily_note_found(date) }
 }
 
 fn daily_page(db: &Database, date: NaiveDate) -> Result<Page> {

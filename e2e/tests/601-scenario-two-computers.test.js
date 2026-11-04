@@ -26,6 +26,8 @@ const named = async (title) => (await pages()).filter((p) => p.title === title);
 const content = async (id) => (await app.invoke("page_get", { id })).content;
 
 async function start(dataDir) {
+  // A test that failed before its end leaves its computer running.
+  await stop();
   app = await launch({ demo: false, dataDir, env: { TZ: "Europe/Berlin" } });
 }
 async function stop() {

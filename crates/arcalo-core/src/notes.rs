@@ -716,10 +716,54 @@ impl Database {
         }
         // All or nothing, under the write lock: the command line may make the same note at the
         // same moment (looked up again here), and a failed step leaves no half-made note.
-        self.atomic(|| match self.daily_page(&key)? {
+        self.atomic(|| match self.daily_note_found(date)? {
             Some(p) => Ok(p),
             None => self.create_daily_note(date, &key),
         })
+    }
+
+    /// The daily note of `date` without creating one. A note of that day taken over from
+    /// another computer (a page titled like a daily note, without the daily mark: the
+    /// repository carries the text, not the mark) becomes the daily note here instead of a
+    /// second one beside it.
+    pub fn daily_note_found(&self, date: NaiveDate) -> Result<Option<Page>> {
+        let key = date.format("%Y-%m-%d").to_string();
+        if let Some(p) = self.daily_page(&key)? {
+            return Ok(Some(p));
+        }
+        let settings = self.load_settings().unwrap_or_default();
+        for title in [settings.notes.daily_title.title(date), key.clone()] {
+            if let Some(p) = self.page_by_title(&title)?
+                && p.daily_date.is_none()
+                && p.kind.is_none()
+            {
+                self.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![p.id, key])?;
+                return Ok(Some(self.page(p.id)?));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Marks the pages among `ids` that are titled like a daily note (in the title format of the
+    /// settings, or as the ISO date) as the daily notes of their days, where those days have
+    /// none yet: notes taken over from another computer arrive without the mark. Returns the
+    /// pages marked.
+    pub fn adopt_daily_notes(&self, ids: &[i64]) -> Result<Vec<i64>> {
+        let style = self.load_settings().unwrap_or_default().notes.daily_title;
+        let mut marked = vec![];
+        for &id in ids {
+            let p = self.page(id)?;
+            if p.deleted_at.is_some() || p.daily_date.is_some() || p.kind.is_some() {
+                continue;
+            }
+            let Some(date) = daily_title_date(&p.title, style) else { continue };
+            let key = date.format("%Y-%m-%d").to_string();
+            if self.daily_page(&key)?.is_none() {
+                self.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![id, key])?;
+                marked.push(id);
+            }
+        }
+        Ok(marked)
     }
 
     fn daily_page(&self, key: &str) -> Result<Option<Page>> {
@@ -763,6 +807,21 @@ impl Database {
         )?;
         self.page(page.id)
     }
+}
+
+/// The day a page titled like a daily note stands for: the title the settings give that day's
+/// note, or its ISO date (the title used when the settings' one was taken).
+pub fn daily_title_date(title: &str, style: crate::prefs::DailyTitle) -> Option<NaiveDate> {
+    let title = title.trim();
+    if let Ok(d) = NaiveDate::parse_from_str(title, "%Y-%m-%d")
+        && d.format("%Y-%m-%d").to_string() == title
+    {
+        return Some(d);
+    }
+    // The date is the last part of every other format („24.09.2026“, „Mittwoch, 24.09.2026“).
+    let tail = title.rsplit(' ').next()?;
+    let d = NaiveDate::parse_from_str(tail, "%d.%m.%Y").ok()?;
+    (style.title(d) == title).then_some(d)
 }
 
 /// Rewrites `[[old]]`, `[[old|alias]]` and `[[old#heading]]` (case-insensitive, decomposed
@@ -1093,6 +1152,34 @@ mod tests {
         assert_eq!(db.daily_note(d).unwrap().id, p.id);
         assert!(db.page_doc(p.id).unwrap().content.starts_with("## Fokus"));
         assert!(db.page_path(p.id).unwrap().starts_with(&format!("{JOURNAL_TITLE_DE} / ")));
+    }
+
+    #[test]
+    fn a_daily_note_from_another_computer_becomes_the_daily_note_here() {
+        let db = Database::open_in_memory().unwrap();
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        // Taken over by the Git sync: the text and the title, not the mark.
+        let pulled = db.create_page(None, "2026-11-04", Some("file-text")).unwrap();
+        db.save_page_content(pulled.id, "Im Büro begonnen").unwrap();
+        assert_eq!(db.daily_note_found(d).unwrap().map(|p| p.id), Some(pulled.id));
+        assert_eq!(db.daily_note(d).unwrap().id, pulled.id);
+        assert_eq!(db.page(pulled.id).unwrap().daily_date.as_deref(), Some("2026-11-04"));
+        assert_eq!(db.list_pages().unwrap().iter().filter(|p| p.title == "2026-11-04").count(), 1);
+
+        // Marked when taken over: in the settings' title format or as the ISO date, once per day.
+        let mut s = db.load_settings().unwrap();
+        s.notes.daily_title = crate::prefs::DailyTitle::Long;
+        db.save_settings(&s).unwrap();
+        let long = db.create_page(None, "Donnerstag, 05.11.2026", None).unwrap();
+        let iso = db.create_page(None, "2026-11-06", None).unwrap();
+        let wrong_day = db.create_page(None, "Montag, 05.11.2026", None).unwrap();
+        let second = db.create_page(None, "2026-11-04 2", None).unwrap();
+        let plain = db.create_page(None, "Protokoll", None).unwrap();
+        let ids = [long.id, iso.id, wrong_day.id, second.id, plain.id];
+        assert_eq!(db.adopt_daily_notes(&ids).unwrap(), [long.id, iso.id]);
+        assert_eq!(db.daily_note(NaiveDate::from_ymd_opt(2026, 11, 5).unwrap()).unwrap().id, long.id);
+        assert_eq!(db.daily_note(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()).unwrap().id, iso.id);
+        assert!(db.adopt_daily_notes(&ids).unwrap().is_empty(), "the days have their notes");
     }
 
     #[test]

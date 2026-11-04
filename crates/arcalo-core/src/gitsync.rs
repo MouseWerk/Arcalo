@@ -767,10 +767,11 @@ fn merge_kept_files(git: &Git, repo: &Path, base: &str, ours: &str, theirs: &str
     Ok(changed)
 }
 
-/// Root entries of the working tree the tree sync never removes: `.git` and the files
-/// written by the sync itself (`README.md` only while the source has none). A companion device
-/// (see [`SyncRequest::companion`]) also keeps the desktop's time sheets.
-fn protected(src: &Path, companion: bool) -> Vec<String> {
+/// Root entries of the working tree the tree sync never removes: `.git`, the files written by
+/// the sync itself (`README.md` only while the source has none) and the time sheets: another
+/// computer's (or the desktop's, on a companion device) stay, this computer only adds and updates
+/// its own months ([`sync_time_sheets`]).
+fn protected(src: &Path) -> Vec<String> {
     let mut p = vec![
         ".git".to_owned(),
         ATTRIBUTES_FILE.to_owned(),
@@ -785,10 +786,31 @@ fn protected(src: &Path, companion: bool) -> Vec<String> {
     if !src.join(README_FILE).exists() {
         p.push(README_FILE.to_owned());
     }
-    if companion {
-        p.push(crate::mirror::TIME_DIR.to_owned());
-    }
+    p.push(crate::mirror::TIME_DIR.to_owned());
     p
+}
+
+/// Brings this computer's time sheets (`Zeiterfassung/JJJJ-MM.csv` of its mirror) into the
+/// working tree without removing any: a month this computer has no bookings in may be another
+/// computer's, and a computer without any bookings must not take the other's time sheets off the
+/// server. A companion device writes none.
+fn sync_time_sheets(src: &Path, dst: &Path, apply: bool, ch: &mut TreeChanges) -> Result<()> {
+    let (from, to) = (src.join(crate::mirror::TIME_DIR), dst.join(crate::mirror::TIME_DIR));
+    if !from.is_dir() || is_link(&from) {
+        return Ok(());
+    }
+    if to.exists() && (is_link(&to) || !to.is_dir()) {
+        ch.removed += 1;
+        if apply {
+            remove_path(&to)?;
+        }
+    }
+    let theirs: Vec<String> = if to.is_dir() && !is_link(&to) {
+        fs::read_dir(&to)?.flatten().filter_map(|e| e.file_name().to_str().map(str::to_owned)).collect()
+    } else {
+        vec![]
+    };
+    sync_dir(&from, &to, Some(&theirs), &[], apply, ch)
 }
 
 /// Makes `dst` a copy of `src` (files added, changed or removed; symlinks and `.git`
@@ -799,7 +821,7 @@ pub fn sync_tree(src: &Path, dst: &Path, apply: bool) -> Result<TreeChanges> {
 
 fn sync_tree_as(src: &Path, dst: &Path, apply: bool, companion: bool) -> Result<TreeChanges> {
     let mut ch = TreeChanges::default();
-    let mut keep = protected(src, companion);
+    let mut keep = protected(src);
     // Files kept twice stay, linked by a note or not ([`KEPT_FILE`]).
     let kept = read_kept(dst);
     let dir = crate::attachments::DIR_NAME;
@@ -807,6 +829,9 @@ fn sync_tree_as(src: &Path, dst: &Path, apply: bool, companion: bool) -> Result<
         keep.push(dir.to_owned());
     }
     sync_dir(src, dst, Some(&keep), &kept, apply, &mut ch)?;
+    if !companion {
+        sync_time_sheets(src, dst, apply, &mut ch)?;
+    }
     if !kept.is_empty() && !src.join(dir).is_dir() && dst.join(dir).is_dir() {
         // No linked file at all: only the kept ones stay.
         for e in fs::read_dir(dst.join(dir))? {
@@ -921,6 +946,10 @@ fn sync_dir(
     }
 
     for (name, is_dir) in &entries {
+        // The time sheets at the root follow on their own ([`sync_time_sheets`]).
+        if keep.is_some_and(|k| k.iter().any(|x| x == crate::mirror::TIME_DIR)) && name == crate::mirror::TIME_DIR {
+            continue;
+        }
         let (from, to) = (src.join(name), dst.join(name));
         // A link in the working tree (committed by someone else) is never written through.
         if apply && is_link(&to) {
@@ -3690,6 +3719,25 @@ mod tests {
         assert!(!dst.join(DB_FILE).exists(), "database copy removed when not included");
         assert!(fs::read_to_string(dst.join(ATTRIBUTES_FILE)).unwrap().contains("*.db binary"));
         assert!(fs::read_to_string(dst.join(ATTRIBUTES_FILE)).unwrap().starts_with(MARKER));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn another_computers_time_sheets_stay_and_this_ones_months_are_written() {
+        let base = tmp("sheets");
+        let (src, dst) = (base.join("src"), base.join("dst"));
+        // The laptop has no bookings yet: the office computer's time sheet stays on the server.
+        write(&src.join("Notiz.md"), "N");
+        write(&dst.join("Zeiterfassung/2026-10.csv"), "Datum;Stunden\n08.10.2026;6,0\n");
+        assert_eq!(sync_tree(&src, &dst, false).unwrap(), TreeChanges { added: 1, updated: 0, removed: 0 });
+        sync_tree(&src, &dst, true).unwrap();
+        assert!(dst.join("Zeiterfassung/2026-10.csv").is_file());
+        // Its first booking adds its month; one of a month both have is its own then.
+        write(&src.join("Zeiterfassung/2026-11.csv"), "Datum;Stunden\n04.11.2026;1,0\n");
+        let ch = sync_tree(&src, &dst, true).unwrap();
+        assert_eq!(ch, TreeChanges { added: 1, updated: 0, removed: 0 });
+        assert_eq!(files(&dst), ["Notiz.md", "Zeiterfassung/2026-10.csv", "Zeiterfassung/2026-11.csv"]);
+        assert_eq!(sync_tree(&src, &dst, true).unwrap().total(), 0, "second run: nothing to do");
         let _ = fs::remove_dir_all(&base);
     }
 

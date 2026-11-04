@@ -1020,7 +1020,40 @@ impl Database {
             let base = crate::notes::clean_title(&format!("{} {}", e.title, date.format(tr!("%d.%m.%Y", "%Y-%m-%d"))));
             let mut title = base.clone();
             let mut n = 2;
-            while self.page_by_title(&title)?.is_some() {
+            // The note may exist already without the mark: written on another computer and taken
+            // over by the Git sync (the repository carries the text, not the mark). It is the one
+            // of this appointment when its front matter names the same day and time.
+            let same_meeting = |p: &Page| -> Result<bool> {
+                let marked: bool = self
+                    .conn()
+                    .query_row("SELECT 1 FROM calendar_marks WHERE note_page_id = ?1", [p.id], |_| Ok(()))
+                    .optional()?
+                    .is_some();
+                if marked || p.kind.is_some() || p.daily_date.is_some() {
+                    return Ok(false);
+                }
+                let doc = self.page_doc(p.id)?.content;
+                let Some(front) = doc.strip_prefix("---\n").and_then(|r| r.split("\n---\n").next()) else {
+                    return Ok(false);
+                };
+                let lines: Vec<&str> = front.lines().map(str::trim).collect();
+                let has = |de: &str, en: &str, v: &str| {
+                    lines.iter().any(|l| *l == format!("{de}: {v}") || *l == format!("{en}: {v}"))
+                };
+                Ok(has("datum", "date", &date.format("%Y-%m-%d").to_string()) && has("uhrzeit", "time", &yaml(&time)))
+            };
+            while let Some(existing) = self.page_by_title(&title)? {
+                if same_meeting(&existing)? {
+                    self.calendar_mark_row(key)?;
+                    let series = if e.recurring { e.uid.clone() } else { String::new() };
+                    self.conn().execute(
+                        "UPDATE calendar_marks SET note_page_id = ?2,
+                                title = CASE WHEN title = '' THEN ?3 ELSE title END,
+                                series = CASE WHEN series = '' THEN ?4 ELSE series END WHERE key = ?1",
+                        params![key, existing.id, e.title.to_lowercase(), series],
+                    )?;
+                    return Ok((self.page(existing.id)?, false));
+                }
                 title = format!("{base} {n}");
                 n += 1;
             }
@@ -1282,6 +1315,48 @@ mod tests {
             "{content}"
         );
         assert!(content.contains("## Teilnehmer\n\n- Jörg\n- Zoë\n\n## Agenda"), "{content}");
+    }
+
+    #[test]
+    fn a_meeting_note_from_another_computer_is_the_note_of_its_appointment_here() {
+        let zone = tz::Zone::named("Europe/Berlin").unwrap();
+        let office = Database::open_in_memory().unwrap();
+        let laptop = Database::open_in_memory().unwrap();
+        for db in [&office, &laptop] {
+            db.calendar_replace(
+                OUTLOOK,
+                at(1, 0),
+                at(30, 0),
+                &[ev("m", "", 24, 8, "Abstimmung"), ev("n", "", 24, 12, "Abstimmung")],
+            )
+            .unwrap();
+        }
+        let (morning, _) = office.calendar_meeting_note(&event_key(OUTLOOK, "m", ""), &zone).unwrap();
+        let (noon, _) = office.calendar_meeting_note(&event_key(OUTLOOK, "n", ""), &zone).unwrap();
+        assert_eq!((morning.title.as_str(), noon.title.as_str()), ("Abstimmung 24.09.2026", "Abstimmung 24.09.2026 2"));
+        // The laptop takes both notes over (as the Git sync does: text, no mark).
+        let mut taken = vec![];
+        for p in [&morning, &noon] {
+            let copy = laptop.create_page(None, &p.title, Some("file-text")).unwrap();
+            let text =
+                office.page_doc(p.id).unwrap().content.replace("## Notizen\n\n", "## Notizen\n\nIm Büro notiert\n");
+            laptop.save_page_content(copy.id, &text).unwrap();
+            taken.push(copy.id);
+        }
+        // The noon appointment opened first finds its own note by day and time, not the first title.
+        let (page, created) = laptop.calendar_meeting_note(&event_key(OUTLOOK, "n", ""), &zone).unwrap();
+        assert_eq!((page.id, created), (taken[1], false));
+        let (page, created) = laptop.calendar_meeting_note(&event_key(OUTLOOK, "m", ""), &zone).unwrap();
+        assert_eq!((page.id, created), (taken[0], false));
+        assert!(laptop.page_doc(page.id).unwrap().content.contains("Im Büro notiert"));
+        assert_eq!(laptop.calendar_event(&event_key(OUTLOOK, "m", "")).unwrap().note_page_id, Some(taken[0]));
+        // A page of that title about something else is no meeting note of it.
+        let other = Database::open_in_memory().unwrap();
+        other.calendar_replace(OUTLOOK, at(1, 0), at(30, 0), &[ev("m", "", 24, 8, "Abstimmung")]).unwrap();
+        let mine = other.create_page(None, "Abstimmung 24.09.2026", None).unwrap();
+        other.save_page_content(mine.id, "Eigene Notizen").unwrap();
+        let (page, created) = other.calendar_meeting_note(&event_key(OUTLOOK, "m", ""), &zone).unwrap();
+        assert!(created && page.id != mine.id && page.title == "Abstimmung 24.09.2026 2");
     }
 
     #[test]

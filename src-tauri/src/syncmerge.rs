@@ -430,6 +430,9 @@ pub fn apply(
                 }
             }
         }
+        // Daily notes of the other computer arrive without their mark: they become this
+        // computer's daily notes of their days (unless it has its own already).
+        db.adopt_daily_notes(&out.created)?;
         store(db, &conflicts)?;
         Ok(out)
     })
