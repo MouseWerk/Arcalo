@@ -47,6 +47,7 @@ mod jumplist;
 mod linking;
 mod mail;
 mod meetwork;
+mod navigation;
 mod network;
 #[cfg_attr(mobile, path = "mobile/notifyact.rs")]
 mod notifyact;
@@ -4234,7 +4235,13 @@ fn create_main_window(
         // (the open folders of the tree) is stored under it.
         .initialization_script(format!("window.__ARCALO_WORKSPACE__ = {:?};", workspace_tag(data_dir)))
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
-        .disable_drag_drop_handler();
+        .disable_drag_drop_handler()
+        // Only the app loads in the window; other links open outside.
+        .on_navigation(navigation::guard(app.handle().clone()));
+    #[cfg(desktop)]
+    {
+        builder = builder.on_new_window(navigation::new_window(app.handle().clone()));
+    }
     // Portable: the webview's profile stays in the data folder, not in the user profile.
     if let Some(dir) = webview_dir {
         builder = builder.data_directory(dir);

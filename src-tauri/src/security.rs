@@ -224,7 +224,8 @@ pub fn show_keygate(app: &AppHandle, dir: &Path, reason: Access) {
     let builder = WebviewWindowBuilder::new(app, KEYGATE, WebviewUrl::App("index.html#keygate".into()))
         .title("Arcalo")
         .inner_size(620.0, 680.0)
-        .min_inner_size(460.0, 520.0);
+        .min_inner_size(460.0, 520.0)
+        .on_navigation(crate::navigation::guard(app.clone()));
     #[cfg(desktop)]
     let builder = builder.center();
     let built = builder.build();

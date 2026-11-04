@@ -676,6 +676,10 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
                 Some(dir) => b.data_directory(dir),
                 None => b,
             };
+            // Only the app loads in the window; other links open outside.
+            let b = b
+                .on_navigation(crate::navigation::guard(app.clone()))
+                .on_new_window(crate::navigation::new_window(app.clone()));
             let w = b.build()?;
             #[cfg(target_os = "macos")]
             macos::float_over_spaces(&w);
