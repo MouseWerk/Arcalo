@@ -5,7 +5,7 @@ import { TextSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { TaskItem, TaskList } from "@tiptap/extension-list";
+import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import Highlight from "@tiptap/extension-highlight";
 import { Placeholder } from "@tiptap/extensions";
@@ -42,6 +42,8 @@ import {
   RAW_RE,
   RENDERED,
   RefDefinition,
+  columns,
+  dedent,
   STRONG_CLOSE,
   STRONG_OPEN,
   SourceStyle,
@@ -185,13 +187,14 @@ function renderTable(node: JsonNode, h: Parameters<typeof renderTableToMarkdown>
     const sepAlign = (c: string) => (c.startsWith(":") && c.endsWith(":") && c.length > 1 ? "center" : c.startsWith(":") ? "left" : c.endsWith(":") ? "right" : null);
     const sameSep = seps.length === cols && seps.every((c, i) => /^:?-+:?$/.test(c) && sepAlign(c) === aligns[i]);
     const own = aligns.map((a) => (a === "left" ? ":--" : a === "right" ? "--:" : a === "center" ? ":-:" : "---"));
-    let out = "\n" + row(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + (sameSep ? `${style.sep}\n` : row(own));
+    let out = row(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + (sameSep ? `${style.sep}\n` : row(own));
     for (const r of hasHeader ? rows.slice(1) : rows) out += row(cellsOf(r));
-    return out;
+    return out.slice(0, -1);
   }
-  let out = "\n" + line(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + `| ${sep.join(" | ")} |\n`;
+  // Without blank lines around it (Tiptap's had them): in a quote they became bare `>` lines, more on every save.
+  let out = line(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + `| ${sep.join(" | ")} |\n`;
   for (const r of hasHeader ? rows.slice(1) : rows) out += line(cellsOf(r));
-  return out;
+  return out.slice(0, -1);
 }
 
 const MarkdownTable = Table.extend({
@@ -297,6 +300,7 @@ const setSpaced = (node: JsonNode | null | undefined) => {
   managerProto.createLexer = function (this: unknown) {
     const lexer = createLexer.call(this);
     lexer.lex = (src: string) => (chunkLines > 0 ? chunkedLex(lexer, src, chunkLines) : Object.getPrototypeOf(lexer).lex.call(lexer, src));
+    keepListTabs(lexer);
     return lexer;
   };
   // Every editor's manager registered the tokenizers of its extensions again on the shared `marked`, bound to
@@ -342,6 +346,55 @@ const setSpaced = (node: JsonNode | null | undefined) => {
       ],
     });
   };
+}
+
+type ListItemToken = { raw?: string; text?: string; task?: boolean; tokens?: { type: string }[] };
+const LIST_ITEM_HEAD = /^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]*)(.*)$/;
+
+/**
+ * Two fixes to marked's list items. It turns every tab that indents a line inside an item into four
+ * spaces before it cuts the item's indentation, so a tab inside code in a list (Go, a Makefile, a
+ * list indented with tabs as Obsidian does) became spaces, and one more indentation level: items
+ * with such a line are read again with the indentation cut in columns, as CommonMark does (a tab
+ * inside the content stays). And text after a block in a tight item (`- ```…```` then a line)
+ * is a `text` token, which Tiptap's list item takes as plain text unless it comes first (the
+ * Markdown was shown and saved escaped, `\*\*` more on every save): such items get paragraphs.
+ */
+function keepListTabs(lexer: Lexer) {
+  const tokenizer = (lexer as unknown as { tokenizer?: { list?: (src: string) => { items?: ListItemToken[] } | undefined; keepsTabs?: boolean } }).tokenizer;
+  if (!tokenizer?.list || tokenizer.keepsTabs) return;
+  tokenizer.keepsTabs = true;
+  const list = tokenizer.list;
+  tokenizer.list = function (this: unknown, src: string) {
+    const token = list.call(this, src);
+    for (const item of token?.items ?? []) {
+      if (!item.task && item.raw && /\n[ \t]*\t/.test(item.raw)) {
+        const text = listItemText(item.raw);
+        const own = (this as { lexer?: Lexer }).lexer ?? lexer;
+        if (text != null && text !== item.text) {
+          item.text = text;
+          item.tokens = own.blockTokens(text, []) as ListItemToken["tokens"];
+        }
+      }
+      const tokens = item.tokens ?? [];
+      if (tokens.some((t, i) => i > 0 && t.type === "text")) for (const t of tokens) if (t.type === "text") t.type = "paragraph";
+    }
+    return token;
+  };
+}
+
+/** The content of a list item from its source, its indentation cut in columns. */
+export function listItemText(raw: string): string | null {
+  const [head, ...rest] = raw.replace(/\n[ \t]*(?:\n[ \t]*)*$/, "").split("\n");
+  const m = LIST_ITEM_HEAD.exec(head);
+  if (!m) return null;
+  const marker = columns(m[1] + m[2]);
+  const after = columns(m[1] + m[2] + m[3]) - marker;
+  // One to four columns after the marker belong to it; more start indented code with one.
+  const width = !m[4] ? marker + 1 : after > 4 ? marker + 1 : marker + after;
+  const first = !m[4] ? "" : after > 4 ? dedent(m[1] + m[2] + m[3], marker + 1) + m[4] : m[4];
+  const lines = rest.map((l) => (!l.trim() ? "" : columns(/^[ \t]*/.exec(l)![0]) >= width ? dedent(l, width) : l));
+  return [first, ...lines].join("\n");
 }
 
 /** How many tokenizers the shared `marked` holds (tests: opening editors must not add more). */
@@ -731,6 +784,28 @@ const SourceTaskList = TaskList.extend({
 });
 
 /**
+ * Numbered lists as marked reads them (CommonMark). Tiptap's own tokenizer cuts the item's
+ * continuation lines by the number's width without its `.`/`)` and then trims the first of them,
+ * so a fence below `1. ` read its code with one more space each time and the second of two bullets
+ * indented under `1. ` became a child of the first. It stays for lists marked does not know
+ * (letters, roman numerals).
+ */
+const SourceOrderedList = OrderedList.extend({
+  markdownTokenizer: OrderedList.config.markdownTokenizer && {
+    ...OrderedList.config.markdownTokenizer,
+    tokenize: (src: string, tokens: unknown, lexer: unknown) =>
+      /^ {0,3}\d{1,9}[.)](?:[ \t]|$)/.test(src) ? undefined : (OrderedList.config.markdownTokenizer!.tokenize as (s: string, t: unknown, l: unknown) => never)(src, tokens, lexer),
+  },
+  // Items through ListItem as in bullet lists (Tiptap's own reading of marked's items keeps their text unparsed).
+  parseMarkdown: (token, helpers) => {
+    if (token.type !== "list" || !token.ordered) return [];
+    const start = Number(token.start) || 1;
+    const attrs = { ...(start !== 1 ? { start } : {}), ...(token.typeMarker ? { type: token.typeMarker } : {}) };
+    return { type: "orderedList", ...(Object.keys(attrs).length ? { attrs } : {}), content: token.items ? helpers.parseChildren(token.items) : [] };
+  },
+});
+
+/**
  * `[ ] ` or `[x] ` typed at the start of a bullet item (`- [ ] ` as in Markdown) makes the item a task.
  * TaskItem's own rule only wraps a paragraph, which a list item cannot hold as a task. The list is
  * split around the item: the bullets before and after it stay bullets.
@@ -777,7 +852,9 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       codeBlock: false,
       link: false,
       paragraph: false,
+      orderedList: false,
     }),
+    SourceOrderedList,
     FocusSelection,
     ImageParagraph,
     MarkdownLink.configure({
@@ -910,7 +987,8 @@ export function collapseBlankLines(md: string): string {
       if (++blanks > 1) continue;
     } else {
       blanks = 0;
-      const open = line.match(/^\s*(`{3,}|~{3,})/);
+      // Also a fence right after a list marker (`- ```py`) or a quote's `>`.
+      const open = line.match(/^(?:[ \t]*(?:>[ \t]?|[-+*][ \t]+|\d{1,9}[.)][ \t]+))*[ \t]*(`{3,}|~{3,})/);
       if (open) fence = { ch: open[1][0], len: open[1].length };
     }
     out.push(line);

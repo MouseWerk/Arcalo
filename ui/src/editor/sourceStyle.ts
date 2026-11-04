@@ -124,13 +124,28 @@ function itemStyle(raw: string | undefined): { indent?: string; cont?: string } 
     const ws = leadingWs(lines[1]);
     out.cont = ws.startsWith(own) ? ws.slice(own.length) : "";
   }
+  // The nested blocks' indentation, from the first nested line that is not inside fenced code
+  // (code may be indented further than the block that holds it).
+  let fence = /^[ \t]*(?:[-+*]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]+(`{3,}|~{3,})/.exec(lines[0])?.[1] ?? "";
   for (const line of lines.slice(1)) {
+    if (fence) {
+      const close = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1];
+      if (close && close[0] === fence[0] && close.length >= fence.length) fence = "";
+      else continue;
+    } else fence = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
     if (!line.trim()) continue;
     const ws = leadingWs(line);
     if (ws.length > own.length && ws.startsWith(own)) {
       out.indent = ws.slice(own.length);
       break;
     }
+  }
+  // Four columns past the item's text make indented code, which is no indentation of the item.
+  const m = /^[ \t]*([-+*]|\d{1,9}[.)])([ \t]*)/.exec(lines[0]);
+  if (m && out.indent != null) {
+    const after = columns(own + m[1] + m[2]) - columns(own + m[1]);
+    const width = m[1].length + (after >= 1 && after <= 4 ? after : 1);
+    if (columns(out.indent) >= width + 4) out.indent = " ".repeat(width);
   }
   return out;
 }
@@ -405,6 +420,9 @@ function markTopNode(token: Tok, out: unknown) {
 
 const TASK_ITEM = /^([ \t]*)([-+*])[ \t]+\[([ xX])\][ \t]+(.*)$/;
 
+/** A line that starts a block and so cannot continue a paragraph (CommonMark's interruptions, plus `$$` and columns). */
+const BLOCK_START = /^[ \t]*(?:[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|>|`{3,}|~{3,}|\$\$|<|(?:[-*_][ \t]*){3,}$)/;
+
 interface Lexer {
   inlineTokens: (src: string) => Tok[];
   blockTokens: (src: string) => Tok[];
@@ -432,18 +450,24 @@ export function tokenizeTaskList(src: string, lexer: Lexer): Tok | undefined {
     const itemLines = [line];
     raw += `${line}\n`;
     i++;
+    // Lines right below the task that start no block continue its text (a line break, a hard
+    // break after two spaces), also when they are not indented (lazy continuation).
+    const textLines = [m[4]];
     while (i < lines.length) {
       const next = lines[i];
+      const continues = textLines.length === itemLines.length && !!next.trim() && !BLOCK_START.test(dedent(next, own + 2));
       if (!next.trim()) {
         const k = lines.slice(i + 1).findIndex((l) => l.trim() !== "");
         if (k === -1 || columns(leadingWs(lines[i + 1 + k])) <= own) break;
-      } else if (columns(leadingWs(next)) <= own) break;
+      } else if (columns(leadingWs(next)) <= own && !continues) break;
+      if (continues) textLines.push(next.trimStart());
       itemLines.push(next);
       raw += `${next}\n`;
       i++;
     }
+    const text = textLines.join("\n");
     const nested = itemLines
-      .slice(1)
+      .slice(textLines.length)
       .map((l) => dedent(l, own + 2))
       .join("\n");
     let nestedTokens: Tok[] | undefined;
@@ -456,10 +480,10 @@ export function tokenizeTaskList(src: string, lexer: Lexer): Tok | undefined {
     items.push({
       type: "taskItem",
       raw: itemLines.join("\n"),
-      text: m[4],
-      tokens: lexer.inlineTokens(m[4]),
+      text,
+      tokens: lexer.inlineTokens(text),
       indent: style.indent,
-      ...({ mainContent: m[4], indentLevel: own, checked: m[3].toLowerCase() === "x", nestedTokens } as object),
+      ...({ mainContent: text, indentLevel: own, checked: m[3].toLowerCase() === "x", nestedTokens } as object),
     });
   }
   if (!items.length) return undefined;
@@ -646,17 +670,26 @@ const width = (s: string) => columns(s);
 /** A list item: the marker, the first paragraph and the nested blocks, indented as the source was. */
 export function renderListItem(node: JNode, h: RenderHelpers, prefix: string, indent: string): string {
   const [first, ...rest] = node.content ?? [];
-  let out = prefix + (first ? h.renderChildren([first]) : "");
+  const indented = (text: string, from: number) =>
+    text
+      .replace(/^\n+/, "")
+      .split("\n")
+      .map((l, i) => (i < from ? l : l ? indent + l : ""))
+      .join("\n");
+  // A first block other than a paragraph (a quote, callout, table or code after the marker)
+  // continues on lines indented like the nested blocks, or it would end the item there.
+  let out = prefix + (!first ? "" : first.type === "paragraph" ? h.renderChildren([first]) : indented(h.renderChildren([first]), 1));
   const cont = node.attrs?.cont;
   if (typeof cont === "string" && cont && first?.type === "paragraph") out = out.split("\n").map((l, i) => (i && l ? cont + l : l)).join("\n");
   rest.forEach((child, i) => {
     const text = h.renderChild?.(child, i + 1) ?? h.renderChildren([child]);
     if (text == null) return;
-    const block = text
-      .split("\n")
-      .map((l) => (l ? indent + l : ""))
-      .join("\n");
-    out += child.type === "paragraph" ? `\n\n${block}` : `\n${block}`;
+    // A nested list, code or a quote right under the item's text may follow without a blank line;
+    // anything else needs one (a rule under text would underline it as a heading, a list under a
+    // quote or table would continue it, two lists, quotes or tables in a row would become one).
+    const prev = i ? rest[i - 1] : first;
+    const tight = prev?.type === "paragraph" && (/List$/.test(child.type ?? "") || child.type === "codeBlock" || child.type === "blockquote" || child.type === "callout");
+    out += `${tight ? "\n" : "\n\n"}${indented(text, 0)}`;
   });
   return out;
 }
