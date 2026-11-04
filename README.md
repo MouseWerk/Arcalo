@@ -696,7 +696,11 @@ history. Failures appear as a notification and in the status line.
 states stay in the version history). A note changed on both computers is not overwritten: both versions are kept, the
 page shows “Conflict”, and merging opens a view with both versions side by side, paragraph by paragraph. Changes made
 on one side only are merged automatically; for the rest you pick “Mine”, “Theirs”, “Both” or write the text yourself.
-“Apply” saves the result and syncs it.
+“Apply” saves the result and syncs it. What the notes hold travels: text, titles, subpages, tasks, tags, properties,
+canvases, images and files, renames and moves (links follow). What each computer keeps for itself: its bookings and the
+timer (the time sheets go along as CSV), page versions, the trash, favorites, page icons, the order of pages within a
+folder (pages from another computer come last), folder colors, PDF highlights, the assistant's chats and the
+decisions about appointments; settings only with “Sync settings”.
 
 **Restore**: “Restore from Git…” clones the repository and imports it as a new top-level page “Git import <date>”
 (images included); existing pages are left alone.

@@ -291,13 +291,20 @@ fn signed_hours(minutes: i64) -> String {
     }
 }
 
-/// „Mo 05.10.“ / „Mon 10/05“.
+/// „Mo 05.10.“ / „Mon 10/05“ (US), „Mon 05/10“ (British), „Mon 10-05“ (ISO) or „Mon 05.10.“.
 fn day_label(d: NaiveDate) -> String {
     const DE: [&str; 7] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
     const EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     let i = d.weekday().num_days_from_monday() as usize;
     if crate::i18n::is_en() {
-        format!("{} {}", EN[i], d.format("%m/%d"))
+        // Day and month in the order of the date format (Settings → Sprache & Format).
+        let f = match crate::i18n::date_format() {
+            crate::prefs::DateFormat::EnUs => "%m/%d",
+            crate::prefs::DateFormat::EnGb => "%d/%m",
+            crate::prefs::DateFormat::Iso => "%m-%d",
+            crate::prefs::DateFormat::De => "%d.%m.",
+        };
+        format!("{} {}", EN[i], d.format(f))
     } else {
         format!("{} {}", DE[i], d.format("%d.%m."))
     }

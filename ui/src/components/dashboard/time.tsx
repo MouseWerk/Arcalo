@@ -332,7 +332,7 @@ export function ProposalWidget({ widget }: WidgetProps) {
         const p = data!;
         const share = p.target_minutes > 0 ? p.booked_minutes / p.target_minutes : 0;
         const complete = p.missing_minutes === 0 && p.unbooked_meetings === 0;
-        const monday = weekStart(new Date(), 1);
+        const monday = weekStart(new Date());
         return (
           <div className="dw-proposal">
             <div className="dw-review-hours">

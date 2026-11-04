@@ -227,6 +227,8 @@ pub fn apply(
         let mut out = Pulled::default();
         // Pages a change of this pull names.
         let mut named: HashSet<i64> = HashSet::new();
+        // Pages renamed there: `(old title, new title)`.
+        let mut renamed: Vec<(String, String)> = vec![];
         // Deleting many pages at once (another computer's mirror went missing, a wrong folder)
         // is not taken over: the pages stay and go back to the server with the next sync. Moves
         // are no deletions.
@@ -263,7 +265,9 @@ pub fn apply(
             }
             let name = new.rsplit('/').next().unwrap_or(&new);
             if !names_title(name, &page.title) {
-                db.rename_page(id, &title_of(&new, name))?;
+                let title = title_of(&new, name);
+                db.rename_page(id, &title)?;
+                renamed.push((page.title.clone(), title));
             }
             out.moved.push(id);
             named.insert(id);
@@ -298,7 +302,9 @@ pub fn apply(
                 let placed = page.parent_id == parent || db.move_page(id, parent, i64::MAX).is_ok();
                 let name = stem(&c.path);
                 if stem(from) != name && !names_title(&name, &page.title) {
-                    db.rename_page(id, &title_of(&path, &name))?;
+                    let title = title_of(&path, &name);
+                    db.rename_page(id, &title)?;
+                    renamed.push((page.title.clone(), title));
                 }
                 if placed {
                     out.moved.push(id);
@@ -430,6 +436,13 @@ pub fn apply(
                 }
             }
         }
+        // Links to a page renamed there that this computer wrote since (a new page, an edit, a
+        // conflict) follow the rename, as they would have there; the pages that came with the
+        // server's text have the other computer's links already.
+        let taken: HashSet<i64> = out.pages.iter().chain(&out.created).chain(&out.restored).copied().collect();
+        for (old, new) in &renamed {
+            out.pages.extend(relink(db, old, new, &taken)?);
+        }
         // Daily notes of the other computer arrive without their mark: they become this
         // computer's daily notes of their days (unless it has its own already).
         db.adopt_daily_notes(&out.created)?;
@@ -442,24 +455,37 @@ pub fn apply(
 /// the other computer gave them ([`vault::TITLES_FILE`], `titles`: its entries that differ from
 /// this computer's mirror, see [`vault::pulled_titles`]): pages taken over before the file existed
 /// carry the file name's version, and a rename there that keeps the file name changes no note.
-/// Runs after every sync, also one that pulled no note. Returns the pages renamed.
-pub fn take_over_titles(db: &Database, titles: &HashMap<String, String>) -> Result<Vec<i64>> {
+/// Runs after every sync, also one that pulled no note. Returns the pages renamed (`moved`) and
+/// the pages whose links to them followed (`pages`).
+pub fn take_over_titles(db: &Database, titles: &HashMap<String, String>) -> Result<Pulled> {
     if titles.is_empty() {
-        return Ok(vec![]);
+        return Ok(Pulled::default());
     }
     db.atomic(|| {
-        let mut renamed = vec![];
+        let mut out = Pulled::default();
         for p in vault::page_paths(db)? {
             let entry =
                 p.file.iter().chain(p.folder.iter()).find_map(|path| Some((path, titles.get(&path.to_lowercase())?)));
             let Some((path, title)) = entry else { continue };
-            if &db.page(p.page_id)?.title != title && names_title(vault::path_stem(path), title) {
+            let old = db.page(p.page_id)?.title;
+            if &old != title && names_title(vault::path_stem(path), title) {
                 db.rename_page(p.page_id, title)?;
-                renamed.push(p.page_id);
+                out.moved.push(p.page_id);
+                out.pages.extend(relink(db, &old, title, &HashSet::new())?);
             }
         }
-        Ok(renamed)
+        Ok(out)
     })
+}
+
+/// [`Database::relink`] after a rename taken over from the server, while no other page has the
+/// old title (a link to it is then no link to the renamed page). Returns the pages changed.
+fn relink(db: &Database, old: &str, new: &str, skip: &HashSet<i64>) -> Result<Vec<i64>> {
+    if old == new || db.page_by_title(old)?.is_some() {
+        return Ok(vec![]);
+    }
+    let changed = db.relink(old, new, skip)?;
+    Ok(changed.into_iter().filter(|id| !skip.contains(id)).collect())
 }
 
 /// This computer's files the sync renamed because the server has another file of the same name
@@ -1138,7 +1164,9 @@ mod tests {
             let titles = vault::pulled_titles(&dir.join("git-sync"), &own);
             let mut pulled = super::apply(db, &changes, &titles, Local::now()).unwrap();
             gitsync::taken_over(&dir.join("git-sync"));
-            pulled.moved.extend(take_over_titles(db, &titles).unwrap());
+            let titled = take_over_titles(db, &titles).unwrap();
+            pulled.moved.extend(titled.moved);
+            pulled.pages.extend(titled.pages);
             pulled
         }
 
@@ -2444,5 +2472,174 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&server.stdout), "von B\n");
+    }
+
+    /// Eight more pages, so a deletion is never a mass deletion.
+    fn filler(db: &Database) {
+        for i in 0..8 {
+            let p = db.create_page(None, &format!("F{i}"), None).unwrap();
+            db.save_page_content(p.id, "x").unwrap();
+        }
+    }
+
+    /// A page renamed on one computer while the other two wrote links to its old title (a new
+    /// page, a conflict): the links follow the rename on each of them and reach the others so. Before, they pointed nowhere on both computers, and following one made a new, empty
+    /// page of the old title.
+    #[test]
+    fn links_written_here_follow_a_rename_there() {
+        let Some(pcs) = Pcs::new("rename-link") else { return };
+        let a = Database::open_in_memory().unwrap();
+        filler(&a);
+        let konzept = a.create_page(None, "Konzept", None).unwrap();
+        a.save_page_content(konzept.id, "Inhalt").unwrap();
+        let verweis = a.create_page(None, "Verweis", None).unwrap();
+        a.save_page_content(verweis.id, "siehe [[Konzept]]").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let verweis_b = b.page_by_title("Verweis").unwrap().unwrap().id;
+        let c = Database::open_in_memory().unwrap();
+        pcs.sync(&c, "c");
+
+        a.rename_page_linked(konzept.id, "Konzept 2026", true).unwrap();
+        a.save_page_content(verweis.id, "siehe [[Konzept 2026]], von A ergänzt").unwrap();
+        pcs.sync(&a, "a");
+        let neu = b.create_page(None, "Neu auf B", None).unwrap();
+        let text = "Bezug: [[Konzept|das Konzept]] und [[Konzept#Ziele]]\n\n`[[Konzept]]` bleibt Code";
+        b.save_page_content(neu.id, text).unwrap();
+        b.save_page_content(verweis_b, "siehe [[Konzept]], von B ergänzt").unwrap();
+        let von_c = c.create_page(None, "Neu auf C", None).unwrap();
+        c.save_page_content(von_c.id, "auch [[konzept]]").unwrap();
+        let out = pcs.sync(&b, "b");
+        assert_eq!(out.conflicts, [verweis_b], "{out:?}");
+        assert!(out.pages.contains(&neu.id), "the editor reloads it: {out:?}");
+        let linked = "Bezug: [[Konzept 2026|das Konzept]] und [[Konzept 2026#Ziele]]\n\n`[[Konzept]]` bleibt Code";
+        assert_eq!(b.page_doc(neu.id).unwrap().content, linked);
+        assert!(b.page_doc(neu.id).unwrap().unresolved_links.is_empty());
+        assert_eq!(b.list_versions(neu.id).unwrap().len(), 1, "B's text before is a version");
+        // The conflict's text here (B's) follows as well; the server's side has A's link.
+        assert_eq!(b.page_doc(verweis_b).unwrap().content, "siehe [[Konzept 2026]], von B ergänzt");
+        assert!(b.page_by_title("Konzept").unwrap().is_none());
+
+        // The third computer takes the rename over after B's sync: its own link follows as well.
+        let out = pcs.sync(&c, "c");
+        assert!(out.pages.contains(&von_c.id), "{out:?}");
+        assert_eq!(c.page_doc(von_c.id).unwrap().content, "auch [[Konzept 2026]]");
+
+        // The rewrites reach the others with the next syncs; nothing flips back.
+        pcs.sync(&b, "b");
+        pcs.sync(&c, "c");
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        for (db, pc) in [(&a, "a"), (&b, "b"), (&c, "c")] {
+            let on = |t: &str| db.page_doc(db.page_by_title(t).unwrap().unwrap().id).unwrap().content;
+            assert_eq!(on("Neu auf B"), linked, "{pc}");
+            assert_eq!(on("Neu auf C"), "auch [[Konzept 2026]]", "{pc}");
+            assert!(db.page_by_title("Konzept").unwrap().is_none(), "{pc}");
+        }
+        for pc in ["c", "a", "b"] {
+            let db = [(&a, "a"), (&b, "b"), (&c, "c")].into_iter().find(|(_, n)| *n == pc).unwrap().0;
+            let out = pcs.sync(db, pc);
+            assert!(out.pages.is_empty() && out.created.is_empty(), "{pc}: {out:?}");
+        }
+    }
+
+    /// A daily note of a computer that titles them in another format („04.11.2026“ against
+    /// this computer's „2026-11-04“) is the daily note of its day here: „Heute“ opens it instead
+    /// of making a second note of that day beside it, which the next sync carried back.
+    #[test]
+    fn a_daily_note_in_another_title_format_is_the_daily_note_here() {
+        let Some(pcs) = Pcs::new("daily-format") else { return };
+        let a = Database::open_in_memory().unwrap();
+        filler(&a);
+        let mut s = a.load_settings().unwrap();
+        s.notes.daily_title = arcalo_core::prefs::DailyTitle::De;
+        a.save_settings(&s).unwrap();
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let note = a.daily_note(day).unwrap();
+        a.save_page_content(note.id, "## Fokus\n\n- [ ] von A\n").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        let out = pcs.sync(&b, "b");
+        let on_b = b.page_by_title("04.11.2026").unwrap().unwrap();
+        assert!(out.created.contains(&on_b.id));
+        assert_eq!(b.daily_note(day).unwrap().id, on_b.id);
+        let daily = b
+            .list_pages()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.title.contains("2026-11-04") || p.title.contains("04.11.2026"));
+        assert_eq!(daily.count(), 1, "{:?}", tree(&b));
+        let out = pcs.sync(&b, "b");
+        assert!(out.created.is_empty() && out.pages.is_empty(), "{out:?}");
+        let out = pcs.sync(&a, "a");
+        assert!(out.created.is_empty(), "{out:?}");
+        // The next day's note on B goes into the folders taken over, not into a second „2026“.
+        let next = b.daily_note(day.succ_opt().unwrap()).unwrap();
+        assert_eq!(next.title, "2026-11-05");
+        assert_eq!(next.parent_id, on_b.parent_id, "{:?}", tree(&b));
+        assert_eq!(b.list_pages().unwrap().iter().filter(|p| p.title == "2026").count(), 1);
+    }
+
+    /// A drawing renamed in the attachment manager on one computer while the other drew on it:
+    /// the drawing keeps its new name with the other computer's strokes, on both computers and on
+    /// the server, and the note shows it. Before, the strokes stayed under the old name, which no
+    /// note linked any more: the next sync took the file off the server, the note showed the old
+    /// drawing everywhere, and the edit was left only as an unused file on the second computer.
+    /// A note written there meanwhile that embeds the old name follows the rename too.
+    #[test]
+    fn a_drawing_edited_here_follows_its_rename_there() {
+        if !git_available() {
+            return;
+        }
+        let r = Rv::new("rename-drawing");
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        filler(&a);
+        std::fs::create_dir_all(r.files("a")).unwrap();
+        std::fs::write(r.files("a").join("Skizze.excalidraw"), "{\"v\":1}").unwrap();
+        std::fs::write(r.files("a").join("Skizze.excalidraw.svg"), "<svg>1</svg>").unwrap();
+        std::fs::write(r.files("a").join("Foto.png"), "PNG").unwrap();
+        let p = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(p.id, "Bild ![[Skizze.excalidraw]] und ![[Foto.png]]").unwrap();
+        r.run(&a, "a");
+        r.run(&b, "b");
+
+        let renamed = arcalo_core::attachment_manager::rename;
+        renamed(&a, &r.files("a"), "Skizze.excalidraw", "Plan.excalidraw").unwrap();
+        renamed(&a, &r.files("a"), "Foto.png", "Baustelle.png").unwrap();
+        r.run(&a, "a");
+        std::fs::write(r.files("b").join("Skizze.excalidraw"), "{\"v\":2}").unwrap();
+        std::fs::write(r.files("b").join("Skizze.excalidraw.svg"), "<svg>2</svg>").unwrap();
+        let neu = b.create_page(None, "Neu auf B", None).unwrap();
+        b.save_page_content(neu.id, "Noch einmal ![[Foto.png|200]]").unwrap();
+        let out = r.run(&b, "b");
+        assert!(
+            out.renamed_files.iter().any(|f| f.from == "Skizze.excalidraw" && f.to == "Plan.excalidraw"),
+            "{out:?}"
+        );
+        assert_eq!(b.page_doc(neu.id).unwrap().content, "Noch einmal ![[Baustelle.png|200]]");
+        r.run(&b, "b");
+        r.run(&a, "a");
+        r.run(&b, "b");
+
+        let read = |pc: &str, name: &str| std::fs::read_to_string(r.files(pc).join(name)).ok();
+        for (db, pc) in [(&a, "a"), (&b, "b")] {
+            let id = db.page_by_title("Notiz").unwrap().unwrap().id;
+            assert_eq!(db.page_doc(id).unwrap().content, "Bild ![[Plan.excalidraw]] und ![[Baustelle.png]]");
+            let neu = db.page_by_title("Neu auf B").unwrap().unwrap().id;
+            assert_eq!(db.page_doc(neu).unwrap().content, "Noch einmal ![[Baustelle.png|200]]", "{pc}");
+            assert_eq!(read(pc, "Plan.excalidraw").as_deref(), Some("{\"v\":2}"), "{pc}: B's strokes");
+            assert_eq!(read(pc, "Plan.excalidraw.svg").as_deref(), Some("<svg>2</svg>"), "{pc}");
+            assert_eq!(read(pc, "Baustelle.png").as_deref(), Some("PNG"), "{pc}");
+        }
+        assert_eq!(read("b", "Skizze.excalidraw"), None, "renamed here as well, no unused copy");
+        assert_eq!(r.server("attachments/Plan.excalidraw"), "{\"v\":2}");
+        assert_eq!(r.server("attachments/Plan.excalidraw.svg"), "<svg>2</svg>");
+        assert_eq!(r.server("attachments/Skizze.excalidraw"), "");
+        assert_eq!(r.server("attachments/Foto.png"), "");
+        // Nothing flips back and forth.
+        let again = r.run(&b, "b");
+        assert!(!again.committed && again.renamed_files.is_empty(), "{again:?}");
+        assert!(!r.run(&a, "a").committed);
     }
 }

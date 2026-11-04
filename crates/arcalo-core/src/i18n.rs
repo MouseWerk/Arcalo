@@ -10,11 +10,13 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::prefs::{Language, NumberFormat};
+use crate::prefs::{DateFormat, Language, NumberFormat};
 
 static LANG: AtomicU8 = AtomicU8::new(0);
 /// Settings → Sprache & Format „Zahlen“: 0 by the language, 1 comma, 2 point.
 static NUMBERS: AtomicU8 = AtomicU8::new(0);
+/// Settings → Sprache & Format „Datum“: 0 German, 1 ISO, 2 British, 3 US.
+static DATES: AtomicU8 = AtomicU8::new(0);
 
 // Tests run in parallel threads: there the language is per thread (German unless a test
 // switches it with `with_lang`), so a test in English does not change another's texts.
@@ -22,6 +24,7 @@ static NUMBERS: AtomicU8 = AtomicU8::new(0);
 thread_local! {
     static TEST_LANG: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
     static TEST_NUMBERS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static TEST_DATES: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
 /// The current language.
@@ -66,6 +69,37 @@ pub fn decimal_comma() -> bool {
         2 => false,
         _ => !is_en(),
     }
+}
+
+const DATE_FORMATS: [DateFormat; 4] = [DateFormat::De, DateFormat::Iso, DateFormat::EnGb, DateFormat::EnUs];
+
+/// Sets the order of day and month the user writes dates in (Settings → Sprache & Format).
+pub fn set_date_format(f: DateFormat) {
+    DATES.store(DATE_FORMATS.iter().position(|x| *x == f).unwrap_or(0) as u8, Ordering::Relaxed);
+}
+
+/// The date format of the settings.
+pub fn date_format() -> DateFormat {
+    #[cfg(test)]
+    let n = TEST_DATES.with(|n| n.get());
+    #[cfg(not(test))]
+    let n = DATES.load(Ordering::Relaxed);
+    DATE_FORMATS.get(n as usize).copied().unwrap_or_default()
+}
+
+/// Runs `f` with this thread's date format set to `f` (tests only).
+#[cfg(test)]
+pub(crate) fn with_date_format<T>(format: DateFormat, f: impl FnOnce() -> T) -> T {
+    let n = DATE_FORMATS.iter().position(|x| *x == format).unwrap_or(0) as u8;
+    let before = TEST_DATES.with(|c| c.replace(n));
+    let out = f();
+    TEST_DATES.with(|c| c.set(before));
+    out
+}
+
+/// Whether dates written with slashes put the month first (`11/04/2026` with the US format).
+pub fn month_first() -> bool {
+    date_format() == DateFormat::EnUs
 }
 
 /// A number formatted with a point (`format!("{:.2}", …)`) in the reader's notation: `28,00`

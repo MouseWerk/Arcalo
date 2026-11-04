@@ -1873,9 +1873,9 @@ pub(crate) fn run_git_sync_with(
 fn take_over_titles(app: &AppHandle, state: &AppState) {
     let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
     match syncmerge::take_over_titles(&state.db(), &titles) {
-        Ok(renamed) if !renamed.is_empty() => {
-            devlog::info("git", format!("{} page titles taken over from the server", renamed.len()));
-            let _ = app.emit("gitsync://pulled", &syncmerge::Pulled { moved: renamed, ..Default::default() });
+        Ok(renamed) if !renamed.moved.is_empty() => {
+            devlog::info("git", format!("{} page titles taken over from the server", renamed.moved.len()));
+            let _ = app.emit("gitsync://pulled", &renamed);
         }
         Ok(_) => {}
         Err(e) => devlog::warn("git", format!("page titles from the server not taken over: {e}")),
@@ -2434,6 +2434,7 @@ fn settings_save(
     let active = new_cal.active_sources(arcalo_core::calsync::outlook::available());
     let relocalize = arcalo_core::i18n::set_lang(settings.locale.lang());
     arcalo_core::i18n::set_number_format(settings.locale.number_format);
+    arcalo_core::i18n::set_date_format(settings.locale.date_format);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     // Another saved Jira search: its issues are read now.
     let jira_resync: Vec<String> = if previous.jira.queries != settings.jira.queries {
@@ -4951,6 +4952,7 @@ pub fn run() {
             if let Ok(mut s) = db.load_settings() {
                 arcalo_core::i18n::set_lang(s.locale.lang());
                 arcalo_core::i18n::set_number_format(s.locale.number_format);
+                arcalo_core::i18n::set_date_format(s.locale.date_format);
                 let page = |t: &str| db.page_by_title(t).ok().flatten().is_some();
                 if arcalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.lang(), page) {
                     let _ = db.save_settings(&s);

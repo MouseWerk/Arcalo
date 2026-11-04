@@ -116,6 +116,7 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     let settings = db.load_settings().unwrap_or_default();
     arcalo_core::i18n::set_lang(settings.locale.lang());
     arcalo_core::i18n::set_number_format(settings.locale.number_format);
+    arcalo_core::i18n::set_date_format(settings.locale.date_format);
     if let Err(e) = db.localize_default_leistungsarten() {
         devlog::warn("core", format!("activity types not localized: {e}"));
     }

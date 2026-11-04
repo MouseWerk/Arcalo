@@ -160,6 +160,8 @@ pub const DESKTOP_ONLY: &[&str] = &[
     "capture_ready",
     "capture_context",
     "capture_undo",
+    "capture_draft_get",
+    "capture_draft_set",
     "capture_open",
     "search_hide",
     "search_open",

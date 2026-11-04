@@ -546,10 +546,10 @@ fn task_row(t: Task) -> QueryRow {
 
 // ---------------------------------------------------------------------- entries
 
-/// First and last local day (inclusive) of a range name.
-pub fn range_days(range: &str, today: NaiveDate) -> (NaiveDate, NaiveDate) {
+/// First and last local day (inclusive) of a range name; a week starts on `week_start`.
+pub fn range_days(range: &str, today: NaiveDate, week_start: crate::prefs::WeekStart) -> (NaiveDate, NaiveDate) {
     use chrono::Datelike;
-    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let monday = week_start.first_day(today);
     match range {
         "today" | "heute" => (today, today),
         "last7" | "7days" | "7tage" => (today - Duration::days(6), today),
@@ -572,7 +572,7 @@ fn status_name(s: StatusFlag) -> &'static str {
 }
 
 fn entries<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Groups, Option<i64>)> {
-    let (from, to) = range_days(&q.range, ctx.today);
+    let (from, to) = range_days(&q.range, ctx.today, ctx.settings.time.week_start);
     let list = ctx.db.list_time_entries(&EntryFilter {
         from: Some(ctx.day_start(from)),
         to: Some(ctx.day_start(to + Duration::days(1))),
