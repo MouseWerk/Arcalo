@@ -36,9 +36,11 @@ Every failure is R4A-1; none was the emulator being slow. The pictures of all th
   `dashboard_save`, `quick_links_save`, `save_calendar` and `save_jira` read, changed and stored the settings in the
   same way, unguarded against a save running at the same time (the phone runs `mobile_settings_save` off the
   command thread).
-- Fix: `AppState::settings_write`, held by every change of the running settings from reading them to taking over
-  the new ones: `settings_save` (to its `rebuild_ai`), `refresh_ai` (the rebuild after a key changed, now reading the
-  settings under the lock) and `update_settings` (the four partial saves).
+- Fix: one mechanism with R4C-1 ([r4-failure-paths.md](r4-failure-paths.md)), which fixed the partial saves of the
+  same class independently: every settings write holds `AppState::settings_write` (`settings_save` with its
+  three-way `merge_change`, `change_settings` for the calendar, Jira, start page, sidebar links and setup). The
+  rebuild after a key changed (the phone's start, `api_key_set`, `provider_key_set`, `proxy_password_set`) is
+  `AppState::refresh_ai` under the same lock, reading the settings only once it holds it.
 - Tests: `phone.test.js` „keeps a saved setting while the app reads its keys again“ (twelve rounds of a key stored
   at the same time as a save; the app must have the saved theme after each); `app.js` checks after every start of the
   suites that the app kept the saved language and theme, and names it when not (the steps after failed with a
