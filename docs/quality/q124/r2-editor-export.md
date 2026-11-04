@@ -11,7 +11,7 @@ Result: 1 high, 5 medium (all fixed), 9 low (listed). Round 1's fixes hold (e2e 
 Tests added: `ui/src/editor/roundtripProperty.test.ts` (property: parse, write, parse is lossless and stable for the
 corpus, every block alone and 200 seeded random documents; plus „an edited list keeps its blocks“, the save path with
 one edit), `ui/src/editor/shareEveryBlock.test.ts`, e2e `471-vault-edges`, `472-undo-external`,
-`473-copy-between-notes`, `474-bookmark-html-edges`, `475-mail-eml-edges`.
+`473-copy-between-notes`, `474-bookmark-html-edges`, `476-mail-eml-edges`.
 
 All findings below concern a list (or quote) that is edited: an unedited block is saved as it was read, an edited one is
 written from the editor's document.
