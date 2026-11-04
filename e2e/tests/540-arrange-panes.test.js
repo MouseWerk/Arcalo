@@ -102,6 +102,9 @@ test("a page renamed in the sidebar shows its new title in its open tab", async 
   await app.browser.waitUntil(async () => (await shownTitle()) === "neuer name baum", { timeout: 5000, timeoutMsg: `the open page still shows „${await shownTitle()}“` });
 });
 
+const tabClosed = (title) =>
+  app.browser.waitUntil(() => app.browser.execute((t) => ![...document.querySelectorAll(".tab-title")].some((x) => x.textContent.startsWith(t)), title), { timeout: 5000, timeoutMsg: "tab not closed" });
+
 test("a title typed and the tab closed right away is kept", async () => {
   const id = (await app.invoke("page_create", { parentId: null, title: "Titel Schliessen", icon: "file-text", content: "Text.\n" })).id;
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: true } });
@@ -113,7 +116,25 @@ test("a title typed and the tab closed right away is kept", async () => {
   });
   await app.type(" neu");
   await app.keys(["Control", "w"]);
+  await tabClosed("Titel Schliessen");
   await app.browser.waitUntil(async () => (await app.invoke("page_get", { id })).title === "Titel Schliessen neu", { timeout: 5000, timeoutMsg: `title lost: ${(await app.invoke("page_get", { id })).title}` });
+});
+
+test("a property typed and the tab closed right away is kept", async () => {
+  const id = (await app.invoke("page_create", { parentId: null, title: "Eigenschaft Schliessen", icon: "file-text", content: "---\nkunde: alt\n---\nText.\n" })).id;
+  await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: true } });
+  const input = '.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="kunde"] .prop-value-input';
+  await app.waitFor(input);
+  await app.browser.execute((sel) => {
+    const el = document.querySelector(sel);
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, input);
+  await app.type(" und neu");
+  await app.keys(["Control", "w"]);
+  await tabClosed("Eigenschaft Schliessen");
+  await app.browser.waitUntil(async () => /\nkunde: alt und neu\n/.test((await app.invoke("page_get", { id })).content), { timeout: 5000, timeoutMsg: `property lost: ${(await app.invoke("page_get", { id })).content}` });
+  assert.equal((await app.invoke("page_get", { id })).content, "---\nkunde: alt und neu\n---\nText.\n");
 });
 
 test("no console errors", async () => {

@@ -60,6 +60,47 @@ test("board: a card dragged to another column stays there", async () => {
   }
 });
 
+test("a canvas below a board page is no card: its file stays a canvas", async () => {
+  const board = JSON.stringify({ nodes: [{ id: "k", type: "text", text: "Karte", x: 0, y: 0, width: 200, height: 80 }], edges: [] }, null, "\t");
+  const canvas = (await app.invoke("canvas_create", { parentId: parent, title: "Skizze im Board" })).id;
+  await app.invoke("page_save", { id: canvas, content: board });
+  // Opened afresh, the board loads the folder as it is now.
+  await app.keys(["Control", "w"]);
+  await app.invoke("search_open", { target: { kind: "page", page_id: parent, new_tab: true } });
+  await app.waitFor(`${col("Fertig")} .board-card[data-row="${kids.d}"]`);
+  await app.browser.pause(800);
+  assert.equal(await app.browser.execute((sel, id) => !!document.querySelector(`${sel} .board-card[data-row="${id}"]`), VIEW, canvas), false, "a canvas is shown as a card it cannot be");
+  assert.match(await app.text(`${VIEW} .coll-count`), /^4 Seiten$/);
+  assert.equal(await content(canvas), board);
+
+  // With the canvas first among the subpages, a card dropped onto another lands right before it.
+  await app.invoke("page_move", { id: canvas, parentId: parent, position: 0 });
+  const order = async () => (await app.invoke("page_collection", { parentId: parent })).rows.map((r) => r.title);
+  const before = await order();
+  const fertig = before.filter((t) => t === "Karte B" || t === "Karte D");
+  const [first, second] = fertig.map((t) => kids[t.slice(-1).toLowerCase()]);
+  const card = await app.$(`${VIEW} .board-card[data-row="${second}"]`);
+  const target = await app.$(`${VIEW} .board-card[data-row="${first}"]`);
+  await app.browser.performActions([
+    {
+      type: "pointer",
+      id: "mouse",
+      parameters: { pointerType: "mouse" },
+      actions: [
+        { type: "pointerMove", origin: card, x: 0, y: 0 },
+        { type: "pointerDown", button: 0 },
+        { type: "pointerMove", origin: "pointer", x: 30, y: -10, duration: 100 },
+        { type: "pointerMove", origin: target, x: 0, y: -8, duration: 200 },
+        { type: "pointerUp", button: 0 },
+      ],
+    },
+  ]);
+  await app.browser.releaseActions();
+  const want = before.filter((t) => t !== fertig[1]);
+  want.splice(want.indexOf(fertig[0]), 0, fertig[1]);
+  await app.browser.waitUntil(async () => (await order()).join() === want.join(), { timeout: 8000, timeoutMsg: `order ${await order()}, wanted ${want}` });
+});
+
 test("no console errors", async () => {
   assert.deepEqual(await app.consoleErrors(), []);
 });

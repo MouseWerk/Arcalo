@@ -953,7 +953,8 @@ impl Database {
         let empty = Schema::default();
         let conn = self.conn();
         let mut st = conn.prepare_cached(&format!(
-            "SELECT {}, content FROM pages WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY position, id",
+            "SELECT {}, content FROM pages WHERE parent_id = ?1 AND deleted_at IS NULL AND kind IS NOT 'canvas'
+             ORDER BY position, id",
             crate::db::PAGE_COLS
         ))?;
         let rows = st
@@ -970,15 +971,16 @@ impl Database {
     }
 
     /// What the table and board views load: the child pages of `parent_id` (sidebar order)
-    /// with their frontmatter only. The views derive the cells from it, so neither the
-    /// pages' text nor server-side cells are sent (an 800-page folder: 0.5 MB less).
+    /// with their frontmatter only (a canvas has no properties and is no row). The views derive
+    /// the cells from it, so neither the pages' text nor server-side cells are sent (an 800-page
+    /// folder: 0.5 MB less).
     pub fn page_collection_view(&self, parent_id: i64) -> Result<CollectionView> {
         let schema = Schema::from_markdown(&self.page_content(parent_id)?);
         let conn = self.conn();
         // Only pages that start with a frontmatter block hand their text out of SQLite.
         let mut st = conn.prepare_cached(&format!(
             "SELECT {}, CASE WHEN substr(content, 1, 3) = '---' THEN content ELSE '' END
-             FROM pages WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY position, id",
+             FROM pages WHERE parent_id = ?1 AND deleted_at IS NULL AND kind IS NOT 'canvas' ORDER BY position, id",
             crate::db::PAGE_COLS
         ))?;
         let rows = st
@@ -1365,5 +1367,18 @@ mod tests {
         assert_eq!(view.rows[0].frontmatter, "---\nstatus: Offen\naufwand: 3\n---\n");
         let json = serde_json::to_string(&view).unwrap();
         assert!(!json.contains("Langer Text") && !json.contains("cells"), "{json}");
+    }
+
+    #[test]
+    fn a_canvas_below_a_collection_is_no_row() {
+        let db = Database::open_in_memory().unwrap();
+        let parent = db.create_page(None, "Aufgaben", None).unwrap();
+        db.save_page_content(parent.id, PARENT).unwrap();
+        db.create_page(Some(parent.id), "Notiz", None).unwrap();
+        db.create_canvas(Some(parent.id), "Skizze", day("2026-09-24")).unwrap();
+        let view = db.page_collection_view(parent.id).unwrap();
+        assert_eq!(view.rows.iter().map(|r| r.page.title.as_str()).collect::<Vec<_>>(), ["Notiz"]);
+        let full = db.page_collection(parent.id).unwrap();
+        assert_eq!(full.rows.iter().map(|r| r.page.title.as_str()).collect::<Vec<_>>(), ["Notiz"]);
     }
 }

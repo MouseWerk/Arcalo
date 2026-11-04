@@ -192,9 +192,19 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
   const moveRow = useCallback(async (row: Row, beforeId: number | null) => {
     const others = (rows ?? []).filter((r) => r.id !== row.id);
     const at = beforeId === null ? others.length : Math.max(0, others.findIndex((r) => r.id === beforeId));
-    setRows([...others.slice(0, at), row, ...others.slice(at)]);
+    // From the rows as they are now: a value just written to this row (a drop on another column) stays.
+    setRows((rs) => {
+      const list = rs ?? [];
+      const moved = list.find((r) => r.id === row.id) ?? row;
+      const rest = list.filter((r) => r.id !== row.id);
+      const i = beforeId === null ? rest.length : Math.max(0, rest.findIndex((r) => r.id === beforeId));
+      return [...rest.slice(0, i), moved, ...rest.slice(i)];
+    });
+    // The place among all subpages (a canvas is one, but no row).
+    const siblings = (s().pages.get(pageId)?.children ?? []).filter((c) => c.id !== row.id);
+    const before = beforeId === null ? siblings.length : siblings.findIndex((c) => c.id === beforeId);
     try {
-      await api.movePage(row.id, pageId, at);
+      await api.movePage(row.id, pageId, before < 0 ? at : before);
       await s().refreshTree();
     } catch (e) {
       s().error(t("coll.orderFailed"), e);
