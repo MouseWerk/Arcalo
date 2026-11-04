@@ -172,6 +172,13 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
         }
     };
     mark_rolled_back(dir, record, st::HEALTH_FILE);
+    // As after restoring a backup: the next Git sync compares with the server and asks before it
+    // uploads the state of before the update. Otherwise it pushed that state as new work, over every
+    // note changed since, also the ones other computers changed and this one had taken over.
+    let name = backup.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if let Err(e) = arcalo_core::gitsync::mark_restored(dir, name, Utc::now()) {
+        crate::devlog::error("update", format!("rollback not noted for the Git sync: {e}"));
+    }
     // A version from before the app identifier changed (1.15) reads the folder of the old one:
     // it learns there that the version it returns from is bad and tells the user.
     if let Some(old) = legacy_folder(dir, &record.from) {
@@ -447,10 +454,14 @@ mod tests {
         };
         assert!(restore(&dir, &record).is_err());
         assert_eq!(std::fs::read(&db).unwrap(), b"migrated by the new version");
+        assert!(arcalo_core::gitsync::read_restored(&dir).is_none(), "nothing restored");
         // Nothing to swap (a .deb, test runs): the database returns.
         let record = RollbackRecord { kind: CopyKind::None, ..record };
         assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
         assert_eq!(std::fs::read(&db).unwrap(), b"before the update");
+        // The Git sync compares with the server before it uploads the older state.
+        let noted = arcalo_core::gitsync::read_restored(&dir).expect("noted for the Git sync");
+        assert_eq!((noted.from.as_str(), noted.checked), ("pre-update.db", false));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

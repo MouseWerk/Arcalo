@@ -5,7 +5,7 @@ fixed four bugs in the Git sync's take-over; this round looked elsewhere: backup
 to the previous version after an update, the trash and attachments, the database and settings migrations of every
 older release, the 1.15 rename leftovers and the command line.
 
-Severity as in the plan. Findings: 1 high, 2 medium, 6 low; the high and medium ones are fixed at the root
+Severity as in the plan. Findings: 2 high, 2 medium, 6 low; the high and medium ones are fixed at the root
 with tests.
 
 ## Findings
@@ -66,6 +66,23 @@ with tests.
   with a pre-receive hook that checks every pushed object, as GitHub does; failed: the sync after removing the file
   was refused again), `gitlib::tests` (the soft reset on libgit2); `a_push_the_server_refuses_shows_the_servers_reason`
   still passes.
+
+### R2B-4 After a return to the previous version the Git sync pushed the old state over every computer (high, fixed)
+
+- Symptom: a return to the version before an update (Settings → Über, or the offer after two failed starts) puts
+  the database of before the update back. With the Git sync on, the next sync of the returned version committed that
+  state as new work: every note changed since the update went back to its old text and every page created since was
+  deleted, on the server and then on every other computer, including the changes the other computers had made
+  themselves and this one had taken over. Nothing asked; the user had agreed to lose the changes on this computer
+  only. (Above the mass-deletion guard's limit only the deletions stopped.)
+- Root cause: `rollback::restore` put the backup in place with `backup::restore_from` but did not note the restore
+  for the Git sync (`gitsync::mark_restored`), which the restore of a backup in Settings → Sicherung and the
+  start-up recovery do since 1.12: the sync then compares with the server and asks before uploading.
+- Fix: `rollback::restore` notes the restored pre-update backup for the Git sync once the return has gone through;
+  the returned version (1.12 and later read the note) compares and asks as after any restore.
+- Tests: `rollback::tests::a_failed_program_swap_leaves_the_new_database_in_place` (no note after a failed return,
+  the note after one that went through; failed before), e2e `127-update-policy-rollback` (the note is there after
+  the return after two failed starts).
 
 ## Low (listed, not fixed)
 

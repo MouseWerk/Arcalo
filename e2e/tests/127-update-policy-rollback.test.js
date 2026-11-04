@@ -146,6 +146,9 @@ test("two failed starts of the new version lead to the rollback, which restores 
   assert.deepEqual(state.bad_versions, ["1.9.0"]);
   assert.equal(fs.existsSync(path.join(dataDir, "rollback")), false, "the record is used up");
   assert.ok(fs.readdirSync(dataDir).some((f) => f.startsWith("workspace.db.before-rollback-")), "the database of the failed version is kept aside");
+  // The Git sync compares with the server before it uploads the state of before the update.
+  const noted = JSON.parse(fs.readFileSync(path.join(dataDir, "sync-after-restore.json"), "utf8"));
+  assert.match(noted.from, /^arcalo-pre-update-1\.8\.5-1\.9\.0\.db$/);
   await app.close();
   app = null;
 });
