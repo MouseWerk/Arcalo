@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{AndroidInterface, StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 19;
+pub const SETTINGS_VERSION: u32 = 20;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -54,6 +54,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 16, name: "daily-folder", run: daily_folder },
     Step { from: 17, name: "android-interface", run: android_interface },
     Step { from: 18, name: "calendar-entries", run: calendar_entries },
+    Step { from: 19, name: "target-history", run: target_history },
 ];
 
 /// What [`migrate`] did.
@@ -474,6 +475,18 @@ fn calendar_entries(s: &mut Map<String, Value>) -> Option<String> {
         }
     }
     (!added.is_empty()).then(|| added.join(", "))
+}
+
+/// 19 → 20: a change of the target counts from its day on; the days before keep their target
+/// (`time.balance.target_history`, 1.23). Stored settings start without a history: their
+/// current target applies to every day, as before.
+fn target_history(s: &mut Map<String, Value>) -> Option<String> {
+    let b = s.get_mut("time")?.as_object_mut()?.get_mut("balance")?.as_object_mut()?;
+    if b.contains_key("target_history") {
+        return None;
+    }
+    b.insert("target_history".into(), Value::Array(vec![]));
+    Some("time.balance.target_history = [] (the current target for every day, as before)".into())
 }
 
 #[cfg(test)]

@@ -541,6 +541,9 @@ export interface BalancePrefs {
   carry_over: number;
   /** BY, NW, …; empty: no public holidays. */
   state: string;
+  /** The targets before each change of the target, oldest first (kept by the backend; the page
+   *  can only clear them): the days up to `until` keep `minutes` Monday..Sunday. */
+  target_history?: { until: string; minutes: number[] }[];
 }
 export interface AiPresetDef {
   label: string;

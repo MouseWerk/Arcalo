@@ -2348,7 +2348,11 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // may have changed ahead of the running settings).
     let stored = state.db().load_settings()?;
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
-    let settings = settings.finish_save(&stored, page)?;
+    let mut settings = settings.finish_save(&stored, page)?;
+    // A changed target counts from today on; the days before keep theirs (not in the first
+    // setup, which sets the starting point).
+    let in_setup = state.reader().onboarding_status(skip_onboarding()).is_ok_and(|o| o.intro);
+    arcalo_core::worktime::record_target_change(&stored, &mut settings, Local::now().date_naive(), in_setup);
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),

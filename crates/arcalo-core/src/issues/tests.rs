@@ -501,6 +501,52 @@ fn worklogs_are_never_posted_twice() {
 }
 
 #[test]
+fn an_edit_while_its_worklog_is_being_posted_reaches_jira() {
+    let db = setup();
+    let mut s = db.load_settings().unwrap();
+    s.time.enabled = true;
+    s.jira.sites.push(JiraSite {
+        id: "acme".into(),
+        name: "Acme".into(),
+        url: "https://acme.atlassian.net".into(),
+        enabled: true,
+        log_work: true,
+        ..Default::default()
+    });
+    db.save_settings(&s).unwrap();
+    store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
+    let out =
+        log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 review", now(), &cet(), &Thresholds::default()).unwrap();
+    let id = out.entry.id;
+    let edit = |minutes: i64| {
+        let before = db.time_entry(id).unwrap();
+        let after = db.update_time_entry(id, Some("1020"), None, before.start_time, minutes, "review").unwrap();
+        db.booking_edited(&before, &after, &s).unwrap()
+    };
+
+    // The first post is on its way (45 min) when the user corrects the booking to 60 min.
+    let due = db.worklogs_due(now()).unwrap();
+    assert_eq!(due[0].work.minutes, 45);
+    assert!(db.worklog_claim(id).unwrap());
+    assert!(edit(60), "the edit is due for Jira");
+    db.worklog_posted(id, "10042").unwrap();
+    let due = db.worklogs_due(now()).unwrap();
+    assert_eq!(due.len(), 1, "the worklog follows the edit");
+    assert_eq!((due[0].worklog_id.as_deref(), due[0].work.minutes), (Some("10042"), 60));
+
+    // The same while the update of a posted worklog is on its way.
+    assert!(db.worklog_claim(id).unwrap());
+    assert!(edit(90));
+    db.worklog_posted(id, "10042").unwrap();
+    let due = db.worklogs_due(now()).unwrap();
+    assert_eq!((due.len(), due[0].work.minutes), (1, 90));
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10042").unwrap();
+    assert!(db.worklogs_due(now()).unwrap().is_empty(), "up to date: nothing more to send");
+    assert!(!edit(90), "no change, nothing due");
+}
+
+#[test]
 fn deleting_an_entry_drops_its_link() {
     let db = setup();
     store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
