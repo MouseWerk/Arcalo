@@ -803,37 +803,19 @@ async fn post_worklogs(app: &AppHandle) {
     let mut changed = false;
     if settings.time_tracking() {
         let due = state.reader().worklogs_due(Utc::now()).unwrap_or_default();
-        let mut accounts: HashMap<String, String> = HashMap::new();
-        for p in due {
-            let Some(site) = settings.jira.site(&p.site).filter(|s| s.enabled && s.log_work).cloned() else { continue };
-            if !state.db().worklog_claim(p.entry_id).unwrap_or(false) {
+        let mut accounts: HashMap<String, Option<String>> = HashMap::new();
+        for listed in due {
+            let Some(site) = settings.jira.site(&listed.site).filter(|s| s.enabled && s.log_work).cloned() else {
                 continue;
-            }
+            };
+            // The booking as it is now: it may have changed while the worklogs before it were sent.
+            let Some(p) = state.db().worklog_claim(listed.entry_id).ok().flatten() else { continue };
             changed = true;
-            let outcome: Result<String> = async {
-                let c = client(&state, &site)?;
-                // Posted before: the entry changed, its worklog follows (posted anew when it
-                // was deleted in Jira).
-                if let Some(id) = &p.worklog_id {
-                    return issues::update_or_post(&c, id, &p.work).await;
-                }
-                if p.retry {
-                    let account = match accounts.get(&site.id) {
-                        Some(a) => a.clone(),
-                        None => {
-                            let a = c.whoami().await?.id;
-                            accounts.insert(site.id.clone(), a.clone());
-                            a
-                        }
-                    };
-                    let list = c.worklogs(&p.work.key).await?;
-                    if let Some(w) = issues::matching_worklog(&list, &p.work, &account) {
-                        return Ok(w.id.clone());
-                    }
-                }
-                c.log_work(&p.work).await
-            }
-            .await;
+            let account = accounts.entry(site.id.clone()).or_default();
+            let outcome: Result<String> = match client(&state, &site) {
+                Ok(c) => issues::send_worklog(&c, &p, account, |s| state.db().worklog_record(p.entry_id, s)).await,
+                Err(e) => Err(e),
+            };
             match outcome {
                 Ok(id) => {
                     let _ = state.db().worklog_posted(p.entry_id, &id);
@@ -859,8 +841,9 @@ async fn post_worklogs(app: &AppHandle) {
                 let _ = state.db().worklog_deleted(d.id);
                 continue;
             };
+            let account = accounts.entry(site.id.clone()).or_default();
             let outcome = match client(&state, &site) {
-                Ok(c) => c.delete_work(&d.issue_key, &d.worklog_id).await,
+                Ok(c) => issues::delete_worklog(&c, &d, account).await,
                 Err(e) => Err(e),
             };
             match outcome {

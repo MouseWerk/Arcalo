@@ -118,6 +118,8 @@ pub mod tagsuggest;
 pub mod taskedit;
 pub mod tasks;
 pub mod templates;
+#[cfg(test)]
+pub(crate) mod testrng;
 pub mod timeblocks;
 pub mod timer;
 pub mod tracking;

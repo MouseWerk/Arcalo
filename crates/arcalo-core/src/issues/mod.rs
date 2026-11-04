@@ -606,11 +606,23 @@ pub fn worklog_seconds(minutes: i64) -> i64 {
 /// same duration, by the same account): a post interrupted after Jira stored it is adopted
 /// instead of posted again.
 pub fn matching_worklog<'a>(list: &'a [RemoteWorklog], work: &WorkLog, account: &str) -> Option<&'a RemoteWorklog> {
+    matching_free_worklog(list, work, account, &[])
+}
+
+/// [`matching_worklog`] without the worklogs in `taken` (those of other bookings: two bookings
+/// with the same start and length never share one worklog).
+pub fn matching_free_worklog<'a>(
+    list: &'a [RemoteWorklog],
+    work: &WorkLog,
+    account: &str,
+    taken: &[String],
+) -> Option<&'a RemoteWorklog> {
     let want = worklog_seconds(work.minutes);
     list.iter().find(|w| {
         (w.started - work.started).num_seconds().abs() < 60
             && w.seconds == want
             && (account.is_empty() || w.author.is_empty() || w.author == account)
+            && !taken.contains(&w.id)
     })
 }
 
@@ -634,6 +646,13 @@ pub struct PendingWorklog {
     pub worklog_id: Option<String>,
     /// A try before this one may have reached Jira: look for its worklog first.
     pub retry: bool,
+    /// What the last post sent before Jira confirmed it (the booking may have changed since):
+    /// its worklog is looked for by these values as well.
+    #[serde(default)]
+    pub sent: Option<WorkLog>,
+    /// Worklogs of other bookings on the same issue: never taken for this one.
+    #[serde(default)]
+    pub taken: Vec<String>,
 }
 
 /// The worklog of a deleted entry that Jira still has to remove.
@@ -642,7 +661,14 @@ pub struct WorklogDelete {
     pub id: i64,
     pub site: String,
     pub issue_key: String,
+    /// Empty: the booking was deleted before Jira confirmed its post; the worklog, if Jira has
+    /// it, is looked up by what was sent (`sent`).
     pub worklog_id: String,
+    #[serde(default)]
+    pub sent: Option<WorkLog>,
+    /// Worklogs of bookings on the same issue: never removed by a lookup.
+    #[serde(default)]
+    pub taken: Vec<String>,
 }
 
 /// Whether bookings on the Jira site `site` are posted as worklogs (time tracking on, the site
@@ -793,6 +819,74 @@ pub async fn update_or_post<P: IssueProvider>(p: &P, id: &str, work: &WorkLog) -
         Ok(()) => Ok(id.to_owned()),
         Err(Error::Remote { status: 404, .. }) => p.log_work(work).await,
         Err(e) => Err(e),
+    }
+}
+
+/// Sends one due worklog (claimed with [`Database::worklog_claim`]) and returns its id: a posted
+/// one is updated, and before a new post a try that may have reached Jira is looked for on the
+/// issue, by the booking as it is and by what that try sent (an edit in between must not make
+/// a second worklog); a found one is brought up to date. `account` caches the user's
+/// account id; `record` keeps what a try cut off afterwards needs ([`Database::worklog_record`]).
+pub async fn send_worklog<P: IssueProvider>(
+    p: &P,
+    w: &PendingWorklog,
+    account: &mut Option<String>,
+    mut record: impl FnMut(Sending) -> Result<()>,
+) -> Result<String> {
+    // Posted before: brought up to date, unless Jira removed it meanwhile (then posted anew).
+    if let Some(id) = &w.worklog_id {
+        match p.update_work(id, &w.work).await {
+            Err(Error::Remote { status: 404, .. }) => {}
+            other => return other.map(|()| id.clone()),
+        }
+    }
+    if w.retry {
+        let me = match account {
+            Some(a) => a.clone(),
+            None => account.insert(p.whoami().await?.id).clone(),
+        };
+        let list = p.worklogs(&w.work.key).await?;
+        let found = matching_free_worklog(&list, &w.work, &me, &w.taken)
+            .or_else(|| w.sent.as_ref().and_then(|s| matching_free_worklog(&list, s, &me, &w.taken)));
+        if let Some(found) = found {
+            // Adopted with the booking's values (its comment may have changed as well); its id is
+            // kept first, as the update may change it before its answer is lost.
+            let id = found.id.clone();
+            record(Sending::Found(&id))?;
+            match p.update_work(&id, &w.work).await {
+                Err(Error::Remote { status: 404, .. }) => {}
+                other => return other.map(|()| id),
+            }
+        }
+    }
+    record(Sending::Post(&w.work))?;
+    p.log_work(&w.work).await
+}
+
+/// What [`send_worklog`] keeps before it goes on, so a try whose answer is lost is found again.
+#[derive(Debug, Clone, Copy)]
+pub enum Sending<'a> {
+    /// A new worklog is about to be posted with these values.
+    Post(&'a WorkLog),
+    /// The worklog an earlier try left on the issue (it is updated next).
+    Found(&'a str),
+}
+
+/// Removes the worklog of a deleted booking: by its id, or, for a booking deleted before Jira
+/// confirmed its post, the worklog that post left (none: nothing to do).
+pub async fn delete_worklog<P: IssueProvider>(p: &P, d: &WorklogDelete, account: &mut Option<String>) -> Result<()> {
+    if !d.worklog_id.is_empty() {
+        return p.delete_work(&d.issue_key, &d.worklog_id).await;
+    }
+    let Some(sent) = &d.sent else { return Ok(()) };
+    let me = match account {
+        Some(a) => a.clone(),
+        None => account.insert(p.whoami().await?.id).clone(),
+    };
+    let list = p.worklogs(&d.issue_key).await?;
+    match matching_free_worklog(&list, sent, &me, &d.taken) {
+        Some(found) => p.delete_work(&d.issue_key, &found.id).await,
+        None => Ok(()),
     }
 }
 
@@ -1337,38 +1431,100 @@ impl Database {
     /// Worklogs due to be posted now (pending, or failed and waiting long enough; an entry that
     /// was being posted when the app stopped counts as failed).
     pub fn worklogs_due(&self, now: DateTime<Utc>) -> Result<Vec<PendingWorklog>> {
-        let mut st = self.conn().prepare(
-            "SELECT l.entry_id, l.site, l.issue_key, e.start_time, IFNULL(e.duration_minutes, 0), e.description, l.attempts, l.worklog_state, l.worklog_id
-             FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id
+        let mut st = self.conn().prepare(&format!(
+            "{PENDING_SELECT}
              WHERE e.status_flag <> 'running'
                AND (l.worklog_state IN ('pending', 'posting') OR (l.worklog_state = 'failed' AND IFNULL(l.next_try, '') <= ?1))
-             ORDER BY l.entry_id LIMIT 50",
+             ORDER BY l.entry_id LIMIT 50"
+        ))?;
+        let rows = st.query_map([ts(now)], map_pending)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter().map(|w| self.with_taken(w)).collect()
+    }
+
+    /// Worklog ids on `key` of the bookings other than `entry_id`, of deleted ones (that may come
+    /// back) and of those queued for deletion.
+    fn worklogs_taken(&self, key: &str, entry_id: Option<i64>) -> Result<Vec<String>> {
+        let mut st = self.conn().prepare_cached(
+            "SELECT worklog_id FROM time_entry_issues
+             WHERE issue_key = ?1 AND worklog_id IS NOT NULL AND entry_id IS NOT ?2
+             UNION SELECT worklog_id FROM time_entry_issues_deleted WHERE issue_key = ?1 AND worklog_id IS NOT NULL
+             UNION SELECT worklog_id FROM jira_worklog_deletes WHERE issue_key = ?1 AND worklog_id <> ''",
         )?;
-        let rows = st.query_map([ts(now)], |r| {
-            let start: String = r.get(3)?;
-            let attempts: i64 = r.get(6)?;
-            let state: String = r.get(7)?;
-            let worklog_id: Option<String> = r.get(8)?;
-            Ok(PendingWorklog {
-                entry_id: r.get(0)?,
-                site: r.get(1)?,
-                work: WorkLog { key: r.get(2)?, started: parse_ts(&start)?, minutes: r.get(4)?, comment: r.get(5)? },
-                retry: worklog_id.is_none() && (attempts > 0 || state == "posting"),
-                worklog_id,
-            })
-        })?;
+        let rows = st.query_map(params![key, entry_id], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Claims a worklog for posting (or, posted before, for its update); `false` when it is
-    /// posted and unchanged (never posted twice: a posted one keeps its id and is updated).
-    pub fn worklog_claim(&self, entry_id: i64) -> Result<bool> {
-        let n = self.conn().execute(
-            "UPDATE time_entry_issues SET worklog_state = 'posting'
-             WHERE entry_id = ?1 AND worklog_state IN ('pending', 'failed', 'posting')",
-            [entry_id],
+    fn with_taken(&self, mut w: PendingWorklog) -> Result<PendingWorklog> {
+        w.taken = self.worklogs_taken(&w.work.key, Some(w.entry_id))?;
+        Ok(w)
+    }
+
+    /// Claims a worklog for posting (or, posted before, for its update) and returns it with the
+    /// booking as it is now (it may have changed since [`Self::worklogs_due`] listed it); `None`
+    /// when it is posted and unchanged (never posted twice: a posted one keeps its id and is
+    /// updated).
+    pub fn worklog_claim(&self, entry_id: i64) -> Result<Option<PendingWorklog>> {
+        let claimable = self
+            .conn()
+            .query_row(
+                &format!(
+                    "{PENDING_SELECT}
+                     WHERE l.entry_id = ?1 AND e.status_flag <> 'running'
+                       AND l.worklog_state IN ('pending', 'failed', 'posting')"
+                ),
+                [entry_id],
+                map_pending,
+            )
+            .optional()?;
+        let Some(w) = claimable else { return Ok(None) };
+        self.conn()
+            .execute("UPDATE time_entry_issues SET worklog_state = 'posting' WHERE entry_id = ?1", [entry_id])?;
+        Ok(Some(self.with_taken(w)?))
+    }
+
+    /// Keeps what [`send_worklog`] is about to do for the entry: a new worklog posted with these
+    /// values (until Jira confirms it, the next try looks for it by them), or the worklog an
+    /// earlier try left (its id; a deleted entry queues its deletion).
+    pub fn worklog_record(&self, entry_id: i64, sending: Sending) -> Result<()> {
+        match sending {
+            Sending::Post(work) => {
+                for table in ["time_entry_issues", "time_entry_issues_deleted"] {
+                    self.conn().execute(
+                        &format!("UPDATE {table} SET sent_started = ?2, sent_minutes = ?3 WHERE entry_id = ?1"),
+                        params![entry_id, ts(work.started), work.minutes],
+                    )?;
+                }
+            }
+            Sending::Found(id) => {
+                let n = self.conn().execute(
+                    "UPDATE time_entry_issues SET worklog_id = ?2, sent_started = NULL, sent_minutes = NULL WHERE entry_id = ?1",
+                    params![entry_id, id],
+                )?;
+                if n == 0 {
+                    self.worklog_of_deleted(entry_id, id)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The entry was deleted while its worklog `worklog_id` was being posted or found: that
+    /// worklog is queued for deletion too (no orphan in Jira), and the booking takes it back when
+    /// it comes back ([`Self::issue_relink`]).
+    fn worklog_of_deleted(&self, entry_id: i64, worklog_id: &str) -> Result<()> {
+        let kept = self.conn().execute(
+            "UPDATE time_entry_issues_deleted SET worklog_state = 'posted', worklog_id = ?2, sent_started = NULL, sent_minutes = NULL
+             WHERE entry_id = ?1 AND (worklog_id IS NULL OR worklog_id <> ?2)",
+            params![entry_id, worklog_id],
         )?;
-        Ok(n == 1)
+        if kept == 1 {
+            self.conn().execute(
+                "INSERT INTO jira_worklog_deletes (site, issue_key, worklog_id)
+                 SELECT site, issue_key, ?2 FROM time_entry_issues_deleted WHERE entry_id = ?1",
+                params![entry_id, worklog_id],
+            )?;
+        }
+        Ok(())
     }
 
     /// Records a posted worklog. An entry edited while it was being posted stays pending: the
@@ -1378,24 +1534,13 @@ impl Database {
     /// comes back ([`Self::issue_relink`]).
     pub fn worklog_posted(&self, entry_id: i64, worklog_id: &str) -> Result<()> {
         let n = self.conn().execute(
-            "UPDATE time_entry_issues SET worklog_id = ?2, error = NULL, next_try = NULL,
+            "UPDATE time_entry_issues SET worklog_id = ?2, error = NULL, next_try = NULL, sent_started = NULL, sent_minutes = NULL,
                worklog_state = CASE worklog_state WHEN 'pending' THEN 'pending' ELSE 'posted' END
              WHERE entry_id = ?1",
             params![entry_id, worklog_id],
         )?;
         if n == 0 {
-            let kept = self.conn().execute(
-                "UPDATE time_entry_issues_deleted SET worklog_state = 'posted', worklog_id = ?2
-                 WHERE entry_id = ?1 AND worklog_id IS NULL",
-                params![entry_id, worklog_id],
-            )?;
-            if kept == 1 {
-                self.conn().execute(
-                    "INSERT INTO jira_worklog_deletes (site, issue_key, worklog_id)
-                     SELECT site, issue_key, ?2 FROM time_entry_issues_deleted WHERE entry_id = ?1",
-                    params![entry_id, worklog_id],
-                )?;
-            }
+            self.worklog_of_deleted(entry_id, worklog_id)?;
         }
         Ok(())
     }
@@ -1413,6 +1558,15 @@ impl Database {
              WHERE entry_id = ?1 AND worklog_state <> 'posted'",
             params![entry_id, attempts, error, ts(now + worklog_retry_delay(attempts))],
         )?;
+        let linked: bool = self.conn().query_row(
+            "SELECT EXISTS(SELECT 1 FROM time_entry_issues WHERE entry_id = ?1)",
+            [entry_id],
+            |r| r.get(0),
+        )?;
+        if !linked {
+            // Deleted while its post was on its way, and that post may have reached Jira.
+            self.worklog_queue_lookup_delete(entry_id)?;
+        }
         Ok(())
     }
 
@@ -1463,18 +1617,45 @@ impl Database {
         Ok(n == 1)
     }
 
+    /// A deleted booking whose post was not confirmed (it may have reached Jira): the worklog it
+    /// may have left is queued for deletion by lookup ([`delete_worklog`]), once.
+    fn worklog_queue_lookup_delete(&self, entry_id: i64) -> Result<bool> {
+        let n = self.conn().execute(
+            "INSERT INTO jira_worklog_deletes (site, issue_key, worklog_id, sent_started, sent_minutes)
+             SELECT k.site, k.issue_key, '', k.sent_started, k.sent_minutes FROM time_entry_issues_deleted k
+             WHERE k.entry_id = ?1 AND k.sent_minutes IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM jira_worklog_deletes d WHERE d.site = k.site AND d.issue_key = k.issue_key
+                 AND d.worklog_id = '' AND d.sent_started = k.sent_started AND d.sent_minutes = k.sent_minutes)",
+            [entry_id],
+        )?;
+        Ok(n == 1)
+    }
+
     /// Deletes a booking; its posted worklog is queued for deletion in Jira in the same
     /// transaction when the site logs work (`settings`), and its issue link is kept for a
     /// booking that comes back. `with_chip`: the user removed the entry's chip from its note (the
     /// note stays as it is); otherwise the chip is marked „Buchung gelöscht“. Returns whether a
     /// worklog deletion was queued.
     pub fn delete_booking(&self, entry_id: i64, with_chip: bool, settings: &crate::settings::Settings) -> Result<bool> {
-        let site = self.entry_worklog(entry_id)?.map(|(site, _, _)| site);
+        // Posted, or a post that may have reached Jira without its answer (`sent`).
+        let site: Option<String> = self
+            .conn()
+            .query_row(
+                "SELECT site FROM time_entry_issues WHERE entry_id = ?1 AND (worklog_id IS NOT NULL OR sent_minutes IS NOT NULL)",
+                [entry_id],
+                |r| r.get(0),
+            )
+            .optional()?;
         let queue = site.is_some_and(|s| logs_work(settings, &s));
         self.atomic(|| {
-            let queued = queue && self.worklog_queue_delete(entry_id)?;
+            let mut queued = queue && self.worklog_queue_delete(entry_id)?;
             // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
             self.issue_keep_link(entry_id, Utc::now())?;
+            // A post that may have reached Jira without its answer (also one that replaced a
+            // worklog removed in Jira): its worklog is looked up and removed as well.
+            if queue && self.worklog_queue_lookup_delete(entry_id)? {
+                queued = true;
+            }
             if with_chip {
                 self.delete_time_entry_with_chip(entry_id)?
             } else {
@@ -1517,8 +1698,10 @@ impl Database {
             .execute("DELETE FROM time_entry_issues_deleted WHERE deleted_at < ?1", [ts(now - Duration::days(30))])?;
         self.conn().execute(
             "INSERT OR REPLACE INTO time_entry_issues_deleted
-               (entry_id, issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr, deleted_at)
-             SELECT l.entry_id, l.issue_key, l.site, l.worklog_state, l.worklog_id, l.attempts, e.netzplan_id, e.vorgang_nr, ?2
+               (entry_id, issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr, deleted_at,
+                sent_started, sent_minutes)
+             SELECT l.entry_id, l.issue_key, l.site, l.worklog_state, l.worklog_id, l.attempts, e.netzplan_id, e.vorgang_nr, ?2,
+                l.sent_started, l.sent_minutes
              FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id WHERE l.entry_id = ?1",
             params![entry_id, ts(now)],
         )?;
@@ -1531,17 +1714,32 @@ impl Database {
     /// posted once more when Jira removed it already ([`update_or_post`]). Only the same
     /// booking (Netzplan and Vorgang) takes a link back. Returns whether a worklog is due.
     pub fn issue_relink(&self, old_id: i64, entry: &TimeEntry) -> Result<bool> {
-        type Kept = (String, String, String, Option<String>, i64, i64, Option<String>);
+        type Kept = (String, String, String, Option<String>, i64, i64, Option<String>, Option<String>, Option<i64>);
         let kept: Option<Kept> = self
             .conn()
             .query_row(
-                "SELECT issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr
+                "SELECT issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr, sent_started, sent_minutes
                  FROM time_entry_issues_deleted WHERE entry_id = ?1",
                 [old_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                    ))
+                },
             )
             .optional()?;
-        let Some((key, site, state, worklog_id, attempts, netzplan_id, vorgang)) = kept else { return Ok(false) };
+        let Some((key, site, state, worklog_id, attempts, netzplan_id, vorgang, sent_started, sent_minutes)) = kept
+        else {
+            return Ok(false);
+        };
         let same_vorgang =
             vorgang.as_deref().map(str::to_lowercase) == entry.vorgang_nr.as_deref().map(str::to_lowercase);
         if netzplan_id != entry.netzplan_id || !same_vorgang {
@@ -1554,6 +1752,14 @@ impl Database {
                 params![site, key, w],
             )?;
         }
+        if sent_minutes.is_some() {
+            // The worklog its unconfirmed post may have left stays; the retry finds it.
+            self.conn().execute(
+                "DELETE FROM jira_worklog_deletes WHERE site = ?1 AND issue_key = ?2 AND worklog_id = ''
+                   AND sent_started = ?3 AND sent_minutes = ?4",
+                params![site, key, sent_started, sent_minutes],
+            )?;
+        }
         // Posted before: updated (or posted anew); never posted: posted, an interrupted try
         // first looks for the worklog it may have left (`retry`).
         let (state, attempts) = match (&worklog_id, state.as_str()) {
@@ -1563,10 +1769,11 @@ impl Database {
             (None, _) => ("pending", attempts),
         };
         self.conn().execute(
-            "INSERT INTO time_entry_issues (entry_id, issue_key, site, worklog_state, worklog_id, attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO time_entry_issues (entry_id, issue_key, site, worklog_state, worklog_id, attempts, sent_started, sent_minutes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (entry_id) DO UPDATE SET issue_key = ?2, site = ?3, worklog_state = ?4, worklog_id = ?5, attempts = ?6,
-               next_try = NULL, error = NULL",
-            params![entry.id, key, site, state, worklog_id, attempts],
+               next_try = NULL, error = NULL, sent_started = ?7, sent_minutes = ?8",
+            params![entry.id, key, site, state, worklog_id, attempts, sent_started, sent_minutes],
         )?;
         Ok(state != "none")
     }
@@ -1583,13 +1790,31 @@ impl Database {
     /// Worklog deletions due now (new, or failed and waiting long enough).
     pub fn worklog_deletes_due(&self, now: DateTime<Utc>) -> Result<Vec<WorklogDelete>> {
         let mut st = self.conn().prepare(
-            "SELECT id, site, issue_key, worklog_id FROM jira_worklog_deletes
+            "SELECT id, site, issue_key, worklog_id, sent_started, sent_minutes FROM jira_worklog_deletes
              WHERE IFNULL(next_try, '') <= ?1 ORDER BY id LIMIT 50",
         )?;
-        let rows = st.query_map([ts(now)], |r| {
-            Ok(WorklogDelete { id: r.get(0)?, site: r.get(1)?, issue_key: r.get(2)?, worklog_id: r.get(3)? })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let rows = st
+            .query_map([ts(now)], |r| {
+                let key: String = r.get(2)?;
+                let sent = sent_worklog(&key, r.get(4)?, r.get(5)?)?;
+                Ok(WorklogDelete {
+                    id: r.get(0)?,
+                    site: r.get(1)?,
+                    issue_key: key,
+                    worklog_id: r.get(3)?,
+                    sent,
+                    taken: vec![],
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(|mut d| {
+                if d.worklog_id.is_empty() {
+                    d.taken = self.worklogs_taken(&d.issue_key, None)?;
+                }
+                Ok(d)
+            })
+            .collect()
     }
 
     /// Jira removed the worklog (or it was gone already).
@@ -1615,6 +1840,40 @@ impl Database {
         )?;
         Ok(())
     }
+}
+
+/// The columns of a [`PendingWorklog`] ([`map_pending`]).
+const PENDING_SELECT: &str =
+    "SELECT l.entry_id, l.site, l.issue_key, e.start_time, IFNULL(e.duration_minutes, 0), e.description,
+       l.attempts, l.worklog_state, l.worklog_id, l.sent_started, l.sent_minutes
+     FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id";
+
+fn map_pending(r: &rusqlite::Row) -> rusqlite::Result<PendingWorklog> {
+    let start: String = r.get(3)?;
+    let key: String = r.get(2)?;
+    let attempts: i64 = r.get(6)?;
+    let state: String = r.get(7)?;
+    let worklog_id: Option<String> = r.get(8)?;
+    let sent = sent_worklog(&key, r.get(9)?, r.get(10)?)?;
+    Ok(PendingWorklog {
+        entry_id: r.get(0)?,
+        site: r.get(1)?,
+        retry: sent.is_some() || (worklog_id.is_none() && (attempts > 0 || state == "posting")),
+        work: WorkLog { key, started: parse_ts(&start)?, minutes: r.get(4)?, comment: r.get(5)? },
+        worklog_id,
+        sent,
+        taken: vec![],
+    })
+}
+
+/// What an unconfirmed post sent (`sent_started`, `sent_minutes`).
+fn sent_worklog(key: &str, started: Option<String>, minutes: Option<i64>) -> rusqlite::Result<Option<WorkLog>> {
+    Ok(match (started, minutes) {
+        (Some(s), Some(m)) => {
+            Some(WorkLog { key: key.to_owned(), started: parse_ts(&s)?, minutes: m, comment: String::new() })
+        }
+        _ => None,
+    })
 }
 
 /// Before a `/zeit` line is booked: the issue key it names, and the WBS to book on when the line
