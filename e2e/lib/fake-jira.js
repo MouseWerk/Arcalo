@@ -21,7 +21,9 @@
 // every login fail as a Server account locked behind a CAPTCHA; `failWorklogs: n` refuses the
 // first n worklog posts with 500 after storing nothing; `big: "KEY"` gives that issue 500 comments
 // and 100 attachments. `state.fail = { status, times }` answers the next `times` authorized
-// requests with `status` (a gateway error, a proxy asking for a login). `state.writeDelayMs`
+// requests with `status` (a gateway error, a proxy asking for a login);
+// `state.failReadsAfterWrite = { status, times }` takes the next write and then answers the
+// `times` reads after it with `status`. `state.writeDelayMs`
 // answers every write (POST, PUT, DELETE) that much later, as a slow Jira does; the request is
 // recorded at once.
 
@@ -401,6 +403,14 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     if (state.fail?.times > 0) {
       state.fail.times--;
       return json(res, state.fail.status, { errorMessages: [`Failure ${state.fail.status}`] });
+    }
+    // The write is taken; the reads after it fail (a gateway giving up on the heavy issue read).
+    if (req.method !== "GET" && state.failReadsAfterWrite) {
+      state.failReads = state.failReadsAfterWrite;
+      state.failReadsAfterWrite = null;
+    } else if (req.method === "GET" && state.failReads?.times > 0) {
+      state.failReads.times--;
+      return json(res, state.failReads.status, { errorMessages: [`Failure ${state.failReads.status}`] });
     }
     let m;
     if (path === "/secure/useravatar") return png(res, pngOf(48, 48, url.searchParams.get("ownerId") === "mmeyer" ? [214, 120, 64] : [90, 160, 110]));

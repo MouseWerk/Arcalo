@@ -830,6 +830,15 @@ fn not_a_calendar(bytes: &[u8]) -> Error {
     })
 }
 
+/// Whether downloaded data began a calendar but never ended it: a connection that broke off
+/// (a proxy or server closing it early) would otherwise read as a calendar with fewer
+/// appointments, and the missing ones would vanish from the Kalender until the next sync.
+fn cut_off(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    let line = |name: &str| text.lines().any(|l| l.trim().eq_ignore_ascii_case(name));
+    line("BEGIN:VCALENDAR") && !line("END:VCALENDAR")
+}
+
 /// Largest ICS file read (bytes).
 pub const MAX_BYTES: usize = 30 * 1024 * 1024;
 
@@ -878,6 +887,15 @@ pub async fn fetch(http: &reqwest::Client, url: &str, timeout: std::time::Durati
     if bytes.len() > MAX_BYTES {
         return Err(Error::State(
             tr!("Die Kalenderdatei ist größer als 30 MB", "The calendar file is larger than 30 MB").into(),
+        ));
+    }
+    if cut_off(&bytes) {
+        return Err(Error::State(
+            tr!(
+                "Der Kalender kam unvollständig an (die Verbindung brach ab). Die Termine der letzten Synchronisierung bleiben; die Synchronisierung versucht es später von selbst erneut.",
+                "The calendar arrived incomplete (the connection broke off). The appointments of the last sync stay; the sync tries again later by itself."
+            )
+            .into(),
         ));
     }
     Ok(bytes.to_vec())
@@ -1147,6 +1165,35 @@ mod tests {
         assert!(err.contains("403") && !err.contains("GEHEIM"), "{err}");
         let ok = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap();
         assert!(ok.starts_with(b"BEGIN:VCALENDAR"));
+    }
+
+    #[tokio::test]
+    async fn a_download_cut_off_midway_keeps_the_last_sync() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let whole = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Jour fixe\r\nDTSTART:20260915T080000Z\r\nEND:VEVENT\r\n\
+                     BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:Review\r\nDTSTART:20260916T080000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let cut = &whole[..whole.find("BEGIN:VEVENT\r\nUID:b").unwrap() + 20];
+        let (w, c) = (whole.to_owned(), cut.to_owned());
+        tokio::spawn(async move {
+            // Without a length the body ends where the server closes: a proxy that gave up.
+            for body in [c, w] {
+                let (mut s, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf).await;
+                s.write_all(format!("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{body}").as_bytes()).await.unwrap();
+            }
+        });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{port}/cal.ics");
+        let err = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap_err().to_string();
+        assert!(err.contains("unvollständig") && err.contains("später von selbst"), "{err}");
+        let ok = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap();
+        assert_eq!(parse(&ok, window(), &berlin(), ALL).unwrap().len(), 2);
+        // A file with its END missing is still read (written by hand or by an old program).
+        let no_end = whole.trim_end().trim_end_matches("END:VCALENDAR");
+        assert_eq!(parse(no_end.as_bytes(), window(), &berlin(), ALL).unwrap().len(), 2);
     }
 
     #[test]

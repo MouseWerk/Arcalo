@@ -288,6 +288,7 @@ const toastClocks = new Map<number, { timer: number | null; left: number; since:
 let toastsHeld = false;
 // `refreshTree` requests: the number of the latest one and when its tree is in place.
 let treeSeq = 0;
+let settingsSeq = 0;
 let treeLatest: Promise<void> = Promise.resolve();
 
 export const useApp = create<State>((set, get) => ({
@@ -540,7 +541,15 @@ export const useApp = create<State>((set, get) => ({
     }
   },
   refreshTimer: async () => set({ timer: await api.timerStatus() }),
-  refreshSettings: async () => set({ settings: await api.settings() }),
+  refreshSettings: async () => {
+    const seq = ++settingsSeq;
+    const asked = get().settings;
+    const next = await api.settings();
+    // Only the newest answer, and not over a save that landed while it was on its way: that one
+    // is newer (an older answer would switch the form back; the save's own `settings://changed`
+    // brings anything after it).
+    if (seq === settingsSeq && get().settings === asked) set({ settings: next });
+  },
   bumpEntries: () => {
     set({ entriesVersion: get().entriesVersion + 1 });
     get().refreshTimer();

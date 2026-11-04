@@ -632,6 +632,21 @@ pub fn network_error(e: &reqwest::Error) -> Error {
     Error::State(msg)
 }
 
+/// A request sent on to another address (`http://` to `https://`, a Jira moved to a new host or
+/// to Atlassian's cloud): the login is not sent along there, so Jira would refuse it and the
+/// error would blame the token. The error names the new address to enter instead.
+fn moved_check(asked: &str, landed: &reqwest::Url) -> Result<()> {
+    let Ok(asked) = reqwest::Url::parse(asked) else { return Ok(()) };
+    if asked.origin() == landed.origin() {
+        return Ok(());
+    }
+    let to = landed.origin().ascii_serialization();
+    Err(Error::State(trf!(
+        "Die Jira-Adresse leitet auf {to} weiter, und dorthin wird die Anmeldung nicht mitgeschickt. Unter Einstellungen → Jira die Adresse der Site auf {to} ändern.",
+        "The Jira address forwards to {to}, and the login is not sent along there. Under Settings → Jira, change the site's address to {to}."
+    )))
+}
+
 /// How long to wait before retry `attempt` (0-based) of a rate-limited request.
 pub fn retry_after(header: Option<&str>, attempt: u32, base: Duration) -> Duration {
     header
@@ -730,6 +745,7 @@ impl JiraClient {
                 req = req.json(b);
             }
             let resp = req.send().await.map_err(|e| network_error(&e))?;
+            moved_check(url, resp.url())?;
             let status = resp.status();
             if (status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE)
                 && attempt < RETRIES

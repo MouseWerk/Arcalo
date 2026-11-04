@@ -344,6 +344,31 @@ async fn network_errors_name_the_cause_and_the_fix() {
     assert!(proxy.contains("Proxy"), "{proxy}");
 }
 
+#[tokio::test]
+async fn a_site_that_forwards_elsewhere_names_the_new_address() {
+    use std::io::{Read, Write};
+    // The new place answers like Jira (here even without a login); the old one forwards to it.
+    let (moved, _) = recording_jira(r#"{"accountId":"x","displayName":"Mia"}"#);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let old = format!("http://{}", listener.local_addr().unwrap());
+    let to = moved.clone();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 301 Moved Permanently\r\nlocation: {to}/rest/api/2/myself\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+        }
+    });
+    let e = direct_jira(&old).whoami().await.unwrap_err().to_string();
+    assert!(e.contains(&moved) && e.contains("Einstellungen → Jira"), "{e}");
+    assert!(!e.contains("Token"), "not the token's fault: {e}");
+    // At its own address it works.
+    assert_eq!(direct_jira(&moved).whoami().await.unwrap().display_name, "Mia");
+}
+
 // ------------------------------------------------------------------ keys
 
 #[test]

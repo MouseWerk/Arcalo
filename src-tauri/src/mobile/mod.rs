@@ -144,6 +144,7 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
         secrets: SecretStore::new(&dir),
         git_secret: SecretStore::git(&dir),
         git_lock: Mutex::new(()),
+        settings_write: Mutex::new(()),
         data_dir: dir,
         data_dir_notice: None,
         meter: Mutex::new(SessionMeter::default()),
@@ -364,7 +365,7 @@ pub fn mobile_settings_save(
     state: State<AppState>,
     settings: serde_json::Value,
 ) -> Result<crate::SettingsView> {
-    crate::settings_save(app, state, settings)
+    crate::settings_save(app, state, settings, None)
 }
 
 /// „Heute“: date, booked time and target, the timer, due tasks and today's appointments.

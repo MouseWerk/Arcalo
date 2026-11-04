@@ -263,6 +263,10 @@ pub struct AppState {
     git_secret: SecretStore,
     /// One Git sync at a time (scheduler, backup and „Jetzt synchronisieren“).
     git_lock: Mutex<()>,
+    /// One settings write at a time: each reads the settings and stores them changed, so two at
+    /// once (a save of the settings page while a calendar discovery stores what it found) would
+    /// take back the other's change.
+    settings_write: Mutex<()>,
     data_dir: PathBuf,
     /// What happened to the data folder at startup (pending move, fallback).
     data_dir_notice: Option<datadir::Notice>,
@@ -333,6 +337,16 @@ impl AppState {
     }
     fn settings(&self) -> Settings {
         self.ai.read().unwrap_or_else(|e| e.into_inner()).settings.clone()
+    }
+    /// Changes the settings with `f` and stores them, after any other settings write (see
+    /// [`AppState::settings_write`]); returns what was stored.
+    pub(crate) fn change_settings(&self, f: impl FnOnce(&mut Settings) -> Result<()>) -> Result<Settings> {
+        let _one = lock(&self.settings_write);
+        let mut settings = self.settings();
+        f(&mut settings)?;
+        self.db().save_settings(&settings)?;
+        self.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings.clone();
+        Ok(settings)
     }
     /// The client of the provider `id` (`""` = the first one); an error when it is missing or off.
     fn client_for(&self, id: &str) -> Result<Arc<AiClient>> {
@@ -2334,10 +2348,22 @@ fn settings_get(state: State<AppState>) -> SettingsView {
     }
 }
 
-/// Saves settings and applies them immediately (no restart needed).
+/// Saves settings and applies them immediately (no restart needed). `base` is the copy the
+/// window changed into `settings`: only what it changed is taken, the rest stays as stored now
+/// (changed meanwhile by a calendar discovery, a Jira setup or another window).
 #[tauri::command]
-fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::Value) -> Result<SettingsView> {
+fn settings_save(
+    app: AppHandle,
+    state: State<AppState>,
+    settings: serde_json::Value,
+    base: Option<serde_json::Value>,
+) -> Result<SettingsView> {
+    let one = lock(&state.settings_write);
     let previous = state.settings();
+    let settings = match base {
+        Some(base) => arcalo_core::settings::merge_change(&serde_json::to_value(&previous)?, &base, &settings),
+        None => settings,
+    };
     let mut settings = Settings::for_save(settings, &previous)?;
     // What an organization's policy fixes (routes, locked profiles) stays as it says.
     network::enforce_policy(&previous.network, &mut settings.network);
@@ -2439,6 +2465,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
             devlog::warn("core", format!("activity types not localized: {e}"));
         }
     }
+    drop(one);
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
     Ok(settings_get(state))
@@ -2455,7 +2482,7 @@ fn settings_scope_set(
 ) -> Result<SettingsView> {
     let s = state.db().set_settings_scope(&section, scope)?;
     devlog::info("settings", format!("section {section} now {scope:?}"));
-    settings_save(app, state, serde_json::to_value(&s)?)
+    settings_save(app, state, serde_json::to_value(&s)?, None)
 }
 
 /// Takes back the settings the last settings sync took from the server.
@@ -2463,7 +2490,7 @@ fn settings_scope_set(
 fn settings_sync_undo(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
     let s = state.db().settings_sync_undo()?;
     devlog::info("settings", "last settings sync taken back");
-    settings_save(app, state, serde_json::to_value(&s)?)
+    settings_save(app, state, serde_json::to_value(&s)?, None)
 }
 
 /// Applies the settings file of a sync (see `settings_sync`): what changed later on another
@@ -2480,7 +2507,7 @@ fn take_over_settings(app: &AppHandle, text: &str) {
             );
             match serde_json::to_value(&next)
                 .map_err(Error::from)
-                .and_then(|v| settings_save(app.clone(), app.state(), v))
+                .and_then(|v| settings_save(app.clone(), app.state(), v, None))
             {
                 Ok(_) => {
                     let _ = app.emit("settings://synced", keys.len());
@@ -2496,10 +2523,10 @@ fn take_over_settings(app: &AppHandle, text: &str) {
 /// Saves only the start page's widgets and scratch note (the rest of the settings stays as it is).
 #[tauri::command]
 fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<SettingsView> {
-    let mut settings = state.settings();
-    settings.dashboard = dashboard.normalized();
-    state.db().save_settings(&settings)?;
-    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    state.change_settings(|s| {
+        s.dashboard = dashboard.normalized();
+        Ok(())
+    })?;
     Ok(settings_get(state))
 }
 
@@ -2510,10 +2537,10 @@ fn quick_links_save(
     state: State<AppState>,
     links: Vec<arcalo_core::settings::QuickLink>,
 ) -> Result<SettingsView> {
-    let mut settings = state.settings();
-    settings.quick_links = arcalo_core::settings::normalize_quick_links(links);
-    state.db().save_settings(&settings)?;
-    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    state.change_settings(|s| {
+        s.quick_links = arcalo_core::settings::normalize_quick_links(links);
+        Ok(())
+    })?;
     let _ = app.emit("settings://changed", ());
     Ok(settings_get(state))
 }
@@ -4157,20 +4184,28 @@ fn onboarding_status(state: State<AppState>) -> Result<arcalo_core::onboarding::
     state.reader().onboarding_status(skip_onboarding())
 }
 
-/// Stores the settings the first-run flags changed (and tells the other windows).
-fn onboarding_store(app: &AppHandle, state: &State<AppState>, settings: Settings) -> SettingsView {
-    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+/// Changes the first-run flags with `change` (which stores them), takes over the settings and
+/// tells the other windows.
+fn onboarding_store(
+    app: &AppHandle,
+    state: &State<AppState>,
+    change: impl FnOnce(&Database) -> Result<Settings>,
+) -> Result<SettingsView> {
+    {
+        let _one = lock(&state.settings_write);
+        let settings = change(&state.db())?;
+        state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    }
     // The setup may have switched time tracking: tray menu and jump list follow.
     desktop::refresh_tray(app);
     let _ = app.emit("settings://changed", ());
-    settings_get(state.clone())
+    Ok(settings_get(state.clone()))
 }
 
 /// The setup was finished or closed: stores `onboarding.completed_version` and `completed_at`.
 #[tauri::command(async)]
 fn onboarding_complete(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
-    let settings = state.db().onboarding_complete(Utc::now())?;
-    Ok(onboarding_store(&app, &state, settings))
+    onboarding_store(&app, &state, |db| db.onboarding_complete(Utc::now()))
 }
 
 /// The one-time hint for an upgraded workspace was shown.
@@ -4188,8 +4223,7 @@ fn rebrand_notice_shown(state: State<AppState>) -> Result<()> {
 /// „Einrichtung zurücksetzen“: the first-run flags only; nothing else is touched.
 #[tauri::command(async)]
 fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
-    let settings = state.db().onboarding_reset()?;
-    Ok(onboarding_store(&app, &state, settings))
+    onboarding_store(&app, &state, |db| db.onboarding_reset())
 }
 
 /// Removes the sample project and pages created on first start.
@@ -5061,6 +5095,7 @@ pub fn run() {
                 secrets,
                 git_secret: SecretStore::git(&dir),
                 git_lock: Mutex::new(()),
+                settings_write: Mutex::new(()),
                 data_dir: dir,
                 data_dir_notice: notice,
                 meter: Mutex::new(SessionMeter::default()),

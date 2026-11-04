@@ -257,6 +257,45 @@ fn normalize_link(l: QuickLink) -> Option<QuickLink> {
     Some(QuickLink { name, url, icon: l.icon.trim().to_owned(), kind: l.kind, color: String::new(), items: vec![] })
 }
 
+/// The settings a window computed as `next` from its copy `base`, applied on `current` (what is
+/// stored now): what the window changed comes from `next`, every other value stays as stored
+/// now, also when it changed after the window took its copy (a calendar discovery, the Jira
+/// setup, another window). Objects are merged key by key; lists and values count as one.
+pub fn merge_change(
+    current: &serde_json::Value,
+    base: &serde_json::Value,
+    next: &serde_json::Value,
+) -> serde_json::Value {
+    use serde_json::Value;
+    if base == next {
+        return current.clone();
+    }
+    let (Value::Object(cur), Value::Object(b), Value::Object(n)) = (current, base, next) else {
+        return next.clone();
+    };
+    let mut out = cur.clone();
+    for key in n.keys().chain(b.keys()) {
+        match (b.get(key), n.get(key)) {
+            (x, y) if x == y => {}
+            (Some(was), Some(now)) => {
+                let merged = match cur.get(key) {
+                    Some(c) => merge_change(c, was, now),
+                    None => now.clone(),
+                };
+                out.insert(key.clone(), merged);
+            }
+            (None, Some(now)) => {
+                out.insert(key.clone(), now.clone());
+            }
+            (Some(_), None) => {
+                out.remove(key);
+            }
+            (None, None) => {}
+        }
+    }
+    Value::Object(out)
+}
+
 /// Trimmed links with an address; the name falls back to the address. Groups keep their
 /// (possibly empty) list; a group inside a group (only by hand-edited settings) hands its
 /// links to the outer one.
@@ -1233,6 +1272,35 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_save_from_an_older_copy_keeps_what_changed_since() {
+        // The settings page's copy: Outlook off, interval 15.
+        let base = Settings::default();
+        let mut next = base.clone();
+        next.calendar.outlook = true;
+        next.theme = "dark".into();
+        // Meanwhile stored: a discovery named the default calendar, the Kalender switched
+        // writing on, and the interval changed in another window.
+        let mut current = base.clone();
+        current.calendar.outlook_calendars[0].name = "Kalender".into();
+        current.calendar.entries_outlook = true;
+        current.calendar.sync_minutes = 30;
+        let v = |s: &Settings| serde_json::to_value(s).unwrap();
+        let merged: Settings = serde_json::from_value(merge_change(&v(&current), &v(&base), &v(&next))).unwrap();
+        assert!(merged.calendar.outlook, "the page's change is taken");
+        assert_eq!(merged.theme, "dark");
+        assert_eq!(merged.calendar.outlook_calendars[0].name, "Kalender", "the discovery's stays");
+        assert!(merged.calendar.entries_outlook);
+        assert_eq!(merged.calendar.sync_minutes, 30);
+        // Nothing changed: what is stored stays as it is.
+        assert_eq!(merge_change(&v(&current), &v(&base), &v(&base)), v(&current));
+        // A list counts as one value; a key the page removed is removed.
+        let cur = serde_json::json!({ "a": [1, 2], "b": 1, "c": { "d": 1, "e": 2 } });
+        let base = serde_json::json!({ "a": [1], "b": 1, "c": { "d": 1, "e": 1 } });
+        let next = serde_json::json!({ "a": [1, 3], "c": { "d": 2, "e": 1 } });
+        assert_eq!(merge_change(&cur, &base, &next), serde_json::json!({ "a": [1, 3], "c": { "d": 2, "e": 2 } }));
+    }
 
     #[test]
     fn time_tracking_switch_gates_booking_and_survives_older_settings() {
