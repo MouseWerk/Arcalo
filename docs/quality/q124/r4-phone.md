@@ -66,9 +66,10 @@ Every failure is R4A-1; none was the emulator being slow. The pictures of all th
   removal ends about a second later („Destroy timeout of remove-task, attempt to kill Task“). An `am start -W` in
   that second started the new process into the dying task, which killed it („Killing 7909 … remove task“, „failed
   to attach“), and `am start -W` waited until the system started the activity again by itself, 11:32 later.
-- Fix: `fresh()` waits until the system reports the old task removed (its „Destroy timeout of remove-task“ in the
-  log, for the task the force-stop named); `dumpsys activity` does not list a task while it is being removed, so a
-  first attempt that looked there let the same stall through (run 41851198571, 15:35:08). `start()` gives
+- Fix: when `pm clear` met the activity still exiting („Force removing ActivityRecord{… t10 f} isExiting“), `fresh()`
+  waits until the system reports that task removed („Destroy timeout of remove-task … #10“); without an exiting
+  activity the task is gone at once. `dumpsys activity` does not list a task while it is being removed, so a first
+  attempt that looked there let the same stall through (run 41851198571, 15:35:08). `start()` gives
   `am start -W` the same 60 s as the rest of the start: a launch that never completes fails with what the device
   says instead of holding the suite.
 
