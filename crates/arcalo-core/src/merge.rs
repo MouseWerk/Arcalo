@@ -160,6 +160,16 @@ fn lcs(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
     }
     let (a_mid, b_mid) = (&a[pre..n - suf], &b[pre..m - suf]);
     let (h, w) = (a_mid.len(), b_mid.len());
+    let mut out: Vec<(usize, usize)> = (0..pre).map(|i| (i, i)).collect();
+    if h.saturating_mul(w) > TABLE_CELLS {
+        // A long note changed in places far apart: the table would take gigabytes and seconds
+        // (20,000 blocks: 400 million cells), so the shortest edit script instead, whose cost
+        // grows with the changes, not with the note.
+        let pairs = myers(a_mid, b_mid, MAX_EDITS).unwrap_or_else(|| unique_anchored(a_mid, b_mid));
+        out.extend(pairs.into_iter().map(|(i, j)| (pre + i, pre + j)));
+        out.extend((0..suf).map(|k| (n - suf + k, m - suf + k)));
+        return out;
+    }
     let mut table = vec![0u32; (h + 1) * (w + 1)];
     for i in (0..h).rev() {
         for j in (0..w).rev() {
@@ -170,7 +180,6 @@ fn lcs(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
             };
         }
     }
-    let mut out: Vec<(usize, usize)> = (0..pre).map(|i| (i, i)).collect();
     let (mut i, mut j) = (0, 0);
     while i < h && j < w {
         if a_mid[i] == b_mid[j] {
@@ -184,6 +193,122 @@ fn lcs(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
         }
     }
     out.extend((0..suf).map(|k| (n - suf + k, m - suf + k)));
+    out
+}
+
+/// Middles of [`lcs`] up to this many cells use the table (16 MB).
+const TABLE_CELLS: usize = 4_000_000;
+/// [`myers`] gives up beyond this many inserted and deleted blocks (its trace then holds 4
+/// million positions); [`unique_anchored`] pairs the blocks then.
+const MAX_EDITS: usize = 2_000;
+
+/// Index pairs of a longest common subsequence of `a` and `b` by Myers' algorithm (a shortest
+/// edit script): time and memory grow with the number of differences `D` (O((N + M) D) and
+/// O(D²)). `None` beyond `max_edits` differences.
+fn myers(a: &[&str], b: &[&str], max_edits: usize) -> Option<Vec<(usize, usize)>> {
+    let (n, m) = (a.len() as isize, b.len() as isize);
+    let limit = (n + m).min(max_edits as isize);
+    // `v[k + off]`: the furthest x on diagonal k = x - y; `trace[d]` holds the diagonals -d..=d
+    // after step d.
+    let off = limit + 1;
+    let mut v = vec![0isize; (2 * off + 1) as usize];
+    let mut trace: Vec<Vec<isize>> = Vec::new();
+    let mut end = None;
+    'steps: for d in 0..=limit {
+        for k in (-d..=d).step_by(2) {
+            let down = k == -d || (k != d && v[(k - 1 + off) as usize] < v[(k + 1 + off) as usize]);
+            let mut x = if down { v[(k + 1 + off) as usize] } else { v[(k - 1 + off) as usize] + 1 };
+            let mut y = x - k;
+            while x < n && y < m && a[x as usize] == b[y as usize] {
+                x += 1;
+                y += 1;
+            }
+            v[(k + off) as usize] = x;
+            if x >= n && y >= m {
+                trace.push(v[(off - d) as usize..=(off + d) as usize].to_vec());
+                end = Some(d);
+                break 'steps;
+            }
+        }
+        trace.push(v[(off - d) as usize..=(off + d) as usize].to_vec());
+    }
+    let steps = end?;
+    // Back from the end: each step is one insertion or deletion followed by a run of equal blocks.
+    let mut out = Vec::new();
+    let (mut x, mut y) = (n, m);
+    for d in (1..=steps).rev() {
+        let prev = &trace[(d - 1) as usize];
+        let at = |k: isize| prev[(k + d - 1) as usize];
+        let k = x - y;
+        let down = k == -d || (k != d && at(k - 1) < at(k + 1));
+        let pk = if down { k + 1 } else { k - 1 };
+        let (px, py) = (at(pk), at(pk) - pk);
+        let (sx, sy) = if down { (px, py + 1) } else { (px + 1, py) };
+        while x > sx && y > sy {
+            x -= 1;
+            y -= 1;
+            out.push((x as usize, y as usize));
+        }
+        (x, y) = (px, py);
+    }
+    while x > 0 && y > 0 {
+        x -= 1;
+        y -= 1;
+        out.push((x as usize, y as usize));
+    }
+    out.reverse();
+    Some(out)
+}
+
+/// Common blocks of two very different texts, as patience diff pairs them: the blocks that occur
+/// once on each side, in the longest run that keeps their order, and between them [`lcs`] again.
+/// Not always a longest common subsequence, but never slow.
+fn unique_anchored(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
+    let mut seen: std::collections::HashMap<&str, (usize, usize, usize, usize)> = std::collections::HashMap::new();
+    for (i, k) in a.iter().enumerate() {
+        let e = seen.entry(k).or_insert((0, i, 0, 0));
+        e.0 += 1;
+    }
+    for (j, k) in b.iter().enumerate() {
+        if let Some(e) = seen.get_mut(k) {
+            e.2 += 1;
+            e.3 = j;
+        }
+    }
+    let mut unique: Vec<(usize, usize)> =
+        seen.into_values().filter(|e| e.0 == 1 && e.2 == 1).map(|e| (e.1, e.3)).collect();
+    unique.sort_unstable();
+    // The longest increasing run of their places in `b` (patience sorting).
+    let mut tails: Vec<usize> = Vec::new();
+    let mut prev: Vec<Option<usize>> = vec![None; unique.len()];
+    for (n, &(_, j)) in unique.iter().enumerate() {
+        let at = tails.partition_point(|&t| unique[t].1 < j);
+        prev[n] = at.checked_sub(1).map(|p| tails[p]);
+        if at == tails.len() {
+            tails.push(n);
+        } else {
+            tails[at] = n;
+        }
+    }
+    let mut anchors = Vec::with_capacity(tails.len());
+    let mut at = tails.last().copied();
+    while let Some(n) = at {
+        anchors.push(unique[n]);
+        at = prev[n];
+    }
+    anchors.reverse();
+    if anchors.is_empty() {
+        return anchors;
+    }
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    for &(ai, bj) in anchors.iter().chain(std::iter::once(&(a.len(), b.len()))) {
+        out.extend(lcs(&a[i..ai], &b[j..bj]).into_iter().map(|(x, y)| (i + x, j + y)));
+        if ai < a.len() {
+            out.push((ai, bj));
+        }
+        (i, j) = (ai + 1, bj + 1);
+    }
     out
 }
 
@@ -434,6 +559,79 @@ mod tests {
         assert_eq!(merge3(Some(""), "neu\n", "").merged().as_deref(), Some("neu\n"));
         assert_eq!(merge3(Some("alt\n"), "", "alt\n").merged().as_deref(), Some(""));
         assert_eq!(merge3(Some(""), "a\n", "b\n").conflicts, 1);
+    }
+
+    /// q124 R2D-5: a note of 20,000 lines changed in places far apart (a log edited on two
+    /// computers, or the page changed elsewhere while it is edited) took gigabytes and many
+    /// seconds to merge: the table of the common blocks grew with the square of the note.
+    #[test]
+    fn long_notes_changed_far_apart_merge_quickly() {
+        let mut base = String::from("# Protokoll\n\n");
+        for i in 0..20_000 {
+            base.push_str(&format!("- Eintrag {i} mit etwas Text\n"));
+        }
+        let mine = base.replace("- Eintrag 10000 mit", "- Eintrag 10000 (hier) mit");
+        let theirs = base
+            .replace("- Eintrag 5 mit", "- Eintrag 5 (dort) mit")
+            .replace("- Eintrag 19990 mit", "- Eintrag 19990 (dort) mit")
+            .replace("- Eintrag 7000 mit etwas Text\n", "");
+        let t = std::time::Instant::now();
+        let r = merge3(Some(&base), &mine, &theirs);
+        let took = t.elapsed();
+        assert_eq!(r.conflicts, 0);
+        let merged = r.merged().unwrap();
+        assert!(merged.contains("Eintrag 10000 (hier)") && merged.contains("Eintrag 5 (dort)"));
+        assert!(merged.contains("Eintrag 19990 (dort)") && !merged.contains("Eintrag 7000 "));
+        assert_eq!(merged.lines().count(), base.lines().count() - 1);
+        assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+        // Without a base: the same blocks pair up, the differences are conflicts.
+        let r = merge3(None, &mine, &theirs);
+        assert_eq!(r.conflicts, 4, "{}", r.conflicts);
+        // Nothing in common beyond the limit of edits: one conflict, quickly.
+        let other: String = (0..20_000).map(|i| format!("- Anderes {i}\n")).collect();
+        let t = std::time::Instant::now();
+        assert_eq!(merge3(Some(&base), &mine, &other).conflicts, 1);
+        assert!(t.elapsed() < std::time::Duration::from_secs(2), "{:?}", t.elapsed());
+        // More differences than the edit script follows (3,000 entries added in between, the
+        // first one changed): the blocks found once on each side still pair the rest.
+        let mut grown = String::new();
+        for (n, line) in base.lines().enumerate() {
+            grown.push_str(&line.replace("Eintrag 0 mit", "Eintrag 0 (dort) mit"));
+            grown.push('\n');
+            if n == 10_002 {
+                grown.extend((0..3_000).map(|i| format!("- Neu {i}\n")));
+            }
+        }
+        let t = std::time::Instant::now();
+        let r = merge3(Some(&base), &mine, &grown);
+        assert!(t.elapsed() < std::time::Duration::from_secs(2), "{:?}", t.elapsed());
+        assert_eq!(r.conflicts, 0);
+        let merged = r.merged().unwrap();
+        assert!(merged.contains("Eintrag 10000 (hier)") && merged.contains("Eintrag 0 (dort)") && merged.contains("- Neu 2999\n"));
+        assert_eq!(merged.lines().count(), base.lines().count() + 3_000);
+    }
+
+    #[test]
+    fn myers_pairs_a_longest_common_subsequence() {
+        let cases: &[(&str, &str)] =
+            &[("abcabba", "cbabac"), ("", "abc"), ("abc", ""), ("abc", "abc"), ("xaybzc", "abc"), ("abcd", "dcba")];
+        for (a, b) in cases {
+            let a: Vec<String> = a.chars().map(String::from).collect();
+            let b: Vec<String> = b.chars().map(String::from).collect();
+            let (a, b): (Vec<&str>, Vec<&str>) = (a.iter().map(|s| s.as_str()).collect(), b.iter().map(|s| s.as_str()).collect());
+            let pairs = myers(&a, &b, 100).unwrap();
+            assert!(pairs.iter().all(|&(i, j)| a[i] == b[j]));
+            assert!(pairs.windows(2).all(|w| w[0].0 < w[1].0 && w[0].1 < w[1].1));
+            // As long as the table's.
+            let (h, w) = (a.len(), b.len());
+            let mut t = vec![vec![0; w + 1]; h + 1];
+            for i in (0..h).rev() {
+                for j in (0..w).rev() {
+                    t[i][j] = if a[i] == b[j] { t[i + 1][j + 1] + 1 } else { t[i + 1][j].max(t[i][j + 1]) };
+                }
+            }
+            assert_eq!(pairs.len(), t[0][0], "{a:?} {b:?}");
+        }
     }
 
     #[test]
