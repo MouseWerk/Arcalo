@@ -174,6 +174,27 @@ for (const [W, H] of [
       assert.deepEqual(problems, []);
     });
 
+    // R4A-1: a key stored (here: none for the LiteLLM provider) reads the keys again and builds the
+    // AI clients with the settings of before; a save in between was taken back in the running app
+    // (the language chosen in the first seconds after the start turned back to English).
+    test("keeps a saved setting while the app reads its keys again", async () => {
+      const lost = await page.evaluate(async () => {
+        const call = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+        const out = [];
+        for (let i = 0; i < 12; i++) {
+          const theme = i % 2 ? "dark" : "light";
+          const view = await call("mobile_settings_get", {});
+          await Promise.all([call("provider_key_set", { id: "litellm", key: null }), call("mobile_settings_save", { settings: { ...view.settings, theme } })]);
+          const now = (await call("mobile_settings_get", {})).settings.theme;
+          if (now !== theme) out.push(`round ${i}: saved ${theme}, the app has ${now}`);
+        }
+        const view = await call("mobile_settings_get", {});
+        await call("mobile_settings_save", { settings: { ...view.settings, theme: "light" } });
+        return out;
+      });
+      assert.deepEqual(lost, []);
+    });
+
     test("shows no stock Android UI", async () => {
       const dialogs = await page.evaluate(stock.nativeDialogs);
       assert.deepEqual([...new Set(stockFound)], [], "the platform's own UI");

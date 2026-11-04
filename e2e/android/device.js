@@ -37,6 +37,9 @@ export function settle(timeout = 300000) {
   // and Android kills the app with it: "depends on provider …FontsProvider in dying proc". The suite
   // tests the app, not Play services: it is switched off on the emulator, before the app first starts.
   shell("pm disable-user --user 0 com.google.android.gms");
+  // Apps that need Play services then post „Enable Google Play services“; as a heads-up banner it
+  // lay over the app's header on the pictures (run 41800159272). In the shade it stays out of view.
+  shell("settings put global heads_up_notifications_enabled 0");
   execFileSync(ADB, ["shell", "am", "wait-for-broadcast-idle"], { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 });
   console.log(`Play services switched off after ${Date.now() - t0} ms`);
 }
@@ -61,6 +64,7 @@ export function fresh() {
     /* not running */
   }
   shell(`pm clear ${PKG}`);
+  taskGone();
   // The log from here on is this start's (diagnose).
   adb("logcat", "-c");
   try {
@@ -73,6 +77,25 @@ export function fresh() {
   shell("settings put global hide_error_dialogs 1");
   shell("settings put global anr_show_background 0");
   dismissSystemDialogs();
+}
+
+/** Waits until the app's task is gone from the window manager. `force-stop` and `pm clear` only
+ *  start removing it; the removal ends a moment later („Destroy timeout of remove-task, attempt to
+ *  kill Task“). An `am start` before that started the new process into the dying task, which killed
+ *  it again („Killing … remove task“, „failed to attach“), and `am start -W` then waited eleven
+ *  minutes for a launch that never came (runs 41804267003, both attempts). */
+function taskGone(timeout = 30000) {
+  const t0 = Date.now();
+  const task = new RegExp(`A=\\d+:${PKG.replace(/\./g, "\\.")}\\b`);
+  for (;;) {
+    const dump = shell("dumpsys activity activities");
+    if (!task.test(dump)) {
+      if (Date.now() - t0 > 1000) console.log(`the app's old task was gone after ${Date.now() - t0} ms`);
+      return;
+    }
+    if (Date.now() - t0 > timeout) throw new Error(`the app's task is still there ${timeout} ms after pm clear:\n${dump.split("\n").filter((l) => task.test(l)).join("\n")}`);
+    execFileSync("sleep", ["0.2"]);
+  }
 }
 
 /** The app's process id, or null while there is none. Toybox's `pidof` exits with 1 when no
@@ -97,7 +120,14 @@ export function appCrash() {
 
 /** Starts the app and waits for its process; a crash or no process within `timeout` fails. */
 export async function start(timeout = 60000) {
-  const said = shell(`am start -W -n ${PKG}/.MainActivity`).trim();
+  // A launch that never completes fails here (with what the device says) instead of holding the
+  // suite: `am start -W` waits as long as the launch does.
+  let said;
+  try {
+    said = execFileSync(ADB, ["shell", `am start -W -n ${PKG}/.MainActivity`], { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 }).trim();
+  } catch (e) {
+    throw new Error(`the app did not start: am start -W gave no answer within ${timeout} ms (${e.message.split("\n")[0]})`);
+  }
   if (/^Error/m.test(said)) throw new Error(`the app did not start:\n${said}`);
   const t0 = Date.now();
   for (let first = true; Date.now() - t0 < timeout; first = false) {

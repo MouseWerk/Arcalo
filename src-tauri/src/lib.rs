@@ -226,7 +226,28 @@ impl AiRuntime {
     }
 }
 
-/// Rebuilds the AI runtime (clients, router) from `settings` and the stored secrets.
+/// Rebuilds the AI runtime from the settings as they are now and the stored secrets, after a key
+/// or a password changed. Under [`AppState::settings_write`]: a save in the meantime would
+/// otherwise be overwritten with the settings read before it (the phone's keys read at the start
+/// took back the language chosen in the same seconds).
+pub(crate) fn refresh_ai(state: &AppState) {
+    let _write = lock(&state.settings_write);
+    rebuild_ai(state, state.settings());
+}
+
+/// Changes the running settings with `f` and saves them (the rest stays as it is), under
+/// [`AppState::settings_write`] so no other change comes in between and is lost.
+pub(crate) fn update_settings(state: &AppState, f: impl FnOnce(&mut Settings) -> Result<()>) -> Result<Settings> {
+    let _write = lock(&state.settings_write);
+    let mut settings = state.settings();
+    f(&mut settings)?;
+    state.db().save_settings(&settings)?;
+    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings.clone();
+    Ok(settings)
+}
+
+/// Rebuilds the AI runtime (clients, router) from `settings` and the stored secrets. The caller
+/// holds [`AppState::settings_write`] (see [`refresh_ai`]).
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let keys = provider_keys(&state.data_dir, &settings.providers);
     let rt = AiRuntime::new(settings.clone(), &keys, &network::passwords_of(&state.data_dir, &settings.network));
@@ -258,6 +279,9 @@ pub struct AppState {
     /// The reader to wait for when all are busy (round robin).
     next_reader: AtomicUsize,
     ai: RwLock<AiRuntime>,
+    /// Held by whatever changes the running settings (a save, a rebuild after a key changed),
+    /// from reading them to taking over the new ones: two such changes at once lost one of them.
+    settings_write: Mutex<()>,
     secrets: SecretStore,
     /// Access token of the Git sync.
     git_secret: SecretStore,
@@ -2337,6 +2361,7 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 /// Saves settings and applies them immediately (no restart needed).
 #[tauri::command]
 fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::Value) -> Result<SettingsView> {
+    let write = lock(&state.settings_write);
     let previous = state.settings();
     let mut settings = Settings::for_save(settings, &previous)?;
     // What an organization's policy fixes (routes, locked profiles) stays as it says.
@@ -2417,6 +2442,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     };
     let time_switched = previous.time_tracking() != settings.time_tracking();
     rebuild_ai(&state, settings);
+    drop(write);
     // Time tracking switched: tray menu and jump list without (or with) the timer entries.
     if time_switched {
         desktop::refresh_tray(&app);
@@ -2496,10 +2522,10 @@ fn take_over_settings(app: &AppHandle, text: &str) {
 /// Saves only the start page's widgets and scratch note (the rest of the settings stays as it is).
 #[tauri::command]
 fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<SettingsView> {
-    let mut settings = state.settings();
-    settings.dashboard = dashboard.normalized();
-    state.db().save_settings(&settings)?;
-    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    update_settings(&state, |s| {
+        s.dashboard = dashboard.normalized();
+        Ok(())
+    })?;
     Ok(settings_get(state))
 }
 
@@ -2510,10 +2536,10 @@ fn quick_links_save(
     state: State<AppState>,
     links: Vec<arcalo_core::settings::QuickLink>,
 ) -> Result<SettingsView> {
-    let mut settings = state.settings();
-    settings.quick_links = arcalo_core::settings::normalize_quick_links(links);
-    state.db().save_settings(&settings)?;
-    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    update_settings(&state, |s| {
+        s.quick_links = arcalo_core::settings::normalize_quick_links(links);
+        Ok(())
+    })?;
     let _ = app.emit("settings://changed", ());
     Ok(settings_get(state))
 }
@@ -2585,7 +2611,7 @@ fn start_program(app: &AppHandle, path: &str) -> std::result::Result<(), String>
 #[tauri::command]
 fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsView> {
     state.secrets.set(key.as_deref().map(str::trim)).map_err(Error::State)?;
-    rebuild_ai(&state, state.settings());
+    refresh_ai(&state);
     Ok(settings_get(state))
 }
 
@@ -2598,7 +2624,7 @@ fn provider_key_set(state: State<AppState>, id: String, key: Option<String>) -> 
         return Err(Error::State(tr!("Anbieter ohne Kennung", "Provider without an id").into()));
     }
     state.provider_secret(&id).set(key.as_deref().map(str::trim)).map_err(Error::State)?;
-    rebuild_ai(&state, state.settings());
+    refresh_ai(&state);
     Ok(settings_get(state))
 }
 
@@ -5058,6 +5084,7 @@ pub fn run() {
                 readers,
                 next_reader: AtomicUsize::new(0),
                 ai: RwLock::new(ai),
+                settings_write: Mutex::new(()),
                 secrets,
                 git_secret: SecretStore::git(&dir),
                 git_lock: Mutex::new(()),

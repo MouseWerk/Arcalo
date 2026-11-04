@@ -60,6 +60,15 @@ export async function openApp(w, h, theme, { onPage = [] } = {}) {
   step("language and theme set");
   await page.reload();
   const splash = await ready(page);
+  // The app keeps what was saved: its keys, read again a few seconds after the start, took back
+  // the settings saved meanwhile (English labels, R4A-1), and every step after failed to find its
+  // German label.
+  const kept = await page.evaluate(async () => {
+    const s = (await window.__TAURI_INTERNALS__.invoke("mobile_settings_get", {})).settings;
+    return { language: s.locale.language, theme: s.theme, page: document.documentElement.lang };
+  });
+  if (kept.language !== "de" || kept.theme !== theme || !kept.page.startsWith("de"))
+    throw new Error(`the app did not keep the saved settings (language de, theme ${theme}): ${JSON.stringify(kept)}`);
   const dpr = await page.evaluate(() => window.devicePixelRatio);
   console.log(`connected at ${w}×${h}: ${page.url()}, ${await page.evaluate(() => `${innerWidth}×${innerHeight}`)} at ${dpr}x`);
   return { page, dpr, splash };

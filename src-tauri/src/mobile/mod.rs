@@ -141,6 +141,7 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
         readers,
         next_reader: AtomicUsize::new(0),
         ai: RwLock::new(ai),
+        settings_write: Mutex::new(()),
         secrets: SecretStore::new(&dir),
         git_secret: SecretStore::git(&dir),
         git_lock: Mutex::new(()),
@@ -188,7 +189,7 @@ fn spawn_ai_keys(app: AppHandle) {
         std::thread::sleep(Duration::from_secs(3));
         let state = app.state::<AppState>();
         if state.settings().providers.iter().any(|p| p.enabled) {
-            crate::rebuild_ai(&state, state.settings());
+            crate::refresh_ai(&state);
         }
     });
 }
