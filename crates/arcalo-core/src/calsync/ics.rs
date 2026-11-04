@@ -1229,4 +1229,192 @@ mod tests {
         let gone = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap_err().to_string();
         assert!(gone.contains("404") && gone.contains("neu kopieren"), "{gone}");
     }
+
+    /// Random series (daily, weekly on chosen days, monthly on a day; with INTERVAL, COUNT or
+    /// UNTIL; in Berlin, New York, UTC, an Outlook VTIMEZONE, floating or all day; with EXDATEs,
+    /// moved and cancelled instances) against a brute-force expansion written from RFC 5545:
+    /// every occurrence in the window once, none more, at the right instant.
+    #[test]
+    fn random_series_match_a_brute_force_expansion() {
+        use crate::testrng::Rng;
+        const DAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+        let ny = Zone::named("America/New_York").unwrap();
+        let mut total = 0;
+        for seed in 1..=400u64 {
+            let mut rng = Rng::new(seed);
+            // The zone of the series: (TZID parameter, zone for the reference).
+            let kind = rng.range(0, 5);
+            let all_day = kind == 5;
+            let (tzid, zone): (String, Zone) = match kind {
+                0 => (";TZID=Europe/Berlin".into(), berlin()),
+                1 => (";TZID=America/New_York".into(), ny.clone()),
+                2 => ("Z".into(), Zone::Utc),
+                3 => (";TZID=\"(UTC+01:00) Amsterdam, Berlin\"".into(), berlin()),
+                4 => (String::new(), berlin()), // floating: the local zone
+                _ => (String::new(), Zone::Utc),
+            };
+            let zoned = |wall: NaiveDateTime| -> String {
+                let v = wall.format("%Y%m%dT%H%M%S").to_string();
+                if tzid == "Z" {
+                    format!(":{}Z", zone.to_utc(wall).format("%Y%m%dT%H%M%S"))
+                } else {
+                    format!("{tzid}:{v}")
+                }
+            };
+            let start_day = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + Duration::days(rng.range(0, 500));
+            // Hours outside the night of a clock change.
+            let start = start_day.and_hms_opt(rng.range(6, 20) as u32, *rng.pick(&[0, 15, 30]), 0).unwrap();
+            let length = Duration::minutes(*rng.pick(&[15, 30, 60, 90]));
+            let interval = rng.range(1, 3);
+            let freq = rng.range(0, 2);
+            let mut weekdays: Vec<u32> = vec![];
+            let mut month_day = start.day();
+            let mut rule = match freq {
+                0 => format!("FREQ=DAILY;INTERVAL={interval}"),
+                1 => {
+                    let n = rng.range(0, 3);
+                    for _ in 0..n {
+                        weekdays.push(rng.range(0, 6) as u32);
+                    }
+                    weekdays.push(start.weekday().num_days_from_monday());
+                    weekdays.sort();
+                    weekdays.dedup();
+                    let by: Vec<&str> = weekdays.iter().map(|d| DAYS[*d as usize]).collect();
+                    format!("FREQ=WEEKLY;INTERVAL={interval};BYDAY={};WKST=MO", by.join(","))
+                }
+                _ => {
+                    if rng.chance(30) {
+                        format!("FREQ=MONTHLY;INTERVAL={interval}")
+                    } else {
+                        month_day = start.day();
+                        format!("FREQ=MONTHLY;INTERVAL={interval};BYMONTHDAY={month_day}")
+                    }
+                }
+            };
+            // The occurrences by the rule's definition, in wall-clock time of the zone.
+            let matches = |d: NaiveDate| -> bool {
+                let days = (d - start_day).num_days();
+                match freq {
+                    0 => days % interval == 0,
+                    1 => {
+                        let week = |x: NaiveDate| x - Duration::days(x.weekday().num_days_from_monday() as i64);
+                        (week(d) - week(start_day)).num_days() / 7 % interval == 0
+                            && weekdays.contains(&d.weekday().num_days_from_monday())
+                    }
+                    _ => {
+                        let months = (d.year() - start_day.year()) * 12 + d.month() as i32 - start_day.month() as i32;
+                        months as i64 % interval == 0 && d.day() == month_day
+                    }
+                }
+            };
+            let mut walls: Vec<NaiveDateTime> = vec![];
+            let mut d = start_day;
+            while d < NaiveDate::from_ymd_opt(2028, 6, 1).unwrap() {
+                if matches(d) {
+                    walls.push(d.and_time(start.time()));
+                }
+                d += Duration::days(1);
+            }
+            match rng.range(0, 2) {
+                0 => {}
+                1 => {
+                    let count = rng.range(1, 40) as usize;
+                    rule.push_str(&format!(";COUNT={count}"));
+                    walls.truncate(count);
+                }
+                _ => {
+                    let until = walls[rng.range(0, (walls.len() as i64 - 1).min(60)) as usize];
+                    if all_day {
+                        rule.push_str(&format!(";UNTIL={}", until.format("%Y%m%d")));
+                    } else {
+                        // UNTIL in UTC is the instant of the last start.
+                        rule.push_str(&format!(";UNTIL={}", zone.to_utc(until).format("%Y%m%dT%H%M%SZ")));
+                    }
+                    walls.retain(|w| *w <= until);
+                }
+            }
+            let to_day = |w: &NaiveDateTime| w.date();
+            // EXDATEs, moved and cancelled instances among the first ones.
+            let mut extra = String::new();
+            let mut overrides = String::new();
+            let mut moved: Vec<(NaiveDateTime, NaiveDateTime)> = vec![];
+            let mut gone: Vec<NaiveDateTime> = vec![];
+            for w in walls.iter().take(40) {
+                match rng.range(0, 9) {
+                    0 => {
+                        gone.push(*w);
+                        extra.push_str(&if all_day {
+                            format!("EXDATE;VALUE=DATE:{}\r\n", w.format("%Y%m%d"))
+                        } else {
+                            format!("EXDATE{}\r\n", zoned(*w))
+                        });
+                    }
+                    1 if !all_day => {
+                        gone.push(*w);
+                        overrides.push_str(&format!(
+                            "BEGIN:VEVENT\r\nUID:s{seed}\r\nRECURRENCE-ID{}\r\nSTATUS:CANCELLED\r\nDTSTART{}\r\nEND:VEVENT\r\n",
+                            zoned(*w),
+                            zoned(*w)
+                        ));
+                    }
+                    2 if !all_day => {
+                        let to = *w + Duration::hours(rng.range(-30, 30));
+                        moved.push((*w, to));
+                        overrides.push_str(&format!(
+                            "BEGIN:VEVENT\r\nUID:s{seed}\r\nRECURRENCE-ID{}\r\nSUMMARY:moved\r\nDTSTART{}\r\nDTEND{}\r\nEND:VEVENT\r\n",
+                            zoned(*w),
+                            zoned(to),
+                            zoned(to + length)
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            let tz_block = if kind == 3 {
+                OUTLOOK_TZ.replace("W. Europe Standard Time", "(UTC+01:00) Amsterdam\\, Berlin")
+            } else {
+                String::new()
+            };
+            let body = if all_day {
+                format!(
+                    "BEGIN:VEVENT\r\nUID:s{seed}\r\nSUMMARY:series\r\nDTSTART;VALUE=DATE:{}\r\nDTEND;VALUE=DATE:{}\r\nRRULE:{rule}\r\n{extra}END:VEVENT\r\n",
+                    start.format("%Y%m%d"),
+                    (start_day + Duration::days(1)).format("%Y%m%d")
+                )
+            } else {
+                format!(
+                    "{tz_block}BEGIN:VEVENT\r\nUID:s{seed}\r\nSUMMARY:series\r\nDTSTART{}\r\nDTEND{}\r\nRRULE:{rule}\r\n{extra}END:VEVENT\r\n{overrides}",
+                    zoned(start),
+                    zoned(start + length)
+                )
+            };
+            let from = utc(2026, 1, 1, 0, 0) + Duration::days(rng.range(0, 400));
+            let to = from + Duration::days(rng.range(1, 120));
+            let local = berlin();
+            let place = |w: NaiveDateTime| -> (DateTime<Utc>, DateTime<Utc>) {
+                if all_day {
+                    (
+                        local.to_utc(to_day(&w).and_hms_opt(0, 0, 0).unwrap()),
+                        local.to_utc((to_day(&w) + Duration::days(1)).and_hms_opt(0, 0, 0).unwrap()),
+                    )
+                } else {
+                    (zone.to_utc(w), zone.to_utc(w) + length)
+                }
+            };
+            let mut want: Vec<(DateTime<Utc>, DateTime<Utc>)> = walls
+                .iter()
+                .filter(|w| !gone.contains(w))
+                .map(|w| match moved.iter().find(|(from, _)| from == w) {
+                    Some((_, to)) => (zone.to_utc(*to), zone.to_utc(*to) + length),
+                    None => place(*w),
+                })
+                .filter(|(s, e)| *s < to && *e > from)
+                .collect();
+            want.sort();
+            let mut have: Vec<(DateTime<Utc>, DateTime<Utc>)> =
+                parse(&cal(&body), (from, to), &local, ALL).unwrap().iter().map(|e| (e.start, e.end)).collect();
+            have.sort();
+            assert_eq!(have, want, "seed {seed}: window {from} – {to}\n{body}");
+        }
+    }
 }

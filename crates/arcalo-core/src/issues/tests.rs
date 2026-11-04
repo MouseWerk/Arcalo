@@ -260,6 +260,20 @@ fn search_pages_continue_until_the_end() {
 }
 
 #[test]
+fn the_worklogs_of_a_busy_issue_are_read_to_the_last_page() {
+    // A retry looks for its worklog among all of them: on an issue with more than one page
+    // (Cloud: 5000), the newest come last.
+    let w = json!({ "id": "1", "started": "2026-09-23T10:00:00.000+0000", "timeSpentSeconds": 60 });
+    let page = |start: u64, n: usize, total: u64| json!({ "startAt": start, "maxResults": 5000, "total": total, "worklogs": vec![w.clone(); n] });
+    assert_eq!(worklog_page_next(&page(0, 5000, 7200), 0), Some(5000));
+    assert_eq!(worklog_page_next(&page(5000, 2200, 7200), 5000), None);
+    // Server answers all at once; an empty page or no total ends it.
+    assert_eq!(worklog_page_next(&page(0, 30, 30), 0), None);
+    assert_eq!(worklog_page_next(&page(0, 0, 30), 0), None);
+    assert_eq!(worklog_page_next(&json!({ "worklogs": [w] }), 0), None);
+}
+
+#[test]
 fn bodies_and_accounts() {
     let adf = body_value(SiteKind::Cloud, "One\ntwo\n\nThree");
     assert_eq!(adf_to_text(&adf), "One\ntwo\n\nThree");
