@@ -649,6 +649,55 @@ fn status_report_per_scope_and_period() {
     });
 }
 
+/// q124 R2D-1: the summary of a status report went to a cloud model although text of a private
+/// page was in it: a note changed in the period that is private by its front matter tags only,
+/// and the due tasks of a `#privat` note not changed in the period.
+#[test]
+fn status_report_with_text_of_a_private_page_stays_local() {
+    with_lang(Language::De, || {
+        let (db, _) = crate::feed::seeded();
+        let mut s = Settings::default();
+        s.router.private_markers = vec!["#privat".into()];
+        let today = day(2026, 10, 2);
+        let folder = db.create_page(None, "Kunde", None).unwrap();
+        let req = ReportRequest {
+            scope: Scope { kind: ScopeKind::Folder, id: folder.id.to_string(), label: "Kunde".into() },
+            period: Period { kind: PeriodKind::ThisWeek, from: None, to: None },
+            sections: vec![],
+            ai: true,
+        };
+        let a = db.create_page(Some(folder.id), "Gespräch", None).unwrap();
+        db.save_page_content(a.id, "## Entscheidungen\n\n- Rabatt von 30 Prozent\n").unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2026-10-01T08:00:00Z'", []).unwrap();
+        let r = status::build(&db, &req, &s, today, &Berlin).unwrap();
+        assert!(!r.private, "nothing private yet");
+
+        // Private by its front matter tags (no marker in the text as `#privat`).
+        db.save_page_content(a.id, "---\ntags: [privat]\n---\n## Entscheidungen\n\n- Rabatt von 30 Prozent\n").unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2026-10-01T08:00:00Z'", []).unwrap();
+        let r = status::build(&db, &req, &s, today, &Berlin).unwrap();
+        assert!(status::ai_messages(&r)[1].content.as_deref().unwrap().contains("Rabatt"));
+        assert!(r.private, "a decision of a page tagged private");
+
+        // A `#privat` note not changed in the period: its due task is a deadline of the report.
+        db.save_page_content(a.id, "Nichts Besonderes.\n").unwrap();
+        let b = db.create_page(Some(folder.id), "Gehalt", None).unwrap();
+        db.save_page_content(b.id, "#privat\n\n- [ ] Gehaltsgespräch Müller due:2026-10-05\n").unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2026-10-01T08:00:00Z' WHERE id = ?1", [a.id]).unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2026-08-01T08:00:00Z' WHERE id = ?1", [b.id]).unwrap();
+        let r = status::build(&db, &req, &s, today, &Berlin).unwrap();
+        assert!(status::ai_messages(&r)[1].content.as_deref().unwrap().contains("Gehaltsgespräch"));
+        assert!(r.private, "the task of a private page");
+
+        // Without a due date the task is not in the report: nothing private is sent.
+        db.save_page_content(b.id, "#privat\n\n- [ ] Gehaltsgespräch Müller\n").unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2026-08-01T08:00:00Z' WHERE id = ?1", [b.id]).unwrap();
+        let r = status::build(&db, &req, &s, today, &Berlin).unwrap();
+        assert!(!status::ai_messages(&r)[1].content.as_deref().unwrap().contains("Gehalt"));
+        assert!(!r.private);
+    });
+}
+
 #[test]
 fn settings_step_adds_the_prep_keys() {
     let mut v = serde_json::json!({ "version": 7, "briefing": { "mode": "start" } });
