@@ -1996,6 +1996,52 @@ fn refusal(out: &GitOutput) -> Option<String> {
     })
 }
 
+/// The server refused what was pushed ([`refusal`]: a hook such as GitHub's check for files over
+/// 100 MB, push protection, a quota) or found the upload too large (HTTP 413, a pack size limit).
+/// A connection that failed is not that: the same push goes through later.
+fn refused_upload(out: &GitOutput) -> bool {
+    let lower = out.stderr.to_ascii_lowercase();
+    refusal(out).is_some()
+        || ["http 413", "entity too large", "pack exceeds", "exceeds maximum allowed size", "file size limit"]
+            .iter()
+            .any(|p| lower.contains(p))
+}
+
+/// Folds the commits the server does not have (`tip..HEAD`) into one with the same state, after a
+/// push the server refused ([`refused_upload`]). Every commit is pushed with its files: one that
+/// held a file the server refuses (too large for GitHub, a server's size limit) was refused at
+/// every later sync, also when the file was long removed here. Only while no pull waits to be
+/// taken over (its record names the commits before it) and when there is more than one such
+/// commit. Returns whether HEAD changed.
+fn fold_unpushed(
+    git: &Git,
+    repo: &Path,
+    tip: Option<&str>,
+    identity: &[String; 2],
+    now: &DateTime<Local>,
+) -> Result<bool> {
+    let Some(tip) = tip else { return Ok(false) };
+    if !read_waiting(repo).is_ok_and(|w| w.is_empty()) || fs::metadata(pending_file(repo)).is_ok() {
+        return Ok(false);
+    }
+    if !git.run(Some(repo), &["merge-base", "--is-ancestor", tip, "HEAD"])?.ok {
+        return Ok(false);
+    }
+    // One commit on top of the server's: nothing to fold (a merge's first parent is this side's).
+    let head = rev(git, repo, "HEAD")?;
+    if head.as_deref() == Some(tip) || rev(git, repo, "HEAD^")?.as_deref() == Some(tip) {
+        return Ok(false);
+    }
+    git.check(Some(repo), &["reset", "-q", "--soft", tip])?;
+    let changed = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
+    let changed = changed.split('\0').filter(|n| !n.is_empty()).count();
+    if changed > 0 {
+        let msg = commit_message(now, changed);
+        git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
+    }
+    Ok(true)
+}
+
 /// The error of a failed push: [`refusal`], else git's message.
 fn push_error(git: &Git, out: &GitOutput) -> Error {
     match refusal(out) {
@@ -2598,7 +2644,10 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         return Ok(done(short(git)?, branch, false, pulled, renamed, files));
     }
     let target = format!("HEAD:refs/heads/{branch}");
-    let push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
+    let mut push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
+    if !push.ok && refused_upload(&push) && fold_unpushed(git, repo, tip.as_deref(), &identity, &req.now)? {
+        push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
+    }
     if push.ok {
         return Ok(done(short(git)?, branch, false, pulled, renamed, files));
     }
@@ -5767,6 +5816,63 @@ mod safety_tests {
         let branches = sh(&r.base.join("remote.git"), &["for-each-ref", "--format=%(refname)"]);
         assert_eq!(branches.trim(), "refs/heads/main", "no fallback branch");
         assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]), "eins\n");
+    }
+
+    /// A bare remote whose pre-receive hook refuses a push that carries a file named `name` in
+    /// any of its commits, as GitHub does for a file over 100 MB (it checks every object pushed,
+    /// not only the newest state).
+    #[cfg(unix)]
+    fn refuse_file(bare: &Path, name: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = bare.join("hooks").join("pre-receive");
+        put(
+            &hook,
+            &format!(
+                "#!/bin/sh\nwhile read old new ref; do\n  range=$new\n  case $old in 0000000*) ;; *) range=$old..$new ;; esac\n  \
+                 if git rev-list --objects $range | grep -q '{name}$'; then\n    \
+                 echo 'error: GH001: Large files detected. File attachments/{name} is 120.00 MB' >&2\n    exit 1\n  fi\n\
+                 done\nexit 0\n"
+            ),
+        );
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// A file the server refuses (too large for GitHub, a server's size limit): the sync names it,
+    /// and once it is removed here the sync goes on. Before, the commit that held it stayed among
+    /// the ones to push, so every later sync was refused for a file long gone.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_the_server_refuses_stops_the_sync_only_until_it_is_removed() {
+        if !git_available() || Git::new(None, "").is_embedded() {
+            return;
+        }
+        let r = Remote::new("refused-file");
+        let bare = r.base.join("remote.git");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins\n");
+        r.sync("a").unwrap();
+        refuse_file(&bare, "video.mp4");
+        put(&a.join("attachments/video.mp4"), "sehr groß");
+        put(&a.join("Notiz.md"), "zwei\n\n![[video.mp4]]\n");
+        for _ in 0..2 {
+            let err = r.sync("a").unwrap_err().to_string();
+            assert!(err.contains("video.mp4") && err.contains("GH001"), "{err}");
+        }
+        fs::remove_file(a.join("attachments/video.mp4")).unwrap();
+        put(&a.join("Notiz.md"), "drei\n");
+        r.sync("a").unwrap();
+        assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "drei\n");
+        let pushed = sh(&bare, &["rev-list", "--objects", "main"]);
+        assert!(!pushed.contains("video.mp4"), "{pushed}");
+        // The other computer gets the state; later syncs go on as usual.
+        let b = r.mirror("b");
+        mark(&b);
+        r.sync("b").unwrap();
+        put(&a.join("Notiz.md"), "vier\n");
+        r.sync("a").unwrap();
+        assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "vier\n");
+        assert_eq!(sh(&bare, &["rev-list", "--count", "--merges", "main"]).trim(), "0");
     }
 
     /// A text file the user attached (a CSV exported by Excel, with CRLF line ends) is stored byte

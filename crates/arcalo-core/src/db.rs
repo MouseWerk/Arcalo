@@ -93,6 +93,11 @@ pub fn is_newer_schema(message: &str) -> bool {
     message.contains(NEWER_SCHEMA) || message.contains(NEWER_SCHEMA_EN)
 }
 
+/// The schema version this build migrates to.
+pub fn schema_known() -> usize {
+    MIGRATIONS.len()
+}
+
 /// Refuses a schema version this build does not know.
 fn check_not_newer(version: usize) -> Result<()> {
     if version > MIGRATIONS.len() {

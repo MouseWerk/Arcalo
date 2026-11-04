@@ -132,12 +132,13 @@ page, on a blocking thread).
   recovery can use it without the database. Credentials are the operating system's (Windows session, Keychain, mounts).
 - **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Arcalo backups in
   the backup folder or a destination, copies the file into the data folder as `restore-pending.db` (checksum and
-  `PRAGMA quick_check` verified) and the UI restarts; the next start renames the database to
-  `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it. When the replaced database
-  was encrypted and the backup is plain (from before the encryption), the encryption is requested again
-  (`backupdest::keep_encrypted`), so the same start encrypts it before opening; the start-up recovery does the same
-  when this computer has a database key. Both write `sync-after-restore.json`: the next Git sync compares the
-  restored mirror with the server's newest state (`gitsync::check_restore`, nothing committed) and, when notes
+  `PRAGMA quick_check` verified, a backup of a newer schema refused: `check_schema`) and the UI restarts; the next start
+  renames the database to `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it. When the
+  replaced database was encrypted and the backup is plain (from before the encryption), the encryption is requested again
+  (`backupdest::keep_encrypted`), so the same start encrypts it before opening; the start-up recovery does the same when this
+  computer has a database key (and skips backups of a newer schema). Both, and the return to the version before an
+  update (`rollback::restore`), write `sync-after-restore.json`: the next Git sync compares the restored mirror with the
+  server's newest state (`gitsync::check_restore`, nothing committed) and, when notes
   differ, stops with a question (Settings → Sicherung): `pull_restored` returns the differences as remote changes
   (a restored text found in the file's server history is taken over, the page keeps it as a version; one never on the
   server becomes a conflict; notes only here stay), `advance_to_server` + a sync with deletions allowed commits the
@@ -214,7 +215,10 @@ page, on a blocking thread).
   refused because the branch moved on (`! [rejected] … (fetch first)` or `(non-fast-forward)`, `diverged`) is merged; a
   refusal by the server itself (`! [remote rejected]`: a hook, push protection, a protected branch, a file too large)
   stops the sync with the reason and the server's `remote:` lines (`refusal`; libgit2: the push status and the side-band
-  messages), and so does a fetch that shows the server did not move on (merge base = the server's tip). A diverged push
+  messages), and so does a fetch that shows the server did not move on (merge base = the server's tip). Before it stops,
+  a refused upload (`refused_upload`: such a refusal, HTTP 413, a pack size limit) folds the commits the server does not
+  have into one with the same state and pushes once more (`fold_unpushed`, not while a pull waits to be taken over), so a
+  file removed here no longer blocks every later sync from an older commit. A diverged push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>` (`gitsync::device_name`; a phone, which
   sees no host name, is `android-<model>-<id>` with an id made once and kept in `<data dir>/device-id`). Files only

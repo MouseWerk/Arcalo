@@ -5736,7 +5736,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(".annalo-health"), b"{}").unwrap();
         assert!(secrets::older_version_ran(&dir));
-        arcalo_core::update_state::begin_start(&dir, "1.16.0", None);
+        arcalo_core::update_state::begin_start(&dir, "1.16.0", None, chrono::Utc::now());
         assert!(!secrets::older_version_ran(&dir), "gone after the start count");
         let _ = std::fs::remove_dir_all(&dir);
         let code = include_str!("lib.rs");

@@ -54,7 +54,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
         return;
     }
     let record = RollbackRecord::load(dir);
-    let check = st::begin_start(dir, version, record.as_ref());
+    let check = st::begin_start(dir, version, record.as_ref(), Utc::now());
     if test_var("ARCALO_TEST_FAIL_START").is_some() {
         crate::devlog::warn("update", "test: start fails on purpose");
         std::process::exit(3);
@@ -67,7 +67,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
         StartCheck::OfferRollback { from, to, failures } => {
             crate::devlog::error("update", format!("{failures} starts of {to} failed in a row, offering {from}"));
             let Some(record) = record else { return };
-            if !ask(&from, &to) {
+            if !ask(&from, &to, record.created) {
                 crate::devlog::info("update", "rollback declined");
                 st::reset_failures(dir, version);
                 return;
@@ -104,15 +104,17 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
     }
 }
 
-fn ask(from: &str, to: &str) -> bool {
+fn ask(from: &str, to: &str, updated: chrono::DateTime<Utc>) -> bool {
     if let Some(answer) = test_var("ARCALO_TEST_ROLLBACK_ANSWER") {
         return answer.eq_ignore_ascii_case("yes");
     }
+    let local = updated.with_timezone(&chrono::Local);
+    let (de, en) = (local.format("%d.%m.%Y, %H:%M"), local.format("%Y-%m-%d %H:%M"));
     let text = trf!(
         "Arcalo {to} konnte zweimal nicht starten – zu {from} zurückkehren?\n\nDie Datenbank wird auf den Stand vor dem Update \
-         zurückgesetzt; Änderungen seit dem Update gehen verloren. Version {to} wird danach übersprungen.",
-        "Arcalo {to} could not start twice – return to {from}?\n\nThe database is put back to its state before the update; \
-         changes made since the update are lost. Version {to} is skipped from then on."
+         ({de}) zurückgesetzt; Änderungen seit dem Update gehen verloren. Version {to} wird danach übersprungen.",
+        "Arcalo {to} could not start twice – return to {from}?\n\nThe database is put back to its state before the update \
+         ({en}); changes made since the update are lost. Version {to} is skipped from then on."
     );
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Warning)
@@ -170,6 +172,13 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
         }
     };
     mark_rolled_back(dir, record, st::HEALTH_FILE);
+    // As after restoring a backup: the next Git sync compares with the server and asks before it
+    // uploads the state of before the update. Otherwise it pushed that state as new work, over every
+    // note changed since, also the ones other computers changed and this one had taken over.
+    let name = backup.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if let Err(e) = arcalo_core::gitsync::mark_restored(dir, name, Utc::now()) {
+        crate::devlog::error("update", format!("rollback not noted for the Git sync: {e}"));
+    }
     // A version from before the app identifier changed (1.15) reads the folder of the old one:
     // it learns there that the version it returns from is bad and tells the user.
     if let Some(old) = legacy_folder(dir, &record.from) {
@@ -445,10 +454,14 @@ mod tests {
         };
         assert!(restore(&dir, &record).is_err());
         assert_eq!(std::fs::read(&db).unwrap(), b"migrated by the new version");
+        assert!(arcalo_core::gitsync::read_restored(&dir).is_none(), "nothing restored");
         // Nothing to swap (a .deb, test runs): the database returns.
         let record = RollbackRecord { kind: CopyKind::None, ..record };
         assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
         assert_eq!(std::fs::read(&db).unwrap(), b"before the update");
+        // The Git sync compares with the server before it uploads the older state.
+        let noted = arcalo_core::gitsync::read_restored(&dir).expect("noted for the Git sync");
+        assert_eq!((noted.from.as_str(), noted.checked), ("pre-update.db", false));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
