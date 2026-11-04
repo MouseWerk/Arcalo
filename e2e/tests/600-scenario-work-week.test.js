@@ -261,6 +261,26 @@ test("Friday: Thursday's hours on the Jira issue are in Jira as its worklog", as
   );
 });
 
+test("the assistant's tools answer about last week with the booked hours", async () => {
+  const tool = (name, args) => app.invoke("ai_run_workspace_tool", { name, arguments: JSON.stringify(args) });
+  const summary = JSON.parse(await tool("time_summary", { from: iso(day(0)), to: iso(day(4)) }));
+  assert.equal(summary.total_hours, BOOKED.reduce((a, b) => a + b, 0) / 60);
+  assert.deepEqual(
+    summary.days.map((d) => [d.date, d.hours]),
+    BOOKED.map((m, i) => [iso(day(i)), m / 60]),
+  );
+  assert.deepEqual(
+    summary.items.map((i) => [i.label, i.hours]),
+    [
+      ["NP-6000/10", 30],
+      ["NP-6000/20", 1.5],
+    ],
+  );
+  // The open tasks: the protocol from the review, the weekly report's next occurrence.
+  const tasks = JSON.parse(await tool("list_tasks", { status: "open" }));
+  assert.deepEqual(tasks.map((t) => t.text).sort(), ["Protokoll an Anna schicken", "Wochenbericht schreiben"]);
+});
+
 const RIGHT = ".workspace > .pane:last-child > .pane-content:not([hidden])";
 const weekSum = () => app.browser.execute((s) => document.querySelector(`${s} .dw-week-sum .dw-big`)?.textContent ?? null, RIGHT);
 
