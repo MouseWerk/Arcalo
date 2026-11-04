@@ -412,7 +412,9 @@ fn in_place(bs: &[String], ms: &[String], ts: &[String]) -> Option<Vec<Chunk>> {
     if bs.len() != ms.len() || bs.len() != ts.len() {
         return None;
     }
-    let one = |x: &String| std::slice::from_ref(x);
+    fn one(x: &String) -> &[String] {
+        std::slice::from_ref(x)
+    }
     let mut out = Vec::with_capacity(bs.len());
     for ((b, m), t) in bs.iter().zip(ms).zip(ts) {
         out.push(if same(one(m), one(b)) {
