@@ -603,26 +603,35 @@ impl Database {
             if !update_links || old == title {
                 return Ok(0);
             }
+            Ok(self.relink(&old, title, &Default::default())?.len())
+        })
+    }
+
+    /// Rewrites `[[old]]` links (see [`replace_link_target`], note cards of canvases) to `new` in
+    /// every page but `skip`; the text before is kept as a version. Returns the pages changed.
+    pub fn relink(&self, old: &str, new: &str, skip: &std::collections::HashSet<i64>) -> Result<Vec<i64>> {
+        self.atomic(|| {
+            let title = new;
             let sources: Vec<(i64, String)> = {
                 let mut st = self.conn().prepare(
                     "SELECT p.id, p.content FROM page_links l JOIN pages p ON p.id = l.from_page WHERE l.target = ?1",
                 )?;
-                st.query_map([crate::nfc::nfc(&old).to_lowercase()], |r| Ok((r.get(0)?, r.get(1)?)))?
+                st.query_map([crate::nfc::nfc(old).to_lowercase()], |r| Ok((r.get(0)?, r.get(1)?)))?
                     .collect::<rusqlite::Result<_>>()?
             };
-            let mut changed = 0;
+            let mut changed = vec![];
             let now = chrono::Utc::now();
-            for (pid, content) in sources {
+            for (pid, content) in sources.into_iter().filter(|(pid, _)| !skip.contains(pid)) {
                 let updated = if self.is_canvas(pid)? {
-                    crate::canvas::rename_page(&content, &old, title)
+                    crate::canvas::rename_page(&content, old, title)
                 } else {
-                    replace_link_target(&content, &old, title)
+                    replace_link_target(&content, old, title)
                 };
                 if updated != content {
                     // Rewritten by the rename, not by the user: keep what they wrote.
                     self.store_version(pid, &content, now)?;
                     self.save_page_content_at(pid, &updated, now)?;
-                    changed += 1;
+                    changed.push(pid);
                 }
             }
             Ok(changed)
@@ -731,8 +740,10 @@ impl Database {
         if let Some(p) = self.daily_page(&key)? {
             return Ok(Some(p));
         }
-        let settings = self.load_settings().unwrap_or_default();
-        for title in [settings.notes.daily_title.title(date), key.clone()] {
+        // This computer's format first, then the others (another computer's format or language).
+        let own = self.load_settings().unwrap_or_default().notes.daily_title.title(date);
+        let others = crate::prefs::DailyTitle::every_title(date).into_iter().filter(|t| *t != own);
+        for title in std::iter::once(own.clone()).chain(others) {
             if let Some(p) = self.page_by_title(&title)?
                 && p.daily_date.is_none()
                 && p.kind.is_none()
@@ -744,19 +755,17 @@ impl Database {
         Ok(None)
     }
 
-    /// Marks the pages among `ids` that are titled like a daily note (in the title format of the
-    /// settings, or as the ISO date) as the daily notes of their days, where those days have
-    /// none yet: notes taken over from another computer arrive without the mark. Returns the
-    /// pages marked.
+    /// Marks the pages among `ids` that are titled like a daily note (in any title format, see
+    /// [`daily_title_date`]) as the daily notes of their days, where those days have none yet:
+    /// notes taken over from another computer arrive without the mark. Returns the pages marked.
     pub fn adopt_daily_notes(&self, ids: &[i64]) -> Result<Vec<i64>> {
-        let style = self.load_settings().unwrap_or_default().notes.daily_title;
         let mut marked = vec![];
         for &id in ids {
             let p = self.page(id)?;
             if p.deleted_at.is_some() || p.daily_date.is_some() || p.kind.is_some() {
                 continue;
             }
-            let Some(date) = daily_title_date(&p.title, style) else { continue };
+            let Some(date) = daily_title_date(&p.title) else { continue };
             let key = date.format("%Y-%m-%d").to_string();
             if self.daily_page(&key)?.is_none() {
                 self.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![id, key])?;
@@ -809,9 +818,11 @@ impl Database {
     }
 }
 
-/// The day a page titled like a daily note stands for: the title the settings give that day's
-/// note, or its ISO date (the title used when the settings' one was taken).
-pub fn daily_title_date(title: &str, style: crate::prefs::DailyTitle) -> Option<NaiveDate> {
+/// The day a page titled like a daily note stands for: a title some computer gives that day's
+/// note ([`crate::prefs::DailyTitle::every_title`]: every format, the long one in both
+/// languages), or its ISO date (the title used when the settings' one was taken). Not only this
+/// computer's format: a daily note of a computer set to another one arrives with its title.
+pub fn daily_title_date(title: &str) -> Option<NaiveDate> {
     let title = title.trim();
     if let Ok(d) = NaiveDate::parse_from_str(title, "%Y-%m-%d")
         && d.format("%Y-%m-%d").to_string() == title
@@ -821,7 +832,7 @@ pub fn daily_title_date(title: &str, style: crate::prefs::DailyTitle) -> Option<
     // The date is the last part of every other format („24.09.2026“, „Mittwoch, 24.09.2026“).
     let tail = title.rsplit(' ').next()?;
     let d = NaiveDate::parse_from_str(tail, "%d.%m.%Y").ok()?;
-    (style.title(d) == title).then_some(d)
+    crate::prefs::DailyTitle::every_title(d).iter().any(|t| t == title).then_some(d)
 }
 
 /// Rewrites `[[old]]`, `[[old|alias]]` and `[[old#heading]]` (case-insensitive, decomposed
@@ -1180,6 +1191,26 @@ mod tests {
         assert_eq!(db.daily_note(NaiveDate::from_ymd_opt(2026, 11, 5).unwrap()).unwrap().id, long.id);
         assert_eq!(db.daily_note(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()).unwrap().id, iso.id);
         assert!(db.adopt_daily_notes(&ids).unwrap().is_empty(), "the days have their notes");
+    }
+
+    /// Another computer of the workspace titles its daily notes in another format („04.11.2026“
+    /// against this computer's „2026-11-04“) or language („Wednesday, 04.11.2026“): its notes are
+    /// this computer's daily notes of their days too, not a second one beside them.
+    #[test]
+    fn a_daily_note_of_a_computer_with_another_title_format_is_the_daily_note_here() {
+        let db = Database::open_in_memory().unwrap();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+        // Taken over before 1.23 (not marked): found by „Heute“.
+        let de = db.create_page(None, "04.11.2026", Some("file-text")).unwrap();
+        assert_eq!(db.daily_note(day(4)).unwrap().id, de.id);
+        // Taken over now: marked on arrival.
+        let en = db.create_page(None, "Thursday, 05.11.2026", None).unwrap();
+        let long = db.create_page(None, "Freitag, 06.11.2026", None).unwrap();
+        let wrong_day = db.create_page(None, "Friday, 07.11.2026", None).unwrap();
+        assert_eq!(db.adopt_daily_notes(&[en.id, long.id, wrong_day.id]).unwrap(), [en.id, long.id]);
+        assert_eq!(db.daily_note(day(5)).unwrap().id, en.id);
+        assert_eq!(db.daily_note(day(6)).unwrap().id, long.id);
+        assert_eq!(db.list_pages().unwrap().len(), 4, "no second note of a day");
     }
 
     #[test]

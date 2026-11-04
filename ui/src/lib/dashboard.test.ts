@@ -25,6 +25,7 @@ import {
   WIDGETS,
 } from "./dashboard";
 import { overlaps } from "./dashgrid";
+import { setFormatPrefs } from "./format";
 import type { Board, DayOverview, GridWidget, LegacyWidget } from "./types";
 
 const noOverlaps = (ws: GridWidget[]) => {
@@ -207,6 +208,20 @@ describe("data parts", () => {
     expect(taskQueryOf({})).toMatchObject({ due: "any", tag: null, priority: 0 });
     // Two budget widgets with different settings load the budgets once.
     expect(partKey(partsOf({ kind: "budget", config: { count: 2 } }, today)[0])).toBe(partKey(partsOf({ kind: "budget" }, today)[0]));
+  });
+
+  it("counts the week and the month from Sunday when the week starts on Sunday (q124 R4D-3)", () => {
+    setFormatPrefs({ weekStartsOn: 0 });
+    try {
+      expect(partsOf({ kind: "week" }, today)).toEqual([{ kind: "week", week_start: "2026-09-20" }]);
+      expect(partsOf({ kind: "focus" }, today)).toEqual([{ kind: "focus", week_start: "2026-09-20" }]);
+      expect(partsOf({ kind: "proposal" }, today)).toEqual([{ kind: "proposal", week_start: "2026-09-20" }]);
+      expect(partsOf({ kind: "calendar" }, today)).toEqual([{ kind: "month", from: "2026-08-30", to: "2026-10-10" }]);
+      // On a Sunday its own week, not the one that ends that day.
+      expect(partsOf({ kind: "week" }, new Date(2026, 8, 27, 10))).toEqual([{ kind: "week", week_start: "2026-09-27" }]);
+    } finally {
+      setFormatPrefs({ weekStartsOn: 1 });
+    }
   });
 
   it("reviews yesterday or the last workday", () => {

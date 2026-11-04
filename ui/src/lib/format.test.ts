@@ -5,7 +5,7 @@ import { fmtApprox, fmtDuration, fmtHours, setFormatPrefs } from "./format";
 import * as dayreview from "./dayreview";
 import * as focus from "./focus";
 import { hoursLabel } from "./calendar";
-import { fileSize, importProgress, isoWeek, shownWeek, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
+import { dateLong, dateShort, fmtDate, isoDay, toDate, fileSize, importProgress, isoWeek, shownWeek, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
   const ok: [string, number][] = [
@@ -164,5 +164,28 @@ describe("shownWeek", () => {
     // Across the turn of the year: Sun 27 Dec 2026 starts the week of Mon 28 Dec (ISO week 53).
     expect(shownWeek(new Date(2026, 11, 27))).toBe(53);
     expect(shownWeek(new Date(2027, 0, 3))).toBe(1);
+  });
+});
+
+describe("days west and east of UTC (q124 R4D-1)", () => {
+  const zones = ["America/Los_Angeles", "Pacific/Honolulu", "Pacific/Auckland", "Pacific/Kiritimati"];
+  it("a bare day shows that day in every time zone", () => {
+    const before = process.env.TZ;
+    try {
+      for (const zone of zones) {
+        process.env.TZ = zone;
+        setFormatPrefs({ dateFormat: "en-us", lang: "en" });
+        expect(fmtDate("2026-11-04"), zone).toBe("11/04/2026");
+        expect(dateLong("2026-11-04"), zone).toBe("Wednesday, November 4, 2026");
+        expect(dateShort("2026-11-04"), zone).toBe("Wed 11/04");
+        setFormatPrefs({ dateFormat: "de", lang: "de" });
+        expect(fmtDate("2026-01-01"), zone).toBe("01.01.2026");
+        // A timestamp still counts in local time.
+        expect(isoDay(toDate("2026-11-04T08:00:00Z")), zone).toBe(isoDay(new Date(Date.UTC(2026, 10, 4, 8))));
+      }
+    } finally {
+      process.env.TZ = before;
+      setFormatPrefs({ dateFormat: "de", lang: "en" });
+    }
   });
 });

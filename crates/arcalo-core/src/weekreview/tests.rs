@@ -201,6 +201,9 @@ fn holidays_absences_and_targets_per_weekday() {
         assert_eq!(r.days[3].holiday.as_deref(), Some("Ascension Day"));
         let md = report_markdown(&r, &Berlin, None);
         assert!(md.contains("| Day | Booked | Target | Difference |"), "{md}");
+        // Day and month in the order of the date format (German by default, R4D-4).
+        assert!(md.contains("| Thu 14.05. (Ascension Day) |"), "{md}");
+        let md = crate::i18n::with_date_format(crate::prefs::DateFormat::EnUs, || report_markdown(&r, &Berlin, None));
         assert!(md.contains("| Thu 05/14 (Ascension Day) |"), "{md}");
     });
 }
@@ -516,4 +519,18 @@ fn a_week_with_thousands_of_open_tasks_stays_fast() {
     // Debug build on a shared machine: about 0.25 s; the eight full task lists of before took
     // well over a second on their own.
     assert!(took < std::time::Duration::from_millis(700), "week review {took:?}");
+}
+
+#[test]
+fn english_days_follow_the_date_format() {
+    use crate::prefs::DateFormat;
+    let d = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+    crate::i18n::with_lang(Language::En, || {
+        let label = |f| crate::i18n::with_date_format(f, || day_label(d));
+        assert_eq!(label(DateFormat::EnUs), "Mon 10/05");
+        assert_eq!(label(DateFormat::EnGb), "Mon 05/10");
+        assert_eq!(label(DateFormat::Iso), "Mon 10-05");
+        assert_eq!(label(DateFormat::De), "Mon 05.10.");
+    });
+    crate::i18n::with_lang(Language::De, || assert_eq!(day_label(d), "Mo 05.10."));
 }

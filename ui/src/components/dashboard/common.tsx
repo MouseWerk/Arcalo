@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CalendarPlus, Pause, Play, Repeat, Square, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
-import { fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
+import { fmtMinutes, formatPrefs, isoDay, relative, toDate } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, Task, TimeEntryRow } from "../../lib/types";
 import { Badge, Button, IconButton, Spinner } from "../ui";
@@ -28,7 +28,7 @@ export function fmt(d: Date | string, opts: Intl.DateTimeFormatOptions): string 
   const key = `${locale()}|${JSON.stringify(opts)}`;
   let f = formatters.get(key);
   if (!f) formatters.set(key, (f = new Intl.DateTimeFormat(locale(), opts)));
-  return f.format(typeof d === "string" ? new Date(d) : d);
+  return f.format(toDate(d));
 }
 export const hhmm = (d: Date | string) => fmt(d, { hour: "2-digit", minute: "2-digit" });
 

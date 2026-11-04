@@ -84,9 +84,20 @@ export function fmtApprox(m: number | null | undefined, style = prefs.hours): st
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * A date or timestamp as a `Date`. A bare day („2026-09-24“, as due dates and other days come
+ * from the backend) is that local day at noon: `new Date("2026-09-24")` reads it as midnight UTC,
+ * which is the day before west of UTC.
+ */
+export function toDate(d: Date | string): Date {
+  if (typeof d !== "string") return d;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  return day ? new Date(+day[1], +day[2] - 1, +day[3], 12) : new Date(d);
+}
+
 /** A day in the configured format: "24.09.2026", "2026-09-24", "24/09/2026" or "09/24/2026". */
 export function fmtDate(d: Date | string, style = prefs.dateFormat): string {
-  const x = typeof d === "string" ? new Date(d) : d;
+  const x = toDate(d);
   const [dd, mm, yy] = [pad2(x.getDate()), pad2(x.getMonth() + 1), x.getFullYear()];
   if (style === "iso") return isoDay(x);
   if (style === "en-gb") return `${dd}/${mm}/${yy}`;
@@ -163,7 +174,7 @@ export function clock(totalSeconds: number) {
 
 /** "Do., 24.09." / "Thu 24/09" – weekday in the display language, day and month in the regional order. */
 export const dateShort = (iso: string) => {
-  const d = new Date(iso);
+  const d = toDate(iso);
   if (prefs.dateFormat === "iso") return `${weekdayShort(d)} ${isoDay(d)}`;
   const wd = d.toLocaleDateString(prefs.lang === "de" ? "de-DE" : "en-GB", { weekday: "short" });
   return prefs.lang === "de" ? `${wd}, ${fmtDayMonth(d)}` : `${wd} ${fmtDayMonth(d)}`;
@@ -171,8 +182,8 @@ export const dateShort = (iso: string) => {
 /** "Donnerstag, 24. September 2026" / "Thursday, 24 September 2026". */
 export const dateLong = (iso: string) =>
   prefs.dateFormat === "iso"
-    ? `${new Date(iso).toLocaleDateString(dateLocale(), { weekday: "long" })}, ${isoDay(new Date(iso))}`
-    : new Date(iso).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    ? `${toDate(iso).toLocaleDateString(dateLocale(), { weekday: "long" })}, ${isoDay(toDate(iso))}`
+    : toDate(iso).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 /** Time of day, always 24 h: "14:03". */
 export const time = (iso: string) => {
   const d = new Date(iso);
@@ -202,8 +213,8 @@ export function relative(iso: string) {
   if (diff < 3600) return t("time.minutesAgo", { n: Math.floor(diff / 60) });
   if (diff < 86400) return t("time.hoursAgo", { n: Math.floor(diff / 3600) });
   if (diff < 7 * 86400) return t("time.daysAgo", { n: Math.floor(diff / 86400) });
-  if (prefs.dateFormat === "iso") return isoDay(new Date(iso));
-  return new Date(iso).toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" });
+  if (prefs.dateFormat === "iso") return isoDay(toDate(iso));
+  return toDate(iso).toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" });
 }
 
 /** File size, e.g. "812 KB" or "3,4 MB". */

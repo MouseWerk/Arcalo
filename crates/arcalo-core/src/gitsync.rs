@@ -3005,17 +3005,85 @@ fn keep_both_files(
     Ok(out)
 }
 
+/// Files of the attachments folder the server renamed (the other computer renamed them in the
+/// attachment manager: the old name gone, a new one with the same content) that this computer
+/// still has under the old name. A file this computer changed meanwhile (a drawing saved again)
+/// goes to the new name with this computer's content (a drawing with its preview): otherwise
+/// the deletion kept it under the old name, which no note links any more, and the next sync
+/// removed it, the edit lost on both computers. Returns `(old path, new path)` of each rename
+/// and of the files moved (`true`); the moved ones are handled, the others take the server's
+/// state as before. Their notes follow with [`relink_notes`].
+fn follow_file_renames(
+    git: &Git,
+    repo: &Path,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    remote: &BTreeSet<String>,
+) -> Result<Vec<(String, String, bool)>> {
+    let dir = crate::attachments::DIR_NAME;
+    let is_preview = |name: &str| {
+        name.len() > ".svg".len()
+            && name.get(name.len() - ".svg".len()..).is_some_and(|e| e.eq_ignore_ascii_case(".svg"))
+            && crate::attachments::is_drawing(&name[..name.len() - ".svg".len()])
+    };
+    // Files the server added: (path, content).
+    let mut added: Vec<(String, String)> = Vec::new();
+    for path in remote {
+        let Some(name) = attachment_name(path) else { continue };
+        if is_preview(name) || blob_id(git, repo, base, path)?.is_some() {
+            continue;
+        }
+        if let Some(id) = blob_id(git, repo, theirs, path)? {
+            added.push((path.clone(), id));
+        }
+    }
+    let mut out = Vec::new();
+    for path in remote {
+        let Some(name) = attachment_name(path) else { continue };
+        if is_preview(name) || blob_id(git, repo, theirs, path)?.is_some() {
+            continue;
+        }
+        let (Some(base_id), Some(mine_id)) = (blob_id(git, repo, base, path)?, blob_id(git, repo, ours, path)?) else {
+            continue;
+        };
+        let Some(at) = added.iter().position(|(_, id)| *id == base_id) else { continue };
+        let (new, _) = added.remove(at);
+        let edited = mine_id != base_id;
+        if edited {
+            let mut moves = vec![(path.clone(), new.clone())];
+            if crate::attachments::is_drawing(name)
+                && let Some(new_name) = attachment_name(&new)
+            {
+                let preview = format!("{dir}/{}", crate::drawings::preview_name(name));
+                if blob_id(git, repo, ours, &preview)?.is_some() {
+                    moves.push((preview, format!("{dir}/{}", crate::drawings::preview_name(new_name))));
+                }
+            }
+            // The working tree holds this computer's files (the commit just made).
+            for (from, to) in &moves {
+                fs::copy(repo.join(from), repo.join(to))?;
+                git.check(Some(repo), &["add", "--", to])?;
+                drop_path(git, repo, from)?;
+            }
+        }
+        out.push((path.clone(), new, edited));
+    }
+    Ok(out)
+}
+
 /// After a merge that renamed this computer's files ([`keep_both_files`]): its notes link to the
 /// new names. A note this computer changed is rewritten where its text stays as written here (in
 /// the working tree, or as the text a pulled change takes over); a conflict's own text (`mine`)
 /// is rewritten in the change, and its page here by the shell. Returns the renames as the shell
-/// takes them.
+/// takes them. `keep`: both files stay (on the kept list); else the old name is gone (a rename).
 fn relink_notes(
     git: &Git,
     repo: &Path,
     ours: &str,
     local: &BTreeSet<String>,
     files: &[(String, String)],
+    keep: bool,
     changes: &mut [RemoteChange],
 ) -> Result<Vec<FileRename>> {
     let names: Vec<(String, String)> = files
@@ -3061,7 +3129,9 @@ fn relink_notes(
             Some(_) => {}
         }
     }
-    add_kept(Some(git), repo, &kept_names(&out))?;
+    if keep {
+        add_kept(Some(git), repo, &kept_names(&out))?;
+    }
     Ok(out)
 }
 
@@ -3193,6 +3263,20 @@ fn merge_remote(
         handled.insert(from.clone());
         if let Some(name) = attachment_name(from) {
             handled.insert(format!("{}/{}", crate::attachments::DIR_NAME, crate::drawings::preview_name(name)));
+        }
+    }
+    // Files renamed there: one changed here goes to the new name with this computer's content.
+    let follows = follow_file_renames(git, repo, base, ours, theirs, &remote)?;
+    for (old, new, _) in follows.iter().filter(|(_, _, moved)| *moved) {
+        handled.extend([old.clone(), new.clone()]);
+        // A drawing's preview, when this computer's went along (else the server's comes in).
+        let preview = |p: &str| {
+            attachment_name(p).map(|n| format!("{}/{}", crate::attachments::DIR_NAME, crate::drawings::preview_name(n)))
+        };
+        if let (Some(from), Some(to)) = (preview(old), preview(new))
+            && repo.join(&to).exists()
+        {
+            handled.extend([from, to]);
         }
     }
     for (old, new) in &renames {
@@ -3331,7 +3415,16 @@ fn merge_remote(
     }
     // The kept list name by name; a kept file the server dropped (a computer on 1.18.0) comes back.
     merge_kept_files(git, repo, base, ours, theirs)?;
-    let renamed = if both.is_empty() { vec![] } else { relink_notes(git, repo, ours, &local, &both, &mut changes)? };
+    let mut renamed =
+        if both.is_empty() { vec![] } else { relink_notes(git, repo, ours, &local, &both, true, &mut changes)? };
+    if !follows.is_empty() {
+        // This computer's notes follow the server's renames; this computer's file takes the new
+        // name here when it moved, or when a note of this computer links it.
+        let pairs: Vec<(String, String)> = follows.iter().map(|(a, b, _)| (a.clone(), b.clone())).collect();
+        let relinked = relink_notes(git, repo, ours, &local, &pairs, false, &mut changes)?;
+        let moved = |r: &FileRename| follows.iter().any(|(a, _, m)| *m && attachment_name(a) == Some(r.from.as_str()));
+        renamed.extend(relinked.into_iter().filter(|r| !r.notes.is_empty() || moved(r)));
+    }
     let msg = trf!(
         "Abgleich mit dem Server {}",
         "Merge with the server {}",
