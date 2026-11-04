@@ -5,7 +5,8 @@ fixed four bugs in the Git sync's take-over; this round looked elsewhere: backup
 to the previous version after an update, the trash and attachments, the database and settings migrations of every
 older release, the 1.15 rename leftovers and the command line.
 
-Severity as in the plan.
+Severity as in the plan. Findings: 1 high, 2 medium, 6 low; the high and medium ones are fixed at the root
+with tests.
 
 ## Findings
 
@@ -46,8 +47,70 @@ Severity as in the plan.
   offer came without a copy and 90 days after the update); e2e `127-update-policy-rollback` (the offer after two
   failed starts of a fresh update) still passes.
 
+### R2B-3 A file the Git server refused stopped every later sync, also after it was removed (medium, fixed)
+
+- Symptom: a push the server refuses for a file in it (GitHub's „GH001: Large files detected“ for a file over
+  100 MB, a size limit of a self-hosted server, a quota) stops the sync with the server's reason, as intended. The
+  user then deletes the file (or the attachment, or switches the database copy off), and every later sync is still
+  refused for the same file: no other computer gets anything from this one any more, and only a hand-made rewrite
+  of the history in `git-sync` helps.
+- Root cause: every commit is pushed with its files. The sync committed each state on top of the previous one, so
+  the commit that held the file stayed among the commits the server does not have, and the server checks all of
+  them, not only the newest state.
+- Fix: when the server refuses a push (`refused_upload`: its hook, HTTP 413, a pack size limit; not a connection
+  that failed), the commits the server does not have are folded into one with the same state (`gitsync::fold_unpushed`: `reset --soft` to the server's commit and one
+  commit, also on libgit2) and the push is tried once more. Not while a pull waits to be taken over (its record
+  names the commits before it), and not for a single commit. The file still there is refused again with its name;
+  once it is gone, the push goes through.
+- Tests: `gitsync::safety_tests::a_file_the_server_refuses_stops_the_sync_only_until_it_is_removed` (real git
+  with a pre-receive hook that checks every pushed object, as GitHub does; failed: the sync after removing the file
+  was refused again), `gitlib::tests` (the soft reset on libgit2); `a_push_the_server_refuses_shows_the_servers_reason`
+  still passes.
+
 ## Low (listed, not fixed)
+
+- L1. Restoring a page from the trash does not bring back attachments it embeds that were deleted meanwhile and
+  lie in the file trash (restoring a version does, `bring_back_missing`). The attachment manager warns when a file
+  is used by a page in the trash, and the file can be restored from the file trash by hand.
+- L2. Renaming an attachment rewrites every page that embeds it, not the saved versions of those pages: restoring
+  an older version embeds the old name, which no longer exists.
+- L3. `arcalo settings set` writes the settings the command read when it started over the stored ones: a setting
+  the app changes in the same few milliseconds is undone (the app saves whole sections the same way).
+- L4. `arcalo pages create ""` ends with exit code 3 (conflict) instead of 1 (wrong input); `arcalo pages restore
+  Kind` for a subpage trashed together with its page says „nicht gefunden“ instead of naming the page to restore
+  (the app's trash offers only the page too).
+- L5. A Windows computer whose copy of the old data folder failed at this start (1.15 migration, `Outcome::usable`
+  gives the old folder) while an earlier copy exists: the command line uses the new folder (`app_dirs` looks only for
+  a database there), the app the old one. Needs a failed copy after an older version wrote to the old folder.
+- L6. A shared settings section („Für alle Arbeitsbereiche“) written by an older version on the same computer is
+  taken over without the settings migration steps: keys it lacks fall back to their defaults in the other
+  workspaces. Needs two versions on one computer (a portable copy next to the installed one).
 
 ## Probed without a finding
 
+- Database migrations: an old workspace of every schema version with pages, subpages, tasks, links, a booking and
+  settings (`a_populated_workspace_of_every_older_schema_upgrades_without_loss`), the line-end migration 0037, the
+  page id floor 0035, the table rebuild of 0018; every foreign key to `pages` (a purge cascades or keeps bookings).
+- Settings migrations: every step of `settings_migrate.rs` read for idempotency (a 1.9 that saves over newer
+  settings drops `version`, the chain runs again without undoing a choice), the fixtures 1.6 to 1.18.
+- The trash: a page trashed with its subpages, a subpage trashed before its page, restoring into a trashed or
+  purged parent (to the top level), title and daily-note clashes on restore, emptying with subpages trashed
+  separately, purge of a page whose files other pages embed (files are never deleted with pages).
+- Backups: rotation (`prune`, both name prefixes, a clock that ran ahead), tagged pre-update backups, the
+  interrupted backup (`.partial`), the restore's set-aside and undo, an encrypted workspace restored from a backup of
+  before the encryption, the Markdown mirror's interrupted swap.
+- The update path: feed parsing (unknown platforms, versions with `v`), a resumed download that the server answers
+  with another range, the signature with the signed version, „Jetzt neu starten“ with unsaved edits (the editors
+  are flushed first, e2e 126 and 376), the manual return in Settings → Über (names its date).
+- The 1.15 rename: the 1.17 cleanup's conditions, legacy markers and environment variables (`ANNALO_DB` still
+  names the database for the command line), the autostart and shortcut migration.
+- The command line: the page, trash, settings, time and export subcommands with wrong input (unknown page, a move
+  into itself, a malformed date, an unknown format or key), a database of a newer version (refused, exit 4), a
+  file that is no database, a missing data folder (exit 2), JSON errors.
+- Git sync push side: a push the server refuses names the server's reason; the authentication failure messages;
+  a remote with rewritten history (merged from the common commit; without one this computer pushes to a branch of
+  its own).
+
 ## Round 1 fixes
+
+Round 1's tests (`syncmerge.rs`, `vault.rs`, e2e 462) pass on this branch.

@@ -1996,12 +1996,23 @@ fn refusal(out: &GitOutput) -> Option<String> {
     })
 }
 
-/// Folds the commits the server does not have (`tip..HEAD`) into one with the same state, for a
-/// push that failed for another reason than the server moving on. Every commit is pushed with its
-/// files: one that held a file the server refuses (too large for GitHub, a server's size limit, a
-/// quota) was refused at every later sync, also when the file was long removed here. Only while no
-/// pull waits to be taken over (its record names the commits before it) and when there is more
-/// than one such commit. Returns whether HEAD changed.
+/// The server refused what was pushed ([`refusal`]: a hook such as GitHub's check for files over
+/// 100 MB, push protection, a quota) or found the upload too large (HTTP 413, a pack size limit).
+/// A connection that failed is not that: the same push goes through later.
+fn refused_upload(out: &GitOutput) -> bool {
+    let lower = out.stderr.to_ascii_lowercase();
+    refusal(out).is_some()
+        || ["http 413", "entity too large", "pack exceeds", "exceeds maximum allowed size", "file size limit"]
+            .iter()
+            .any(|p| lower.contains(p))
+}
+
+/// Folds the commits the server does not have (`tip..HEAD`) into one with the same state, after a
+/// push the server refused ([`refused_upload`]). Every commit is pushed with its files: one that
+/// held a file the server refuses (too large for GitHub, a server's size limit) was refused at
+/// every later sync, also when the file was long removed here. Only while no pull waits to be
+/// taken over (its record names the commits before it) and when there is more than one such
+/// commit. Returns whether HEAD changed.
 fn fold_unpushed(
     git: &Git,
     repo: &Path,
@@ -2634,7 +2645,7 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     }
     let target = format!("HEAD:refs/heads/{branch}");
     let mut push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
-    if !push.ok && !diverged(&push) && fold_unpushed(git, repo, tip.as_deref(), &identity, &req.now)? {
+    if !push.ok && refused_upload(&push) && fold_unpushed(git, repo, tip.as_deref(), &identity, &req.now)? {
         push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
     }
     if push.ok {
