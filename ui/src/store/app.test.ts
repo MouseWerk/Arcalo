@@ -161,6 +161,18 @@ describe("pinned tabs", () => {
     document.body.replaceChildren();
   });
 
+  it("moving the shown tab to another pane shows its neighbour, as closing it does", () => {
+    reset();
+    for (const k of ["tasks", "calendar", "activity", "graph"] as const) open(k);
+    const s = useApp.getState();
+    s.splitTab(idOf("graph"));
+    const [left, right] = useApp.getState().panes;
+    s.activateTab(idOf("activity"));
+    s.moveTab(idOf("activity"), right.id, right.tabs.length);
+    const after = useApp.getState().panes.find((p) => p.id === left.id)!;
+    expect(after.tabs.find((t) => t.id === after.activeTabId)?.kind).toBe("graph");
+  });
+
   it("survive a restart (the stored layout) and moving to another pane", () => {
     reset();
     open("tasks");

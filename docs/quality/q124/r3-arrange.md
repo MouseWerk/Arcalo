@@ -8,8 +8,8 @@ images, embeds, the property editor, the outline and links panels and the graph.
 wrong page be changed, can undo bring back the wrong thing, can a change be lost when tabs switch or close, can two
 panes on the same page drift apart.
 
-Severity as in the plan. Findings: 1 high, 2 medium, 9 low; the high and medium ones (and one low) are fixed at the
-root with tests.
+Severity as in the plan. Findings: 1 high, 2 medium, 9 low; the high and medium ones (and two low ones) are fixed at
+the root with tests.
 
 ## Findings
 
@@ -77,8 +77,9 @@ root with tests.
 
 ## Low (listed, not fixed)
 
-- L1 Moving the active tab to another pane makes the first tab of the old pane active, not its neighbour (closing a
-  tab picks the neighbour).
+- L1 Moving the active tab to another pane made the first tab of the old pane active, not its neighbour (closing a
+  tab picks the neighbour). Fixed on the way (`moveTab`), unit test „moving the shown tab to another pane shows its
+  neighbour“.
 - L2 The image menu acts on the position the image had when the menu opened: should the note change meanwhile (a save
   of another pane, the command line), „Größe“ or „Aus Notiz entfernen“ can act on a neighbouring node. Needs a change
   arriving within the seconds the menu is open.

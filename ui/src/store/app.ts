@@ -462,7 +462,9 @@ export const useApp = create<State>((set, get) => ({
         tabs = [...tabs.slice(0, at), tab, ...tabs.slice(at)];
         return { ...p, tabs, activeTabId: tab.id };
       }
-      const activeTabId = p.activeTabId === tabId ? (tabs[0]?.id ?? "") : p.activeTabId;
+      // The moved tab's neighbour shows next, as when a tab closes.
+      const was = p.tabs.findIndex((t) => t.id === tabId);
+      const activeTabId = p.activeTabId === tabId ? (tabs[Math.min(was, tabs.length - 1)]?.id ?? "") : p.activeTabId;
       return { ...p, tabs, activeTabId };
     });
     set(layoutPatch(next, toPaneId, paneSizes));
