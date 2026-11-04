@@ -736,4 +736,15 @@ fn huge_workspace() {
         arcalo_core::calendar::daily_overview(&db, &Default::default(), monday, monday + Duration::days(41), &tl)
             .unwrap()
     });
+    let zone = arcalo_core::calsync::tz::Zone::Iana(chrono_tz::Europe::Berlin);
+    let opts = arcalo_core::weekplan::ProposeOptions { rest_of_today: false, sources: None };
+    time("week proposal", 3, || {
+        arcalo_core::weekplan::propose(&db, monday - Duration::days(7), Utc::now(), &zone, &opts).unwrap()
+    });
+    let sources: Vec<String> = (0..CALENDARS).map(|c| format!("ics:big{c}")).collect();
+    let week = db.calendar_events(day(monday), day(monday + Duration::days(7)), &sources).unwrap();
+    time(&format!("calendar_wbs_memory of {} appointments", week.len()), 3, || {
+        week.iter().map(|e| db.calendar_wbs_memory(e).unwrap().is_some()).count()
+    });
+    time("search 'nicht' (in every booking text)", 3, || arcalo_core::search::search(&db, "nicht", 30).unwrap());
 }
