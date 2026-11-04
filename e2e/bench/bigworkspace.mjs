@@ -154,7 +154,8 @@ async function lookup(app) {
   const walk = (ns) => ns.forEach((n) => (flat.push(n.page ?? n), walk(n.children ?? [])));
   walk(tree);
   const by = (t) => flat.find((p) => p.title === t);
-  ids.big = by("Großes Dokument");
+  // BENCH_LARGE_TITLE: another long page of the workspace (e.g. „Sehr lange Notiz“ of the very large one).
+  ids.big = by(process.env.BENCH_LARGE_TITLE ?? "Großes Dokument");
   ids.canvas = by("Große Leinwand");
   ids.small = ["0101", "0202", "0303", "0404", "0505"].map((n) => flat.find((p) => p.title.startsWith(`Seite ${n} `)));
   out.treeNodes = flat.length;
@@ -181,16 +182,16 @@ for (let i = 0; i < 3; i++) {
   await openPage(app, ids.small[0].id, ids.small[0].title);
   await sleep(300);
   out.openLarge.push(r1(await openPage(app, ids.big.id, ids.big.title)));
-  await app.waitText(".pane.active .ProseMirror", /Kapitel 40/, 60000);
+  await app.waitText(".pane.active .ProseMirror", new RegExp(process.env.BENCH_LARGE_END ?? "Kapitel 40"), 60000);
 }
 const embedsShown = await app.browser.execute(() => ({ mermaid: document.querySelectorAll(".pane.active .ProseMirror svg").length, tables: document.querySelectorAll(".pane.active .ProseMirror table").length }));
 out.largeContent = embedsShown;
 // Caret in the middle of the long page, then type.
-await app.browser.execute(() => {
+await app.browser.execute((min) => {
   const ed = document.querySelector(".pane.active .ProseMirror").editor;
   let pos = null;
   ed.state.doc.descendants((n, p) => {
-    if (pos == null && n.isTextblock && n.textContent.length > 100 && p > ed.state.doc.content.size / 2) pos = p + n.nodeSize - 1;
+    if (pos == null && n.isTextblock && n.textContent.length > min && p > ed.state.doc.content.size / 2) pos = p + n.nodeSize - 1;
     return pos == null;
   });
   ed.chain().focus().setTextSelection(pos).scrollIntoView().run();
@@ -199,7 +200,7 @@ await app.browser.execute(() => {
     const t0 = performance.now();
     requestAnimationFrame(() => setTimeout(() => window.__lat.push(performance.now() - t0), 0));
   }, true);
-});
+}, Number(process.env.BENCH_LARGE_MIN_TEXT ?? 100));
 await sleep(500);
 await app.browser.execute(() => (window.__perf.calls.length = 0));
 const typeStart = Date.now();

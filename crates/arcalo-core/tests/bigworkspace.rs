@@ -748,7 +748,7 @@ fn huge_workspace() {
     let sources: Vec<String> = (0..CALENDARS).map(|c| format!("ics:big{c}")).collect();
     let week = db.calendar_events(day(monday), day(monday + Duration::days(7)), &sources).unwrap();
     time(&format!("calendar_wbs_memory of {} appointments", week.len()), 3, || {
-        week.iter().map(|e| db.calendar_wbs_memory(e).unwrap().is_some()).count()
+        week.iter().filter(|e| db.calendar_wbs_memory(e).unwrap().is_some()).count()
     });
     time("search 'nicht' (in every booking text)", 3, || arcalo_core::search::search(&db, "nicht", 30).unwrap());
 }
