@@ -553,7 +553,7 @@ mod tests {
             if rng.chance(20) {
                 rule.until = Some((due + Duration::days(rng.range(0, 500))).format("%Y-%m-%d").to_string());
             }
-            let end = rule.until.as_deref().map(|u| d(u));
+            let end = rule.until.as_deref().map(d);
             // The series as ticking off writes it: from the 29th to 31st its day is kept.
             let written = rule.pinned(due).unwrap_or_else(|| rule.clone());
             let all = reference(&written, due, d("2050-01-01"));

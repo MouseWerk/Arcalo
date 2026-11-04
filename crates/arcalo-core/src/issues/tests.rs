@@ -493,7 +493,7 @@ fn worklogs_are_never_posted_twice() {
     assert!(db.worklogs_due(later).unwrap()[0].retry);
     assert!(db.worklog_claim(id).unwrap().is_some());
     db.worklog_posted(id, "10042").unwrap();
-    assert!(!db.worklog_claim(id).unwrap().is_some(), "posted: never again");
+    assert!(db.worklog_claim(id).unwrap().is_none(), "posted: never again");
     assert!(db.worklogs_due(later + Duration::hours(5)).unwrap().is_empty());
     db.worklog_failed(id, "late error", later).unwrap();
     let e = &db.issue_entries(&[id]).unwrap()[0];
@@ -1093,8 +1093,11 @@ async fn the_client_loads_descriptions_only_for_an_opened_issue() {
 
 /// Jira for the property test: its worklogs, and calls that may fail before they take effect
 /// (refused, offline) or after (a timeout: Jira stored it, the answer was lost).
+/// A worklog in [`FlakyJira`]: start, seconds and comment.
+type JiraWorklog = (DateTime<Utc>, i64, String);
+
 struct FlakyJira {
-    logs: std::cell::RefCell<BTreeMap<u64, (DateTime<Utc>, i64, String)>>,
+    logs: std::cell::RefCell<BTreeMap<u64, JiraWorklog>>,
     next_id: std::cell::Cell<u64>,
     rng: std::cell::RefCell<crate::testrng::Rng>,
     /// Percent of calls that fail (half of them after taking effect).
@@ -1280,7 +1283,7 @@ fn worklog_sync_never_posts_twice_or_loses_an_edit() {
                 9 if !deleted.is_empty() => {
                     let i = rng.range(0, deleted.len() as i64 - 1) as usize;
                     // A booking whose id a later booking took (the newest one deleted, the next
-                    // one booked) is not brought back: its kept link is that booking's (R3D-L3).
+                    // one booked) is not brought back: its kept link is that booking's (R3D-L1).
                     if deleted[i + 1..].iter().any(|d| d.id == deleted[i].id) || live.contains(&deleted[i].id) {
                         return;
                     }
