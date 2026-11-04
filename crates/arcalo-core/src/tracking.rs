@@ -1,7 +1,7 @@
 //! High-level time tracking: slash-command logging and budget / ETC alerts.
 
 use crate::{tr, trf};
-use chrono::{DateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{BookedMinutes, Database};
@@ -71,7 +71,14 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     if let (Some(key), true, None) = (&issue.key, bare, default_ref) {
         return Err(crate::issues::unmapped_error(key));
     }
-    let cmd = zeit::parse_with_default(line, local_now.date_naive(), default_ref)?;
+    // Typed in the daily note of an earlier day (written up later): a line without a date books
+    // on that day, not today.
+    let today = local_now.date_naive();
+    let note_day = match ctx.page_id {
+        Some(id) => db.page(id)?.daily_date.and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()),
+        None => None,
+    };
+    let cmd = zeit::parse_for_day(line, today, default_ref, note_day.filter(|d| *d < today))?;
     book_command(db, cmd, issue, now, offset, thresholds, ctx)
 }
 
@@ -623,6 +630,31 @@ mod tests {
         assert_eq!(local_to_utc(&Berlin, gap).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 1, 30, 0).unwrap());
         let before = gap - chrono::Duration::hours(1);
         assert_eq!(local_to_utc(&Berlin, before).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 0, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn a_line_without_a_date_in_an_earlier_daily_note_books_on_that_day() {
+        let (db, _) = setup();
+        let t = Thresholds::default();
+        let tz = chrono_tz::Europe::Berlin;
+        // Friday 6 November, written up in Tuesday's daily note.
+        let now = Utc.with_ymd_and_hms(2026, 11, 6, 15, 0, 0).unwrap();
+        let tuesday = db.daily_note(chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap()).unwrap();
+        let friday = db.daily_note(chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()).unwrap();
+        let other = db.create_page(None, "Protokoll", None).unwrap();
+        let book = |line: &str, page: i64| {
+            let ctx = SlashContext { default_ref: None, page_id: Some(page) };
+            log_slash_command_in(&db, line, now, &tz, &t, ctx).unwrap().entry
+        };
+        let local = |e: &TimeEntry| e.start_time.with_timezone(&tz).format("%Y-%m-%d %H:%M").to_string();
+        assert_eq!(local(&book("/zeit NP-8801/1020 2h Telefonat", tuesday.id)), "2026-11-03 08:00");
+        assert_eq!(local(&book("/zeit NP-8801/1020 1h Nachtrag @14:00", tuesday.id)), "2026-11-03 14:00");
+        // A date written in the line wins, also relative ones and „heute“.
+        assert_eq!(local(&book("/zeit NP-8801/1020 1h x @02.11.2026", tuesday.id)), "2026-11-02 08:00");
+        assert_eq!(local(&book("/zeit NP-8801/1020 1h x @heute @09:00", tuesday.id)), "2026-11-06 09:00");
+        // Today's daily note and other pages book today, as before.
+        assert_eq!(local(&book("/zeit NP-8801/1020 1h x", friday.id)), "2026-11-06 15:00");
+        assert_eq!(local(&book("/zeit NP-8801/1020 30m y", other.id)), "2026-11-06 15:30");
     }
 
     #[test]

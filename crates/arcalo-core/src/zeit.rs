@@ -69,6 +69,17 @@ pub fn parse(line: &str, today: NaiveDate) -> Result<ZeitCommand> {
 
 /// Like [`parse`]; a command without reference books on `default_ref` (`NP-8801` or `NP-8801/1020`).
 pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str>) -> Result<ZeitCommand> {
+    parse_for_day(line, today, default_ref, None)
+}
+
+/// Like [`parse_with_default`]; a command without a date books on `default_day` instead of today
+/// (typed in the daily note of an earlier day: the work of that day).
+pub fn parse_for_day(
+    line: &str,
+    today: NaiveDate,
+    default_ref: Option<&str>,
+    default_day: Option<NaiveDate>,
+) -> Result<ZeitCommand> {
     let tokens = tokenize(line)?;
     let mut it = tokens.into_iter().peekable();
 
@@ -133,7 +144,7 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
     };
 
     let mut leistungsart = None;
-    let mut date = DateSpec::Today;
+    let mut date = default_day.filter(|d| *d != today).map_or(DateSpec::Today, DateSpec::On);
     let mut start = span_start;
     let mut quoted: Option<String> = None;
     let mut words: Vec<String> = vec![];

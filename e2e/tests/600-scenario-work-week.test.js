@@ -36,8 +36,9 @@ async function patchSettings(f) {
 const weekEntries = () => app.invoke("time_entries", { from: day(0).toISOString(), to: day(7).toISOString() });
 
 async function openPage(id) {
+  const { title } = await app.invoke("page_get", { id });
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-  await until(() => app.browser.execute((p, ed, id) => document.querySelector(`${p} ${ed}`) && document.querySelector(`${p} [data-page-id]`)?.dataset.pageId !== undefined, PANE, EDITOR, id), `page ${id} not open`);
+  await until(() => app.browser.execute((p, ed, t) => !!document.querySelector(`${p} ${ed}`) && document.querySelector(`${p} .page-title`)?.value === t, PANE, EDITOR, title), `page ${title} not open`);
   await app.waitFor(`${PANE} ${EDITOR}`);
   await app.browser.pause(300);
 }
@@ -173,9 +174,34 @@ test("a weekly task written on Monday is ticked off in the task view and comes b
   await app.browser.execute((sel) => document.querySelector(sel).querySelector("input[type=checkbox], [role=checkbox]").click(), `${row}[data-ordinal="${ordinal}"]`);
   await until(async () => (await app.invoke("page_get", { id })).content.includes("- [x] Wochenbericht schreiben"), "the task was not ticked off");
   const content = (await app.invoke("page_get", { id })).content;
-  assert.match(content, /- \[x\] Wochenbericht schreiben every:weekly due:\d{4}-\d{2}-\d{2}\n- \[ \] Wochenbericht schreiben every:weekly due:\d{4}-\d{2}-\d{2}/);
-  const week = await app.invoke("week_review", { date: iso(day(4)) });
-  console.log("done tasks", JSON.stringify(week.tasks.done));
+  const next = /- \[x\] Wochenbericht schreiben every:weekly due:(\S+)\n- \[ \] Wochenbericht schreiben every:weekly due:(\S+)/.exec(content);
+  assert.ok(next, content);
+  assert.equal(next[1], iso(day(4)));
+  // The next Friday from today on (the past ones are skipped).
+  const due = new Date(`${next[2]}T12:00:00`);
+  assert.equal(due.getDay(), 5);
+  assert.ok(next[2] >= iso(new Date()) && due.getTime() - Date.now() < 8 * 86400000, next[2]);
+  const open = await app.invoke("tasks_list", { filter: { status: "open" } });
+  assert.deepEqual(
+    open.filter((t) => t.text.startsWith("Wochenbericht")).map((t) => t.due),
+    [next[2]],
+  );
+  // Done this week (today), in this week's review.
+  const week = await app.invoke("week_review", { date: iso(new Date()) });
+  assert.ok(week.tasks.done.some((t) => t.text.startsWith("Wochenbericht") && t.page_id === id), JSON.stringify(week.tasks.done));
+});
+
+test("a /zeit without a date written up later in Tuesday's daily note books on Tuesday", async () => {
+  await openPage(notes[1]);
+  await typeLine("/zeit NP-6000/20 30m Nachtrag Telefonat");
+  await until(async () => (await weekEntries()).some((x) => x.description === "Nachtrag Telefonat"), "not booked on Tuesday's week");
+  const r = (await weekEntries()).find((x) => x.description === "Nachtrag Telefonat");
+  assert.equal(iso(new Date(r.start_time)), iso(day(1)));
+  assert.equal(r.page_id, notes[1]);
+  BOOKED[1] += 30;
+  // The chip names that day.
+  const chip = `<time-entry id="${r.id}" hours="0,50" target="NP-6000/20" date="${iso(day(1))}">Nachtrag Telefonat</time-entry>`;
+  await until(async () => (await app.invoke("page_get", { id: notes[1] })).content.includes(chip), "the chip is not saved with the day");
 });
 
 // What was booked: 6 h on Vorgang 10 every day, the review's hour on Vorgang 20 on Wednesday.
@@ -183,8 +209,9 @@ const BOOKED = [360, 360, 420, 360, 360];
 
 test("Friday: the week review, the calendar, the timesheet, the CSV and SAP CATS say what was booked", async () => {
   const week = await app.invoke("week_review", { date: iso(day(4)) });
-  console.log("week time", JSON.stringify(week.time));
-  assert.equal(week.time.booked_minutes, 1860);
+  const total = BOOKED.reduce((a, b) => a + b, 0);
+  const hours = (m) => (m / 60).toFixed(2).replace(".", ",");
+  assert.equal(week.time.booked_minutes, total);
   assert.equal(week.time.target_minutes, 2400);
   assert.deepEqual(
     week.days.slice(0, 5).map((d) => d.booked_minutes),
@@ -200,16 +227,16 @@ test("Friday: the week review, the calendar, the timesheet, the CSV and SAP CATS
   await app.click('.ribbon [aria-label="Zeiterfassung"]');
   await app.waitText(".view-header h1", /Zeiterfassung/);
   await app.click('.week-nav [aria-label="Vorherige Woche"]');
-  await until(async () => (await app.browser.execute(() => document.querySelector(".week-grid tfoot td.strong")?.textContent)) === "31,00", "timesheet total");
+  await until(async () => (await app.browser.execute(() => document.querySelector(".week-grid tfoot td.strong")?.textContent)) === hours(total), "timesheet total");
   const foot = await app.browser.execute(() => [...document.querySelectorAll(".week-grid tfoot td")].map((t) => t.textContent.trim()));
-  assert.deepEqual(foot.slice(0, 5), ["6,00", "6,00", "7,00", "6,00", "6,00"]);
+  assert.deepEqual(foot.slice(0, 5), BOOKED.map(hours));
   await app.shot("600-timesheet-week");
 
   // CSV and SAP CATS of the week.
   const range = { from: day(0).toISOString(), to: day(7).toISOString(), onlyReleased: false, markExported: false, path: null };
   const csv = (await app.invoke("export_entries", { format: "csv", ...range })).content.trim().split("\r\n").slice(1);
-  assert.equal(csv.length, 6, csv.join("\n"));
-  assert.equal(csv.reduce((a, l) => a + Number(l.split(",")[8]), 0), 1860);
+  assert.equal(csv.length, 7, csv.join("\n"));
+  assert.equal(csv.reduce((a, l) => a + Number(l.split(",")[8]), 0), total);
   const cats = (await app.invoke("export_entries", { format: "sap_cats", ...range })).content.trim().split("\r\n");
   const head = cats[0].split(";");
   const at = (name) => head.indexOf(name);
@@ -232,4 +259,32 @@ test("Friday: Thursday's hours on the Jira issue are in Jira as its worklog", as
     logs.map((w) => [w.key, w.timeSpentSeconds, new Date(w.started).toISOString()]),
     [["PROJ-123", 21600, new Date(thursday.start_time).toISOString()]],
   );
+});
+
+const RIGHT = ".workspace > .pane:last-child > .pane-content:not([hidden])";
+const weekSum = () => app.browser.execute((s) => document.querySelector(`${s} .dw-week-sum .dw-big`)?.textContent ?? null, RIGHT);
+
+test("today: the start page beside today's daily note follows a booking typed there", async () => {
+  const thisWeek = async () => {
+    const m = mondayOf(new Date());
+    const rows = await app.invoke("time_entries", { from: m.toISOString(), to: new Date(m.getFullYear(), m.getMonth(), m.getDate() + 7).toISOString() });
+    return rows.reduce((a, r) => a + (r.duration_minutes ?? 0), 0);
+  };
+  const before = await thisWeek();
+  // Today's daily note on the left, the start page split off to the right.
+  const today = await app.invoke("daily_note", { date: iso(new Date()) });
+  await openPage(today.id);
+  await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
+  await until(async () => (await app.$$(".workspace > .pane")).length === 2, "no second pane");
+  await app.click(".workspace > .pane:last-child .tabbar-home");
+  await app.waitFor(`${RIGHT} .dw-week-sum`, 10000);
+  const fmt = (m) => (m / 60).toFixed(2).replace(".", ",");
+  await until(async () => (await weekSum()) === fmt(before), `start page shows ${await weekSum()}, booked ${fmt(before)}`);
+  // A booking of 45 minutes typed in the daily note.
+  await typeLine("/zeit NP-6000/10 45m Abstimmung Schnittstelle");
+  await until(async () => (await thisWeek()) === before + 45, "not booked");
+  await until(async () => (await weekSum()) === fmt(before + 45), `start page still shows ${await weekSum()}`);
+  const review = await app.invoke("week_review", { date: iso(new Date()) });
+  assert.equal(review.time.booked_minutes, before + 45);
+  await app.shot("600-start-page-beside-note");
 });
