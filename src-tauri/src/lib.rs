@@ -2841,8 +2841,9 @@ async fn ai_provider_test(
     let start = Instant::now();
     match client.chat_stream(&ask(vec![]), None, |_| {}).await {
         // A model that spends its 16 tokens on thinking answers with nothing: it still answers.
-        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
-            steps.push(step("chat", Some(true), format!("{chat_model}: antwortet (ohne Text)"), start));
+        Err(e) if AiClient::is_empty_answer(&e) => {
+            let detail = trf!("{chat_model}: antwortet (ohne Text)", "{chat_model}: answers (without text)");
+            steps.push(step("chat", Some(true), detail, start));
         }
         Ok(c) => {
             let answer: String = c.content.trim().chars().take(40).collect();
@@ -2877,9 +2878,9 @@ async fn ai_provider_test(
     });
     let start = Instant::now();
     steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
-        Ok(_) => step("tools", Some(true), "Werkzeuge werden angenommen".into(), start),
-        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
-            step("tools", Some(true), "Werkzeuge werden angenommen".into(), start)
+        Ok(_) => step("tools", Some(true), tr!("Werkzeuge werden angenommen", "Tools are accepted").into(), start),
+        Err(e) if AiClient::is_empty_answer(&e) => {
+            step("tools", Some(true), tr!("Werkzeuge werden angenommen", "Tools are accepted").into(), start)
         }
         Err(Error::Provider { status, body }) => {
             let unsupported =
@@ -2930,7 +2931,7 @@ async fn embed_step(client: &AiClient, settings: &Settings, provider: &AiProvide
         Ok(v) => TestStep {
             id: "embed",
             ok: Some(true),
-            detail: format!("{model}: {} Dimensionen", v.first().map_or(0, Vec::len)),
+            detail: trf!("{model}: {} Dimensionen", "{model}: {} dimensions", v.first().map_or(0, Vec::len)),
             latency_ms,
         },
         Err(e) => {
@@ -3171,10 +3172,20 @@ async fn ai_chat(
 
     // Retrieval: embeddings are optional; keyword search always works offline. A private
     // question is not sent to an embedding model of a provider that is not local.
-    let lower = prompt.to_lowercase();
+    // A question about a private page that is open, or in a conversation whose earlier turns
+    // (tool results included) carry a marker, is private as well.
+    let markers = &settings.router.private_markers;
+    let open_private = match page_id.filter(|_| settings.privacy.read_open_page) {
+        Some(id) => privacy::page_is_private(&state.reader(), id, markers)?,
+        None => false,
+    };
     let private = private_chat
         || settings.privacy.local_only
-        || settings.router.private_markers.iter().any(|m| !m.trim().is_empty() && lower.contains(&m.to_lowercase()));
+        || open_private
+        || privacy::any_private(
+            std::iter::once(prompt.as_str()).chain(messages.iter().filter_map(|m| m.content.as_deref())),
+            markers,
+        );
     // A chat model is never asked for embeddings, and a model that failed is not asked again:
     // on a LiteLLM proxy each failure counts against the model and can put it into cooldown.
     let embedding = if notes { embedding_client(&state) } else { None };

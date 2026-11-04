@@ -508,9 +508,13 @@ pub fn briefing<Tz: TimeZone>(
             due_before: Some(key.clone()),
             ..Default::default()
         })?;
+        // A task's text is text of its page: a private page (a marker in its text or among its
+        // tags) keeps the briefing local, also when the task itself carries no marker.
+        let mut task_pages = vec![];
         for t in open {
             let Some(due) = t.due.clone() else { continue };
             private |= marked(&t.text) || t.tags.iter().any(|g| marked(&format!("#{g}")));
+            task_pages.push(t.page_id);
             let row = BriefingTask {
                 page_id: t.page_id,
                 page_title: t.page_title,
@@ -520,6 +524,11 @@ pub fn briefing<Tz: TimeZone>(
                 priority: t.priority,
             };
             if due == key { tasks.today.push(row) } else { tasks.overdue.push(row) }
+        }
+        if !markers.is_empty() && !task_pages.is_empty() {
+            task_pages.sort_unstable();
+            task_pages.dedup();
+            private |= !crate::ai::privacy::private_pages(db, task_pages, &markers)?.is_empty();
         }
         tasks.overdue_total = tasks.overdue.len() as i64;
         tasks.today_total = tasks.today.len() as i64;
