@@ -24,7 +24,7 @@ export function KeyboardSection({ draft, update }: SectionProps) {
   const ai = aiSwitchOn(draft) && !policyOff;
   const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
   // Without global shortcuts (Android) the window's keys meet no other ones.
-  const conflicts = findConflicts(map, caps().globalShortcuts ? { capture: draft.capture_shortcut, palette: draft.palette_shortcut, selection: draft.capture?.selection_shortcut, mail: draft.mail?.shortcut } : {});
+  const conflicts = findConflicts(map, caps().globalShortcuts ? { capture: draft.capture_shortcut, palette: draft.palette_shortcut, selection: draft.capture?.selection_shortcut, mail: draft.mail?.shortcut, search: draft.search_shortcut, voice: draft.voice?.shortcut } : {});
   const conflictOf = (id: string) => conflicts.filter((c) => c.commands.includes(id));
   const setCombo = (id: string, combo: string) => update({ keymap: keymapOverrides({ ...map, [id]: combo }) });
   const otherLabel = (other: NonNullable<(typeof conflicts)[number]["other"]>) =>
@@ -36,7 +36,11 @@ export function KeyboardSection({ draft, update }: SectionProps) {
           ? t("keys.globalSelection")
           : other === "global.mail"
             ? t("keys.globalMail")
-            : t(other);
+            : other === "global.search"
+              ? t("keys.globalSearch")
+              : other === "global.voice"
+                ? t("keys.globalVoice")
+                : t(other);
 
   return (
     <>

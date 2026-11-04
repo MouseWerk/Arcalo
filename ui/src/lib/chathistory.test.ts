@@ -151,7 +151,7 @@ describe("restoreChat", () => {
       ["user", null, "weiter"],
     ]);
     const tool = turns.find((x) => x.kind === "tool") as Extract<Turn, { kind: "tool" }>;
-    expect([tool.status, tool.output]).toEqual(["error", "Unterbrochen"]);
+    expect([tool.status, tool.output]).toEqual(["error", "Unterbrochen (Arcalo wurde währenddessen beendet)"]);
     expect((turns[turns.length - 1] as Extract<Turn, { kind: "user" }>).hist).toBe(4);
     // At the end too.
     const open = restoreChat([rec(0, { role: "user", content: "x" }), rec(1, { role: "assistant", content: "", tool_calls: [calls[0]] })]);

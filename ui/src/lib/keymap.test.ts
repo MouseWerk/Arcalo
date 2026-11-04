@@ -202,11 +202,18 @@ describe("keymap", () => {
     expect(DEFAULT_KEYMAP.palette).toBe("Ctrl+K");
     expect(DEFAULT_KEYMAP.daily_note).toBe("Ctrl+Shift+D");
     expect(DEFAULT_KEYMAP.chat_view).toBe("Ctrl+Shift+J");
-    expect(findConflicts(DEFAULT_KEYMAP, { capture: "Ctrl+Shift+Space", palette: null })).toEqual([]);
+    expect(findConflicts(DEFAULT_KEYMAP, { capture: "Ctrl+Shift+Space", palette: null, search: "Ctrl+Shift+O", voice: "" })).toEqual([]);
     // Every default is usable; a command without a default is listed unbound („Tab anheften“).
     for (const c of Object.values(DEFAULT_KEYMAP).filter(Boolean)) expect(comboProblem(c)).toBeNull();
     expect(DEFAULT_KEYMAP.pin_tab).toBe("");
     expect(Object.values(DEFAULT_KEYMAP).filter((c) => !c)).toEqual([""]);
+  });
+
+  it("a command on the global quick search or voice shortcut is a conflict (q124 H4-2)", () => {
+    const map = { ...DEFAULT_KEYMAP, pin_tab: "Ctrl+Shift+O", tasks: "Ctrl+Shift+V" };
+    const found = findConflicts(map, { search: "Ctrl+Shift+O", voice: "ctrl+shift+v" });
+    expect(found).toContainEqual({ combo: "Ctrl+Shift+O", commands: ["pin_tab"], other: "global.search" });
+    expect(found).toContainEqual({ combo: "Ctrl+Shift+V", commands: ["tasks"], other: "global.voice" });
   });
 
   it("detects conflicts between commands, with the editor and with global shortcuts", () => {

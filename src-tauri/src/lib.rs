@@ -128,7 +128,7 @@ use arcalo_core::versions::VersionInfo;
 use arcalo_core::{Database, Error, cmdlock, datadir, demo};
 use arcalo_core::{tr, trf};
 use base64::Engine;
-use chrono::{DateTime, Local, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 #[cfg(desktop)]
@@ -3221,8 +3221,10 @@ async fn ai_chat(
             Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content, privacy::tag_text(&d.tags))),
             None => None,
         };
-        // A chunk rarely contains its page's #privat tag, so the privacy of every source page counts too.
-        let ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
+        // A chunk rarely contains its page's #privat tag, so the privacy of every source page counts too,
+        // and of the page a booking among the sources was typed on.
+        let mut ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
+        ids.extend(privacy::entry_pages(&db, context.iter().filter_map(|c| c.time_entry_id))?);
         let private = privacy::private_pages(&db, ids, &settings.router.private_markers)?;
         (
             context,
@@ -3828,6 +3830,11 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
         "search_workspace" => {
             let hits = search::search(&db, &arg("query"), 10)?;
             pages.extend(hits.iter().filter_map(search::SearchHit::page_id));
+            let entries = hits.iter().filter_map(|h| match h {
+                search::SearchHit::TimeEntry { id, .. } => Some(*id),
+                _ => None,
+            });
+            pages.extend(privacy::entry_pages(&db, entries)?);
             serde_json::to_string(&hits)?.replace("\\u0002", "").replace("\\u0003", "")
         }
         "budget_status" => {
@@ -3839,7 +3846,15 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
                 NaiveDate::parse_from_str(arg(k).trim(), "%Y-%m-%d")
                     .map_err(|_| Error::Parse(format!("'{k}' muss ein Datum YYYY-MM-DD sein")))
             };
-            serde_json::to_string(&report::time_summary(&db, date("from")?, date("to")?, &Local)?)?
+            let (from, to) = (date("from")?, date("to")?);
+            let out = serde_json::to_string(&report::time_summary(&db, from, to, &Local)?)?;
+            // The descriptions of bookings typed on a private page are text of that page.
+            pages.extend(privacy::entry_pages_between(
+                &db,
+                local_day_start(from),
+                local_day_start(to + chrono::Days::new(1)),
+            )?);
+            out
         }
         "activity_log" => {
             let date = |k: &str| {
@@ -3849,6 +3864,11 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             let from = date("from")?;
             let to = if arg("to").trim().is_empty() { from } else { date("to")? };
             pages = arcalo_core::feed::day_pages(&db, from, to, &Local)?;
+            pages.extend(privacy::entry_pages_between(
+                &db,
+                local_day_start(from),
+                local_day_start(to + chrono::Days::new(1)),
+            )?);
             arcalo_core::feed::describe_days(&db, from, to, &Local)?
         }
         "list_tasks" => {
@@ -3868,6 +3888,17 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     let markers = state.settings().router.private_markers;
     let private = privacy::private_pages(&db, pages, &markers)?;
     Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
+}
+
+/// The start of the local day `d` in UTC (the earliest one when a clock change repeats midnight).
+fn local_day_start(d: NaiveDate) -> DateTime<Utc> {
+    let midnight = d.and_time(chrono::NaiveTime::MIN);
+    Local
+        .from_local_datetime(&midnight)
+        .earliest()
+        // A clock change skipped midnight: the day starts an hour later.
+        .or_else(|| Local.from_local_datetime(&(midnight + chrono::Duration::hours(1))).earliest())
+        .map_or_else(|| midnight.and_utc(), |t| t.with_timezone(&Utc))
 }
 
 /// Executes a system tool after the user approved the exact summary returned by `ai_plan_tool`:

@@ -618,7 +618,9 @@ where
     }
     let ids = r.pages.iter().filter(|p| !p.gone).filter_map(|p| p.page_id);
     let ids = ids.chain(r.tasks.done.iter().chain(&r.tasks.open).chain(&r.tasks.overdue).filter_map(|t| t.page_id));
-    if !crate::ai::privacy::private_pages(db, ids, markers)?.is_empty() {
+    // The descriptions of the week's bookings are text of the pages they were typed on.
+    let booked = if r.without_time { vec![] } else { crate::ai::privacy::entry_pages_between(db, r.from, r.to)? };
+    if !crate::ai::privacy::private_pages(db, ids.chain(booked), markers)?.is_empty() {
         return Ok(true);
     }
     Ok(crate::ai::privacy::any_private([describe(r, tz).as_str()], markers))

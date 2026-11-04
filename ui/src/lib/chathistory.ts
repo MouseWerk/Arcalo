@@ -132,7 +132,7 @@ export function restoreChat(records: StoredChatRecord[]): { turns: Turn[]; histo
           label: tool.label || tool.name,
           status: (finished ? tool.status : "error") as ToolStatus,
           summary: tool.summary,
-          output: tool.output ?? (finished ? undefined : "Unterbrochen"),
+          output: tool.output ?? (finished ? undefined : t("chat.toolInterrupted")),
         });
       }
       const id = m.tool_call_id ?? "";

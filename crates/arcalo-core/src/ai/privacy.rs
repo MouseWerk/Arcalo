@@ -8,6 +8,8 @@
 //! Settings → Datenschutz „Nur lokal“ keeps everything local anyway.
 
 use crate::trf;
+use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 use std::collections::HashSet;
 
 use crate::db::Database;
@@ -58,6 +60,26 @@ pub fn private_pages(db: &Database, ids: impl IntoIterator<Item = i64>, markers:
         }
     }
     Ok(out)
+}
+
+/// The pages the time entries `ids` were typed on (a `/zeit` line keeps its page): a booking's
+/// description is text of that page, so a private page makes it private too.
+pub fn entry_pages(db: &Database, ids: impl IntoIterator<Item = i64>) -> Result<Vec<i64>> {
+    let mut st = db.conn().prepare_cached("SELECT page_id FROM time_entries WHERE id = ?1 AND page_id IS NOT NULL")?;
+    let mut out = vec![];
+    for id in ids {
+        if let Some(page) = st.query_row([id], |r| r.get::<_, i64>(0)).optional()? {
+            out.push(page);
+        }
+    }
+    Ok(out)
+}
+
+/// The pages of the time entries that start in `from..to` (see [`entry_pages`]).
+pub fn entry_pages_between(db: &Database, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<i64>> {
+    let rows =
+        db.list_time_entries(&crate::db::EntryFilter { from: Some(from), to: Some(to), ..Default::default() })?;
+    Ok(rows.into_iter().filter_map(|r| r.entry.page_id).collect())
 }
 
 /// What the router has to see of page `id` when its text goes into a request: the content
@@ -162,6 +184,40 @@ mod tests {
         });
         assert_eq!(d.tier, Tier::Local);
         assert_eq!(mark_tool_result("x".into(), false, &markers()), "x");
+    }
+
+    #[test]
+    fn bookings_typed_on_a_private_page_count_as_private() {
+        // q124 H4-3: the description of a `/zeit` line is text of its page.
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_project("PRJ", "P").unwrap();
+        let np = db.create_netzplan(p.id, "NP-1", "NP-1-1", "", 10.0).unwrap();
+        let private = db.create_page(None, "Arzt", None).unwrap();
+        db.save_page_content(private.id, "#privat\n\nTermin").unwrap();
+        let open = db.create_page(None, "Projekt", None).unwrap();
+        let book = |page: Option<i64>, text: &str| {
+            db.insert_time_entry(&crate::model::NewTimeEntry {
+                netzplan_id: np.id,
+                vorgang_nr: None,
+                leistungsart: None,
+                start_time: Utc::now() - chrono::Duration::hours(1),
+                duration_minutes: 60,
+                description: text.into(),
+                source: crate::model::EntrySource::Manual,
+                page_id: page,
+            })
+            .unwrap()
+            .id
+        };
+        let a = book(Some(private.id), "Therapie");
+        let b = book(Some(open.id), "Schnittstelle");
+        let c = book(None, "Manuell");
+        assert_eq!(entry_pages(&db, [a, b, c]).unwrap(), [private.id, open.id]);
+        let day = chrono::Duration::days(1);
+        let found =
+            private_pages(&db, entry_pages_between(&db, Utc::now() - day, Utc::now()).unwrap(), &markers()).unwrap();
+        assert_eq!(found.into_iter().collect::<Vec<_>>(), [private.id]);
+        assert!(entry_pages_between(&db, Utc::now() - day * 3, Utc::now() - day * 2).unwrap().is_empty());
     }
 
     #[test]

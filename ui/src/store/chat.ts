@@ -355,7 +355,11 @@ function createSession(id: SessionId): ChatSession {
     }
   }
 
-  async function send(textArg: string, opts: SendOpts = {}) {
+  /**
+   * Asks `textArg`, or with `resume` continues that question after the steps it already ran (its
+   * tool results are in the history): only the answer after them is asked again.
+   */
+  async function send(textArg: string, opts: SendOpts = {}, resume?: Extract<Turn, { kind: "user" }>) {
     const text = textArg.trim();
     const st = get();
     if (!text || st.busy || busyElsewhere(session)) return;
@@ -367,7 +371,7 @@ function createSession(id: SessionId): ChatSession {
     // The chat this send writes to; „Neuer Chat“ starts another one.
     const chat = history;
     const current = () => history === chat;
-    const user: Extract<Turn, { kind: "user" }> = {
+    const user: Extract<Turn, { kind: "user" }> = resume ?? {
       id: turnId(),
       kind: "user",
       text: opts.display ?? text,
@@ -375,12 +379,17 @@ function createSession(id: SessionId): ChatSession {
       hist: chat.length,
       opts: { tools: opts.tools, pageTitle: opts.pageTitle, display: opts.display },
     };
-    set((s) => ({ busy: true, turns: [...s.turns, user], followTick: s.followTick + 1, notice: s.turns.length ? s.notice : null }));
-    chat.push({ role: "user", content: text });
-    const turnStart = user.hist;
-    const convId = await ensureConversation(opts.display ?? text, current);
+    if (resume) set((s) => ({ busy: true, followTick: s.followTick + 1 }));
+    else {
+      set((s) => ({ busy: true, turns: [...s.turns, user], followTick: s.followTick + 1, notice: s.turns.length ? s.notice : null }));
+      chat.push({ role: "user", content: text });
+    }
+    // What a failure takes back out of the history: the question, or only what followed the
+    // last finished tool step (a booking made is not undone, so it must stay in the history).
+    let keep = resume ? chat.length : user.hist;
+    const convId = resume ? (get().conversation?.id ?? null) : await ensureConversation(opts.display ?? text, current);
     const userRecord: ChatRecord = { role: "user", content: text, display: opts.display ?? null };
-    const pending: ChatRecord[] = [userRecord];
+    const pending: ChatRecord[] = resume ? [] : [userRecord];
     let priv = st.private;
     const page = scope.page;
     const onSaved = (seqs: number[]) => {
@@ -457,6 +466,7 @@ function createSession(id: SessionId): ChatSession {
           return;
         }
         chat.push(...results);
+        keep = chat.length;
         save(convId, pending, page, priv, onSaved);
         if (!live()) break;
       }
@@ -473,7 +483,7 @@ function createSession(id: SessionId): ChatSession {
           if (last?.kind === "assistant" && last.streaming) return { turns: [...s.turns.slice(0, -1), { ...last, streaming: false, error: message }] };
           return { turns: [...s.turns, { id: turnId(), kind: "assistant", text: "", streaming: false, error: message }] };
         });
-        chat.splice(turnStart);
+        chat.splice(keep);
       }
     } finally {
       save(convId, pending, page, priv, onSaved);
@@ -549,10 +559,41 @@ function createSession(id: SessionId): ChatSession {
     return null;
   }
 
+  /**
+   * The answer after the last tool step of the question `user`, when there is one: the steps ran
+   * (a time entry was booked, a comment written), so asking the question again would run them a
+   * second time. Cuts the turns, the model history and the saved messages after that step and
+   * returns true; false when the question has no finished tool step.
+   */
+  async function cutAfterTools(user: Extract<Turn, { kind: "user" }>): Promise<boolean> {
+    await saveChain;
+    const turns = get().turns;
+    const idx = turns.indexOf(user);
+    let lastTool = -1;
+    for (let i = idx + 1; i < turns.length && turns[i].kind !== "user"; i++) if (turns[i].kind === "tool") lastTool = i;
+    let histEnd = -1;
+    for (let i = user.hist + 1; i < history.length && history[i].role !== "user"; i++) if (history[i].role === "tool") histEnd = i + 1;
+    if (idx < 0 || lastTool < 0 || histEnd < 0) return false;
+    const conv = get().conversation;
+    if (conv && user.seq != null) {
+      try {
+        const doc = await api.chatGet(conv.id);
+        const stepSeqs = doc.messages.filter((m) => m.seq > user.seq! && m.role === "tool").map((m) => m.seq);
+        if (stepSeqs.length) await api.chatTruncate(conv.id, Math.max(...stepSeqs) + 1);
+      } catch (e) {
+        console.warn("chat not cut", e);
+      }
+    }
+    history.splice(histEnd);
+    set({ turns: turns.slice(0, lastTool + 1) });
+    return true;
+  }
+
   async function regenerate(turnIdArg: string) {
     if (get().busy || busyElsewhere(session)) return;
     const user = questionOf(turnIdArg);
     if (!user) return;
+    if (await cutAfterTools(user)) return send(user.prompt, { ...user.opts }, user);
     await cutBefore(user.id);
     await send(user.prompt, { ...user.opts });
   }
