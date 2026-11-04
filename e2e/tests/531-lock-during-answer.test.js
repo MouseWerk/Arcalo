@@ -51,7 +51,7 @@ const idle = () => app.browser.waitUntil(async () => (await app.$$(".assistant .
 const saved = async () => {
   const list = await app.invoke("chat_list", { query: null, archived: null });
   const docs = await Promise.all(list.map((c) => app.invoke("chat_get", { id: c.id })));
-  return docs.flatMap((d) => d.messages.map((m) => m.message.content ?? ""));
+  return docs.flatMap((d) => d.messages.map((m) => m.content ?? ""));
 };
 
 test("an answer that finished while the app was locked is saved, and so are the next ones", async () => {
