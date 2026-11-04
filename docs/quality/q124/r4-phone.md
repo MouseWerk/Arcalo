@@ -54,7 +54,8 @@ Every failure is R4A-1; none was the emulator being slow. The pictures of all th
 - Fix: the capture keeps a draft of a note or task (text, kind, target, due choice) in the workspace's database,
   as the desktop's does (`mobile_capture_draft_get`/`_set` over `capture::load_draft`/`save_draft`, `draftSaver`):
   stored while typing, at once when the app goes to the background or the capture closes, opened again with the
-  next capture, removed when it is saved or emptied. Text shared from another app comes first.
+  next capture, removed when it is saved (before the capture closes, so one opened right after starts empty) or
+  emptied. Text shared from another app comes first.
 - Tests: `model.test.ts` (`captureDraft`, `restoreCapture`); `phone.test.js` „keeps the capture's text after Back
   until it is saved“.
 

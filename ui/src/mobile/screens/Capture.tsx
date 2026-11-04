@@ -71,7 +71,9 @@ export function CaptureScreen({ mode: initial, text: shared }: { mode: CaptureMo
     try {
       const page = await mobileApi.capture(md, inbox);
       typed.current = false;
-      drafts.save(null);
+      // Removed before the capture closes: one opened right after must not bring the text back.
+      await drafts.flush();
+      await mobileApi.captureDraft.set(null).catch(() => {});
       m.toast("success", t("mob.cap.saved", { title: page.title }));
       m.back();
     } catch (e) {
