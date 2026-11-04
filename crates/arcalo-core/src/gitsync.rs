@@ -3268,11 +3268,15 @@ fn merge_remote(
     // Files renamed there: one changed here goes to the new name with this computer's content.
     let follows = follow_file_renames(git, repo, base, ours, theirs, &remote)?;
     for (old, new, _) in follows.iter().filter(|(_, _, moved)| *moved) {
-        for path in [old, new] {
-            handled.insert(path.clone());
-            if let Some(name) = attachment_name(path) {
-                handled.insert(format!("{}/{}", crate::attachments::DIR_NAME, crate::drawings::preview_name(name)));
-            }
+        handled.extend([old.clone(), new.clone()]);
+        // A drawing's preview, when this computer's went along (else the server's comes in).
+        let preview = |p: &str| {
+            attachment_name(p).map(|n| format!("{}/{}", crate::attachments::DIR_NAME, crate::drawings::preview_name(n)))
+        };
+        if let (Some(from), Some(to)) = (preview(old), preview(new))
+            && repo.join(&to).exists()
+        {
+            handled.extend([from, to]);
         }
     }
     for (old, new) in &renames {
