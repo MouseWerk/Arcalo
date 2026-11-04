@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Settings, SettingsView } from "./types";
 
-type Pending = { settings: Settings; done: () => void };
+type Pending = { settings: Settings; base?: Settings; done: () => void };
 const pending: Pending[] = [];
 let disk: Settings;
 vi.mock("./api", async (orig) => ({
@@ -12,10 +12,11 @@ vi.mock("./api", async (orig) => ({
   api: {
     settings: async () => ({ settings: structuredClone(disk) }),
     // Held until `done()`: a save on its way while another change is made.
-    saveSettings: (settings: Settings) =>
+    saveSettings: (settings: Settings, base?: Settings) =>
       new Promise<SettingsView>((ok) =>
         pending.push({
           settings,
+          base,
           done: () => {
             disk = structuredClone(settings);
             ok({ settings: structuredClone(settings) } as SettingsView);
@@ -67,6 +68,15 @@ describe("settings writes", () => {
     await landAll();
     await Promise.all([theme, editor]);
     expect(disk).toMatchObject({ theme: "dark", editor: { tab_size: 4 } });
+  });
+
+  it("a write names the copy it changed, so the core keeps what it stored meanwhile", async () => {
+    const write = writeSettings((cur) => ({ ...cur, theme: "dark" }));
+    await settle();
+    expect(pending[0].base).toEqual(start);
+    expect(pending[0].settings.theme).toBe("dark");
+    await landAll();
+    await write;
   });
 
   it("only the given paths are taken from the view's copy", () => {

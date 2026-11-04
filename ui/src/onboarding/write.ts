@@ -13,7 +13,7 @@ export function writeSettings(patch: (s: Settings) => Settings): Promise<Setting
   const run = async () => {
     try {
       const view = useApp.getState().settings ?? (await api.settings());
-      const saved = await api.saveSettings(patch(structuredClone(view.settings)));
+      const saved = await api.saveSettings(patch(structuredClone(view.settings)), view.settings);
       useApp.getState().set({ settings: saved });
       return saved;
     } catch (e) {

@@ -250,7 +250,8 @@ export const api = {
 
   // settings
   settings: () => call<T.SettingsView>("settings_get").then(withSystemLang),
-  saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }).then(withSystemLang),
+  /** `base`: the copy `settings` was made from; only what changed against it is stored. */
+  saveSettings: (settings: T.Settings, base?: T.Settings) => call<T.SettingsView>("settings_save", { settings, base: base ?? null }).then(withSystemLang),
   setSettingsScope: (section: string, scope: T.SettingsScope) => call<T.SettingsView>("settings_scope_set", { section, scope }),
   undoSettingsSync: () => call<T.SettingsView>("settings_sync_undo"),
   /** The operating system's locale tag (e.g. „de-DE“), or null when unknown. */

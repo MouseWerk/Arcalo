@@ -87,6 +87,23 @@ async fn fetch(app: &AppHandle, site: &JiraSite, key: &str) -> Result<FullView> 
 }
 
 /// The site an issue belongs to, the cached view's when there is one.
+/// The issue read again after a change Jira took (a comment, a status, a field). Jira not
+/// answering now (a timeout, a gateway error) shows the last copy with the error, read only: an
+/// error here would say the change failed and invite making it a second time.
+async fn after_change(app: &AppHandle, site: &JiraSite, key: &str) -> Result<FullView> {
+    match fetch(app, site, key).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            devlog::warn("jira", format!("{key}: not read again after a change: {}", devlog::redact(&e.to_string())));
+            let state = app.state::<AppState>();
+            match state.reader().issue_full_get(Some(&site.id), key)? {
+                Some(c) => view_of(&state, c.issue, c.fetched_at, Some(e.to_string())),
+                None => Err(e),
+            }
+        }
+    }
+}
+
 fn site_of_view(state: &AppState, key: &str) -> Result<JiraSite> {
     match state.reader().issue_full_get(None, key)? {
         Some(c) => site_of(state, &c.issue.site).or_else(|_| site_for_key(state, key)),
@@ -214,7 +231,7 @@ pub async fn jira_full_update(
     let view = match &outcome {
         UpdateOutcome::Saved { .. } => {
             devlog::debug("jira", format!("{key}: {field} saved"));
-            Some(fetch(&app, &site, &key).await?)
+            Some(after_change(&app, &site, &key).await?)
         }
         UpdateOutcome::Conflict { .. } => None,
     };
@@ -249,7 +266,7 @@ pub async fn jira_full_assign(
     }
     let before = issues::view::parse_user(&raw).map(|u| u.id);
     c.assign(&key, target.as_deref()).await?;
-    let view = fetch(&app, &site, &key).await?;
+    let view = after_change(&app, &site, &key).await?;
     let _ = app.emit("jira://synced", &site.id);
     Ok(EditResult { outcome: UpdateOutcome::Saved { undo: Some(FieldInput::User(before)) }, view: Some(view) })
 }
@@ -285,7 +302,7 @@ pub async fn jira_full_transition(
     })?;
     client(&state, &site)?.do_transition(&key, &t, &inputs, comment.as_ref()).await?;
     devlog::debug("jira", format!("{key}: moved to {}", t.to.name));
-    let view = fetch(&app, &site, &key).await?;
+    let view = after_change(&app, &site, &key).await?;
     let back = &copy.status.name;
     let undo = view
         .issue
@@ -310,7 +327,7 @@ pub async fn jira_full_comment_add(app: AppHandle, key: String, doc: Value) -> R
     let state = app.state::<AppState>();
     let site = site_of_view(&state, &key)?;
     let id = client(&state, &site)?.comment_add(&key, &doc).await?;
-    Ok(CommentResult { view: fetch(&app, &site, &key).await?, id })
+    Ok(CommentResult { view: after_change(&app, &site, &key).await?, id })
 }
 
 #[tauri::command]
@@ -319,7 +336,7 @@ pub async fn jira_full_comment_edit(app: AppHandle, key: String, id: String, doc
     let state = app.state::<AppState>();
     let site = site_of_view(&state, &key)?;
     client(&state, &site)?.comment_edit(&key, &id, &doc).await?;
-    fetch(&app, &site, &key).await
+    after_change(&app, &site, &key).await
 }
 
 #[tauri::command]
@@ -328,7 +345,7 @@ pub async fn jira_full_comment_delete(app: AppHandle, key: String, id: String) -
     let state = app.state::<AppState>();
     let site = site_of_view(&state, &key)?;
     client(&state, &site)?.comment_delete(&key, &id).await?;
-    fetch(&app, &site, &key).await
+    after_change(&app, &site, &key).await
 }
 
 #[derive(Serialize)]
@@ -398,15 +415,8 @@ pub async fn jira_full_worklog_add(
         }
         worklog_id = Some(id);
     }
-    // Done from here on: Jira not answering now shows the last copy with the error, never an
-    // error that invites logging the same work again.
-    let view = match fetch(&app, &site, &key).await {
-        Ok(v) => v,
-        Err(e) => match state.reader().issue_full_get(Some(&site.id), &key)? {
-            Some(c) => view_of(&state, c.issue, c.fetched_at, Some(e.to_string()))?,
-            None => return Err(e),
-        },
-    };
+    // Done from here on: never an error that invites logging the same work again.
+    let view = after_change(&app, &site, &key).await?;
     Ok(WorklogResult { view, worklog_id, entry_id })
 }
 
@@ -417,7 +427,7 @@ pub async fn jira_full_worklog_delete(app: AppHandle, key: String, id: String) -
     let state = app.state::<AppState>();
     let site = site_of_view(&state, &key)?;
     client(&state, &site)?.delete_work(&key, &id).await?;
-    fetch(&app, &site, &key).await
+    after_change(&app, &site, &key).await
 }
 
 /// Users for a user field (`assignable`: who may be assignee).

@@ -158,6 +158,19 @@ async fn garbage_truncated_and_empty_streams_are_not_answers() {
     .await;
     let err = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap_err().to_string();
     assert!(err.contains("Keine Antwort im erwarteten Format") && err.contains("Hotel-WLAN"), "{err}");
+    // The same page for embeddings and the model list: said as such, and not a lasting failure
+    // of the model (the index goes on once the user signed in).
+    let page = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{html}",
+        html.len()
+    );
+    let url = fake_raw(page.clone()).await;
+    let e = AiClient::new(url, None).embed("text-embedding-3-small", &["Netzplan".into()]).await.unwrap_err();
+    assert!(e.to_string().contains("Hotel-WLAN"), "{e}");
+    assert!(!arcalo_core::ai::capability::embedding_failure_lasting(&e), "{e:?}");
+    let url = fake_raw(page).await;
+    let e = AiClient::new(url, None).models().await.unwrap_err().to_string();
+    assert!(e.contains("Anmeldeseite") && e.contains("Hotel-WLAN"), "{e}");
 
     let sse =
         |body: &str| format!("HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n{body}");

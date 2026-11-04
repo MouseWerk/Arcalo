@@ -12,7 +12,9 @@ let chain: Promise<unknown> = Promise.resolve();
 export function writeSettings(change: (current: Settings) => Settings | Promise<Settings>): Promise<SettingsView> {
   const run = chain.then(async () => {
     const view = useApp.getState().settings ?? (await api.settings());
-    const saved = await api.saveSettings(await change(structuredClone(view.settings)));
+    // With the copy it was made from: what the core changed meanwhile (a calendar discovery,
+    // the Jira setup) and the store does not show yet stays.
+    const saved = await api.saveSettings(await change(structuredClone(view.settings)), view.settings);
     useApp.getState().set({ settings: saved });
     return saved;
   });

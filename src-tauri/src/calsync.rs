@@ -199,9 +199,9 @@ fn save_sources(app: &AppHandle, f: impl FnOnce(&mut Vec<IcsSource>) -> Result<(
 
 /// Saves only the calendar settings, changed by `f` (the rest stays as it is).
 pub(crate) fn save_calendar(app: &AppHandle, f: impl FnOnce(&mut core::CalendarSettings) -> Result<()>) -> Result<()> {
-    crate::update_settings(&app.state::<AppState>(), |s| {
-        f(&mut s.calendar)?;
-        s.calendar = std::mem::take(&mut s.calendar).normalized();
+    app.state::<AppState>().change_settings(|settings| {
+        f(&mut settings.calendar)?;
+        settings.calendar = std::mem::take(&mut settings.calendar).normalized();
         Ok(())
     })?;
     let _ = app.emit("settings://changed", ());

@@ -113,7 +113,7 @@ fn apply(app: &AppHandle, c: &Change) {
         let stored = state.db().load_settings();
         match stored.map_err(|e| e.to_string()).and_then(|s| serde_json::to_value(&s).map_err(|e| e.to_string())) {
             Ok(v) => {
-                if let Err(e) = crate::settings_save(app.clone(), app.state(), v) {
+                if let Err(e) = crate::settings_save(app.clone(), app.state(), v, None) {
                     devlog::warn("external", format!("settings of the command line not applied: {e}"));
                 }
             }

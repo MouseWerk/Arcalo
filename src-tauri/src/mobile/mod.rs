@@ -142,10 +142,10 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
         readers,
         next_reader: AtomicUsize::new(0),
         ai: RwLock::new(ai),
-        settings_write: Mutex::new(()),
         secrets: SecretStore::new(&dir),
         git_secret: SecretStore::git(&dir),
         git_lock: Mutex::new(()),
+        settings_write: Mutex::new(()),
         data_dir: dir,
         data_dir_notice: None,
         meter: Mutex::new(SessionMeter::default()),
@@ -190,7 +190,7 @@ fn spawn_ai_keys(app: AppHandle) {
         std::thread::sleep(Duration::from_secs(3));
         let state = app.state::<AppState>();
         if state.settings().providers.iter().any(|p| p.enabled) {
-            crate::refresh_ai(&state);
+            state.refresh_ai();
         }
     });
 }
@@ -366,7 +366,7 @@ pub fn mobile_settings_save(
     state: State<AppState>,
     settings: serde_json::Value,
 ) -> Result<crate::SettingsView> {
-    crate::settings_save(app, state, settings)
+    crate::settings_save(app, state, settings, None)
 }
 
 /// The Schnellerfassung's text not saved yet, kept in the workspace's database as the desktop's

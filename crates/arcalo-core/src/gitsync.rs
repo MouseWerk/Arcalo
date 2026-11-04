@@ -1364,6 +1364,12 @@ fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str
             "Anmeldung am Git-Server fehlgeschlagen – Zugangstoken bzw. SSH-Schlüssel prüfen ({detail})",
             "Sign-in to the Git server failed – check the access token or SSH key ({detail})"
         )
+    } else if crate::network::is_certificate_error(&lower) || any(&["ssl certificate problem", "tls handshake"]) {
+        // A company's certificate authority: the server is there, only not trusted yet.
+        trf!(
+            "Das Zertifikat des Git-Servers wird nicht anerkannt (z. B. eine Firmen-Zertifizierungsstelle). Unter Einstellungen → Netzwerk das Stammzertifikat der Firma im Profil hinzufügen oder dort beim Test der Git-Synchronisierung dem Server vertrauen ({detail})",
+            "The Git server's certificate is not trusted (e.g. a company certificate authority). Under Settings → Network, add the company's root certificate to the profile, or trust the server there when testing the Git sync ({detail})"
+        )
     } else if any(&[
         "could not resolve host",
         "couldn't connect",
@@ -4628,6 +4634,15 @@ mod safety_tests {
         assert!(msg("fatal: unable to access 'https://x/': Couldn't connect to server").contains("nicht erreichbar"));
         assert!(msg("fatal: Authentication failed for 'https://x/'").starts_with("Anmeldung"));
         assert!(msg("error: unable to create file a.md: Permission denied").starts_with("Git kann"));
+        // A company's certificate authority says where to add it, not that the server is gone.
+        let ca = msg(
+            "fatal: unable to access 'https://git.firma.de/x.git/': SSL certificate problem: self-signed certificate in certificate chain",
+        );
+        assert!(ca.starts_with("Das Zertifikat") && ca.contains("Einstellungen → Netzwerk"), "{ca}");
+        let ca = msg(
+            "fatal: unable to access 'https://x/': server certificate verification failed. CAfile: none CRLfile: none",
+        );
+        assert!(ca.starts_with("Das Zertifikat"), "{ca}");
         let long = format!("fatal: the cause\n{}", "zeile\n".repeat(10));
         assert!(msg(&long).contains("fatal: the cause"), "the first fatal line is kept");
     }

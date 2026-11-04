@@ -175,6 +175,31 @@ impl AiClient {
         self.provider.authorize(req, self.api_key.as_deref())
     }
 
+    /// The error for a web page where an answer was expected: the sign-in page of a Wi-Fi or a
+    /// proxy, or its error page. Not the model's fault, and it passes once the user signed in.
+    async fn not_an_answer(content_type: &str, resp: reqwest::Response) -> Error {
+        let text = resp.text().await.unwrap_or_default();
+        let start: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
+        Error::State(trf!(
+            "Keine Antwort im erwarteten Format vom KI-Server ({content_type}): {start} – Anmeldeseite eines WLANs oder Proxys?",
+            "No answer in the expected format from the AI server ({content_type}): {start} – the sign-in page of a Wi-Fi or proxy?"
+        ))
+    }
+
+    /// The JSON of a successful answer; a web page instead is [`Self::not_an_answer`].
+    async fn json_of<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if content_type.contains("html") {
+            return Err(Self::not_an_answer(&content_type, resp).await);
+        }
+        Ok(resp.json().await?)
+    }
+
     async fn check(resp: reqwest::Response) -> Result<reqwest::Response> {
         if resp.status().is_success() {
             return Ok(resp);
@@ -245,12 +270,7 @@ impl AiClient {
         }
         if !content_type.is_empty() && !content_type.contains("event-stream") {
             // A login page of a hotel WLAN or a proxy error page, not an answer.
-            let text = resp.text().await.unwrap_or_default();
-            let start: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
-            return Err(Error::State(trf!(
-                "Keine Antwort im erwarteten Format vom KI-Server ({content_type}): {start} – Anmeldeseite eines WLANs oder Proxys?",
-                "No answer in the expected format from the AI server ({content_type}): {start} – the sign-in page of a Wi-Fi or proxy?"
-            )));
+            return Err(Self::not_an_answer(&content_type, resp).await);
         }
 
         let mut decoder = SseDecoder::default();
@@ -364,7 +384,7 @@ impl AiClient {
         let req = self.auth(self.http.post(self.provider.embeddings_url(model)));
         let req = req.json(&json!({ "model": model, "input": inputs })).timeout(self.embed_timeout());
         let resp = Self::check(req.send().await?).await?;
-        let mut data = resp.json::<Resp>().await?.data;
+        let mut data = Self::json_of::<Resp>(resp).await?.data;
         data.sort_by_key(|i| i.index);
         if data.len() != inputs.len() {
             return Err(Error::Provider {
@@ -407,7 +427,8 @@ impl AiClient {
     }
 
     async fn get_json(&self, url: &str) -> Result<Value> {
-        Ok(Self::check(self.auth(self.http.get(url)).timeout(self.request_timeout).send().await?).await?.json().await?)
+        Self::json_of(Self::check(self.auth(self.http.get(url)).timeout(self.request_timeout).send().await?).await?)
+            .await
     }
 
     /// Ollama's version (`/api/version`): whether an Ollama answers at the address.

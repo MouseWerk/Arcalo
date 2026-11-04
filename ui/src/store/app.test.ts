@@ -1,9 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
-import type { PageNode } from "../lib/types";
+import type { PageNode, SettingsView } from "../lib/types";
 import { trimToasts, useApp } from "./app";
 
 const node = (id: number, title: string): PageNode => ({ id, title, parent_id: null, children: [] }) as unknown as PageNode;
+
+describe("refreshSettings", () => {
+  it("an answer that arrives after a save does not take the save back", async () => {
+    const answers: ((v: SettingsView) => void)[] = [];
+    const spy = vi.spyOn(api, "settings").mockImplementation(() => new Promise<SettingsView>((r) => answers.push(r)));
+    const view = (outlook: boolean) => ({ settings: { calendar: { outlook } } }) as unknown as SettingsView;
+    useApp.setState({ settings: view(false) });
+    // Asked before the switch's save landed, answered after it.
+    const refresh = useApp.getState().refreshSettings();
+    const saved = view(true);
+    useApp.setState({ settings: saved });
+    answers[0](view(false));
+    await refresh;
+    expect(useApp.getState().settings).toBe(saved);
+    // Two at once: only the newer answer counts.
+    const older = useApp.getState().refreshSettings();
+    const newer = useApp.getState().refreshSettings();
+    const fresh = view(true);
+    answers[2](fresh);
+    await newer;
+    answers[1](view(false));
+    await older;
+    expect(useApp.getState().settings).toBe(fresh);
+    spy.mockRestore();
+  });
+});
 
 describe("refreshTree", () => {
   it("an older answer arriving last does not replace the newer tree (and keeps fresh tabs)", async () => {

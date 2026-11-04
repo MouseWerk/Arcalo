@@ -33,12 +33,17 @@ pub async fn fetch_title_with(
     }
     let work = async {
         let resp = client
-            .get(parsed)
+            .get(parsed.clone())
             .header(reqwest::header::ACCEPT, "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
             .send()
             .await?;
         if !resp.status().is_success() {
             return Err(Error::State(format!("HTTP {}", resp.status().as_u16())));
+        }
+        // Sent on to a sign-in (an intranet or SharePoint link asks the company's single sign-on
+        // first): its title („Anmelden“, „Sign in to your account“) is not the page's.
+        if resp.url() != &parsed && sign_in(resp.url()) && !sign_in(&parsed) {
+            return Ok(None);
         }
         let content_type = resp
             .headers()
@@ -64,6 +69,37 @@ pub async fn fetch_title_with(
     tokio::time::timeout(timeout, work)
         .await
         .map_err(|_| Error::State(tr!("Zeitüberschreitung", "Timed out").into()))?
+}
+
+/// Whether `url` looks like a sign-in: a host such as `login.…`, `sso.…` or `accounts.…`, or
+/// a path step such as `/login`, `/signin`, `/sso`, `/saml2`, `/oauth2/authorize`, `/adfs` or
+/// `Authenticate.aspx`.
+fn sign_in(url: &reqwest::Url) -> bool {
+    const WORDS: &[&str] = &[
+        "login",
+        "logon",
+        "signin",
+        "sign-in",
+        "sso",
+        "saml",
+        "saml2",
+        "oauth",
+        "oauth2",
+        "authorize",
+        "authenticate",
+        "auth",
+        "adfs",
+        "idp",
+        "cas",
+        "accounts",
+    ];
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let first = host.split('.').next().unwrap_or("");
+    url.path_segments().into_iter().flatten().chain([first]).any(|step| {
+        let step = step.to_ascii_lowercase();
+        let name = step.split('.').next().unwrap_or("");
+        WORDS.contains(&name)
+    })
 }
 
 /// The head is complete once `</head>` or `<body` appeared (the title comes before).
@@ -379,6 +415,48 @@ mod tests {
         for bad in ["ftp://example.com/x", "file:///etc/passwd", "javascript:alert(1)", "kein url"] {
             assert!(fetch_title(&client, bad).await.is_err(), "{bad}");
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_sign_in_page_on_the_way_is_no_title() {
+        // An intranet page sends the request on to the company's sign-in.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 2048];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let resp = if head.starts_with("GET /wiki/Rollout ") {
+                    b"HTTP/1.1 302 Found\r\nLocation: /adfs/ls/?wa=wsignin1.0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                } else if head.starts_with("GET /alt ") {
+                    b"HTTP/1.1 301 Moved\r\nLocation: /neu\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                } else if head.starts_with("GET /neu ") {
+                    http("text/html", b"<title>Neue Seite</title>")
+                } else {
+                    http("text/html", b"<title>Anmelden</title><form><input type=password></form>")
+                };
+                let _ = sock.write_all(&resp).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        let client = reqwest::Client::new();
+        let title = |path: &str| {
+            let url = format!("http://{addr}{path}");
+            let client = client.clone();
+            async move { fetch_title(&client, &url).await.unwrap() }
+        };
+        assert_eq!(title("/wiki/Rollout").await, None);
+        // An ordinary move keeps its title, and a sign-in page linked itself has its own.
+        assert_eq!(title("/alt").await.as_deref(), Some("Neue Seite"));
+        assert_eq!(title("/login").await.as_deref(), Some("Anmelden"));
+        let u = |s: &str| reqwest::Url::parse(s).unwrap();
+        assert!(sign_in(&u("https://login.microsoftonline.com/common/oauth2/authorize?client_id=x")));
+        assert!(sign_in(&u("https://accounts.google.com/v3/signin/identifier")));
+        assert!(sign_in(&u("https://wiki.firma.de/login.action?os_destination=%2Fx")));
+        assert!(sign_in(&u("https://firma.sharepoint.com/_layouts/15/Authenticate.aspx?Source=x")));
+        assert!(!sign_in(&u("https://www.example.com/blog/authoring-tips")));
+        assert!(!sign_in(&u("https://youtube.com/watch?v=x")));
     }
 
     #[tokio::test(flavor = "current_thread")]

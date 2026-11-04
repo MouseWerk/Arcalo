@@ -162,9 +162,9 @@ pub fn jira_status(app: AppHandle) -> Result<JiraStatus> {
 
 /// Saves only the Jira settings, changed by `f`.
 fn save_jira(app: &AppHandle, f: impl FnOnce(&mut IssueSettings) -> Result<()>) -> Result<()> {
-    crate::update_settings(&app.state::<AppState>(), |s| {
-        f(&mut s.jira)?;
-        s.jira = std::mem::take(&mut s.jira).normalized();
+    app.state::<AppState>().change_settings(|settings| {
+        f(&mut settings.jira)?;
+        settings.jira = std::mem::take(&mut settings.jira).normalized();
         Ok(())
     })?;
     let _ = app.emit("settings://changed", ());

@@ -212,7 +212,7 @@ pub fn proxy_password_set(app: AppHandle, password: Option<String>, profile: Opt
     }
     secret(&state, &id).set(password.as_deref()).map_err(Error::State)?;
     devlog::remember_secret(password.as_deref());
-    crate::refresh_ai(&state);
+    state.refresh_ai();
     Ok(status_of(&state, &state.settings()))
 }
 
