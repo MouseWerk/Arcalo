@@ -39,8 +39,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test -p arcalo-core -p arcalo-cli
-      # The update installer (AppImage replacement against a file in a temp folder).
-      - run: cargo test -p arcalo --lib installer
+      # Every test of the app crate, the update installer among them (AppImage replacement against a file in a
+      # temp folder). Only the installer's ran here before, so a broken `platform::tests` reached main unseen.
+      - run: cargo test -p arcalo --lib
       - run: npm ci --prefix ui && npm run --prefix ui typecheck && npm test --prefix ui
       # The owner as author, no trailers (CLAUDE.md), on the commits of each push.
       - name: Commit rules
