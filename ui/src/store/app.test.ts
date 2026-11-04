@@ -136,6 +136,31 @@ describe("pinned tabs", () => {
     expect(kinds()).toEqual(["tasks*", "graph", "calendar"]);
   });
 
+  it("closing a tab first blurs its focused field (it stores its value on blur), not a field elsewhere", () => {
+    reset();
+    open("tasks");
+    open("calendar");
+    const panel = (id: string) => {
+      const el = document.createElement("div");
+      el.id = `tabpanel-${id}`;
+      const input = document.createElement("input");
+      el.append(input);
+      document.body.append(el);
+      return input;
+    };
+    const tasks = panel(idOf("tasks"));
+    const calendar = panel(idOf("calendar"));
+    const blurred: string[] = [];
+    tasks.addEventListener("blur", () => blurred.push("tasks"));
+    calendar.addEventListener("blur", () => blurred.push("calendar"));
+    calendar.focus();
+    useApp.getState().closeTab(idOf("tasks"));
+    expect(blurred).toEqual([]);
+    useApp.getState().closeAll();
+    expect(blurred).toEqual(["calendar"]);
+    document.body.replaceChildren();
+  });
+
   it("survive a restart (the stored layout) and moving to another pane", () => {
     reset();
     open("tasks");

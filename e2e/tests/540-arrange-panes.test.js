@@ -137,6 +137,25 @@ test("a property typed and the tab closed right away is kept", async () => {
   assert.equal((await app.invoke("page_get", { id })).content, "---\nkunde: alt und neu\n---\nText.\n");
 });
 
+test("a note moved to the other pane right after typing shows and keeps the typing", async () => {
+  assert.equal((await app.$$(".pane")).length, 2, "two panes from the first test");
+  const id = (await app.invoke("page_create", { parentId: null, title: "Getippt Verschoben", icon: "file-text", content: "Anfang\n" })).id;
+  await app.browser.execute(() => document.querySelectorAll(".pane")[0].dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: true } });
+  const ed = ".pane.active > .pane-content:not([hidden]) .ProseMirror";
+  await app.waitFor(ed);
+  await app.browser.execute((sel) => document.querySelector(sel).editor.commands.focus("end"), ed);
+  await app.type(" und mehr");
+  // At once, before the autosave: „In den anderen Bereich“ from the tab's menu.
+  await app.browser.execute(() => document.querySelector(".pane.active .tab.active").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 400, clientY: 20 })));
+  await app.browser.waitUntil(() => menuClick("In den anderen Bereich"), { timeout: 5000, timeoutMsg: "no tab menu" });
+  await app.browser.waitUntil(
+    () => app.browser.execute(() => document.querySelectorAll(".pane")[1]?.querySelector(".pane-content:not([hidden]) .ProseMirror")?.textContent.includes("Anfang und mehr")),
+    { timeout: 8000, timeoutMsg: "the moved tab lost the typing" },
+  );
+  await app.browser.waitUntil(async () => (await app.invoke("page_get", { id })).content.includes("Anfang und mehr"), { timeout: 8000, timeoutMsg: "typing not stored" });
+});
+
 test("no console errors", async () => {
   assert.deepEqual(await app.consoleErrors(), []);
 });
