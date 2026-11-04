@@ -725,15 +725,17 @@ fn huge_workspace() {
         });
     }
     time("time_summary year", 3, || {
-        arcalo_core::report::time_summary(&db, today - Duration::days(366), today, &tl).unwrap()
+        arcalo_core::report::time_summary(&db, today - Duration::days(365), today, &tl).unwrap()
     });
     time("all_budgets", 3, || arcalo_core::tracking::all_budgets(&db, &t).unwrap());
     let settings = db.load_settings().unwrap();
+    // The reviews of last week: the generator created and edited every page today.
+    let past = today - Duration::days(7);
     time("week_review", 3, || {
-        arcalo_core::weekreview::week_review(&db, today, &tl, &settings, None, Utc::now()).unwrap()
+        arcalo_core::weekreview::week_review(&db, past, &tl, &settings, None, Utc::now()).unwrap()
     });
     let opts = arcalo_core::dayreview::ReviewOptions::from_settings(&settings, None, Utc::now());
-    time("day_review", 3, || arcalo_core::dayreview::day_review(&db, today, &tl, &opts).unwrap());
+    time("day_review", 3, || arcalo_core::dayreview::day_review(&db, past, &tl, &opts).unwrap());
     time("daily_overview 6 weeks", 3, || {
         arcalo_core::calendar::daily_overview(&db, &Default::default(), monday, monday + Duration::days(41), &tl)
             .unwrap()
