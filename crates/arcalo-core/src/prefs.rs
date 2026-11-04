@@ -445,6 +445,21 @@ impl DailyTitle {
             }
         }
     }
+
+    /// Every title the daily note of `date` can have on some computer: each format, the long one
+    /// in both languages. Another computer of the same workspace may use another format or
+    /// language; its daily notes come here through the Git sync with its titles.
+    pub fn every_title(date: chrono::NaiveDate) -> [String; 4] {
+        use chrono::Datelike;
+        let day = date.weekday().num_days_from_monday() as usize;
+        let numeric = date.format("%d.%m.%Y").to_string();
+        [
+            date.format("%Y-%m-%d").to_string(),
+            format!("{}, {numeric}", WEEKDAYS[day]),
+            format!("{}, {numeric}", WEEKDAYS_EN[day]),
+            numeric,
+        ]
+    }
 }
 
 // ---------------------------------------------------------------------- time

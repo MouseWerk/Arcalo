@@ -1859,9 +1859,9 @@ pub(crate) fn run_git_sync_with(
 fn take_over_titles(app: &AppHandle, state: &AppState) {
     let titles = vault::pulled_titles(&state.git_repo_dir(), &state.git_source_dir());
     match syncmerge::take_over_titles(&state.db(), &titles) {
-        Ok(renamed) if !renamed.is_empty() => {
-            devlog::info("git", format!("{} page titles taken over from the server", renamed.len()));
-            let _ = app.emit("gitsync://pulled", &syncmerge::Pulled { moved: renamed, ..Default::default() });
+        Ok(renamed) if !renamed.moved.is_empty() => {
+            devlog::info("git", format!("{} page titles taken over from the server", renamed.moved.len()));
+            let _ = app.emit("gitsync://pulled", &renamed);
         }
         Ok(_) => {}
         Err(e) => devlog::warn("git", format!("page titles from the server not taken over: {e}")),

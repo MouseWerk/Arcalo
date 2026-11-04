@@ -384,6 +384,12 @@ pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
                 if !ms.is_empty() {
                     push(Chunk::Merged { text: join(ms), from: Side::Both });
                 }
+            } else if let Some(pieces) = in_place(bs, ms, ts) {
+                // Neighbouring blocks changed in place, each on one side only (a task ticked
+                // here, the next one or the paragraph below edited there).
+                for c in pieces {
+                    push(c);
+                }
             } else {
                 push(Chunk::Conflict { base: Some(join(bs)), mine: join(ms), theirs: join(ts) });
             }
@@ -397,6 +403,29 @@ pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
         (bi, mi, ti) = (ab + 1, am + 1, at + 1);
     }
     finish(chunks)
+}
+
+/// A region both sides changed, merged block by block when neither side added or removed a block
+/// there and each block was changed on one side only (or the same way on both). `None`: a
+/// conflict of the whole region.
+fn in_place(bs: &[String], ms: &[String], ts: &[String]) -> Option<Vec<Chunk>> {
+    if bs.len() != ms.len() || bs.len() != ts.len() {
+        return None;
+    }
+    let one = |x: &String| std::slice::from_ref(x);
+    let mut out = Vec::with_capacity(bs.len());
+    for ((b, m), t) in bs.iter().zip(ms).zip(ts) {
+        out.push(if same(one(m), one(b)) {
+            Chunk::Merged { text: t.clone(), from: Side::Theirs }
+        } else if same(one(t), one(b)) {
+            Chunk::Merged { text: m.clone(), from: Side::Mine }
+        } else if same(one(m), one(t)) {
+            Chunk::Merged { text: m.clone(), from: Side::Both }
+        } else {
+            return None;
+        });
+    }
+    Some(out)
 }
 
 fn finish(chunks: Vec<Chunk>) -> MergeResult {
@@ -508,6 +537,36 @@ mod tests {
                 && text.contains("weiter vom Server")
                 && text.contains("Letzter Absatz A.")
         );
+    }
+
+    /// Two computers change neighbouring blocks: a task ticked here, the next task ticked or the
+    /// paragraph below edited there. Each block changed on one side only: merged, nothing to
+    /// decide (before, the region was one conflict, and „Meine“ or „Andere“ undid one change).
+    #[test]
+    fn neighbouring_blocks_changed_on_different_sides_merge() {
+        let base = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [ ] Angebot\n\nText unten\n";
+        let mine = "## Woche\n\n- [x] Bericht\n- [ ] Anruf\n- [ ] Angebot\n\nText unten, ergänzt\n";
+        let theirs = "## Woche\n\n- [ ] Bericht\n- [x] Anruf\n- [ ] Angebot\n\nText unten\n";
+        let r = merge3(Some(base), mine, theirs);
+        assert_eq!(r.conflicts, 0, "{:#?}", r.chunks);
+        assert_eq!(
+            r.merged().as_deref(),
+            Some("## Woche\n\n- [x] Bericht\n- [x] Anruf\n- [ ] Angebot\n\nText unten, ergänzt\n")
+        );
+        // The last task ticked there, the paragraph right below it edited here.
+        let theirs = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [x] Angebot\n\nText unten\n";
+        let mine = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [ ] Angebot\n\nText unten, ergänzt\n";
+        let r = merge3(Some(base), mine, theirs);
+        assert_eq!(
+            r.merged().as_deref(),
+            Some("## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [x] Angebot\n\nText unten, ergänzt\n")
+        );
+        // One block changed differently on both sides stays a conflict, as does a region where a
+        // side added or removed a block.
+        let theirs = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [x] Angebot\n\nText unten, anders\n";
+        assert_eq!(merge3(Some(base), mine, theirs).conflicts, 1);
+        let theirs = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [x] Angebot\n- [ ] Neu\n\nText unten\n";
+        assert_eq!(merge3(Some(base), mine, theirs).conflicts, 1);
     }
 
     #[test]
