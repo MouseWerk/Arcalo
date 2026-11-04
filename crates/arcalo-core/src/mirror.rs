@@ -121,6 +121,10 @@ where
 {
     let (pages, csv_files) = replace_dir(target, |dir| {
         let pages = vault::export_snapshot(&snap.vault, dir, attachments_dir)?;
+        if let Some(titles) = vault::titles_file(&snap.vault) {
+            let file = dir.join(vault::TITLES_FILE);
+            fs::write(&file, titles).at(&file)?;
+        }
         let months = time_entries_csv(&snap.rows, offset);
         if !months.is_empty() {
             let out = dir.join(TIME_DIR);

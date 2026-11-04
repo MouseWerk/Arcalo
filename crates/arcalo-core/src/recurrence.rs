@@ -327,11 +327,15 @@ impl Recurrence {
             Some(d) if !self.when_done => d,
             _ => done_on,
         };
-        let mut next = self.step(base)?;
+        // A series from the 31st keeps its day while past dates are skipped, as the rule written
+        // into the next occurrence does ([`Recurrence::pinned`]): not 28 February, 28 March, ….
+        let pinned = self.pinned(base);
+        let rule = pinned.as_ref().unwrap_or(self);
+        let mut next = rule.step(base)?;
         // Skip what is already past; bounded for a rule of every day over decades.
         let mut guard = 0;
         while next <= done_on && guard < 20_000 {
-            next = self.step(next)?;
+            next = rule.step(next)?;
             guard += 1;
         }
         let until = self.until.as_deref().and_then(|u| NaiveDate::parse_from_str(u, "%Y-%m-%d").ok());
@@ -343,8 +347,13 @@ impl Recurrence {
         let mut out = vec![];
         let mut cur = due;
         let mut done_on = today;
+        // The rule as each occurrence writes it (a series from the 31st keeps its day).
+        let mut rule = self.clone();
         while out.len() < n {
-            let Some(next) = self.next_due(cur, done_on) else { break };
+            if let Some(p) = cur.and_then(|c| rule.pinned(c)) {
+                rule = p;
+            }
+            let Some(next) = rule.next_due(cur, done_on) else { break };
             out.push(next);
             cur = Some(next);
             done_on = next;
@@ -460,6 +469,22 @@ mod tests {
         assert_eq!(r("weekly").pinned(d("2026-01-31")), None);
         // A bare day only with a monthly or yearly unit.
         assert!(Recurrence::parse("weekly 15").is_none());
+    }
+
+    #[test]
+    fn a_series_from_the_31st_keeps_its_day_while_skipping_past_dates() {
+        // Due 31 January, ticked off on 3 November: the end of November, not the 28th.
+        assert_eq!(r("monthly").next_due(Some(d("2026-01-31")), d("2026-11-03")), Some(d("2026-11-30")));
+        assert_eq!(r("monthly").next_due(Some(d("2026-01-30")), d("2026-03-01")), Some(d("2026-03-30")));
+        assert_eq!(r("2m").next_due(Some(d("2026-08-31")), d("2027-01-15")), Some(d("2027-02-28")));
+        assert_eq!(r("yearly").next_due(Some(d("2024-02-29")), d("2027-06-01")), Some(d("2028-02-29")));
+        // From the day it was done, the day of that day counts as before.
+        assert_eq!(r("monthly,done").next_due(Some(d("2026-01-31")), d("2026-01-31")), Some(d("2026-02-28")));
+        // The dialog's preview shows what ticking off will write.
+        assert_eq!(
+            r("monthly").preview(Some(d("2026-01-31")), d("2026-01-20"), 3),
+            [d("2026-02-28"), d("2026-03-31"), d("2026-04-30")]
+        );
     }
 
     #[test]

@@ -89,6 +89,19 @@ pub fn book_command<Tz: TimeZone>(
     // Settings → Zeiterfassung: rounding, minimum booking and default Leistungsart.
     let settings = db.load_settings().unwrap_or_default();
     let time = settings.time.clone();
+    // A time span lasts as long as the clock ran that day: over the change to winter time
+    // 01:00-04:00 is four hours, over the change to summer time two.
+    if let (Some(from), Some(to)) = (cmd.start, cmd.end) {
+        let day = cmd.date.resolve(local_now.date_naive());
+        let end_day = if to > from { day } else { day + chrono::Days::new(1) };
+        let minutes =
+            (local_to_utc(offset, end_day.and_time(to))? - local_to_utc(offset, day.and_time(from))?).num_minutes();
+        if minutes <= 0 {
+            let w = format!("{}-{}", from.format("%H:%M"), to.format("%H:%M"));
+            return Err(Error::Parse(trf!("Die Zeitspanne „{w}“ ist leer", "The time span “{w}” is empty")));
+        }
+        cmd.duration_minutes = minutes;
+    }
     cmd.duration_minutes = time.rounding.apply(cmd.duration_minutes);
 
     let np = db.netzplan_by_ref(&cmd.netzplan_ref)?;
@@ -610,6 +623,33 @@ mod tests {
         assert_eq!(local_to_utc(&Berlin, gap).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 1, 30, 0).unwrap());
         let before = gap - chrono::Duration::hours(1);
         assert_eq!(local_to_utc(&Berlin, before).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 0, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn a_time_span_over_the_clock_change_books_the_real_length() {
+        let (db, _) = setup();
+        let t = Thresholds::default();
+        let tz = chrono_tz::Europe::Berlin;
+        let now = Utc.with_ymd_and_hms(2026, 11, 3, 12, 0, 0).unwrap();
+        let book = |line: &str| log_slash_command(&db, line, now, &tz, &t).unwrap().entry;
+        // 25 October 2026: 03:00 summer time becomes 02:00 winter time; 01:00–04:00 is four hours.
+        let e = book("/zeit NP-8801/1020 01:00-04:00 Migration @25.10.2026");
+        assert_eq!(e.start_time, Utc.with_ymd_and_hms(2026, 10, 24, 23, 0, 0).unwrap());
+        assert_eq!(
+            (e.duration_minutes, e.end_time),
+            (Some(240), Some(Utc.with_ymd_and_hms(2026, 10, 25, 3, 0, 0).unwrap()))
+        );
+        // Over midnight into that night: 22:00–04:00 is seven hours.
+        let e = book("/zeit NP-8801/1020 22:00-04:00 Nachtschicht @24.10.2026");
+        assert_eq!(e.duration_minutes, Some(420));
+        // 29 March 2026: 02:00 winter time becomes 03:00 summer time; 01:00–04:00 is two hours.
+        let e = book("/zeit NP-8801/1020 01:00-04:00 Wartung @29.03.2026");
+        assert_eq!(
+            (e.start_time, e.duration_minutes),
+            (Utc.with_ymd_and_hms(2026, 3, 29, 0, 0, 0).unwrap(), Some(120))
+        );
+        // An ordinary day is unchanged.
+        assert_eq!(book("/zeit NP-8801/1020 09:00-10:30 x @22.10.2026").duration_minutes, Some(90));
     }
 
     #[test]

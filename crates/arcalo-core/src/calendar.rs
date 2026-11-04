@@ -1,5 +1,5 @@
 //! Month overview for the daily-note calendar: per local day whether a daily note
-//! exists, the booked minutes and the open tasks due that day.
+//! exists, the booked minutes, the day's target and the open tasks due that day.
 
 use crate::trf;
 use std::collections::HashMap;
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::report;
+use crate::settings::Settings;
 
 /// Longest range an overview may cover (a calendar shows at most six weeks).
 const MAX_DAYS: i64 = 62;
@@ -22,13 +23,17 @@ pub struct DayOverview {
     pub has_note: bool,
     /// Finished bookings whose start falls on that local day.
     pub booked_minutes: i64,
+    /// The day's target as every view counts missing time ([`crate::worktime::DayTargets`]):
+    /// none on a public holiday, an absence day or a day without a weekday target.
+    pub target_minutes: i64,
     /// Open tasks due that day (templates excluded).
     pub open_tasks: i64,
 }
 
-/// Every local day `from..=to` with its daily note, booked minutes and open tasks due.
+/// Every local day `from..=to` with its daily note, booked minutes, target and open tasks due.
 pub fn daily_overview<Tz: TimeZone>(
     db: &Database,
+    settings: &Settings,
     from: NaiveDate,
     to: NaiveDate,
     offset: &Tz,
@@ -56,6 +61,7 @@ pub fn daily_overview<Tz: TimeZone>(
 
     let tasks = db.open_tasks_due_per_day(&key(from), &key(to))?;
 
+    let targets = crate::worktime::DayTargets::load(db, settings, from, to)?;
     let summary = report::time_summary(db, from, to, offset)?;
     Ok(summary
         .days
@@ -68,6 +74,7 @@ pub fn daily_overview<Tz: TimeZone>(
                 note_id,
                 has_note: note_id.is_some(),
                 booked_minutes: (d.hours * 60.0).round() as i64,
+                target_minutes: targets.get(d.date),
                 open_tasks: tasks.get(&k).copied().unwrap_or(0),
             }
         })
@@ -124,7 +131,7 @@ mod tests {
         )
         .unwrap();
 
-        let o = daily_overview(&db, day(21), day(23), &cet()).unwrap();
+        let o = daily_overview(&db, &Settings::default(), day(21), day(23), &cet()).unwrap();
         assert_eq!(o.iter().map(|d| d.date).collect::<Vec<_>>(), [day(21), day(22), day(23)]);
         assert_eq!((o[0].has_note, o[0].booked_minutes, o[0].open_tasks), (false, 450, 0));
         assert_eq!(
@@ -135,7 +142,32 @@ mod tests {
         assert!(o[1].has_note);
         assert_eq!((o[2].has_note, o[2].booked_minutes, o[2].open_tasks), (false, 60, 1), "trashed note ignored");
 
-        assert!(daily_overview(&db, day(22), day(21), &cet()).is_err());
-        assert!(daily_overview(&db, day(1), NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(), &cet()).is_err());
+        assert!(daily_overview(&db, &Settings::default(), day(22), day(21), &cet()).is_err());
+        assert!(
+            daily_overview(&db, &Settings::default(), day(1), NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(), &cet())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn the_target_of_each_day_follows_holidays_absences_and_weekday_targets() {
+        let db = Database::open_in_memory().unwrap();
+        let mut s = Settings::default();
+        s.time.balance.state = "BY".into();
+        // Monday to Thursday 8 h, Friday 6 h, no weekend.
+        s.time.balance.weekday_hours = vec![8.0, 8.0, 8.0, 8.0, 6.0, 0.0, 0.0];
+        let d = |m: u32, day: u32| NaiveDate::from_ymd_opt(2026, m, day).unwrap();
+        let vacation = crate::worktime::Absence {
+            date: d(10, 28),
+            kind: crate::worktime::AbsenceKind::Vacation,
+            half: false,
+            note: String::new(),
+        };
+        db.absence_put(&vacation).unwrap();
+        db.absence_put(&crate::worktime::Absence { date: d(10, 29), half: true, ..vacation }).unwrap();
+        // Mon 26 Oct to Mon 2 Nov 2026; Sun 1 Nov is All Saints' Day in Bavaria, Mon 2 Nov is not.
+        let o = daily_overview(&db, &s, d(10, 26), d(11, 2), &cet()).unwrap();
+        let targets: Vec<i64> = o.iter().map(|x| x.target_minutes).collect();
+        assert_eq!(targets, [480, 480, 0, 240, 360, 0, 0, 480]);
     }
 }

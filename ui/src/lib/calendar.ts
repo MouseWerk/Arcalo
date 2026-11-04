@@ -24,18 +24,18 @@ export function addMonths(d: Date, n: number): Date {
 export type DayTone = "none" | "met" | "below";
 
 /**
- * How a day's booked time compares with the daily target: `below` only on past workdays
- * (today is still running, weekends have no target), `met` whenever the target is reached.
- * Empty days before `trackedSince` (the first booking in view) stay neutral, so months
- * before time tracking started are not all flagged.
+ * How a day's booked time compares with its target (`target_minutes` of the day overview: the
+ * weekday's target, none on a public holiday, half on a half absence, none on a full one, as
+ * every view counts missing time): `below` only on past days with a target (today is still
+ * running), `met` whenever the target is reached. Empty days before `trackedSince` (the first
+ * booking in view) stay neutral, so months before time tracking started are not all flagged.
  */
-export function dayTone(day: Date, minutes: number, targetHours: number, workdays: number[], today: Date, trackedSince?: string): DayTone {
-  const isoWeekday = ((day.getDay() + 6) % 7) + 1;
-  if (targetHours > 0 && minutes >= targetHours * 60) return "met";
+export function dayTone(day: Date, minutes: number, targetMinutes: number, today: Date, trackedSince?: string): DayTone {
+  if (targetMinutes > 0 && minutes >= targetMinutes) return "met";
   const iso = isoDay(day);
   const past = iso < isoDay(today);
   if (minutes <= 0 && (!trackedSince || iso < trackedSince)) return "none";
-  if (past && workdays.includes(isoWeekday) && targetHours > 0) return "below";
+  if (past && targetMinutes > 0) return "below";
   return "none";
 }
 

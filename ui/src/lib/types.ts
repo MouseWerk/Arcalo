@@ -882,11 +882,21 @@ export interface MirrorStatus {
   error: string | null;
 }
 /** One day of the daily-note calendar. */
+/** The next occurrence of a repeating task ticked off (`taskedit::NextOccurrence`): its due date
+ *  and, when it must keep its day of the month, the rule as written and the rule to write. */
+export interface NextOccurrence {
+  due: string;
+  rule_from: string | null;
+  rule_to: string | null;
+}
+
 export interface DayOverview {
   date: string;
   note_id: number | null;
   has_note: boolean;
   booked_minutes: number;
+  /** The day's target (none on a holiday or an absence day, half on a half one). */
+  target_minutes: number;
   open_tasks: number;
 }
 export interface ConnectionTest {

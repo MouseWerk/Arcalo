@@ -32,6 +32,10 @@ pub struct ZeitCommand {
     pub description: String,
     pub date: DateSpec,
     pub start: Option<NaiveTime>,
+    /// End of a time span (`9:00-10:30`): the booking then lasts from `start` to this time as the
+    /// clock runs that day, so a span over a clock change books its real length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<NaiveTime>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,10 +113,12 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
     };
 
     let mut span_start = None;
+    let mut span_end = None;
     let duration_minutes = match it.next() {
         Some(Token::Word(w)) => match parse_span(&w) {
             Some((from, to)) => {
                 span_start = Some(from);
+                span_end = Some(to);
                 span_minutes(from, to).ok_or_else(|| {
                     Error::Parse(trf!("Die Zeitspanne „{w}“ ist leer", "The time span “{w}” is empty"))
                 })?
@@ -187,7 +193,16 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
         }
     };
 
-    Ok(ZeitCommand { netzplan_ref, vorgang_nr, duration_minutes, leistungsart, description, date, start })
+    Ok(ZeitCommand {
+        netzplan_ref,
+        vorgang_nr,
+        duration_minutes,
+        leistungsart,
+        description,
+        date,
+        start,
+        end: span_end,
+    })
 }
 
 #[derive(Debug, PartialEq)]
