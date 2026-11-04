@@ -91,6 +91,37 @@ export function captureMarkdown(mode: Exclude<CaptureMode, "booking">, text: str
     .join("\n");
 }
 
+/** What the Schnellerfassung keeps of a note or task not saved yet (lib/capture.ts's draft, with
+ *  the phone's own choices beside the text). */
+export interface CaptureDraft {
+  text: string;
+  /** The desktop's target; the phone keeps its own (`inbox`). */
+  target: null;
+  mode: Exclude<CaptureMode, "booking">;
+  inbox: boolean;
+  due: DueChoice;
+}
+
+const DUE_CHOICES: DueChoice[] = ["none", "today", "tomorrow", "nextWeek"];
+
+/** The draft of a note or task being typed; null for a booking or an empty text (nothing to keep). */
+export function captureDraft(mode: CaptureMode, text: string, inbox: boolean, due: DueChoice): CaptureDraft | null {
+  if (mode === "booking" || !text.trim()) return null;
+  return { text, target: null, mode, inbox, due };
+}
+
+/** A stored draft as the Schnellerfassung opens it again; a draft of the desktop's capture window
+ *  (text and target only) opens as a note into the daily note. */
+export function restoreCapture(d: { text?: unknown; mode?: unknown; inbox?: unknown; due?: unknown } | null): Omit<CaptureDraft, "target"> | null {
+  if (!d || typeof d.text !== "string" || !d.text.trim()) return null;
+  return {
+    text: d.text,
+    mode: d.mode === "task" ? "task" : "note",
+    inbox: d.inbox === true,
+    due: DUE_CHOICES.includes(d.due as DueChoice) ? (d.due as DueChoice) : "none",
+  };
+}
+
 // ------------------------------------------------------------------- bookings
 
 export interface ZeitDraft {

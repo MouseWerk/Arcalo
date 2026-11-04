@@ -84,6 +84,11 @@ export const mobileApi = {
   /** Books a `/zeit` line; its chip goes into the daily note. */
   book: (line: string) => invoke<T.LogOutcome>("mobile_book", { line }),
   capture: (text: string, inbox: boolean) => invoke<T.Page>("mobile_capture", { text, inbox }),
+  /** The Schnellerfassung's draft (JSON, see `CaptureDraft`), kept in the workspace's database. */
+  captureDraft: {
+    get: () => invoke<string | null>("mobile_capture_draft_get"),
+    set: (draft: string | null) => invoke<void>("mobile_capture_draft_set", { draft }),
+  },
   timerStop: () => invoke<T.TimeEntry[]>("mobile_timer_stop"),
   recentTargets: () => invoke<RecentTarget[]>("mobile_recent_targets"),
   sync: (allowDeletions = false) => invoke<MobileSync>("mobile_sync", { allowDeletions, afterRestore: null }),

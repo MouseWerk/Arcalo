@@ -25,6 +25,8 @@ import {
   taskBoxes,
   toggleTask,
   withNextOccurrence,
+  captureDraft,
+  restoreCapture,
 } from "./model";
 import type { PageNode, Task, TimeEntryRow } from "../lib/types";
 
@@ -353,5 +355,22 @@ describe("tasks in a page (A19)", () => {
     );
     expect(mayRepeat("Bericht every:weekly")).toBe(true);
     expect(mayRepeat("Bericht jede Woche")).toBe(false);
+  });
+});
+
+describe("the capture's draft (R4A-2)", () => {
+  it("keeps a note or task being typed, with its choices, and nothing for a booking or an empty text", () => {
+    expect(captureDraft("task", "Angebot prüfen", true, "tomorrow")).toEqual({ text: "Angebot prüfen", target: null, mode: "task", inbox: true, due: "tomorrow" });
+    expect(captureDraft("note", "  ", false, "none")).toBeNull();
+    expect(captureDraft("booking", "x", false, "none")).toBeNull();
+  });
+
+  it("opens a stored draft again, the desktop's as a note, and nothing from an empty or broken one", () => {
+    const d = captureDraft("task", "Reisekosten\nBelege", false, "nextWeek");
+    expect(restoreCapture(JSON.parse(JSON.stringify(d)))).toEqual({ text: "Reisekosten\nBelege", mode: "task", inbox: false, due: "nextWeek" });
+    expect(restoreCapture({ text: "vom Desktop" })).toEqual({ text: "vom Desktop", mode: "note", inbox: false, due: "none" });
+    expect(restoreCapture({ text: "x", mode: "booking", inbox: "yes", due: "someday" })).toEqual({ text: "x", mode: "note", inbox: false, due: "none" });
+    expect(restoreCapture({ text: " " })).toBeNull();
+    expect(restoreCapture(null)).toBeNull();
   });
 });

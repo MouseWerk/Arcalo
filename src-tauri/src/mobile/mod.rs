@@ -368,6 +368,20 @@ pub fn mobile_settings_save(
     crate::settings_save(app, state, settings)
 }
 
+/// The Schnellerfassung's text not saved yet, kept in the workspace's database as the desktop's
+/// capture window keeps its draft: Back, the close button or Android ending the app in the
+/// background lost it.
+#[tauri::command(async)]
+pub fn mobile_capture_draft_get(state: State<AppState>) -> Result<Option<String>> {
+    arcalo_core::capture::load_draft(&state.reader())
+}
+
+/// Stores the Schnellerfassung's draft; `None` removes it (saved, or emptied).
+#[tauri::command(async)]
+pub fn mobile_capture_draft_set(state: State<AppState>, draft: Option<String>) -> Result<()> {
+    arcalo_core::capture::save_draft(&state.db(), draft.as_deref())
+}
+
 /// „Heute“: date, booked time and target, the timer, due tasks and today's appointments.
 #[tauri::command(async)]
 pub fn mobile_today(state: State<AppState>) -> Result<Today> {

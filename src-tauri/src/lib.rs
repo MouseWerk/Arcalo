@@ -5720,6 +5720,10 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         #[cfg(mobile)]
         mobile::mobile_capture,
         #[cfg(mobile)]
+        mobile::mobile_capture_draft_get,
+        #[cfg(mobile)]
+        mobile::mobile_capture_draft_set,
+        #[cfg(mobile)]
         mobile::mobile_timer_stop,
         #[cfg(mobile)]
         mobile::mobile_recent_targets,

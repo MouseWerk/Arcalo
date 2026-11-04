@@ -174,6 +174,38 @@ for (const [W, H] of [
       assert.deepEqual(problems, []);
     });
 
+    // R4A-2: Back (or the close button) closed the capture and its text was gone.
+    test("keeps the capture's text after Back until it is saved", async () => {
+      const value = () => page.evaluate(() => document.querySelector(".m-sheet textarea")?.value ?? null);
+      const closed = async () => {
+        for (let i = 0; i < 3 && (await page.$(".m-sheet")); i++) {
+          device.back();
+          await page.waitForFunction(() => !document.querySelector(".m-sheet"), undefined, { timeout: 3000 }).catch(() => {});
+        }
+        assert.equal(await page.$(".m-sheet"), null, "Back closed the capture");
+      };
+      await tab(1);
+      await page.click(".m-tab-capture");
+      await visible(".m-sheet textarea");
+      await page.click(".m-seg-opt:nth-child(2)");
+      await page.click(".m-sheet textarea");
+      await page.insertText("Entwurf: Rückruf beim Kunden");
+      await closed();
+      await page.click(".m-tab-capture");
+      await visible(".m-sheet textarea");
+      await page.waitForFunction(() => document.querySelector(".m-sheet textarea")?.value === "Entwurf: Rückruf beim Kunden", undefined, { timeout: 10000 }).catch(() => {});
+      assert.equal(await value(), "Entwurf: Rückruf beim Kunden", "the text typed before Back");
+      assert.equal(await page.evaluate(() => document.querySelector(".m-seg-opt[aria-checked='true'], .m-seg-opt.on")?.textContent.trim() ?? null), "Aufgabe", "as a task again");
+      // Saved: the next capture starts empty.
+      await page.click(".m-sheet .m-form-actions .m-btn-primary");
+      await page.waitForFunction(() => !document.querySelector(".m-sheet"), undefined, { timeout: 10000 });
+      await page.click(".m-tab-capture");
+      await visible(".m-sheet textarea");
+      await sleep(1000);
+      assert.equal(await value(), "", "the capture after saving");
+      await closed();
+    });
+
     // R4A-1: a key stored (here: none for the LiteLLM provider) reads the keys again and builds the
     // AI clients with the settings of before; a save in between was taken back in the running app
     // (the language chosen in the first seconds after the start turned back to English).

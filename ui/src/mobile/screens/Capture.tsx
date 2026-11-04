@@ -1,13 +1,13 @@
 // Schnellerfassung: a note or a task into today's daily note or the inbox (also with text shared
 // from another app), or a booking (the form of the „Zeit“ tab).
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate } from "../../lib/format";
-import { normalizeCapture } from "../../lib/capture";
+import { draftSaver, loadDraft, normalizeCapture } from "../../lib/capture";
 import { t } from "../../lib/i18n";
 import { mobileApi } from "../api";
 import { errorText, useMobile } from "../context";
-import { captureMarkdown, dueOf, noonOf, type CaptureMode, type DueChoice } from "../model";
+import { captureDraft, captureMarkdown, dueOf, noonOf, restoreCapture, type CaptureMode, type DueChoice } from "../model";
 import { Header, Segmented } from "../ui";
 import { ZeitForm } from "./Time";
 
@@ -20,6 +20,46 @@ export function CaptureScreen({ mode: initial, text: shared }: { mode: CaptureMo
   const [due, setDue] = useState<DueChoice>("none");
   const [busy, setBusy] = useState(false);
 
+  // The text typed is kept until it is saved (Back, the close button, Android ending the app in
+  // the background lost it): the draft opens again with the next capture, as on the desktop.
+  const drafts = useMemo(() => draftSaver(mobileApi.captureDraft), []);
+  const draftRead = useRef(false);
+  const typed = useRef(false);
+  useEffect(() => {
+    let live = true;
+    // Text shared from another app comes first; the draft stays until that text is typed on.
+    if (shared) return;
+    void loadDraft(mobileApi.captureDraft)
+      .then((d) => {
+        const back = restoreCapture(d);
+        if (!live || !back || typed.current) return;
+        setMode(back.mode);
+        setText(back.text);
+        setInbox(back.inbox);
+        setDue(back.due);
+      })
+      .finally(() => {
+        if (live) draftRead.current = true;
+      });
+    return () => {
+      live = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // A booking has its own form: the note's text stays kept meanwhile.
+    if (mode === "booking") return;
+    if (draftRead.current || typed.current) drafts.save(captureDraft(mode, text, inbox, due));
+  }, [drafts, mode, text, inbox, due]);
+  // Stored at once when the app goes to the background or the capture closes.
+  useEffect(() => {
+    const onHidden = () => document.visibilityState === "hidden" && void drafts.flush();
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      void drafts.flush();
+    };
+  }, [drafts]);
+
   const save = async () => {
     if (mode === "booking") return;
     const md = captureMarkdown(mode, normalizeCapture(text), dueOf(due));
@@ -30,6 +70,8 @@ export function CaptureScreen({ mode: initial, text: shared }: { mode: CaptureMo
     setBusy(true);
     try {
       const page = await mobileApi.capture(md, inbox);
+      typed.current = false;
+      drafts.save(null);
       m.toast("success", t("mob.cap.saved", { title: page.title }));
       m.back();
     } catch (e) {
@@ -62,7 +104,10 @@ export function CaptureScreen({ mode: initial, text: shared }: { mode: CaptureMo
               autoFocus
               rows={mode === "note" ? 8 : 3}
               placeholder={mode === "note" ? t("mob.cap.notePlaceholder") : t("mob.cap.taskPlaceholder")}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                typed.current = true;
+                setText(e.target.value);
+              }}
               aria-label={mode === "note" ? t("mob.cap.note") : t("mob.cap.task")}
             />
             {mode === "task" && (
