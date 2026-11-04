@@ -168,7 +168,13 @@ page, on a blocking thread).
   (`adopt_tree`, first sync of a new computer): the server's files stay, files only this computer has are added, a note
   both have with different text keeps the server's version and comes back as a conflict (base `None`), and notes only the
   server has come back with `mine: None`, so the shell creates them as pages (subpages below the page created for their
-  folder). Mass-deletion guard (`mass_deletion`): a commit that deletes more than 10 tracked notes, or 3 and more than a
+  folder). The repository carries the text, not the marks: a page created so whose title is a daily note's (the settings'
+  format or the ISO date) becomes the daily note of its day when that day has none (`adopt_daily_notes`, and
+  `daily_note_found` for pages taken over before), and a meeting note whose front matter names the appointment's day and
+  time becomes that appointment's note when it is opened (`calendar_meeting_note`), instead of a second note beside it. The
+  time sheets (`Zeiterfassung/`) are only added and updated, never removed: a month this computer has no bookings in may be
+  another computer's (`sync_time_sheets`; two computers booking in the same month still write the same file, the last
+  sync's wins). Mass-deletion guard (`mass_deletion`): a commit that deletes more than 10 tracked notes, or 3 and more than a
   fifth of them, is refused (staged changes reset) with an error starting with `GUARD_PREFIX`; `git_sync_status` reports
   `blocked_deletions` and Settings → Sicherung offers „Löschungen übertragen“ (`git_sync_now` with `allowDeletions`, after a
   confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
@@ -1258,7 +1264,8 @@ quelle: "[[Konzept]]"
 
 - **`/zeit` parser** (`zeit.rs`): tokenizer with straight and typographic quotes; the
   reference `NP/Vorgang` or a WBS element; durations in h/m/`h:mm`; options `#LA`, `@date`, `@hh:mm`.
-  "Today" without a start time books the block as ending now; past days default to 08:00 local.
+  "Today" without a start time books the block as ending now; past days default to 08:00 local. A line without a date
+  typed in the daily note of an earlier day books on that day (`parse_for_day`).
 - **Budget / ETC** (`tracking.rs`): per Vorgang ETC = manual remaining estimate or
   `max(plan − booked, 0)`; Netzplan ETC = sum of its Vorgänge; EAC = booked + ETC.
   Levels: warning ≥ 75 %, critical ≥ 90 % or EAC > plan, exceeded when booked > plan.

@@ -97,6 +97,10 @@ test("the office computer writes the day and syncs it", async () => {
   const note = await app.invoke("calendar_meeting_note", { key });
   assert.equal(note.created, true);
   state.meeting = note.page.title;
+  // Prepared in the office too, with a question of its own below the generated part.
+  const prep = await app.invoke("meeting_prep", { requestId: "prep-601", key, ai: false });
+  state.prep = prep.page.title;
+  await app.invoke("page_save", { id: prep.page.id, content: `${await content(prep.page.id)}- Frage: Termin Go-live?\n` });
   await app.invoke("page_save", { id: note.page.id, content: `${note.page.content ?? (await content(note.page.id))}\nBeschlossen: REST statt SOAP.\n` });
   await enableSync("Office");
   await app.invoke("backup_now");
@@ -122,6 +126,12 @@ test("the laptop goes on with the same daily note and the same meeting note", as
   const note = await app.invoke("calendar_meeting_note", { key });
   assert.equal(note.page.title, state.meeting);
   assert.match(await content(note.page.id), /REST statt SOAP/);
+  // Refreshing the preparation keeps the office's prep page and its question.
+  const prep = await app.invoke("meeting_prep", { requestId: "prep-601b", key, ai: false });
+  assert.equal(prep.created, false);
+  assert.equal(prep.page.title, state.prep);
+  assert.match(await content(prep.page.id), /Frage: Termin Go-live\?/);
+  assert.equal((await named(`${state.prep} 2`)).length, 0);
   // The laptop goes on: a line in the daily note, the concept renamed, the task done.
   await app.invoke("page_save", { id: daily.id, content: (await content(daily.id)).replace("Im Büro begonnen", "Im Büro begonnen, unterwegs weiter") });
   const konzept = (await named("Konzept Schnittstelle"))[0];

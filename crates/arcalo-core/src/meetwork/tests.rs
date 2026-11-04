@@ -409,6 +409,26 @@ fn prep_selects_series_open_points_issues_and_attendees() {
         let ty: Option<String> =
             db.conn().query_row("SELECT file_type FROM pages WHERE id = ?1", [page.id], |r| r.get(0)).unwrap();
         assert_eq!(ty.as_deref(), Some("meeting"));
+
+        // The laptop took the prep page over with the Git sync (text, no link): refreshing the
+        // appointment's prep there keeps that page and its own notes instead of a second one.
+        let laptop = Database::open_in_memory().unwrap();
+        let copy = laptop.create_page(None, &page.title, Some("file-text")).unwrap();
+        laptop.save_page_content(copy.id, &after.replace("neu", &body)).unwrap();
+        let other = laptop.create_page(None, "Vorbereitung Jour fixe Portal 02.10.2026 2", None).unwrap();
+        let (taken, created) = laptop.meeting_prep_write(&ev, "vom Laptop", &zone).unwrap();
+        assert_eq!((taken.id, created), (copy.id, false));
+        let text = laptop.page_doc(copy.id).unwrap().content;
+        assert!(text.contains("<!-- arcalo:auto -->\n\nvom Laptop\n\n<!-- /arcalo:auto -->"), "{text}");
+        assert!(text.ends_with("- [ ] Eigene Frage an Anna\n"), "{text}");
+        assert_eq!(laptop.meeting_prep_page_id(&ev.key).unwrap(), Some(copy.id));
+        assert_ne!(taken.id, other.id);
+        // A page of that title that is no prep page of this time stays the user's.
+        let third = Database::open_in_memory().unwrap();
+        let mine = third.create_page(None, &page.title, None).unwrap();
+        third.save_page_content(mine.id, "Eigene Gedanken").unwrap();
+        let (fresh, created) = third.meeting_prep_write(&ev, "neu", &zone).unwrap();
+        assert!(created && fresh.id != mine.id);
     });
 }
 

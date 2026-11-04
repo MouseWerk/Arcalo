@@ -627,7 +627,36 @@ impl Database {
             ));
             let mut title = base.clone();
             let mut n = 2;
-            while self.page_by_title(&title)?.is_some() {
+            // The prep page may exist already without the link: written on another computer and
+            // taken over by the Git sync. It is this appointment's when its generated part names
+            // the same day and time and it belongs to no other appointment here.
+            let start = zone.to_wall(ev.start);
+            let when = if ev.all_day {
+                format!("{} · {}", start.format(tr!("%d.%m.%Y", "%Y-%m-%d")), tr!("ganztägig", "all day"))
+            } else {
+                let end = zone.to_wall(ev.end);
+                format!(
+                    "{} {}–{}",
+                    start.format(tr!("%d.%m.%Y", "%Y-%m-%d")),
+                    start.format("%H:%M"),
+                    end.format("%H:%M")
+                )
+            };
+            while let Some(existing) = self.page_by_title(&title)? {
+                let doc = self.page_doc(existing.id)?.content;
+                let ours = doc.contains(block::BEGIN)
+                    && (doc.contains(&format!("*Besprechung: {when}")) || doc.contains(&format!("*Meeting: {when}")))
+                    && self.meeting_prep_key(existing.id)?.is_none()
+                    && existing.kind.is_none();
+                if ours {
+                    let next = block::replace(&doc, body);
+                    if next != doc {
+                        self.save_page_content(existing.id, &next)?;
+                    }
+                    self.meta_set(&format!("{PAGE_KEY}{}", e.key), &existing.id.to_string())?;
+                    self.meta_set(&format!("{EVENT_KEY}{}", existing.id), &e.key)?;
+                    return Ok((self.page(existing.id)?, false));
+                }
                 title = format!("{base} {n}");
                 n += 1;
             }
