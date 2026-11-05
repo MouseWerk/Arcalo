@@ -15,6 +15,7 @@ import { fmtDate } from "../../lib/format";
 import type { CaInfo, CertDetails, NetworkSettings, NetworkStatus, NetworkTest, ProxyMode, ProxyProfile, ServiceRow, Settings } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 import { checkProxy, checkUrl } from "../../lib/settingsApply";
+import { writeSettings } from "../../lib/settingsWrite";
 import { DEFAULT_PROFILE, addProfile, duplicateProfile, fingerprint, pacTargets, removeProfile, routeOf, routeText, setRoute, trustCertificate, untrust, updateProfile } from "../../lib/network";
 import { isKey } from "../../lib/ime";
 
@@ -387,13 +388,12 @@ function ProfileEditor({
     try {
       const probes = await api.networkLegacyProbe(p.id);
       const certs = probes.filter((x) => !x.valid && x.certificate).map((x) => x.certificate!);
-      const settings = useApp.getState().settings?.settings;
-      if (!settings) return;
-      let n = settings.network;
-      for (const c of certs) n = trustCertificate(n, c);
-      n = updateProfile(n, p.id, { legacy_accept_invalid_certs: false });
-      const saved = await api.saveSettings({ ...settings, network: n });
-      useApp.getState().set({ settings: saved });
+      if (!useApp.getState().settings) return;
+      await writeSettings((cur) => {
+        let n = cur.network;
+        for (const c of certs) n = trustCertificate(n, c);
+        return { ...cur, network: updateProfile(n, p.id, { legacy_accept_invalid_certs: false }) };
+      });
       s().toast({ tone: "success", title: t("net.converted", { n: certs.length }), detail: certs.map((c) => c.host).join(", ") || undefined });
     } catch (e) {
       s().error(t("net.convertFailed"), e);

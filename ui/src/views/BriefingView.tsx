@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Mous
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ClipboardList, Clock, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
+import { writeSettings } from "../lib/settingsWrite";
 import { useApp } from "../store/app";
 import { useAi } from "../lib/aiswitch";
 import { Badge, Button, EmptyState, IconButton, Progress, Skeleton } from "../components/ui";
@@ -110,11 +111,9 @@ export function BriefingView() {
   }, [b, summary, write]);
 
   const saveSections = async (sections: BriefingSection[]) => {
-    const view = s().settings;
-    if (!view) return;
+    if (!s().settings) return;
     try {
-      const saved = await api.saveSettings({ ...view.settings, briefing: { ...briefingSettings(view.settings.briefing), sections } });
-      s().set({ settings: saved });
+      await writeSettings((cur) => ({ ...cur, briefing: { ...briefingSettings(cur.briefing), sections } }));
     } catch (e) {
       s().error(t("settings.saveFailed"), e);
     }

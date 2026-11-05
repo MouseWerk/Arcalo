@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errorParts, on } from "./lib/api";
 import { openSettingsSection } from "./lib/calnav";
+import { writeSettings } from "./lib/settingsWrite";
 import { requestWeekProposal } from "./lib/weekplan";
 import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { AI_SHORTCUTS, aiEnabled } from "./lib/aiswitch";
@@ -555,8 +556,13 @@ async function refreshPac(view: SettingsView) {
   try {
     const next = await withPacResults(s);
     if (JSON.stringify(next.network) !== JSON.stringify(s.network)) {
-      const saved = await api.saveSettings(next);
-      useApp.getState().set({ settings: saved });
+      // Only the answers, put on the settings as they are now: a change saved while the PAC script
+      // was read stays.
+      const answers = new Map(next.network.profiles.map((p) => [`${p.id}\n${p.pac_url}`, p.pac_results]));
+      await writeSettings((cur) => ({
+        ...cur,
+        network: { ...cur.network, profiles: cur.network.profiles.map((p) => (answers.has(`${p.id}\n${p.pac_url}`) ? { ...p, pac_results: answers.get(`${p.id}\n${p.pac_url}`)! } : p)) },
+      }));
     }
   } catch (e) {
     useApp.getState().toast({ tone: "warning", title: t("app.pacFailed"), detail: String(e) });

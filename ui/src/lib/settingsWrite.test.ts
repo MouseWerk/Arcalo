@@ -85,3 +85,25 @@ describe("settings writes", () => {
     expect(withPaths(stored, stale, ["editor.smart_quotes"])).toEqual({ ...start, theme: "dark", editor: { smart_quotes: true, tab_size: 2 } });
   });
 });
+
+// R5D-3: a save of the whole settings object without the copy it was made from takes back what
+// the core stored meanwhile (a calendar discovery, „Termine in Outlook eintragen“, a save of the
+// settings page while the PAC script is read at the start). Every save goes through `writeSettings`.
+describe("every settings save of the desktop names the copy it changed", () => {
+  it("api.saveSettings is called only by writeSettings and the setup's writer", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = path.resolve(__dirname, "..");
+    const files = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) return e.name === "mobile" ? [] : files(p);
+        return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+      });
+    const callers = files(src)
+      .filter((f) => /\bapi\.saveSettings\(/.test(fs.readFileSync(f, "utf8")))
+      .map((f) => path.relative(src, f).split(path.sep).join("/"))
+      .sort();
+    expect(callers).toEqual(["lib/settingsWrite.ts", "onboarding/write.ts"]);
+  });
+});
