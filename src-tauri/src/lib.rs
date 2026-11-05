@@ -2360,7 +2360,11 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 /// Saves settings and applies them immediately (no restart needed). `base` is the copy the
 /// window changed into `settings`: only what it changed is taken, the rest stays as stored now
 /// (changed meanwhile by a calendar discovery, a Jira setup or another window).
-#[tauri::command]
+///
+/// Every command that holds [`AppState::settings_write`] runs on a worker, never on the main
+/// thread: a write holding it registers shortcuts and rebuilds the tray on the main thread and
+/// waits for that, so a main thread waiting for the lock would hang the app (R5D-1).
+#[tauri::command(async)]
 fn settings_save(
     app: AppHandle,
     state: State<AppState>,
@@ -2483,7 +2487,7 @@ fn settings_save(
 
 /// Settings → a shareable section: „Für alle Arbeitsbereiche“ or „Nur dieser Arbeitsbereich“.
 /// To „Für alle“ the shared value is taken (when there is one) and applied like a save.
-#[tauri::command]
+#[tauri::command(async)]
 fn settings_scope_set(
     app: AppHandle,
     state: State<AppState>,
@@ -2496,7 +2500,7 @@ fn settings_scope_set(
 }
 
 /// Takes back the settings the last settings sync took from the server.
-#[tauri::command]
+#[tauri::command(async)]
 fn settings_sync_undo(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
     let s = state.db().settings_sync_undo()?;
     devlog::info("settings", "last settings sync taken back");
@@ -2531,7 +2535,7 @@ fn take_over_settings(app: &AppHandle, text: &str) {
 }
 
 /// Saves only the start page's widgets and scratch note (the rest of the settings stays as it is).
-#[tauri::command]
+#[tauri::command(async)]
 fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<SettingsView> {
     state.change_settings(|s| {
         s.dashboard = dashboard.normalized();
@@ -2541,7 +2545,7 @@ fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<Settin
 }
 
 /// Saves only the sidebar's links (the rest of the settings stays as it is).
-#[tauri::command]
+#[tauri::command(async)]
 fn quick_links_save(
     app: AppHandle,
     state: State<AppState>,
@@ -2619,7 +2623,7 @@ fn start_program(app: &AppHandle, path: &str) -> std::result::Result<(), String>
 }
 
 /// Stores (or with `None`, removes) the LiteLLM API key in the OS credential store.
-#[tauri::command]
+#[tauri::command(async)]
 fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsView> {
     state.secrets.set(key.as_deref().map(str::trim)).map_err(Error::State)?;
     state.refresh_ai();
@@ -2628,7 +2632,7 @@ fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsVi
 
 /// Stores (or with `None`, removes) the API key of the provider `id` in the OS credential store.
 /// The provider need not be saved yet (the dialog stores the key before the settings).
-#[tauri::command]
+#[tauri::command(async)]
 fn provider_key_set(state: State<AppState>, id: String, key: Option<String>) -> Result<SettingsView> {
     let id = arcalo_core::ai::provider::slug(&id);
     if id.is_empty() {

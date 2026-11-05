@@ -32,7 +32,8 @@ const answers = (cmd, ms) =>
 // in the same way) changed a shortcut while holding the settings write lock, and the shortcut is
 // registered on the main thread. A settings write from the window waited for that lock on the
 // main thread meanwhile: neither went on, and the app hung for good.
-test("the app keeps answering when the command line changes a shortcut while the window stores a key", async () => {
+// A hung app also stops the WebDriver: the test's own limit ends it.
+test("the app keeps answering when the command line changes a shortcut while the window stores a key", { timeout: 240000 }, async () => {
   // The window stores keys without a pause (as the AI settings do when a key is pasted and taken
   // back), each on the main thread and as a settings write; none changes the settings, so each
   // shortcut of the command line is taken over.
@@ -48,12 +49,14 @@ test("the app keeps answering when the command line changes a shortcut while the
   });
   try {
     for (let i = 0; i < 16; i++) {
-      const shortcut = i % 2 ? "Ctrl+Shift+Space" : "Ctrl+Alt+Shift+K";
+      const shortcut = i % 2 ? "Ctrl+Shift+Space" : "Ctrl+Shift+K";
       await cli("settings", "set", "capture_shortcut", shortcut);
-      await app.browser.waitUntil(async () => (await answers("settings_get", 15000)).settings.capture_shortcut === shortcut, {
-        timeout: 15000,
-        timeoutMsg: `round ${i}: the app did not take over the shortcut of the command line`,
-      });
+      // Asked until it shows the shortcut; an app that hangs fails at once (no retry hides it).
+      const until = Date.now() + 15000;
+      while ((await answers("settings_get", 10000)).settings.capture_shortcut !== shortcut) {
+        assert.ok(Date.now() < until, `round ${i}: the app did not take over the shortcut of the command line`);
+        await new Promise((r) => setTimeout(r, 200));
+      }
     }
   } finally {
     // A hung app runs no script either: the stop is not waited for then.
