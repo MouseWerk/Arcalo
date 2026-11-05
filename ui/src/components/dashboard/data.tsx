@@ -12,6 +12,7 @@ import { isoDay } from "../../lib/format";
 import { partKey, partsOf, partTopics, type DataTopic, type Part } from "../../lib/dashboard";
 import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
+import { useToday } from "../../lib/today";
 import type { GridWidget } from "../../lib/types";
 
 export interface Entry {
@@ -50,21 +51,14 @@ declare global {
   }
 }
 
-/** The local day, renewed after midnight. */
-function useToday(): Date {
-  const [today, setToday] = useState(() => new Date());
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const now = new Date();
-      if (isoDay(now) !== isoDay(today)) setToday(now);
-    }, 60_000);
-    return () => window.clearInterval(id);
-  }, [today]);
-  return today;
+/** The local day, renewed after midnight (the shared day check of the window). */
+function useTodayDate(): Date {
+  const day = useToday();
+  return useMemo(() => new Date(`${day}T12:00:00`), [day]);
 }
 
 export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; seen: Set<string>; children: ReactNode }) {
-  const today = useToday();
+  const today = useTodayDate();
   const workdays = useApp((s) => s.settings?.settings.workdays);
   const timeOn = useTimeTracking();
   const [store, setStore] = useState<Map<string, Entry>>(() => new Map());

@@ -14,7 +14,7 @@ use crate::db::{EntryFilter, PAGE_COLS, map_page};
 use crate::error::Result;
 use crate::model::{Page, StatusFlag};
 use crate::properties::{self, Cell, Filter, Schema, Typed};
-use crate::tasks::{Task, TaskFilter, TaskStatus};
+use crate::tasks::{TEMPLATE_PAGES, Task, TaskFilter, TaskStatus};
 
 /// Most rows handed out.
 pub const MAX_ROWS: usize = 200;
@@ -281,8 +281,11 @@ fn pages<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Group
     let group = q.group.trim().to_lowercase();
     let needs_props =
         !q.filters.is_empty() || !q.columns.is_empty() || !(group.is_empty() || group == "tag" || group == "eltern");
-    let mut conds = vec!["p.deleted_at IS NULL".to_owned()];
-    let mut args: Vec<rusqlite::types::Value> = vec![];
+    // Like the task lists: templates (the „Vorlagen“ page and below) and the folders of the
+    // filing are no pages of the workspace's content.
+    let mut conds =
+        vec!["p.deleted_at IS NULL".to_owned(), "p.system_folder IS NULL".to_owned(), "p.id NOT IN tpl".to_owned()];
+    let mut args: Vec<rusqlite::types::Value> = vec![db.templates_title()?.into()];
     if let Some(tag) =
         q.tag.as_deref().map(|t| t.trim().trim_start_matches('#').to_lowercase()).filter(|t| !t.is_empty())
     {
@@ -303,7 +306,7 @@ fn pages<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Group
         if needs_props { "CASE WHEN substr(p.content, 1, 3) = '---' THEN p.content ELSE '' END" } else { "''" };
     let order = if q.sort == "title" { "p.title COLLATE NOCASE, p.id" } else { "p.updated_at DESC, p.id DESC" };
     let sql = format!(
-        "SELECT {}, {content} FROM pages p WHERE {} ORDER BY {order}",
+        "{TEMPLATE_PAGES} SELECT {}, {content} FROM pages p WHERE {} ORDER BY {order}",
         PAGE_COLS.split(", ").map(|c| format!("p.{c}")).collect::<Vec<_>>().join(", "),
         conds.join(" AND ")
     );
@@ -427,15 +430,23 @@ pub fn due_bucket(due: Option<&str>, today: NaiveDate) -> &'static str {
 const PRIORITY: [&str; 3] = ["keine", "mittel", "hoch"];
 
 fn tasks<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Groups, Option<i64>)> {
-    // `status` is a filter of the database query; everything else is checked here.
+    // `status` is a filter of the database query; everything else is checked here. `status ist
+    // nicht offen` asks for the done tasks (and the other way round), `ist nicht alle` for none.
     let mut status = TaskStatus::Open;
     let mut rest = vec![];
     for f in &q.filters {
-        if f.field.trim().eq_ignore_ascii_case("status") && f.op.trim() == "ist" {
-            status = match f.value.trim().to_lowercase().as_str() {
+        let op = f.op.trim();
+        if f.field.trim().eq_ignore_ascii_case("status") && (op == "ist" || op == "ist nicht") {
+            let named = match f.value.trim().to_lowercase().as_str() {
                 "erledigt" | "done" => TaskStatus::Done,
                 "alle" | "all" => TaskStatus::All,
                 _ => TaskStatus::Open,
+            };
+            status = match (op, named) {
+                ("ist", s) => s,
+                (_, TaskStatus::Open) => TaskStatus::Done,
+                (_, TaskStatus::Done) => TaskStatus::Open,
+                (_, TaskStatus::All) => return Ok((vec![], vec![], None)),
             };
         } else {
             rest.push(f.clone());

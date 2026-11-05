@@ -53,26 +53,29 @@ fn check_color(color: &str) -> Result<()> {
     }
 }
 
-/// Collapses whitespace and joins words hyphenated at a line break (`Ver- arbeitung`).
+/// Collapses whitespace and joins words hyphenated at a line break (`Ver-⏎arbeitung`). A hyphen
+/// before a blank within a line stays: „Haus- und Gartenarbeit“ is not one word.
 pub fn clean_text(text: &str) -> String {
-    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut out = String::with_capacity(joined.len());
-    let chars: Vec<char> = joined.chars().collect();
+    let chars: Vec<char> = text.chars().collect();
+    let mut joined = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '-'
-            && i > 0
-            && chars[i - 1].is_lowercase()
-            && chars.get(i + 1) == Some(&' ')
-            && chars.get(i + 2).is_some_and(|c| c.is_lowercase())
-        {
-            i += 2;
-            continue;
+        if chars[i] == '-' && i > 0 && chars[i - 1].is_lowercase() {
+            let mut j = i + 1;
+            let mut line_break = false;
+            while j < chars.len() && chars[j].is_whitespace() {
+                line_break |= matches!(chars[j], '\n' | '\r');
+                j += 1;
+            }
+            if line_break && chars.get(j).is_some_and(|c| c.is_lowercase()) {
+                i = j;
+                continue;
+            }
         }
-        out.push(chars[i]);
+        joined.push(chars[i]);
         i += 1;
     }
-    out.chars().take(MAX_TEXT).collect()
+    joined.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_TEXT).collect()
 }
 
 /// Escapes what Markdown would read as formatting or a link inside a quote.
@@ -190,9 +193,33 @@ impl Database {
         self.pdf_highlight(id)
     }
 
-    pub fn delete_pdf_highlight(&self, id: i64) -> Result<()> {
+    /// Deletes a highlight; returns it for [`Database::restore_pdf_highlight`] („Rückgängig“).
+    pub fn delete_pdf_highlight(&self, id: i64) -> Result<PdfHighlight> {
+        let h = self.pdf_highlight(id)?;
         self.conn().execute("DELETE FROM pdf_highlights WHERE id = ?1", [id])?;
-        Ok(())
+        Ok(h)
+    }
+
+    /// Brings a deleted highlight back with its note, under its id while that is free (the links
+    /// to it in notes, `hl=7`, find it again).
+    pub fn restore_pdf_highlight(&self, h: &PdfHighlight) -> Result<PdfHighlight> {
+        check_color(&h.color)?;
+        self.conn().execute(
+            "INSERT INTO pdf_highlights (id, attachment, page, rects, text, color, note, created_at)
+             VALUES ((SELECT CASE WHEN EXISTS (SELECT 1 FROM pdf_highlights WHERE id = ?1) THEN NULL ELSE ?1 END),
+                     ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                h.id,
+                h.attachment,
+                h.page,
+                serde_json::to_string(&h.rects)?,
+                clean_text(&h.text),
+                h.color,
+                h.note.trim(),
+                h.created_at
+            ],
+        )?;
+        self.pdf_highlight(self.conn().last_insert_rowid())
     }
 
     /// Highlights follow their file when it is renamed.
@@ -232,7 +259,7 @@ mod tests {
     #[test]
     fn stores_updates_and_deletes_highlights() {
         let db = Database::open_in_memory().unwrap();
-        let a = db.add_pdf_highlight(&new(3, "Die  Daten-\nver- arbeitung *läuft*")).unwrap();
+        let a = db.add_pdf_highlight(&new(3, "Die  Daten-\nverarbeitung *läuft*")).unwrap();
         let b = db.add_pdf_highlight(&new(1, "Erste Seite")).unwrap();
         assert_eq!(a.text, "Die Datenverarbeitung *läuft*");
         assert_eq!(a.rects, vec![[0.1, 0.2, 0.5, 0.02]]);
@@ -247,6 +274,34 @@ mod tests {
         assert_eq!(db.pdf_highlights("Bericht 2026.pdf").unwrap().len(), 2);
         db.delete_pdf_highlight(b.id).unwrap();
         assert_eq!(db.pdf_highlights("Bericht 2026.pdf").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_deleted_highlight_comes_back_with_its_note_and_id() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.add_pdf_highlight(&new(2, "Zweite Seite")).unwrap();
+        let b = db.add_pdf_highlight(&NewHighlight { note: "Nachfragen".into(), ..new(3, "Dritte Seite") }).unwrap();
+        let gone = db.delete_pdf_highlight(b.id).unwrap();
+        assert_eq!(gone, b);
+        let back = db.restore_pdf_highlight(&gone).unwrap();
+        assert_eq!(back, b, "the same highlight, id and note included");
+        // Its id taken meanwhile (ids of deleted rows are handed out again): it comes back
+        // under another one.
+        let gone = db.delete_pdf_highlight(b.id).unwrap();
+        let c = db.add_pdf_highlight(&new(4, "Vierte Seite")).unwrap();
+        assert_eq!(c.id, b.id);
+        let back = db.restore_pdf_highlight(&gone).unwrap();
+        assert_ne!(back.id, c.id);
+        assert_eq!((back.note.as_str(), back.page), ("Nachfragen", 3));
+        assert_eq!(db.pdf_highlights("Bericht.pdf").unwrap().len(), 3);
+        assert!(db.pdf_highlight(a.id).is_ok());
+    }
+
+    #[test]
+    fn a_hyphen_within_a_line_stays() {
+        assert_eq!(clean_text("Haus- und Gartenarbeit"), "Haus- und Gartenarbeit");
+        assert_eq!(clean_text("Ein- oder Ausgang, Daten-\r\n  verarbeitung"), "Ein- oder Ausgang, Datenverarbeitung");
+        assert_eq!(clean_text("Ost-\nWest"), "Ost- West", "a capital after the break: a compound, kept apart");
     }
 
     #[test]

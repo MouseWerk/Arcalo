@@ -117,7 +117,7 @@ pub struct TaskCounts {
 
 /// `tpl(id)`: the templates page („Vorlagen“, title in `?1`) and everything below it.
 /// Checkboxes in templates are blueprints, not tasks.
-const TEMPLATE_PAGES: &str = "WITH RECURSIVE tpl(id) AS (
+pub(crate) const TEMPLATE_PAGES: &str = "WITH RECURSIVE tpl(id) AS (
                  SELECT id FROM (SELECT id FROM pages
                                  WHERE parent_id IS NULL AND deleted_at IS NULL AND title = ?1 COLLATE NOCASE
                                  ORDER BY id LIMIT 1)

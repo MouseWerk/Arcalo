@@ -21,6 +21,7 @@ import { taskSegments } from "../lib/tasks";
 import { stripInline, stripMarkdown } from "../lib/plaintext";
 import { track } from "./lazyRender";
 import { isKey } from "../lib/ime";
+import { useToday } from "../lib/today";
 
 /** Runs a parsed block: the backend's result with the rows in the block's order. */
 export async function runNoteQuery(nq: NoteQuery): Promise<QueryResult> {
@@ -258,6 +259,8 @@ export function QueryBlock({ source, onEdit, editing }: QueryBlockProps) {
     return () => window.clearTimeout(id);
   }, [source]);
   const blocked = nq.query.source === "entries" && !timeOn;
+  // „heute“, „überfällig“ and the time ranges are relative: run again on a new day.
+  const day = useToday();
   const load = useCallback(() => {
     if (blocked) return;
     const n = ++seq.current;
@@ -267,7 +270,8 @@ export function QueryBlock({ source, onEdit, editing }: QueryBlockProps) {
         (e) => n === seq.current && setState({ error: e instanceof Error ? e.message : String(e), loading: false }),
       ),
     );
-  }, [nq, blocked]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nq, blocked, day]);
   useEffect(load, [load]);
   // Refresh on the change events (debounced).
   useEffect(() => {

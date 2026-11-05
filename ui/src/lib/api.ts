@@ -225,7 +225,8 @@ export const api = {
   blocks: (from: string, to: string) => call<T.FocusBlock[]>("blocks_list", { from, to }),
   blockCreate: (block: T.NewBlock) => call<T.FocusBlock>("block_create", { block }),
   blockUpdate: (id: number, patch: T.BlockPatch) => call<T.FocusBlock>("block_update", { id, patch }),
-  blockDelete: (id: number) => call<void>("block_delete", { id }),
+  blockDelete: (id: number) => call<T.DeletedBlock>("block_delete", { id }),
+  blockRestore: (block: T.DeletedBlock) => call<T.FocusBlock>("block_restore", { block }),
   blockTaskDone: (id: number) => call<void>("block_task_done", { id }),
   /** Free starts on a day for a block of `minutes`. */
   blockFreeSlots: (date: string, minutes: number) => call<string[]>("block_free_slots", { date, minutes }),
@@ -510,7 +511,8 @@ export const api = {
   addPdfHighlight: (highlight: T.NewPdfHighlight) => call<T.PdfHighlight>("pdf_highlight_add", { highlight }),
   updatePdfHighlight: (id: number, patch: { color?: string; note?: string }) =>
     call<T.PdfHighlight>("pdf_highlight_update", { id, color: patch.color ?? null, note: patch.note ?? null }),
-  deletePdfHighlight: (id: number) => call<void>("pdf_highlight_delete", { id }),
+  deletePdfHighlight: (id: number) => call<T.PdfHighlight>("pdf_highlight_delete", { id }),
+  restorePdfHighlight: (highlight: T.PdfHighlight) => call<T.PdfHighlight>("pdf_highlight_restore", { highlight }),
   pdfHighlightMarkdown: (name: string, id: number | null) => call<string>("pdf_highlight_markdown", { name, id }),
   appendToPage: (pageId: number, markdown: string) => call<void>("page_append", { pageId, markdown }),
 };
@@ -520,6 +522,9 @@ export const api = {
 // dozens of them. Handlers run in the order they subscribed, as separate listeners did.
 type Hub = { handlers: { h: (payload: unknown) => void }[]; ready: Promise<UnlistenFn> };
 const hubs = new Map<string, Hub>();
+// Under WebDriver: the handlers per event, so a test of a long session sees one that is not dropped.
+if (typeof navigator !== "undefined" && navigator.webdriver)
+  (window as unknown as { __arcaloHandlers?: () => Record<string, number> }).__arcaloHandlers = () => Object.fromEntries([...hubs].map(([k, h]) => [k, h.handlers.length]));
 
 export function on<P>(event: string, handler: (payload: P) => void): Promise<UnlistenFn> {
   let hub = hubs.get(event);

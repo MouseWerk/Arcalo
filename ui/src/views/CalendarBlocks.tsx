@@ -49,18 +49,18 @@ export async function saveBlock(b: FocusBlock, p: BlockPatch, local: (id: number
   }
 }
 
-/** Deletes a block; the message can bring it back (as a new block). */
+/** Deletes a block; the message brings it back as it was (booking, focus sessions, Netzplan/Vorgang). */
 export async function deleteBlock(b: FocusBlock, local: (id: number, p: Partial<FocusBlock> | null) => void) {
   local(b.id, null);
   try {
-    await api.blockDelete(b.id);
+    const deleted = await api.blockDelete(b.id);
     useApp.getState().toast({
       tone: "info",
       title: tr("blocks.deleted"),
       detail: b.title,
       action: {
         label: tr("common.undo"),
-        run: () => void api.blockCreate({ title: b.title, start: b.start, end: b.end, link: b.link, reference: b.reference }).catch((e) => useApp.getState().error(tr("blocks.createFailed"), e)),
+        run: () => void api.blockRestore(deleted).catch((e) => useApp.getState().error(tr("blocks.createFailed"), e)),
       },
     });
   } catch (e) {

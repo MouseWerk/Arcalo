@@ -355,8 +355,18 @@ fn book_session<Tz: TimeZone>(
         Some(id) => {
             // The entry as it is now (the user may have corrected it): the session's minutes are
             // added to its duration, the start stays and the end follows (start + duration = end).
+            // Rounding applies to the sessions' own minutes: an entry still at the rounded sum of
+            // its sessions grows from that sum, or every session would round up again (four
+            // sessions of 25 minutes became 2 h instead of 1:45 h with a 15-minute step).
             let current = db.time_entry(id)?;
-            let total = settings.time.rounding.apply(current.duration_minutes.unwrap_or(0) + worked);
+            let booked = current.duration_minutes.unwrap_or(0);
+            let sessions: i64 = db.conn().query_row(
+                "SELECT IFNULL(SUM(booked_minutes), 0) FROM focus_sessions WHERE entry_id = ?1",
+                [id],
+                |r| r.get(0),
+            )?;
+            let base = if sessions > 0 && settings.time.rounding.apply(sessions) == booked { sessions } else { booked };
+            let total = settings.time.rounding.apply(base + worked);
             let new_end = current.start_time + chrono::Duration::minutes(total);
             db.conn().execute(
                 "UPDATE time_entries SET duration_minutes = ?2, end_time = ?3 WHERE id = ?1",
@@ -575,6 +585,24 @@ mod tests {
         assert_eq!(e2.duration_minutes, Some(65), "40 corrected + 25");
         assert_eq!(e2.start_time, start);
         assert_eq!(e2.end_time, Some(start + chrono::Duration::minutes(65)));
+    }
+
+    #[test]
+    fn rounding_applies_once_to_the_sessions_of_an_entry() {
+        let (db, r) = setup();
+        let mut s = db.load_settings().unwrap();
+        s.time.rounding.step_minutes = 15;
+        db.save_settings(&s).unwrap();
+        let mut t = yesterday_morning();
+        let mut minutes = vec![];
+        for _ in 0..4 {
+            begin(&db, &r, 25.0, "Konzept", t);
+            let e = finish(&db, t + chrono::Duration::minutes(25), &cet()).unwrap().entry.unwrap();
+            minutes.push(e.duration_minutes.unwrap());
+            t += chrono::Duration::minutes(31);
+        }
+        // 25, 50, 75 and 100 minutes worked, each total rounded up to 15 minutes once.
+        assert_eq!(minutes, [30, 60, 75, 105]);
     }
 
     #[test]

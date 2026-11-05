@@ -5,7 +5,8 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 
 use crate::db::Database;
 use crate::error::Result;
-use crate::model::{EntrySource, NewTimeEntry};
+use crate::model::{EntrySource, NewTimeEntry, PageNode};
+use std::collections::HashSet;
 
 /// Seeds the samples on explicit request (`arcalo demo`), even if they were removed before.
 pub fn seed_explicit<Tz: TimeZone>(db: &Database, now: DateTime<Tz>) -> Result<bool> {
@@ -243,35 +244,43 @@ pub fn seed<Tz: TimeZone>(db: &Database, now: DateTime<Tz>) -> Result<bool> {
     )?;
     db.set_favorite(proj.id, true)?;
     db.set_favorite(arch.id, true)?;
+    // „Beispiele entfernen“ goes by these ids: a page of the user's with a sample's title stays.
+    let ids = [start.id, projects.id, proj.id, arch.id, jf.id, kb.id, cats.id, templates.id, meeting.id, customer.id];
+    db.meta_set(DEMO_IDS, &ids.map(|id| id.to_string()).join(","))?;
     db.daily_note(today)?;
     Ok(true)
 }
 
-/// Titles of the pages created by [`seed`], in both languages.
-const DEMO_PAGES: &[&str] = &[
-    "Willkommen",
-    "Projekte",
-    "PRJ-2026-X Rollout",
-    "Architektur",
-    "Jour fixe 22.09.",
-    "Wissensbasis",
-    "SAP CATS Leitfaden",
-    crate::templates::TEMPLATES_TITLE,
-    "Besprechung",
-    "Kundentermin",
-    "Welcome",
-    "Weekly sync 22.09.",
-    "Projects",
-    "Architecture",
-    "Knowledge base",
-    "SAP CATS guide",
-    crate::templates::TEMPLATES_TITLE_EN,
-    "Meeting",
-    "Customer meeting",
+/// The ids of the sample pages (comma-separated; samples seeded before 1.18 have none).
+const DEMO_IDS: &str = "demo_pages";
+
+/// Titles and icons of the pages created by [`seed`], in both languages: samples seeded before
+/// their ids were kept are told by both.
+const DEMO_PAGES: &[(&str, &str)] = &[
+    ("Willkommen", "sparkles"),
+    ("Projekte", "folder-kanban"),
+    ("PRJ-2026-X Rollout", "briefcase"),
+    ("Architektur", "blocks"),
+    ("Jour fixe 22.09.", "users"),
+    ("Wissensbasis", "book-open"),
+    ("SAP CATS Leitfaden", "file-text"),
+    (crate::templates::TEMPLATES_TITLE, "layout-template"),
+    ("Besprechung", "users"),
+    ("Kundentermin", "briefcase"),
+    ("Welcome", "sparkles"),
+    ("Weekly sync 22.09.", "users"),
+    ("Projects", "folder-kanban"),
+    ("Architecture", "blocks"),
+    ("Knowledge base", "book-open"),
+    ("SAP CATS guide", "file-text"),
+    (crate::templates::TEMPLATES_TITLE_EN, "layout-template"),
+    ("Meeting", "users"),
+    ("Customer meeting", "briefcase"),
 ];
 
-/// Removes the sample project (with its time entries) and the sample pages.
-/// Daily notes and everything the user created are kept. Returns the number of removed subtrees.
+/// Removes the sample project (with its time entries) and moves the sample pages to the trash
+/// (with what was written into them, they can be restored from there). Daily notes and everything
+/// the user created are kept. Returns the number of removed subtrees.
 pub fn remove(db: &Database) -> Result<usize> {
     db.atomic(|| {
         if let Ok(p) = db.project_by_code("PRJ-2026-X") {
@@ -286,18 +295,32 @@ pub fn remove(db: &Database) -> Result<usize> {
             )?;
             db.delete_project(p.id)?;
         }
-        // Delete sample subtrees top-down, but keep any page that has user content below it.
-        fn is_demo(n: &crate::model::PageNode) -> bool {
-            n.page.daily_date.is_none() && DEMO_PAGES.contains(&n.page.title.as_str())
+        let ids: Option<HashSet<i64>> =
+            db.meta_get(DEMO_IDS)?.map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect());
+        let is_demo = |n: &PageNode| {
+            n.page.daily_date.is_none()
+                && match &ids {
+                    Some(ids) => ids.contains(&n.page.id),
+                    None => DEMO_PAGES
+                        .iter()
+                        .any(|(title, icon)| n.page.title == *title && n.page.icon.as_deref() == Some(*icon)),
+                }
+        };
+        // Sample subtrees top-down; a page with the user's pages below it stays.
+        fn only_demo(n: &PageNode, is_demo: &dyn Fn(&PageNode) -> bool) -> bool {
+            is_demo(n) && n.children.iter().all(|c| only_demo(c, is_demo))
         }
-        fn only_demo(n: &crate::model::PageNode) -> bool {
-            is_demo(n) && n.children.iter().all(only_demo)
-        }
-        fn sweep(db: &Database, nodes: &[crate::model::PageNode], removed: &mut usize) -> Result<()> {
+        fn sweep(
+            db: &Database,
+            nodes: &[PageNode],
+            is_demo: &dyn Fn(&PageNode) -> bool,
+            at: DateTime<Utc>,
+            removed: &mut usize,
+        ) -> Result<()> {
             for n in nodes {
-                if only_demo(n) {
-                    // Trashed pages below a sample page belong to the user: move them to the top level
-                    // so the delete cascade spares them and they stay in the trash.
+                if only_demo(n, is_demo) {
+                    // Pages the user trashed below a sample page stay entries of their own, at the
+                    // top level.
                     db.conn().execute(
                         "WITH RECURSIVE sub(id) AS (
                              SELECT ?1 UNION ALL
@@ -312,16 +335,17 @@ pub fn remove(db: &Database) -> Result<usize> {
                          DELETE FROM activity WHERE page_id IN sub",
                         [n.page.id],
                     )?;
-                    db.delete_page(n.page.id)?;
+                    db.trash_page_at(n.page.id, at)?;
                     *removed += 1;
                 } else {
-                    sweep(db, &n.children, removed)?;
+                    sweep(db, &n.children, is_demo, at, removed)?;
                 }
             }
             Ok(())
         }
         let mut removed = 0;
-        sweep(db, &db.page_tree()?, &mut removed)?;
+        sweep(db, &db.page_tree()?, &is_demo, Utc::now(), &mut removed)?;
+        db.conn().execute("DELETE FROM settings WHERE key = ?1", [format!("meta.{DEMO_IDS}")])?;
         Ok(removed)
     })
 }
@@ -383,8 +407,8 @@ mod tests {
         remove(&db).unwrap();
         assert!(db.page_by_title("Wissensbasis").unwrap().is_none(), "sample subtree is gone");
         let trash = db.list_trash().unwrap();
-        assert_eq!(trash.len(), 1);
-        assert_eq!((trash[0].page.id, trash[0].descendants), (mine.id, 1));
+        let entry = trash.iter().find(|e| e.page.id == mine.id).expect("the user's page stays in the trash");
+        assert_eq!(entry.descendants, 1);
         assert_eq!(db.page(mine.id).unwrap().parent_id, None);
         assert_eq!(db.page(sub.id).unwrap().parent_id, Some(mine.id));
         assert_eq!(db.restore_page(mine.id).unwrap().parent_id, None);
@@ -392,5 +416,45 @@ mod tests {
         let feed = crate::feed::list(&db, &Default::default()).unwrap();
         assert!(feed.iter().any(|a| a.page_id == Some(mine.id)));
         assert!(!feed.iter().any(|a| a.title == "SAP CATS Leitfaden" || a.kind.starts_with("entry_")), "{feed:?}");
+    }
+
+    #[test]
+    fn remove_keeps_user_pages_with_sample_titles_and_trashes_the_samples() {
+        let db = Database::open_in_memory().unwrap();
+        seed(&db, Utc::now()).unwrap();
+        // The user's own pages that happen to have a sample's title.
+        let meeting = db.create_page(None, "Besprechung", None).unwrap();
+        db.save_page_content(meeting.id, "Meine Notizen zur Besprechung\n").unwrap();
+        let projects = db.create_page(None, "Projekte", Some("folder-kanban")).unwrap();
+        db.save_page_content(projects.id, "Meine Projektliste\n").unwrap();
+        // Text written into a sample page.
+        let welcome = db.page_by_title("Willkommen").unwrap().unwrap();
+        db.save_page_content(welcome.id, "Meine Gedanken\n").unwrap();
+        remove(&db).unwrap();
+        assert_eq!(db.page_doc(meeting.id).unwrap().content, "Meine Notizen zur Besprechung\n");
+        assert_eq!(db.page_doc(projects.id).unwrap().content, "Meine Projektliste\n");
+        assert!(
+            db.page(meeting.id).unwrap().deleted_at.is_none() && db.page(projects.id).unwrap().deleted_at.is_none()
+        );
+        // The samples are in the trash, not gone: what was written into them comes back.
+        assert!(db.page(welcome.id).unwrap().deleted_at.is_some());
+        db.restore_page(welcome.id).unwrap();
+        assert_eq!(db.page_doc(welcome.id).unwrap().content, "Meine Gedanken\n");
+        let kb =
+            db.list_trash().unwrap().into_iter().find(|e| e.page.title == "Wissensbasis").expect("sample in the trash");
+        assert_eq!(kb.descendants, 1, "with its subpage");
+    }
+
+    #[test]
+    fn samples_seeded_without_their_ids_are_told_by_title_and_icon() {
+        let db = Database::open_in_memory().unwrap();
+        seed(&db, Utc::now()).unwrap();
+        db.conn().execute("DELETE FROM settings WHERE key = 'meta.demo_pages'", []).unwrap();
+        let mine = db.create_page(None, "Meeting", None).unwrap();
+        db.save_page_content(mine.id, "Notes\n").unwrap();
+        let n = remove(&db).unwrap();
+        assert_eq!(n, 4, "Willkommen, Projekte, the Wissensbasis and the Vorlagen subtree");
+        assert!(db.page(mine.id).unwrap().deleted_at.is_none(), "the user's page stays");
+        assert!(db.page_by_title("Architektur").unwrap().is_none());
     }
 }

@@ -458,3 +458,53 @@ fn the_migration_keeps_waiting_writes_and_gives_deletes_their_own_marker() {
         .unwrap();
     assert_eq!(rows, [("upsert".into(), None, true, 2), ("delete".into(), Some("E9".into()), false, 1)]);
 }
+
+#[test]
+fn a_deleted_block_comes_back_with_its_booking_and_focus_time() {
+    let db = Database::open_in_memory().unwrap();
+    let pr = db.create_project("PRJ-1", "Rollout").unwrap();
+    let np = db.create_netzplan(pr.id, "NP-8801", "NP-8801-1020", "Integration", 10.0).unwrap();
+    db.create_vorgang(np.id, "1020", "Systemintegration", 1.0, 10.0).unwrap();
+    let now = t(1, 8, 0);
+    let own = NewBlock { reference: "NP-8801/1020".into(), ..new("Konzept", t(5, 9, 0), 90, BlockLink::None) };
+    let b = db.block_create(&own, now, false).unwrap();
+    // A focus session from the block, and the booking „Woche vorschlagen“ made of it.
+    let s = crate::focus::start(
+        &db,
+        &crate::focus::FocusStart { minutes: 50.0, goal: "Konzept".into(), block_id: Some(b.id), ..Default::default() },
+        t(5, 9, 0),
+    )
+    .unwrap();
+    db.conn().execute("UPDATE focus_sessions SET status = 'done', worked_minutes = 50 WHERE id = ?1", [s.id]).unwrap();
+    let e = db
+        .insert_time_entry(&crate::model::NewTimeEntry {
+            netzplan_id: np.id,
+            vorgang_nr: Some("1020".into()),
+            leistungsart: None,
+            start_time: t(5, 9, 0),
+            duration_minutes: 90,
+            description: "Konzept".into(),
+            source: crate::model::EntrySource::Manual,
+            page_id: None,
+        })
+        .unwrap();
+    db.conn().execute("UPDATE focus_blocks SET entry_id = ?2 WHERE id = ?1", params![b.id, e.id]).unwrap();
+    let before = db.block(b.id).unwrap();
+    assert_eq!((before.entry_id, before.focus_minutes), (Some(e.id), 50));
+
+    let deleted = db.block_delete(b.id).unwrap();
+    assert!(db.blocks_in(t(5, 0, 0), t(6, 0, 0)).unwrap().is_empty());
+    let back = db.block_restore(&deleted, t(1, 8, 5), false).unwrap();
+    assert_eq!(
+        (back.title.as_str(), back.start, back.end, back.reference.as_str()),
+        ("Konzept", t(5, 9, 0), t(5, 10, 30), "NP-8801/1020")
+    );
+    assert_eq!(back.entry_id, Some(e.id), "still booked: not proposed again");
+    assert_eq!(back.focus_minutes, 50, "the focus time stays with the block");
+    assert_eq!(back.outlook, OutlookState::None);
+
+    // A booking deleted meanwhile is not linked.
+    let deleted = db.block_delete(back.id).unwrap();
+    db.conn().execute("DELETE FROM time_entries WHERE id = ?1", [e.id]).unwrap();
+    assert_eq!(db.block_restore(&deleted, t(1, 8, 6), false).unwrap().entry_id, None);
+}

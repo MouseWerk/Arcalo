@@ -67,6 +67,22 @@ pub struct NewBlock {
     pub reference: String,
 }
 
+/// A deleted block as [`Database::block_restore`] brings it back.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeletedBlock {
+    pub title: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub link: BlockLink,
+    pub netzplan_id: Option<i64>,
+    pub vorgang_nr: Option<String>,
+    pub entry_id: Option<i64>,
+    /// The focus sessions started from the block.
+    pub sessions: Vec<i64>,
+    /// It was written to Outlook (or about to be).
+    pub had_appointment: bool,
+}
+
 /// A change of a block; `None` leaves a field as it is.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -485,8 +501,9 @@ impl Database {
 
     /// Deletes a block; its Outlook appointment is deleted too (queued). A first write that
     /// is still waiting or under way may have created one: then the delete is queued as well
-    /// (by marker until the write's answer brings the EntryID).
-    pub fn block_delete(&self, id: i64) -> Result<()> {
+    /// (by marker until the write's answer brings the EntryID). Returns what
+    /// [`Database::block_restore`] needs to bring it back („Rückgängig“).
+    pub fn block_delete(&self, id: i64) -> Result<DeletedBlock> {
         let old = self.block(id)?;
         self.atomic(|| {
             let (marker, uid): (String, Option<String>) =
@@ -499,8 +516,86 @@ impl Database {
             if old.outlook_entry_id.is_some() || waiting {
                 self.block_enqueue_delete(&marker, old.outlook_entry_id.as_deref(), uid.as_deref())?;
             }
+            let sessions: Vec<i64> = self
+                .conn()
+                .prepare("SELECT id FROM focus_sessions WHERE block_id = ?1 ORDER BY id")?
+                .query_map([id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
             self.conn().execute("DELETE FROM focus_blocks WHERE id = ?1", [id])?;
-            Ok(())
+            Ok(DeletedBlock {
+                title: old.title.clone(),
+                start: old.start,
+                end: old.end,
+                link: old.link.clone(),
+                netzplan_id: old.netzplan_id,
+                vorgang_nr: old.vorgang_nr.clone(),
+                entry_id: old.entry_id,
+                sessions,
+                had_appointment: old.outlook != OutlookState::None,
+            })
+        })
+    }
+
+    /// Brings a deleted block back as it was: its Netzplan/Vorgang, the booking „Woche
+    /// vorschlagen“ made from it (so it is not proposed again) and the focus sessions started
+    /// from it. A block that was in Outlook gets its appointment again (`outlook`, or it had one).
+    pub fn block_restore(&self, d: &DeletedBlock, now: DateTime<Utc>, outlook: bool) -> Result<FocusBlock> {
+        let (kind, page_id, ordinal, text, key) = match &d.link {
+            BlockLink::None => ("", None, None, None, None),
+            BlockLink::Task { page_id, ordinal, text } => {
+                ("task", Some(*page_id), Some(*ordinal), Some(text.clone()), None)
+            }
+            BlockLink::Issue { key } => ("issue", None, None, None, Some(key.clone())),
+            BlockLink::Page { page_id } => ("page", Some(*page_id), None, None, None),
+        };
+        let alive = |table: &str, id: Option<i64>| -> Result<Option<i64>> {
+            let Some(id) = id else { return Ok(None) };
+            Ok(self
+                .conn()
+                .query_row(&format!("SELECT id FROM {table} WHERE id = ?1"), [id], |r| r.get(0))
+                .optional()?)
+        };
+        let page_id = alive("pages", page_id)?;
+        let netzplan_id = alive("netzplaene", d.netzplan_id)?;
+        // A booking another block took meanwhile stays with that one.
+        let entry_id = alive("time_entries", d.entry_id)?.filter(|e| {
+            !self
+                .conn()
+                .query_row("SELECT 1 FROM focus_blocks WHERE entry_id = ?1", [e], |_| Ok(()))
+                .optional()
+                .is_ok_and(|x| x.is_some())
+        });
+        self.atomic(|| {
+            self.conn().execute(
+                "INSERT INTO focus_blocks (title, start_at, end_at, link_kind, page_id, task_ordinal, task_text, issue_key,
+                   netzplan_id, vorgang_nr, entry_id, created_at, updated_at, marker)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, 'arcalo-' || lower(hex(randomblob(16))))",
+                params![
+                    d.title,
+                    ts(d.start),
+                    ts(d.end),
+                    kind,
+                    page_id,
+                    ordinal,
+                    text,
+                    key,
+                    netzplan_id,
+                    d.vorgang_nr.as_ref().filter(|_| netzplan_id.is_some()),
+                    entry_id,
+                    ts(now)
+                ],
+            )?;
+            let id = self.conn().last_insert_rowid();
+            for s in &d.sessions {
+                self.conn().execute(
+                    "UPDATE focus_sessions SET block_id = ?2 WHERE id = ?1 AND block_id IS NULL",
+                    params![s, id],
+                )?;
+            }
+            if outlook || d.had_appointment {
+                self.block_enqueue_upsert(id)?;
+            }
+            self.block(id)
         })
     }
 

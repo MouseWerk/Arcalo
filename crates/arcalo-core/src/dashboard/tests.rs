@@ -468,6 +468,31 @@ fn query_pages_by_property_tag_and_text() {
 }
 
 #[test]
+fn query_pages_leave_out_templates_and_filing_folders() {
+    let w = world();
+    let tpl = w.page("Vorlagen", None, "");
+    w.page("Projekt", Some(tpl), "---\nstatus: offen\n---\n#projekt Vorlage");
+    let folder = w.page("2026", None, "");
+    w.db.conn().execute("UPDATE pages SET system_folder = 'journal' WHERE id = ?1", [folder]).unwrap();
+    let real = w.page("Portal", Some(folder), "---\nstatus: offen\n---\n#projekt läuft");
+    let ids = |q: Query| w.query(q).rows.iter().map(|r| r.page_id.unwrap()).collect::<Vec<_>>();
+    assert_eq!(ids(Query { tag: Some("projekt".into()), ..Default::default() }), [real]);
+    assert_eq!(ids(Query { filters: vec![f("status", "ist", "offen")], ..Default::default() }), [real]);
+    assert_eq!(ids(Query { sort: "title".into(), ..Default::default() }), [real], "no template, no folder");
+}
+
+#[test]
+fn query_tasks_status_is_not() {
+    let w = world();
+    w.page("A", None, "- [ ] Offen\n- [x] Fertig");
+    let texts =
+        |q: Query| w.query(Query { source: Source::Tasks, ..q }).rows.into_iter().map(|r| r.title).collect::<Vec<_>>();
+    assert_eq!(texts(Query { filters: vec![f("status", "ist nicht", "offen")], ..Default::default() }), ["Fertig"]);
+    assert_eq!(texts(Query { filters: vec![f("status", "is not", "done")], ..Default::default() }), ["Offen"]);
+    assert!(texts(Query { filters: vec![f("status", "ist nicht", "alle")], ..Default::default() }).is_empty());
+}
+
+#[test]
 fn query_tasks_by_due_priority_and_page() {
     let w = world();
     w.page("A", None, "- [ ] Alt due:2026-09-20 !!\n- [ ] Heute due:2026-09-23\n- [ ] Bald due:2026-09-26 !\n- [ ] Offen #x\n- [x] Fertig due:2026-09-20");

@@ -1922,6 +1922,19 @@ export interface NewBlock {
   reference?: string;
 }
 
+/** A deleted block as „Rückgängig“ brings it back (the answer of `blockDelete`). */
+export interface DeletedBlock {
+  title: string;
+  start: string;
+  end: string;
+  link: BlockLink;
+  netzplan_id: number | null;
+  vorgang_nr: string | null;
+  entry_id: number | null;
+  sessions: number[];
+  had_appointment: boolean;
+}
+
 export interface BlockPatch {
   title?: string;
   start?: string;

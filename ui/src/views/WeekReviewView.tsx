@@ -33,6 +33,7 @@ import {
 import { useT } from "../lib/i18n";
 import { copyText } from "../lib/clipboard";
 import { overlayOpen } from "../lib/overlays";
+import { useToday } from "../lib/today";
 
 const s = useApp.getState;
 
@@ -53,7 +54,7 @@ export function WeekReviewView() {
   const configured = useAiConfigured();
   const root = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
-  const thisMonday = mondayOf(isoDay(new Date()));
+  const thisMonday = mondayOf(useToday());
   // Time tracking switched: the review comes back with (or without) its time part.
   const timeOn = useTimeTracking();
 
