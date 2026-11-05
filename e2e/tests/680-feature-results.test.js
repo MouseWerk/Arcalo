@@ -24,15 +24,16 @@ async function open(id, title) {
 }
 const queryBlocks = () => app.browser.execute((s) => [...document.querySelectorAll(`${s} .rich-preview.rich-query`)].map((e) => e.innerText), ACTIVE);
 async function loadedBlocks(n) {
+  let blocks = [];
   await app.browser.waitUntil(
     async () => {
       await app.browser.execute((s) => document.querySelectorAll(`${s} .rich-preview.rich-query`).forEach((e) => e.scrollIntoView({ block: "center" })), ACTIVE);
-      const b = await queryBlocks();
-      return b.length === n && b.every((t) => !/Wird geladen/.test(t));
+      blocks = await queryBlocks();
+      return blocks.length === n && blocks.every((t) => /Abfrage bearbeiten/.test(t) && !/Wird geladen/.test(t));
     },
     { timeout: 10000, timeoutMsg: "queries not loaded" },
   );
-  return queryBlocks();
+  return blocks;
 }
 
 test("query blocks: status!=offen lists the done tasks; templates and filing folders are no results", async () => {
@@ -163,7 +164,7 @@ test("focus sessions extending one entry round its total once", async () => {
   const durations = [];
   for (let i = 0; i < 3; i++) {
     await app.invoke("focus_start", { start: { reference: "NP-8801/1020", minutes: 0.05, break_minutes: 0, goal: "R5 Rundung" } });
-    await app.browser.waitUntil(async () => (await app.invoke("focus_state"))?.state?.phase !== "work", { timeout: 15000, timeoutMsg: "session did not end" });
+    await app.browser.waitUntil(async () => (await app.invoke("focus_state"))?.phase !== "work", { timeout: 15000, timeoutMsg: "session did not end" });
     const entries = await app.invoke("time_entries", { from, to: null });
     const e = entries.filter((x) => x.description === "R5 Rundung");
     assert.equal(e.length, 1, "one entry for the sessions");
