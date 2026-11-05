@@ -165,8 +165,25 @@ describe("<Select>", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     // A scroll of its own in a later frame moves the trigger away: the list closes.
     await frame();
+    const placed = trigger.getBoundingClientRect();
+    trigger.getBoundingClientRect = () => ({ ...placed.toJSON(), top: placed.top - 40, y: placed.top - 40 }) as DOMRect;
     scroll();
     expect(list()).toBeNull();
+  });
+
+  // R5D-4: a dropdown below the fold, scrolled into view and clicked in the same frame (as
+  // WebDriver clicks, or a field focused by Tab and opened with Space): the scroll is reported
+  // after the list opened, and it closed the list at once (e2e 37 on CI).
+  it("stays open through a scroll reported after it opened that did not move the trigger", async () => {
+    const trigger = mount("h2", () => {});
+    act(() => trigger.click());
+    expect(list()).not.toBeNull();
+    await act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    act(() => {
+      host!.dispatchEvent(new Event("scroll"));
+    });
+    expect(list()).not.toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("chooses with the mouse and closes on a click outside", () => {

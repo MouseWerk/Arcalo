@@ -175,6 +175,10 @@ export function Select({ value, onChange, options, children, disabled, className
   // place at the new scale): the engine reports those scrolls in the same frame, right after the
   // resize. They are not the person scrolling and must not close the list either.
   const resizing = useRef(false);
+  // Where the trigger was when the list was placed. A scroll reported after that which did not
+  // move the trigger is one from before the list opened (an area scrolled to show the trigger and
+  // clicked in the same frame, a field focused below the fold): it must not close the list.
+  const placedAt = useRef<{ top: number; left: number } | null>(null);
 
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
@@ -182,6 +186,7 @@ export function Select({ value, onChange, options, children, disabled, className
     const el = pop.current;
     const r = trigger.current?.getBoundingClientRect();
     if (!el || !r) return;
+    placedAt.current = { top: r.top, left: r.left };
     el.style.maxHeight = "";
     const natural = el.offsetHeight;
     const below = window.innerHeight - r.bottom - GAP - MARGIN;
@@ -208,6 +213,9 @@ export function Select({ value, onChange, options, children, disabled, className
     // area such as the assistant panel scrolling to its newest message, nor a resize's own).
     const onScroll = (e: Event) => {
       if (!(e.target instanceof Node) || pop.current?.contains(e.target) || !trigger.current || !e.target.contains(trigger.current)) return;
+      const r = trigger.current.getBoundingClientRect();
+      const at = placedAt.current;
+      if (at && Math.abs(r.top - at.top) < 1 && Math.abs(r.left - at.left) < 1) return;
       if (resizing.current) setResized((n) => n + 1);
       else setOpen(false);
     };

@@ -65,3 +65,27 @@ test("the app keeps answering when the command line changes a shortcut while the
   assert.ok((await app.browser.execute(() => window.__r5dSaves)) > 16, "the window stored keys meanwhile");
   assert.equal((await answers("settings_get", 5000)).settings.capture_shortcut, "Ctrl+Shift+Space");
 });
+
+// R5D-4: a dropdown below the fold, scrolled into view and clicked at once (WebDriver's click, a
+// field reached with Tab and opened with Space): the scroll is reported after the list opened and
+// closed it again (e2e 37 on CI: „… did not open“).
+test("a dropdown scrolled into view and opened in the same moment stays open", async () => {
+  await app.keys(["Control", ","]);
+  await app.waitFor(".settings-head h1");
+  for (let i = 0; i < 3; i++) {
+    const r = await app.browser.executeAsync((done) => {
+      const el = [...document.querySelectorAll('[role="combobox"]')].find((e) => e.getBoundingClientRect().top > window.innerHeight + 100);
+      if (!el) return done("no dropdown below the fold");
+      el.scrollIntoView({ block: "center" });
+      el.click();
+      setTimeout(() => {
+        const open = el.getAttribute("aria-expanded");
+        if (open === "true") el.click();
+        // Back to the top for the next round.
+        for (const s of document.querySelectorAll("*")) if (s.scrollTop > 0 && s.contains(el)) s.scrollTop = 0;
+        done(`${el.getAttribute("aria-label")}: ${open}`);
+      }, 300);
+    });
+    assert.match(r, /: true$/, `round ${i}: ${r}`);
+  }
+});

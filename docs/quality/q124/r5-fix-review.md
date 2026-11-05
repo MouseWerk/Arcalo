@@ -61,6 +61,22 @@ behaviour counts at the severity of that behaviour.
   are put onto the settings as they are when the save runs.
 - Tests: `settingsWrite.test.ts` „api.saveSettings is called only by writeSettings and the setup's writer“.
 
+### R5D-4 A dropdown below the fold closed again the moment it opened (medium, fixed)
+
+- Symptom: a dropdown that had to be scrolled into view and was opened in the same moment closed by itself: a field
+  reached with Tab below the visible part of the settings and opened with Space, and every WebDriver click on such a
+  dropdown. Found as the CI failure of this branch (run 41985351160, attempt 1): `37-ai-providers` „… Anbieter für
+  Lokales Modell did not open“; the tier dropdown was 992 px down (below the window), WebDriver scrolled it into view
+  and clicked, and the list was gone again. Not caused by R5D-1: the commands moving to a worker only shifted the
+  timing so that the scroll was reported after the list opened.
+- Root cause: `Select` closes on a scroll of an area holding the trigger (so a list does not float away from it).
+  The browser reports a scroll in the next frame; a scroll made just before the click arrived after the list had
+  opened and closed it, although the trigger had not moved since.
+- Fix: the list keeps where the trigger was when it was placed and closes only on a scroll that moved the trigger.
+- Tests: `Select.test.ts` „stays open through a scroll reported after it opened that did not move the trigger“ (the
+  existing „closes on a scroll“ now moves the trigger, as its text says); e2e 681 „a dropdown scrolled into view and
+  opened in the same moment stays open“ (closed in round 0 before the fix).
+
 ## Low findings (not fixed in this round)
 
 - R5D-L1 `settings_scope_set`, `settings_sync_undo`, the settings take-over of a Git sync and the command line's
