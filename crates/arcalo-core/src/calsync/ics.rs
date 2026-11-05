@@ -314,7 +314,23 @@ fn whens(p: &Prop, zones: &Zones) -> Vec<When> {
 }
 
 fn when(c: &Component, name: &str, zones: &Zones) -> Option<When> {
-    c.prop(name).and_then(|p| whens(p, zones).into_iter().next())
+    let w = c.prop(name).and_then(|p| whens(p, zones).into_iter().next())?;
+    // Outlook and Exchange may write an all-day appointment from midnight to midnight with times,
+    // marked as all day only by their own property: it is the days it covers.
+    let marked = ["X-MICROSOFT-CDO-ALLDAYEVENT", "X-MICROSOFT-MSNCALENDAR-ALLDAYEVENT"]
+        .iter()
+        .any(|p| c.prop(p).is_some_and(|v| v.value.trim().eq_ignore_ascii_case("TRUE")));
+    if marked && matches!(name, "DTSTART" | "DTEND") {
+        let wall = match &w {
+            When::Time(t, Zone::Utc) => Some(zones.default.to_wall(Zone::Utc.to_utc(*t))),
+            When::Time(t, _) => Some(*t),
+            When::Date(_) => None,
+        };
+        if let Some(wall) = wall.filter(|t| t.time() == chrono::NaiveTime::MIN) {
+            return Some(When::Date(wall.date()));
+        }
+    }
+    Some(w)
 }
 
 /// `P1DT2H30M`, `PT15M`, `-PT5M`, `P2W`.
@@ -1037,6 +1053,30 @@ mod tests {
         let private = by("z");
         assert_eq!((private.start, private.title.as_str()), (utc(2026, 9, 11, 8, 30), super::super::PRIVATE_TITLE));
         assert!(evs.iter().all(|e| e.uid != "old"), "outside the window");
+    }
+
+    #[test]
+    fn outlook_all_day_appointments_written_with_times_are_all_day() {
+        // Midnight to midnight in the Windows zone, or in UTC, marked only by Outlook's property;
+        // also a weekly series of them. A timed appointment from midnight stays timed.
+        let body = format!(
+            "{OUTLOOK_TZ}BEGIN:VEVENT\r\nUID:conf\r\nSUMMARY:Konferenz\r\nDTSTART;TZID=W. Europe Standard Time:20261030T000000\r\nDTEND;TZID=W. Europe Standard Time:20261103T000000\r\nX-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:utc\r\nSUMMARY:Feiertag\r\nDTSTART:20261031T230000Z\r\nDTEND:20261101T230000Z\r\nX-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:jf\r\nSUMMARY:Jour fixe ganztägig\r\nDTSTART;TZID=W. Europe Standard Time:20261005T000000\r\nDTEND;TZID=W. Europe Standard Time:20261006T000000\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nEXDATE;TZID=W. Europe Standard Time:20261012T000000\r\nX-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:night\r\nSUMMARY:Wartung\r\nDTSTART;TZID=W. Europe Standard Time:20261007T000000\r\nDTEND;TZID=W. Europe Standard Time:20261007T020000\r\nX-MICROSOFT-CDO-ALLDAYEVENT:FALSE\r\nEND:VEVENT\r\n"
+        );
+        let evs = parse(&cal(&body), window(), &berlin(), ALL).unwrap();
+        let by = |uid: &str| evs.iter().filter(|e| e.uid == uid).collect::<Vec<_>>();
+        let conf = by("conf")[0];
+        assert!(conf.all_day, "four days over the end of the month");
+        assert_eq!((conf.start, conf.end), (utc(2026, 10, 29, 23, 0), utc(2026, 11, 2, 23, 0)));
+        let holiday = by("utc")[0];
+        assert!(holiday.all_day && holiday.start == utc(2026, 10, 31, 23, 0) && holiday.end == utc(2026, 11, 1, 23, 0));
+        let jf = by("jf");
+        assert_eq!(jf.len(), 2, "the excluded day is left out");
+        assert!(jf.iter().all(|e| e.all_day && e.end - e.start == Duration::days(1)));
+        assert_eq!(jf.iter().map(|e| e.instance.as_str()).collect::<Vec<_>>(), ["2026-10-05", "2026-10-19"]);
+        assert!(!by("night")[0].all_day);
     }
 
     #[test]
