@@ -172,10 +172,20 @@ pub fn adf_to_text(v: &Value) -> String {
         match kind {
             "text" => out.push_str(v["text"].as_str().unwrap_or("")),
             "hardBreak" => out.push('\n'),
-            "mention" | "emoji" | "status" | "date" => {
+            "mention" | "emoji" | "status" => {
                 let a = &v["attrs"];
                 let s = a["text"].as_str().or(a["shortName"].as_str()).unwrap_or("");
                 out.push_str(s);
+            }
+            // A date carries only its timestamp (milliseconds, midnight UTC).
+            "date" => {
+                let day = v["attrs"]["timestamp"]
+                    .as_str()
+                    .and_then(|t| t.parse::<i64>().ok())
+                    .or_else(|| v["attrs"]["timestamp"].as_i64())
+                    .and_then(DateTime::from_timestamp_millis)
+                    .map(|d| d.format("%Y-%m-%d").to_string());
+                out.push_str(&day.unwrap_or_default());
             }
             "inlineCard" | "blockCard" => out.push_str(v["attrs"]["url"].as_str().unwrap_or("")),
             "rule" => out.push_str("\n---\n"),
@@ -524,6 +534,9 @@ pub fn parse_worklogs(v: &Value) -> Vec<RemoteWorklog> {
 
 /// Worklogs asked for per request (Jira's own limit for this list).
 const WORKLOG_PAGE: usize = 5000;
+
+/// Issues of a sprint read at most (the widget and its burndown).
+const MAX_SPRINT_ISSUES: usize = 2000;
 
 /// Where the next page of an issue's worklogs starts (`startAt` of the page plus its length,
 /// while that is below `total`); `None` after the last page.
@@ -1024,16 +1037,35 @@ impl IssueProvider for JiraClient {
             };
             let Some(s) = sprints["values"].as_array().and_then(|a| a.first()).cloned() else { continue };
             let sid = s["id"].as_i64().unwrap_or_default();
-            let mut url = reqwest::Url::parse(&agile_url(&self.base, &format!("sprint/{sid}/issue")))
-                .map_err(|e| Error::State(e.to_string()))?;
-            url.query_pairs_mut().append_pair("fields", &fields).append_pair("maxResults", "200");
-            let v = self.get_json(url.as_str()).await?;
-            let issues = v["issues"]
-                .as_array()
-                .map(|a| {
-                    a.iter().filter_map(|i| parse_issue(i, &self.site, &self.base, sprint_field.as_deref())).collect()
-                })
-                .unwrap_or_default();
+            // All pages: Jira gives at most 50 issues per request here, whatever is asked for.
+            let mut issues = vec![];
+            let mut start = 0;
+            loop {
+                let mut url = reqwest::Url::parse(&agile_url(&self.base, &format!("sprint/{sid}/issue")))
+                    .map_err(|e| Error::State(e.to_string()))?;
+                url.query_pairs_mut()
+                    .append_pair("fields", &fields)
+                    .append_pair("startAt", &start.to_string())
+                    .append_pair("maxResults", "100");
+                let v = self.get_json(url.as_str()).await?;
+                let page: Vec<Issue> = v["issues"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|i| parse_issue(i, &self.site, &self.base, sprint_field.as_deref()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let len = v["issues"].as_array().map_or(0, Vec::len);
+                issues.extend(page);
+                let at = v["startAt"].as_u64().map_or(start, |s| s as usize);
+                match v["total"].as_u64() {
+                    Some(total) if len > 0 && at + len < total as usize && issues.len() < MAX_SPRINT_ISSUES => {
+                        start = at + len
+                    }
+                    _ => break,
+                }
+            }
             return Ok(Some(Sprint {
                 id: sid,
                 name: s["name"].as_str().unwrap_or("").to_owned(),

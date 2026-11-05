@@ -809,7 +809,14 @@ pub struct Fetched {
     pub refreshed: HashSet<String>,
     /// Searches that failed (id, message); the others are still stored.
     pub failed: Vec<(String, String)>,
+    /// Cached keys whose issue Jira now has under another key (moved to another project): old, new.
+    pub moved: Vec<(String, String)>,
+    /// Cached keys Jira does not know any more (deleted, or no longer visible).
+    pub gone: Vec<String>,
 }
+
+/// Cached issues asked for one by one per sync when Jira does not answer them in a `key in (…)`.
+const MAX_SINGLE_GETS: usize = 100;
 
 /// Brings the posted worklog `id` up to date with its entry; returns the worklog's id. One that
 /// was deleted in Jira meanwhile (404) is posted anew, so the entry's hours reach Jira again
@@ -913,18 +920,49 @@ pub async fn fetch_site<P: IssueProvider>(p: &P, searches: &[(String, String)], 
         }
     }
     let missing: Vec<&String> = stale.iter().filter(|k| !out.issues.contains_key(*k)).collect();
+    let mut single = MAX_SINGLE_GETS;
     for chunk in missing.chunks(50) {
         let keys: Vec<&str> = chunk.iter().map(|k| k.as_str()).collect();
-        // Deleted or moved issues make Jira reject the whole `key in (…)`: then they are left as they are.
+        // A deleted issue makes Jira reject the whole `key in (…)`, and a moved one comes back
+        // under its new key: the keys not answered are asked for one by one.
+        let mut unanswered: Vec<&str> = keys.clone();
         if let Ok(list) = p.search(&jira::keys_jql(&keys), keys.len()).await {
-            for mut issue in list {
-                issue.matches.clear();
-                out.refreshed.insert(issue.key.clone());
-                out.issues.insert(issue.key.clone(), issue);
+            for issue in list {
+                unanswered.retain(|k| *k != issue.key);
+                out.refresh(issue);
+            }
+        }
+        for key in unanswered {
+            if single == 0 {
+                break;
+            }
+            single -= 1;
+            match p.get(key).await {
+                Ok(issue) => {
+                    if issue.key != key {
+                        out.moved.push((key.to_owned(), issue.key.clone()));
+                    }
+                    out.refresh(issue);
+                }
+                Err(Error::Remote { status: 404, .. }) => out.gone.push(key.to_owned()),
+                // Offline or refused: left as it is until the next sync.
+                Err(_) => {}
             }
         }
     }
     Ok(out)
+}
+
+impl Fetched {
+    /// A cached issue asked for again; one a search found already keeps that copy (and its searches).
+    fn refresh(&mut self, mut issue: Issue) {
+        if self.issues.contains_key(&issue.key) {
+            return;
+        }
+        issue.matches.clear();
+        self.refreshed.insert(issue.key.clone());
+        self.issues.insert(issue.key.clone(), issue);
+    }
 }
 
 /// What storing a sync changed.
@@ -1055,6 +1093,20 @@ impl Database {
                     params![site, key, serde_json::to_string(m)?],
                 )?;
             }
+            // Moved issues: the old key follows the new one, its tasks are ticked with it.
+            for (old, new) in &fetched.moved {
+                let was_open = before.get(old).is_some_and(|c| c != "done");
+                if was_open && fetched.issues.get(new).is_some_and(Issue::done) {
+                    out.newly_done.push(old.clone());
+                    if !before.contains_key(new) {
+                        out.newly_done.push(new.clone());
+                    }
+                }
+                self.issue_moved_record(site, old, new)?;
+            }
+            for key in &fetched.gone {
+                self.conn().execute("DELETE FROM issues WHERE site = ?1 AND key = ?2", params![site, key])?;
+            }
             for issue in fetched.issues.values() {
                 if issue.done() && before.get(&issue.key).is_some_and(|c| c != "done") {
                     out.newly_done.push(issue.key.clone());
@@ -1153,21 +1205,74 @@ impl Database {
         Ok(st.query_map(params![f.site, f.query, limit], map_issue)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The cached issue `key` (of any site; the first site wins when two have it).
+    /// The cached issue `key` (of any site; the first site wins when two have it). A key of an
+    /// issue moved to another project gives the issue under its new key.
     pub fn issue_get(&self, key: &str) -> Result<Option<Issue>> {
-        Ok(self
+        let found = self
             .conn()
             .query_row(
                 &format!("SELECT {ISSUE_SELECT} FROM issues WHERE key = ?1 ORDER BY site LIMIT 1"),
                 [key],
                 map_issue,
             )
+            .optional()?;
+        if found.is_some() {
+            return Ok(found);
+        }
+        Ok(self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {ISSUE_SELECT} FROM issues WHERE EXISTS (SELECT 1 FROM issue_moved m
+                       WHERE m.old_key = ?1 AND m.site = issues.site AND m.new_key = issues.key) ORDER BY site LIMIT 1"
+                ),
+                [key],
+                map_issue,
+            )
             .optional()?)
+    }
+
+    /// Records that the issue `old` of `site` is `new` now (moved to another project): earlier
+    /// moves follow it, the row under the old key goes.
+    pub fn issue_moved_record(&self, site: &str, old: &str, new: &str) -> Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        let c = self.conn();
+        c.execute("UPDATE issue_moved SET new_key = ?3 WHERE site = ?1 AND new_key = ?2", params![site, old, new])?;
+        c.execute(
+            "INSERT INTO issue_moved (site, old_key, new_key) VALUES (?1, ?2, ?3)
+             ON CONFLICT (site, old_key) DO UPDATE SET new_key = ?3",
+            params![site, old, new],
+        )?;
+        // Moved back: the key is current again.
+        c.execute("DELETE FROM issue_moved WHERE site = ?1 AND old_key = ?2", params![site, new])?;
+        c.execute("DELETE FROM issues WHERE site = ?1 AND key = ?2", params![site, old])?;
+        Ok(())
+    }
+
+    /// Old keys of moved issues and their new keys (`site`, `old`, `new`).
+    pub fn issue_moves(&self) -> Result<Vec<(String, String, String)>> {
+        let mut st = self.conn().prepare("SELECT site, old_key, new_key FROM issue_moved ORDER BY site, old_key")?;
+        Ok(st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// `key` and the old keys it had before it was moved (bookings and notes may name those).
+    pub fn issue_keys_of(&self, key: &str) -> Result<Vec<String>> {
+        let mut st =
+            self.conn().prepare("SELECT DISTINCT old_key FROM issue_moved WHERE new_key = ?1 ORDER BY old_key")?;
+        let mut out = vec![key.to_owned()];
+        out.extend(st.query_map([key], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?);
+        Ok(out)
     }
 
     /// Keys of the cached projects, upper-case (only they become chips).
     pub fn issue_project_keys(&self) -> Result<HashSet<String>> {
-        let mut st = self.conn().prepare_cached("SELECT DISTINCT key FROM issue_projects")?;
+        // Also the projects of moved issues' old keys: notes still name them.
+        let mut st = self.conn().prepare_cached(
+            "SELECT DISTINCT key FROM issue_projects
+             UNION SELECT DISTINCT substr(old_key, 1, instr(old_key, '-') - 1) FROM issue_moved",
+        )?;
         Ok(st.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<_>>()?)
     }
 
@@ -1187,7 +1292,7 @@ impl Database {
     /// Removes the cache of a site (it was removed from the settings).
     pub fn issues_remove_site(&self, site: &str) -> Result<()> {
         self.atomic(|| {
-            for t in ["issues", "issue_projects", "issue_sync", "issue_full"] {
+            for t in ["issues", "issue_projects", "issue_sync", "issue_full", "issue_moved"] {
                 self.conn().execute(&format!("DELETE FROM {t} WHERE site = ?1"), [site])?;
             }
             Ok(())

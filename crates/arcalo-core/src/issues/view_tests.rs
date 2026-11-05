@@ -946,6 +946,15 @@ fn estimates_are_edited_as_jira_words_them() {
         json!({ "originalEstimate": "3d", "remainingEstimate": "1h 30m" })
     );
     assert_eq!(w(None, Some("4h")).unwrap(), json!({ "remainingEstimate": "4h" }));
+    // What the app reads, Jira reads alike: days as „t“, a decimal comma, minutes without a unit.
+    assert_eq!(
+        w(Some("2t 4h"), Some("1,5h")).unwrap(),
+        json!({ "originalEstimate": "2d 4h", "remainingEstimate": "1.5h" })
+    );
+    assert_eq!(
+        w(Some("90"), Some("1h30")).unwrap(),
+        json!({ "originalEstimate": "90m", "remainingEstimate": "1h 30m" })
+    );
     assert!(w(Some("soon"), None).unwrap_err().to_string().contains("keine Dauer"));
     assert!(w(None, None).is_err());
     let raw = &j(CLOUD_ISSUE)["fields"]["timetracking"];

@@ -119,6 +119,18 @@ export type ChipIssue = Pick<Issue, "key" | "site" | "summary" | "status" | "sta
 export interface IssueIndex {
   projects: string[];
   issues: ChipIssue[];
+  /** Old keys of issues moved to another project, with their new keys. */
+  moved?: [string, string][];
+}
+
+/** The chips' issues by key; the old key of a moved issue shows the issue under its new key. */
+export function indexByKey(idx: IssueIndex): Map<string, ChipIssue> {
+  const byKey = new Map(idx.issues.map((i) => [i.key, i]));
+  for (const [old, now] of idx.moved ?? []) {
+    const issue = byKey.get(now);
+    if (issue && !byKey.has(old)) byKey.set(old, issue);
+  }
+  return byKey;
 }
 export interface Backlink {
   page_id: number;
@@ -280,7 +292,7 @@ export const useIssueIndex = create<IndexState>((set) => ({
   load: async () => {
     try {
       const idx = await jiraApi.index();
-      set((st) => ({ projects: new Set(idx.projects), byKey: new Map(idx.issues.map((i) => [i.key, i])), version: st.version + 1 }));
+      set((st) => ({ projects: new Set(idx.projects), byKey: indexByKey(idx), version: st.version + 1 }));
     } catch {
       /* no index: no chips */
     }

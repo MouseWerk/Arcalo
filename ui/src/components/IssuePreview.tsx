@@ -105,22 +105,24 @@ export function IssuePreview() {
   // Above the chip the card hangs from its bottom edge: a short card stays next to the chip.
   const place = below ? { top: shown.rect.bottom + 6 } : { bottom: Math.max(8, window.innerHeight - shown.rect.top + 6) };
   const i = shown.issue;
+  // An old key of an issue moved to another project shows the issue under its key now.
+  const key = i?.key || shown.key;
   const kind = typeOf(i?.issue_type ?? "");
   // Jira's paragraphs arrive with blank lines between them: one line break each keeps the excerpt compact.
   const text = (i?.description ?? "").replace(/\n\s*\n+/g, "\n").trim();
   const excerpt = text.length > 320 ? `${text.slice(0, 320).trimEnd()}…` : text;
   return (
-    <div ref={card} className="link-preview issue-preview" role="dialog" aria-label={shown.key} style={{ left, ...place, width: W, maxHeight: H }} onMouseLeave={() => (hideTimer.current = window.setTimeout(() => setShown(null), 220))}>
+    <div ref={card} className="link-preview issue-preview" role="dialog" aria-label={key} style={{ left, ...place, width: W, maxHeight: H }} onMouseLeave={() => (hideTimer.current = window.setTimeout(() => setShown(null), 220))}>
       <div className="issue-preview-head">
         <span className={`issue-type-icon issue-type-${kind}`} dangerouslySetInnerHTML={{ __html: TYPE_SVG[kind] }} aria-hidden />
-        <span className="mono issue-preview-key">{shown.key}</span>
+        <span className="mono issue-preview-key">{key}</span>
         {i && <span className={`issue-status cat-${i.status_category}`}>{i.status}</span>}
         <span className="grow" />
-        <IssueOpenButtons issueKey={shown.key} url={i?.url} onOpen={() => setShown(null)} />
+        <IssueOpenButtons issueKey={key} url={i?.url} onOpen={() => setShown(null)} />
       </div>
       {i ? (
         <>
-          <button type="button" className="link-preview-title issue-preview-title" onClick={(e) => (void openIssue(shown.key, { note: e.shiftKey, newTab: e.shiftKey, browser: e.ctrlKey || e.metaKey }), setShown(null))}>
+          <button type="button" className="link-preview-title issue-preview-title" onClick={(e) => (void openIssue(key, { note: e.shiftKey, newTab: e.shiftKey, browser: e.ctrlKey || e.metaKey }), setShown(null))}>
             {i.summary}
           </button>
           <dl className="issue-preview-meta">

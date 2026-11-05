@@ -1,6 +1,6 @@
 use super::jira::*;
 use super::*;
-use crate::tracking::{SlashContext, Thresholds, log_slash_command, log_slash_command_in};
+use crate::tracking::{SlashContext, Thresholds, log_slash_command, log_slash_command_as, log_slash_command_in};
 use chrono::TimeZone;
 use serde_json::json;
 
@@ -277,6 +277,14 @@ fn the_worklogs_of_a_busy_issue_are_read_to_the_last_page() {
 fn bodies_and_accounts() {
     let adf = body_value(SiteKind::Cloud, "One\ntwo\n\nThree");
     assert_eq!(adf_to_text(&adf), "One\ntwo\n\nThree");
+    // A date node carries only its timestamp: the list's excerpt and the editor's label show the day.
+    let due = json!({ "type": "doc", "content": [{ "type": "paragraph", "content": [
+        { "type": "text", "text": "Due " },
+        { "type": "date", "attrs": { "timestamp": "1793836800000" } },
+        { "type": "text", "text": ", ask " },
+        { "type": "mention", "attrs": { "id": "a1", "text": "@Mia" } },
+    ] }] });
+    assert_eq!(adf_to_text(&due), "Due 2026-11-05, ask @Mia");
     assert_eq!(body_value(SiteKind::Server, "x"), json!("x"));
     assert_eq!(parse_account(&json!({ "accountId": "a1", "displayName": "Mia", "emailAddress": "m@x" })).id, "a1");
     assert_eq!(parse_account(&json!({ "name": "mmeyer", "displayName": "Mia" })).id, "mmeyer");
@@ -488,6 +496,25 @@ fn zeit_with_an_issue_key_learns_and_reuses_the_wbs() {
 }
 
 #[test]
+fn a_worklog_comment_booked_along_stays_text() {
+    // „Arbeit protokollieren“ with „Auch in der Zeiterfassung buchen“: the comment is the booking's
+    // text, `#…`, `@…` and quotes in it set nothing (and fail nothing).
+    let db = setup();
+    store(&db, &[(issue("PROJ-123", "indeterminate"), &["mine"])]);
+    db.issue_wbs_set("issue", "PROJ-123", "NP-8801/1020", false).unwrap();
+    let t = Thresholds::default();
+    let comment = "Fix #2 mit @Tom ab @14:00 \"login\" und \"logout\"";
+    let parsed = log_slash_command(&db, &format!("/zeit 45m PROJ-123 {comment}"), now(), &cet(), &t);
+    assert!(parsed.is_err(), "read as a command, the comment fails the booking");
+    let ctx = SlashContext::default();
+    let out = log_slash_command_as(&db, "/zeit 45m PROJ-123", Some(comment), now(), &cet(), &t, ctx).unwrap();
+    assert_eq!(out.entry.description, format!("PROJ-123 {comment}"));
+    assert_eq!((out.entry.leistungsart, out.entry.duration_minutes), (None, Some(45)));
+    assert_eq!(out.entry.start_time, now() - Duration::minutes(45));
+    assert_eq!(out.issue.as_deref(), Some("PROJ-123"));
+}
+
+#[test]
 fn worklogs_are_never_posted_twice() {
     let db = setup();
     let mut s = db.load_settings().unwrap();
@@ -691,6 +718,140 @@ async fn fetching_a_site_merges_searches_and_refreshes_stale_issues() {
     let failing = Fake { results: HashMap::new() };
     assert!(fetch_site(&failing, &searches, &[]).await.is_err(), "the default search failing fails the site");
     assert_eq!(fake.whoami().await.unwrap().display_name, "Mia");
+}
+
+/// A Jira whose issues were moved between projects and deleted: like Jira, `key in (…)` with a
+/// key it does not know fails as a whole (400), a moved key answers under its new key.
+struct Reorganized {
+    issues: Vec<Issue>,
+    moved: HashMap<String, String>,
+}
+
+impl Reorganized {
+    fn resolve(&self, key: &str) -> Option<Issue> {
+        let key = self.moved.get(key).map_or(key, String::as_str);
+        self.issues.iter().find(|i| i.key == key).cloned()
+    }
+}
+
+impl IssueProvider for Reorganized {
+    fn site(&self) -> &str {
+        "acme"
+    }
+    async fn whoami(&self) -> Result<Account> {
+        Ok(Account::default())
+    }
+    async fn search(&self, query: &str, _limit: usize) -> Result<Vec<Issue>> {
+        if query == DEFAULT_JQL {
+            return Ok(self.issues.iter().filter(|i| !i.done()).cloned().collect());
+        }
+        let keys = query.trim_start_matches("key in (").split(')').next().unwrap_or("");
+        let mut out: Vec<Issue> = vec![];
+        for k in keys.split(", ") {
+            let Some(i) = self.resolve(k) else {
+                return Err(Error::Remote { status: 400, message: format!("An issue with key '{k}' does not exist") });
+            };
+            if !out.iter().any(|o| o.key == i.key) {
+                out.push(i);
+            }
+        }
+        Ok(out)
+    }
+    async fn get(&self, key: &str) -> Result<Issue> {
+        self.resolve(key)
+            .map(|mut i| {
+                i.detailed = true;
+                i
+            })
+            .ok_or(Error::Remote { status: 404, message: "Issue does not exist".into() })
+    }
+    async fn projects(&self) -> Result<Vec<RemoteProject>> {
+        Ok(vec![])
+    }
+    async fn create(&self, _new: &NewIssue) -> Result<String> {
+        unreachable!()
+    }
+    async fn comment(&self, _key: &str, _body: &str) -> Result<()> {
+        unreachable!()
+    }
+    async fn transition(&self, _key: &str, _to: &str) -> Result<String> {
+        unreachable!()
+    }
+    async fn log_work(&self, _work: &WorkLog) -> Result<String> {
+        unreachable!()
+    }
+    async fn worklogs(&self, _key: &str) -> Result<Vec<RemoteWorklog>> {
+        unreachable!()
+    }
+    async fn update_work(&self, _id: &str, _work: &WorkLog) -> Result<()> {
+        unreachable!()
+    }
+    async fn delete_work(&self, _key: &str, _id: &str) -> Result<()> {
+        unreachable!()
+    }
+    async fn sprint(&self, _project: &str) -> Result<Option<Sprint>> {
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn moved_and_deleted_issues_are_followed_by_their_old_keys() {
+    let db = setup();
+    let mine: &[&str] = &["mine"];
+    store(
+        &db,
+        &[
+            (issue("PROJ-1", "indeterminate"), mine),
+            (issue("PROJ-2", "new"), mine),
+            (issue("PROJ-3", "new"), mine),
+            (issue("PROJ-9", "new"), mine),
+        ],
+    );
+    let page = db.create_page(None, "Plan", None).unwrap();
+    db.save_page_content(page.id, "- [ ] PROJ-1 Deploy\n- [ ] PROJ-3 Review\n- [ ] PROJ-9 Docs\n").unwrap();
+    // In Jira: PROJ-1 moved to NEW-5 and done, PROJ-2 deleted, PROJ-3 done, PROJ-9 moved to
+    // NEW-6 and still mine.
+    let jira = Reorganized {
+        issues: vec![issue("NEW-5", "done"), issue("PROJ-3", "done"), issue("NEW-6", "new")],
+        moved: HashMap::from([("PROJ-1".into(), "NEW-5".into()), ("PROJ-9".into(), "NEW-6".into())]),
+    };
+    let stale = db.issues_open_keys("acme").unwrap();
+    let f = fetch_site(&jira, &[(MINE.to_owned(), DEFAULT_JQL.to_owned())], &stale).await.unwrap();
+    assert_eq!(f.gone, ["PROJ-2"]);
+    let mut moved = f.moved.clone();
+    moved.sort();
+    assert_eq!(moved, [("PROJ-1".to_owned(), "NEW-5".to_owned()), ("PROJ-9".to_owned(), "NEW-6".to_owned())]);
+    assert_eq!(f.issues["NEW-6"].matches, ["mine"], "found by the search: stays in the list");
+    let out = db.issues_store("acme", &f, now()).unwrap();
+    let mut done = out.newly_done.clone();
+    done.sort();
+    assert_eq!(done, ["NEW-5", "PROJ-1", "PROJ-3"], "a deleted issue does not hold up the others");
+    assert_eq!(out.issues, 1);
+    // The old keys show the issue under its new key; the deleted one is gone; none is asked again.
+    assert_eq!(db.issue_get("PROJ-1").unwrap().unwrap().key, "NEW-5");
+    assert_eq!(db.issue_get("PROJ-9").unwrap().unwrap().key, "NEW-6");
+    assert!(db.issue_get("PROJ-2").unwrap().is_none());
+    assert!(db.issues_open_keys("acme").unwrap().iter().all(|k| k.starts_with("NEW")));
+    assert!(db.issue_project_keys().unwrap().contains("PROJ"), "old keys in notes stay chips");
+    assert_eq!(db.issue_keys_of("NEW-5").unwrap(), ["NEW-5", "PROJ-1"]);
+    let mine_now = db.issues_list(&IssueFilter { query: MINE.into(), ..Default::default() }).unwrap();
+    assert_eq!(mine_now.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(), ["NEW-6"]);
+    // The tasks of the done issues are ticked, the open one stays.
+    db.issues_tick_tasks(&out.newly_done).unwrap();
+    let tasks = db
+        .list_tasks(&crate::tasks::TaskFilter { status: crate::tasks::TaskStatus::All, ..Default::default() })
+        .unwrap();
+    let mut states: Vec<(String, bool)> = tasks.iter().map(|t| (t.text.clone(), t.done)).collect();
+    states.sort();
+    assert_eq!(
+        states,
+        [("PROJ-1 Deploy".to_owned(), true), ("PROJ-3 Review".to_owned(), true), ("PROJ-9 Docs".to_owned(), false)]
+    );
+    // Moved on again (NEW-5 → OPS-2): the first key follows.
+    db.issue_put("acme", &issue("OPS-2", "done"), now()).unwrap();
+    db.issue_moved_record("acme", "NEW-5", "OPS-2").unwrap();
+    assert_eq!(db.issue_get("PROJ-1").unwrap().unwrap().key, "OPS-2");
+    assert_eq!(db.issue_keys_of("OPS-2").unwrap(), ["OPS-2", "NEW-5", "PROJ-1"]);
 }
 
 #[tokio::test]
@@ -1406,4 +1567,59 @@ fn worklog_sync_never_posts_twice_or_loses_an_edit() {
         let ids: HashSet<String> = db.issue_entries(&live).unwrap().into_iter().filter_map(|e| e.worklog_id).collect();
         assert_eq!(ids.len(), live.len(), "seed {seed}: each booking knows its own worklog\n{}", trace.join("\n"));
     }
+}
+
+/// A Jira answering each request line with `answer` (the body of a 200, JSON).
+fn scripted_jira(answer: fn(&str) -> String) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line);
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap_or(0) == 0 || h == "\r\n" {
+                    break;
+                }
+            }
+            let body = answer(line.trim());
+            let mut out = stream;
+            let _ = write!(
+                out,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    url
+}
+
+#[tokio::test]
+async fn the_sprint_reads_every_page_of_its_issues() {
+    // 120 issues; Jira gives at most 50 per request, whatever `maxResults` asks for.
+    let url = scripted_jira(|line| {
+        let target = line.split_whitespace().nth(1).unwrap_or("");
+        if target.starts_with("/rest/agile/1.0/board?") {
+            return r#"{"values":[{"id":1,"name":"Board","type":"scrum"}]}"#.into();
+        }
+        if target.starts_with("/rest/agile/1.0/board/1/sprint") {
+            return r#"{"values":[{"id":4,"name":"Sprint 4","state":"active"}]}"#.into();
+        }
+        if target.starts_with("/rest/agile/1.0/sprint/4/issue") {
+            let q = reqwest::Url::parse(&format!("http://x{target}")).unwrap();
+            let start: usize = q.query_pairs().find(|(k, _)| k == "startAt").map_or(0, |(_, v)| v.parse().unwrap());
+            let issues: Vec<serde_json::Value> = (start..(start + 50).min(120))
+                .map(|n| json!({ "key": format!("PROJ-{n}"), "id": n.to_string(), "fields": { "summary": "S" } }))
+                .collect();
+            return json!({ "startAt": start, "maxResults": 50, "total": 120, "issues": issues }).to_string();
+        }
+        "[]".into()
+    });
+    let sprint = direct_jira(&url).sprint("PROJ").await.unwrap().unwrap();
+    assert_eq!(sprint.issues.len(), 120);
+    let keys: HashSet<&str> = sprint.issues.iter().map(|i| i.key.as_str()).collect();
+    assert_eq!(keys.len(), 120, "each issue once");
 }

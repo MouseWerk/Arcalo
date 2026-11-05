@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, fromIssueTable, groupIssues, isKey, isSiteAddress, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
+import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, fromIssueTable, groupIssues, indexByKey, isKey, isSiteAddress, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
 import { guessKind } from "../views/settings/JiraSection";
 import { typeOf } from "./issueTypes";
 import { quickItems } from "./quicksearch";
@@ -177,5 +177,15 @@ describe("compact issue list", () => {
       issue("PROJ-1", { remote_id: "10001", summary: "Erstes", status: "In Arbeit", status_category: "indeterminate", priority: "High", priority_level: 4, reporter: "Tom", project_name: "Projekt", sprint: "Sprint 3", sprint_state: "active", due_date: "2026-10-20", updated: "2026-10-01T08:00:00Z", url: "https://acme/browse/PROJ-1", description: "Text" }),
     );
     expect([b.project_key, b.project_name, b.resolved, b.comments, b.matches]).toEqual(["OPS", "Betrieb", "2026-10-02T08:00:00Z", [], []]);
+  });
+});
+
+describe("moved issues", () => {
+  it("show the issue under its new key for the old one", () => {
+    const moved = issue("NEW-5", { summary: "Moved", status: "Done", status_category: "done" });
+    const byKey = indexByKey({ projects: ["NEW", "PROJ"], issues: [moved], moved: [["PROJ-1", "NEW-5"], ["PROJ-2", "GONE-1"]] });
+    expect(byKey.get("PROJ-1")).toBe(moved);
+    expect(byKey.get("NEW-5")).toBe(moved);
+    expect(byKey.has("PROJ-2")).toBe(false);
   });
 });

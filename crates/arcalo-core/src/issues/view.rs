@@ -1204,13 +1204,13 @@ pub fn write_value(field: &EditField, kind: SiteKind, input: &FieldInput) -> Res
             let mut v = serde_json::Map::new();
             for (name, value) in [("originalEstimate", original), ("remainingEstimate", remaining)] {
                 if let Some(t) = value.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-                    if parse_duration(t).is_none() {
+                    let Some(jira) = jira_duration(t) else {
                         return Err(Error::State(trf!(
                             "„{t}“ ist keine Dauer (z. B. 1h 30m, 45m, 2d)",
                             "“{t}” is not a duration (e.g. 1h 30m, 45m, 2d)"
                         )));
-                    }
-                    v.insert(name.into(), Value::String(t.split_whitespace().collect::<Vec<_>>().join(" ")));
+                    };
+                    v.insert(name.into(), Value::String(jira));
                 }
             }
             if v.is_empty() {
@@ -1348,6 +1348,33 @@ pub fn parse_duration(text: &str) -> Option<i64> {
         any = true;
     }
     (any && total >= 60.0).then_some(total.round() as i64)
+}
+
+/// A duration [`parse_duration`] reads, written the way Jira reads it: `2t` (Tage) as `2d`, `1,5h`
+/// as `1.5h`, a number without a unit as minutes (Jira would take its own default unit, which may
+/// be hours). `None` where it is no duration.
+pub fn jira_duration(text: &str) -> Option<String> {
+    parse_duration(text)?;
+    let t = text.trim().to_lowercase().replace(',', ".");
+    let mut parts: Vec<String> = vec![];
+    let mut num = String::new();
+    for c in t.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() || c == '.' {
+            num.push(c);
+            continue;
+        }
+        if num.is_empty() {
+            continue;
+        }
+        let unit = match c {
+            't' => 'd',
+            ' ' => 'm',
+            u => u,
+        };
+        parts.push(format!("{num}{unit}"));
+        num.clear();
+    }
+    Some(parts.join(" "))
 }
 
 // ------------------------------------------------------------------ the client

@@ -57,6 +57,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0040_composed_links.sql"),
     include_str!("../migrations/0041_issue_full.sql"),
     include_str!("../migrations/0042_worklog_sent.sql"),
+    include_str!("../migrations/0043_issue_moved.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

@@ -383,14 +383,23 @@ pub async fn jira_full_worklog_add(
     if book {
         settings.require_time_tracking()?;
     }
+    // The comment is the booking's text as it is: `#…`, `@…` or quotes in it are no part of the
+    // command (they would set a Leistungsart, a date or a start, or fail the booking).
     let book_it = || -> Result<i64> {
-        let text = comment.split_whitespace().collect::<Vec<_>>().join(" ");
-        let line = format!("/zeit {minutes}m {key} {text}");
+        let line = format!("/zeit {minutes}m {key}");
         let out = {
             let db = state.db();
             let ctx = arcalo_core::tracking::SlashContext { default_ref: None, page_id: None };
             let end = started + chrono::Duration::minutes(minutes);
-            arcalo_core::tracking::log_slash_command_in(&db, line.trim(), end, &Local, &settings.thresholds, ctx)?
+            arcalo_core::tracking::log_slash_command_as(
+                &db,
+                &line,
+                Some(&comment),
+                end,
+                &Local,
+                &settings.thresholds,
+                ctx,
+            )?
         };
         let _ = app.emit("data://entries", ());
         Ok(out.entry.id)
@@ -403,12 +412,27 @@ pub async fn jira_full_worklog_add(
         // retried by the runner, never posted twice).
         crate::jira::run_worklogs(&app).await;
     } else {
-        // Posted first: a post that fails books nothing, so trying again makes no second booking.
-        let id = client(&state, &site)?
-            .log_work(&WorkLog { key: key.clone(), started, minutes, comment: comment.trim().to_owned() })
-            .await?;
-        if book {
-            let e = book_it()?;
+        // Booked first (a booking that cannot be made, e.g. without a WBS, posts nothing), then
+        // posted; a post that fails takes the booking back, so trying again makes neither a second
+        // booking nor a second worklog.
+        let booked = if book { Some(book_it()?) } else { None };
+        let posted = match client(&state, &site) {
+            Ok(c) => {
+                c.log_work(&WorkLog { key: key.clone(), started, minutes, comment: comment.trim().to_owned() }).await
+            }
+            Err(e) => Err(e),
+        };
+        let id = match posted {
+            Ok(id) => id,
+            Err(e) => {
+                if let Some(entry) = booked {
+                    state.db().delete_time_entry(entry)?;
+                    let _ = app.emit("data://entries", ());
+                }
+                return Err(e);
+            }
+        };
+        if let Some(e) = booked {
             // The booking knows its worklog: it is never posted again.
             state.db().worklog_posted(e, &id)?;
             entry_id = Some(e);
@@ -496,10 +520,17 @@ fn sniff_image(bytes: &[u8]) -> &'static str {
     }
 }
 
-/// Copies opened more than a week ago are removed (they were opened in their app already).
+/// Copies opened more than a week ago are removed (they were opened in their app already), with
+/// the folders they leave empty.
 fn forget_old_files(dir: &std::path::Path) {
     let week = std::time::Duration::from_secs(7 * 24 * 3600);
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            forget_old_files(&path);
+            let _ = std::fs::remove_dir(&path);
+            continue;
+        }
         let old = entry
             .metadata()
             .and_then(|m| m.modified())
@@ -507,9 +538,19 @@ fn forget_old_files(dir: &std::path::Path) {
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age > week);
         if old {
-            let _ = std::fs::remove_file(entry.path());
+            let _ = std::fs::remove_file(path);
         }
     }
+}
+
+/// The folder of an attachment's copy: a stable name from its address (FNV-1a).
+fn attachment_folder(url: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in url.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
 }
 
 /// A file name that is safe on every system.
@@ -538,15 +579,22 @@ pub async fn jira_attachment(
     let path = match target.filter(|t| !t.trim().is_empty()) {
         Some(t) => std::path::PathBuf::from(t),
         None => {
-            let dir = state.data_dir.join("jira-files").join(&s.id);
+            let site_dir = state.data_dir.join("jira-files").join(&s.id);
+            forget_old_files(&site_dir);
+            // A folder per attachment: two files of the same name (`image.png` of two issues) do
+            // not overwrite each other, and one still open in its app (and locked by it) is not
+            // written again.
+            let dir = site_dir.join(attachment_folder(&url));
             std::fs::create_dir_all(&dir).map_err(|e| Error::State(e.to_string()))?;
-            forget_old_files(&dir);
             dir.join(&name)
         }
     };
-    std::fs::write(&path, &bytes).map_err(|e| {
-        Error::State(trf!("„{name}“ ließ sich nicht speichern: {e}", "“{name}” could not be saved: {e}"))
-    })?;
+    let same = std::fs::read(&path).is_ok_and(|old| old == bytes);
+    if !same {
+        std::fs::write(&path, &bytes).map_err(|e| {
+            Error::State(trf!("„{name}“ ließ sich nicht speichern: {e}", "“{name}” could not be saved: {e}"))
+        })?;
+    }
     if path.starts_with(state.data_dir.join("jira-files")) {
         #[cfg(mobile)]
         {
@@ -585,5 +633,27 @@ mod tests {
         assert_eq!(safe_name("  "), "attachment");
         assert_eq!(sniff_image(&[0x89, b'P', b'N', b'G', 1]), "image/png");
         assert_eq!(sniff_image(b"<svg"), "application/octet-stream");
+    }
+
+    #[test]
+    fn attachments_of_the_same_name_get_their_own_folder() {
+        let a = attachment_folder("https://acme.atlassian.net/rest/api/3/attachment/content/10500");
+        let b = attachment_folder("https://acme.atlassian.net/rest/api/3/attachment/content/10501");
+        assert_ne!(a, b);
+        assert_eq!(a, attachment_folder("https://acme.atlassian.net/rest/api/3/attachment/content/10500"));
+        assert_eq!(a.len(), 16);
+        // Old copies go with the folders they leave empty; new ones stay.
+        let dir = std::env::temp_dir().join(format!("arcalo-jira-files-{}", std::process::id()));
+        let old = dir.join(&a);
+        let new = dir.join(&b);
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        let file = std::fs::File::create(old.join("image.png")).unwrap();
+        file.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 24 * 3600)).unwrap();
+        drop(file);
+        std::fs::write(new.join("image.png"), b"x").unwrap();
+        forget_old_files(&dir);
+        assert!(!old.exists() && new.join("image.png").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

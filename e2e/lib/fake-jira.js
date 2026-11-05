@@ -26,6 +26,10 @@
 // `times` reads after it with `status`. `state.writeDelayMs`
 // answers every write (POST, PUT, DELETE) that much later, as a slow Jira does; the request is
 // recorded at once.
+//
+// `move(key, project)` moves an issue to another project as Jira does: it gets the next key there,
+// and the old key still finds it (`GET issue/OLD-1`, `key in (OLD-1)`). `remove(key)` deletes it;
+// like Jira, a `key in (…)` naming a key it does not know then fails as a whole (400).
 
 import http from "node:http";
 import zlib from "node:zlib";
@@ -176,7 +180,26 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     return cloud ? { accountId: u.id, displayName: u.name, active: true, avatarUrls } : { name: u.id, key: `JIRAUSER-${u.id}`, displayName: u.name, active: true, avatarUrls };
   };
   const statusJson = (i) => ({ name: i.status, statusCategory: { key: i.category } });
-  const byKey = (k) => store.find((i) => i.key === k);
+  /** Old keys of moved issues: old → new. */
+  const movedKeys = {};
+  const current = (k) => {
+    let key = k;
+    for (let n = 0; n < 10 && movedKeys[key]; n++) key = movedKeys[key];
+    return key;
+  };
+  const byKey = (k) => store.find((i) => i.key === current(k));
+  function move(key, project, projectName = project) {
+    const i = byKey(key);
+    const n = Math.max(...store.filter((x) => x.project === project).map((x) => Number(x.key.split("-")[1])), 0) + 1;
+    const to = `${project}-${n}`;
+    movedKeys[i.key] = to;
+    Object.assign(i, { key: to, project, projectName });
+    changed(i, "Tom", [{ field: "Key", fromString: key, toString: to }]);
+    return to;
+  }
+  function remove(key) {
+    store.splice(store.indexOf(byKey(key)), 1);
+  }
   const refJson = (k) => {
     const o = byKey(k);
     return { key: k, fields: { summary: o?.summary ?? k, status: o ? statusJson(o) : { name: "To Do", statusCategory: { key: "new" } }, issuetype: { name: o?.type ?? "Task" }, priority: o?.priority ? { name: o.priority } : null } };
@@ -365,7 +388,10 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     let m;
     if ((m = /^key in \(([^)]*)\)$/i.exec(j))) {
       const keys = m[1].split(",").map((s) => s.trim());
-      return store.filter((i) => keys.includes(i.key));
+      const unknown = keys.find((k) => !byKey(k));
+      if (unknown) return { error: `An issue with key '${unknown}' does not exist for field 'key'.` };
+      const wanted = keys.map(current);
+      return store.filter((i) => wanted.includes(i.key));
     }
     if ((m = /^key = (\S+)$/i.exec(j))) return store.filter((i) => i.key === m[1]);
     if ((m = /^text ~ "(.*)"$/i.exec(j))) {
@@ -455,6 +481,7 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
       }
       const found = query(url.searchParams.get("jql") ?? "");
       if (!found) return json(res, 400, { errorMessages: ["Error in the JQL Query"] });
+      if (found.error) return json(res, 400, { errorMessages: [found.error] });
       const size = Math.min(2, Number(url.searchParams.get("maxResults") ?? 50));
       if (cloud) {
         const start = Number(url.searchParams.get("nextPageToken") ?? 0);
@@ -625,6 +652,8 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     },
     worklogs: () => store.flatMap((i) => i.worklogs.map((w) => ({ key: i.key, ...w }))),
     edit,
+    move,
+    remove,
     stop: close,
     start: open,
     close,

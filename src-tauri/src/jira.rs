@@ -456,6 +456,8 @@ pub struct ChipIssue {
 pub struct IssueIndex {
     projects: Vec<String>,
     issues: Vec<ChipIssue>,
+    /// Old keys of issues moved to another project, with their new keys.
+    moved: Vec<(String, String)>,
 }
 
 #[tauri::command(async)]
@@ -481,7 +483,8 @@ pub fn jira_index(state: State<AppState>) -> Result<IssueIndex> {
             detailed: i.detailed,
         })
         .collect();
-    Ok(IssueIndex { projects, issues })
+    let moved = db.issue_moves()?.into_iter().map(|(_, old, new)| (old, new)).collect();
+    Ok(IssueIndex { projects, issues, moved })
 }
 
 #[derive(Serialize)]
@@ -500,13 +503,17 @@ pub struct IssueView {
 pub fn jira_issue_view(state: State<AppState>, key: String) -> Result<IssueView> {
     let db = state.reader();
     let backlinks = db.issue_backlinks(&key)?;
+    // Bookings made under the keys the issue had before it was moved count as well.
+    let issue = db.issue_get(&key)?;
+    let keys = db.issue_keys_of(issue.as_ref().map_or(key.as_str(), |i| i.key.as_str()))?;
     let booked_minutes: i64 = db.conn().query_row(
-        "SELECT IFNULL(SUM(e.duration_minutes), 0) FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id WHERE l.issue_key = ?1",
-        [&key],
+        "SELECT IFNULL(SUM(e.duration_minutes), 0) FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id
+         WHERE l.issue_key IN (SELECT value FROM json_each(?1))",
+        [serde_json::to_string(&keys)?],
         |r| r.get(0),
     )?;
     Ok(IssueView {
-        issue: db.issue_get(&key)?,
+        issue,
         note_page_id: backlinks.iter().find(|b| b.note).map(|b| b.page_id),
         backlinks,
         wbs: db.issue_wbs_for(&key)?,
@@ -520,7 +527,7 @@ pub async fn jira_issue_fetch(app: AppHandle, key: String) -> Result<Issue> {
     let state = app.state::<AppState>();
     let site = site_for_key(&state, &key)?;
     let issue = client(&state, &site)?.get(&key).await?;
-    state.db().issue_put(&site.id, &issue, Utc::now())?;
+    put_fetched(&state, &site.id, &key, &issue)?;
     let _ = app.emit("jira://synced", &site.id);
     Ok(issue)
 }
@@ -532,8 +539,24 @@ pub async fn jira_issue_detail(app: AppHandle, key: String) -> Result<Issue> {
     let state = app.state::<AppState>();
     let site = site_for_key(&state, &key)?;
     let issue = client(&state, &site)?.get(&key).await?;
-    state.db().issue_put(&site.id, &issue, Utc::now())?;
+    if put_fetched(&state, &site.id, &key, &issue)? {
+        let _ = app.emit("jira://synced", &site.id);
+    }
     Ok(issue)
+}
+
+/// Caches an issue Jira sent for `asked`; one that answers under another key was moved to
+/// another project, and the asked key follows it from now on. Returns whether it was moved.
+fn put_fetched(state: &AppState, site: &str, asked: &str, issue: &Issue) -> Result<bool> {
+    let db = state.db();
+    db.atomic(|| {
+        db.issue_put(site, issue, Utc::now())?;
+        let moved = !issue.key.eq_ignore_ascii_case(asked);
+        if moved {
+            db.issue_moved_record(site, asked, &issue.key)?;
+        }
+        Ok(moved)
+    })
 }
 
 #[derive(Serialize)]

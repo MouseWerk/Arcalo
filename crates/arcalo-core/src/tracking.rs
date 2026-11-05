@@ -59,6 +59,20 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     thresholds: &Thresholds,
     ctx: SlashContext,
 ) -> Result<LogOutcome> {
+    log_slash_command_as(db, line, None, now, offset, thresholds, ctx)
+}
+
+/// [`log_slash_command_in`] with the booking's text given as it is (`description`): it is not read
+/// as part of the command, so `#…`, `@…` and quotes in it stay words (a Jira worklog's comment).
+pub fn log_slash_command_as<Tz: TimeZone>(
+    db: &Database,
+    line: &str,
+    description: Option<&str>,
+    now: DateTime<Utc>,
+    offset: &Tz,
+    thresholds: &Thresholds,
+    ctx: SlashContext,
+) -> Result<LogOutcome> {
     let local_now = now.with_timezone(offset);
     // An issue key of a synced project (`/zeit 1h PROJ-123 Login`): a line without reference
     // books on the issue's (or its project's) WBS, which wins over the page's.
@@ -78,7 +92,11 @@ pub fn log_slash_command_in<Tz: TimeZone>(
         Some(id) => db.page(id)?.daily_date.and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()),
         None => None,
     };
-    let cmd = zeit::parse_for_day(line, today, default_ref, note_day.filter(|d| *d < today))?;
+    let mut cmd = zeit::parse_for_day(line, today, default_ref, note_day.filter(|d| *d < today))?;
+    if let Some(d) = description {
+        let d = d.split_whitespace().collect::<Vec<_>>().join(" ");
+        cmd.description = [cmd.description.as_str(), d.as_str()].join(" ").trim().to_owned();
+    }
     book_command(db, cmd, issue, now, offset, thresholds, ctx)
 }
 
