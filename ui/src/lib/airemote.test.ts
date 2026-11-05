@@ -85,4 +85,40 @@ describe("answers of a model load nothing from other servers", () => {
     expect(cleanAiMarkdown("```markdown\n# T\n\n![a](https://evil.example/x.png)\n```")).toBe("# T\n\n[a](<https://evil.example/x.png>)");
     expect(renderMarkdown(withoutRemoteImages(`![a](${LEAK})`))).not.toContain("<img");
   });
+
+  // R5D-2: CSS loads images by more than `url(`: `image-set("…" 1x)` takes a plain string, and an
+  // escaped `u\72l(` is `url(` to the browser. A style that names no `background` was not even looked at.
+  it("styles of an answer load nothing either, also with image-set or escapes", () => {
+    const host = "evil.example";
+    /** Every place outside a link where the remote host is still named. */
+    const named = (html: string, svg = false) => {
+      const doc = svg ? new DOMParser().parseFromString(html, "image/svg+xml") : new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+      const out: string[] = [];
+      for (const el of doc.querySelectorAll("*")) {
+        if (el.localName === "style" && el.textContent?.includes(host)) out.push(el.textContent);
+        for (const a of el.attributes) if (a.value.includes(host) && !(el.localName === "a" && (a.name === "href" || a.name === "title"))) out.push(`${el.localName}@${a.name}=${a.value}`);
+      }
+      return out;
+    };
+    const styles = [
+      `<li style="list-style-image:image-set('${LEAK}' 1x)">x</li>`,
+      `<p style="cursor:-webkit-image-set('${LEAK}' 1x),auto">x</p>`,
+      `<p style="background:u\\72l(${LEAK})">x</p>`,
+      `<p style="border-image:\\75 rl(${LEAK}) 30">x</p>`,
+    ];
+    for (const html of styles) {
+      expect(named(renderAiMarkdown(`Antwort:\n\n${html}`)), `review: ${html}`).toEqual([]);
+      expect(named(renderChatMarkdown(`Antwort:\n\n${html}`)), `chat: ${html}`).toEqual([]);
+    }
+    // A diagram's style sheet (Mermaid's `themeCSS` goes there unchecked) and its paint references.
+    for (const css of [`svg{background-image:image-set("${LEAK}" 1x)}`, `svg{background-image:-webkit-image-set("${LEAK}" 1x)}`, `svg{background:u\\72l(${LEAK})}`]) {
+      const out = svgWithoutRemoteLoads(`<svg xmlns="http://www.w3.org/2000/svg"><style>${css}</style><rect width="1" height="1"></rect></svg>`);
+      expect(named(out, true), css).toEqual([]);
+      expect(out).toContain("<rect");
+    }
+    const painted = svgWithoutRemoteLoads(`<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(${LEAK}#p)" filter="url(${LEAK}#f)" width="1" height="1"></rect><path marker-end="url(#arrow)"></path></svg>`);
+    expect(named(painted, true)).toEqual([]);
+    // Mermaid's own references inside the diagram stay.
+    expect(painted).toContain('marker-end="url(#arrow)"');
+  });
 });

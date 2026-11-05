@@ -69,7 +69,7 @@ const LOAD_ATTRS = ["src", "href", "xlink:href", "data", "poster", "background",
  * `srcset` and `url(…)` in styles are removed. Links stay links.
  */
 export function withoutRemoteLoads(html: string): string {
-  if (!/<(img|image|video|audio|source|picture|input|svg|use|object|track|style)\b|url\s*\(|srcset|poster|background|\bdata\s*=/i.test(html)) return html;
+  if (!/<(img|image|video|audio|source|picture|input|svg|use|object|track|style)\b|url\s*\(|srcset|poster|background|\b(data|style)\s*=/i.test(html)) return html;
   // A parsed document has no window: nothing in it is fetched while it is cleaned.
   const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, "text/html");
   scrubRemote(doc, [...doc.body.querySelectorAll("*")]);
@@ -84,14 +84,34 @@ export function svgWithoutRemoteLoads(svg: string): string {
   return new XMLSerializer().serializeToString(doc.documentElement);
 }
 
+/**
+ * CSS that can load something: `url(…)`, the image functions that take a plain string
+ * (`image-set("…" 1x)`, `-webkit-image-set`, `image(…)`, `cross-fade`), `src(…)`, `@import`, and any
+ * escape (`u\72l(` is `url(` to the browser).
+ */
+const CSS_LOADS = /\\|url\s*\(|image(?:-set)?\s*\(|cross-fade|\bsrc\s*\(|@import/i;
+
+/** A reference inside the same document (a diagram's `marker-end="url(#arrow)"`), which loads nothing. */
+const LOCAL_REF = /^url\(\s*['"]?#[^'")\\]*['"]?\s*\)$/i;
+
 function scrubRemote(doc: Document, elements: Element[]) {
   for (const el of elements) {
     el.removeAttribute("srcset");
     const style = el.getAttribute("style");
-    if (style && /url\s*\(|image-set|@import/i.test(style)) el.removeAttribute("style");
+    if (style && CSS_LOADS.test(style)) el.removeAttribute("style");
     if (el.localName === "style") {
-      el.textContent = (el.textContent ?? "").replace(/url\s*\([^)]*\)|@import[^;]*;?/gi, "none");
+      // Escapes are read first (`u\72l(` is `url(`), then every loading function goes.
+      el.textContent = (el.textContent ?? "")
+        .replace(/\\([0-9a-f]{1,6})\s?|\\([\s\S]?)/gi, (_, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff) || 0xfffd) : (ch ?? "")))
+        .replace(/(?:-webkit-)?(?:url|image-set|image|cross-fade|src)\s*\((?:"[^"]*"|'[^']*'|[^)"'])*\)?/gi, "none")
+        .replace(/@import[^;]*;?/gi, "");
       continue;
+    }
+    // SVG's presentation attributes (`fill`, `filter`, `mask`, …) are CSS and may point into another document.
+    if (el.namespaceURI === "http://www.w3.org/2000/svg") {
+      for (const a of [...el.attributes]) {
+        if (a.name !== "style" && CSS_LOADS.test(a.value) && !LOCAL_REF.test(a.value.trim())) el.removeAttribute(a.name);
+      }
     }
     if (el.localName === "a" && el.namespaceURI === "http://www.w3.org/1999/xhtml") continue;
     const src = el.getAttribute("src");
