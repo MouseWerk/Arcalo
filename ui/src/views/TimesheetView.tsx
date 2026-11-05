@@ -30,6 +30,7 @@ import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../li
 import { defaultLeistungsart } from "../lib/timetracking";
 import { isComposing, isKey } from "../lib/ime";
 import { copyText } from "../lib/clipboard";
+import { useToday } from "../lib/today";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone; icon: typeof Check }> = {
   running: { label: "time.status.running", tone: "info", icon: Timer },
@@ -114,7 +115,8 @@ export function TimesheetView() {
   const done = rows.filter((r) => r.status_flag !== "running");
   const total = done.reduce((a, r) => a + (r.duration_minutes ?? 0), 0);
   const byStatus = (st: StatusFlag) => done.filter((r) => r.status_flag === st).reduce((a, r) => a + (r.duration_minutes ?? 0), 0);
-  const todayKey = isoDay(new Date());
+  // Marked (and the gaps counted) for the new day when the window stays open over midnight.
+  const todayKey = useToday();
   const settings = useApp((st) => st.settings?.settings);
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
   const { targets, off } = useWeekTargets(week);

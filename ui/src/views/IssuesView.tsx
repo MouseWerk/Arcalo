@@ -15,7 +15,7 @@ import { useApp } from "../store/app";
 const NO_QUERIES: never[] = [];
 import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner, useMenu, type MenuEntry, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
-import { fmtDate, fmtDuration, isoDay, relative } from "../lib/format";
+import { fmtDate, fmtDuration, relative } from "../lib/format";
 import { t, useT, type TKey } from "../lib/i18n";
 import { emptyIssueQuery, filterIssues, GROUP_BYS, groupIssues, jiraApi, overdue, priorityClass, valuesOf, type GroupBy, type Issue, type IssueQuery, type IssueView, type JiraStatus } from "../lib/jira";
 import { addIssueTask, ISSUE_VIEW_ICON, issueOpenMenu, openIssueNote } from "../lib/jiraActions";
@@ -26,6 +26,7 @@ import { useTimeTracking } from "../lib/timetracking";
 import { openPlanPicker, setPlanData } from "../lib/blocks";
 import { useGroupWindow } from "../lib/groupWindow";
 import { isComposing } from "../lib/ime";
+import { useToday } from "../lib/today";
 
 const PREF = "arcalo.issues.view";
 /** From this many issues on, only the rows in view are rendered. */
@@ -124,7 +125,7 @@ export function IssuesView() {
   // The groups are grids of their own: the key column takes the longest key's width in all of them,
   // so the summaries start at the same place in every group.
   const keyWidth = useMemo(() => `${Math.max(7, ...shown.map((i) => i.key.length))}ch`, [shown]);
-  const today = isoDay(new Date());
+  const today = useToday();
   const lastSync = sites.map((x) => x.sync?.synced_at).filter(Boolean).sort().pop() ?? null;
   const failing = sites.filter((x) => x.enabled && x.sync?.error);
   // The issues of the failing sites are as old as their last good sync (the oldest of them).
