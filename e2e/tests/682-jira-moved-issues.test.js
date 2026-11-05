@@ -67,6 +67,30 @@ test("moved and deleted issues: the list, the tasks and the old keys", async () 
   assert.deepEqual(asked.map((r) => `${r.path} ${r.query.jql ?? ""}`), [], "settled");
 });
 
+test("work logged in the issue view and booked along: the comment stays text, a failed post books nothing (R6C-3)", async () => {
+  // The site does not post worklogs of bookings: the view posts the worklog itself.
+  await app.invoke("jira_wbs_set", { kind: "project", key: "OPS", reference: "NP-8801/1020" });
+  const started = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 3 * 3600_000).toISOString();
+  const comment = 'Fix #2 mit @Tom, "login" und "logout"';
+  const booked = async () => (await app.invoke("time_entries", { from: null, to: null })).filter((e) => /^OPS-7\b/.test(e.description));
+  jira.state.fail = { status: 500, times: 1 };
+  await assert.rejects(app.invoke("jira_full_worklog_add", { key: "OPS-7", started, duration: "45m", comment, book: true }), /500/);
+  assert.deepEqual(await booked(), [], "a post that failed books nothing (trying again makes no second booking)");
+  assert.equal(jira.worklogs().length, 0);
+  const r = await app.invoke("jira_full_worklog_add", { key: "OPS-7", started, duration: "45m", comment, book: true });
+  assert.ok(r.worklog_id && r.entry_id);
+  const [entry, ...more] = await booked();
+  assert.equal(more.length, 0);
+  assert.equal(entry.description, `OPS-7 ${comment}`, "the comment is the booking's text");
+  assert.equal(entry.leistungsart ?? null, null, "„#2“ is no Leistungsart");
+  assert.equal(entry.duration_minutes, 45);
+  assert.equal(new Date(entry.start_time).getTime(), new Date(started).getTime(), "„@Tom“ moves nothing");
+  const logs = jira.worklogs();
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].timeSpentSeconds, 2700);
+  assert.equal((await app.invoke("jira_entry_issues", { entryIds: [entry.id] }))[0]?.worklog_id, r.worklog_id, "the booking knows its worklog");
+});
+
 test("the chip of an old key shows the moved issue", async () => {
   await app.reload();
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
