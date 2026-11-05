@@ -12,7 +12,7 @@ use std::time::Duration;
 use arcalo_core::calsync::outlook;
 use arcalo_core::calsync::outlookwrite::{self, OutlookBridge};
 use arcalo_core::calsync::tz::Zone;
-use arcalo_core::timeblocks::{BlockPatch, Bridge, FocusBlock, NewBlock};
+use arcalo_core::timeblocks::{BlockPatch, Bridge, DeletedBlock, FocusBlock, NewBlock};
 use arcalo_core::{Error, tr};
 use chrono::{DateTime, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -61,11 +61,21 @@ pub fn block_update(app: AppHandle, state: State<AppState>, id: i64, patch: Bloc
 }
 
 #[tauri::command(async)]
-pub fn block_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
-    state.db().block_delete(id)?;
+pub fn block_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<DeletedBlock> {
+    let deleted = state.db().block_delete(id)?;
     changed(&app);
     spawn_flush(app.clone(), false);
-    Ok(())
+    Ok(deleted)
+}
+
+/// „Rückgängig“ of a delete: the block as it was (booking, focus sessions, Netzplan/Vorgang).
+#[tauri::command(async)]
+pub fn block_restore(app: AppHandle, state: State<AppState>, block: DeletedBlock) -> Result<FocusBlock> {
+    let outlook = writes_outlook(&state);
+    let b = state.db().block_restore(&block, Utc::now(), outlook)?;
+    changed(&app);
+    spawn_flush(app.clone(), false);
+    Ok(b)
 }
 
 /// Ticks off the block's task (open editors of its page reload).

@@ -301,6 +301,29 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
       useApp.getState().error(t("pdfh.failed"), e);
     }
   };
+  /** Deletes a highlight; „Rückgängig“ brings it back with its note (and its id for the links to it). */
+  const deleteHighlight = async (id: number) => {
+    const s = useApp.getState();
+    try {
+      const gone = await api.deletePdfHighlight(id);
+      setHls((l) => l.filter((x) => x.id !== id));
+      s.toast({
+        tone: "info",
+        title: t("pdfh.deleted"),
+        detail: gone.note || gone.text,
+        action: {
+          label: t("common.undo"),
+          run: () =>
+            void api.restorePdfHighlight(gone).then(
+              (h) => setHls((l) => [...l, h].sort((a, b) => a.page - b.page || a.id - b.id)),
+              (e) => useApp.getState().error(t("pdfh.failed"), e),
+            ),
+        },
+      });
+    } catch (e) {
+      s.error(t("pdfh.failed"), e);
+    }
+  };
   /** „In Notiz übernehmen“ (one highlight, or all with `null`): into the open note, else a picked one. */
   const take = (id: number | null, anchor: HTMLElement | null) => {
     const pageId = currentNote();
@@ -623,7 +646,7 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
           onDelete={() => {
             const id = popover.h.id;
             setPopover(null);
-            api.deletePdfHighlight(id).then(() => setHls((l) => l.filter((x) => x.id !== id)), (e) => useApp.getState().error(t("pdfh.failed"), e));
+            void deleteHighlight(id);
           }}
           onTake={() => {
             const id = popover.h.id;

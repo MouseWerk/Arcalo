@@ -125,8 +125,14 @@ pub fn pdf_highlight_update(
 }
 
 #[tauri::command(async)]
-pub fn pdf_highlight_delete(state: State<AppState>, id: i64) -> Result<()> {
+pub fn pdf_highlight_delete(state: State<AppState>, id: i64) -> Result<PdfHighlight> {
     state.db().delete_pdf_highlight(id)
+}
+
+/// „Rückgängig“ of a delete.
+#[tauri::command(async)]
+pub fn pdf_highlight_restore(state: State<AppState>, highlight: PdfHighlight) -> Result<PdfHighlight> {
+    state.db().restore_pdf_highlight(&highlight)
 }
 
 /// The Markdown of one highlight (a quote with its link) or, with `all`, of every highlight

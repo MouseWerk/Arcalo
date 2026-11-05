@@ -190,9 +190,33 @@ impl Database {
         self.pdf_highlight(id)
     }
 
-    pub fn delete_pdf_highlight(&self, id: i64) -> Result<()> {
+    /// Deletes a highlight; returns it for [`Database::restore_pdf_highlight`] („Rückgängig“).
+    pub fn delete_pdf_highlight(&self, id: i64) -> Result<PdfHighlight> {
+        let h = self.pdf_highlight(id)?;
         self.conn().execute("DELETE FROM pdf_highlights WHERE id = ?1", [id])?;
-        Ok(())
+        Ok(h)
+    }
+
+    /// Brings a deleted highlight back with its note, under its id while that is free (the links
+    /// to it in notes, `hl=7`, find it again).
+    pub fn restore_pdf_highlight(&self, h: &PdfHighlight) -> Result<PdfHighlight> {
+        check_color(&h.color)?;
+        self.conn().execute(
+            "INSERT INTO pdf_highlights (id, attachment, page, rects, text, color, note, created_at)
+             VALUES ((SELECT CASE WHEN EXISTS (SELECT 1 FROM pdf_highlights WHERE id = ?1) THEN NULL ELSE ?1 END),
+                     ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                h.id,
+                h.attachment,
+                h.page,
+                serde_json::to_string(&h.rects)?,
+                clean_text(&h.text),
+                h.color,
+                h.note.trim(),
+                h.created_at
+            ],
+        )?;
+        self.pdf_highlight(self.conn().last_insert_rowid())
     }
 
     /// Highlights follow their file when it is renamed.
@@ -247,6 +271,27 @@ mod tests {
         assert_eq!(db.pdf_highlights("Bericht 2026.pdf").unwrap().len(), 2);
         db.delete_pdf_highlight(b.id).unwrap();
         assert_eq!(db.pdf_highlights("Bericht 2026.pdf").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_deleted_highlight_comes_back_with_its_note_and_id() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.add_pdf_highlight(&new(2, "Zweite Seite")).unwrap();
+        let b = db.add_pdf_highlight(&NewHighlight { note: "Nachfragen".into(), ..new(3, "Dritte Seite") }).unwrap();
+        let gone = db.delete_pdf_highlight(b.id).unwrap();
+        assert_eq!(gone, b);
+        let back = db.restore_pdf_highlight(&gone).unwrap();
+        assert_eq!(back, b, "the same highlight, id and note included");
+        // Its id taken meanwhile (ids of deleted rows are handed out again): it comes back
+        // under another one.
+        let gone = db.delete_pdf_highlight(b.id).unwrap();
+        let c = db.add_pdf_highlight(&new(4, "Vierte Seite")).unwrap();
+        assert_eq!(c.id, b.id);
+        let back = db.restore_pdf_highlight(&gone).unwrap();
+        assert_ne!(back.id, c.id);
+        assert_eq!((back.note.as_str(), back.page), ("Nachfragen", 3));
+        assert_eq!(db.pdf_highlights("Bericht.pdf").unwrap().len(), 3);
+        assert!(db.pdf_highlight(a.id).is_ok());
     }
 
     #[test]
