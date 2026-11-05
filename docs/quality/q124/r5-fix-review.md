@@ -26,7 +26,7 @@ behaviour counts at the severity of that behaviour.
 - Fix: those seven commands run on a worker (`#[tauri::command(async)]`), like every other command that writes
   settings: no settings write waits for the lock on the main thread any more, so the main thread is free for the
   shortcut and tray work of the write that holds it.
-- Tests: e2e 680 „the app keeps answering when the command line changes a shortcut while the window stores a
+- Tests: e2e 681 „the app keeps answering when the command line changes a shortcut while the window stores a
   key“ (sixteen shortcut changes on the command line while the window stores keys without a pause). Before the
   fix the app hung in the first round: the main thread in `api_key_set` → `refresh_ai` waiting for the lock, the
   command line's watcher in `settings_save` → `apply_shortcuts` waiting for the main thread.
