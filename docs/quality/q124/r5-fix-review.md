@@ -27,8 +27,9 @@ behaviour counts at the severity of that behaviour.
   settings: no settings write waits for the lock on the main thread any more, so the main thread is free for the
   shortcut and tray work of the write that holds it.
 - Tests: e2e 680 „the app keeps answering when the command line changes a shortcut while the window stores a
-  key“ (sixteen shortcut changes on the command line while the window stores keys without a pause; hung in the
-  first rounds before the fix).
+  key“ (sixteen shortcut changes on the command line while the window stores keys without a pause). Before the
+  fix the app hung in the first round: the main thread in `api_key_set` → `refresh_ai` waiting for the lock, the
+  command line's watcher in `settings_save` → `apply_shortcuts` waiting for the main thread.
 
 ### R5D-2 A model's answer could still load an image from another server through its styles (high, fixed)
 
