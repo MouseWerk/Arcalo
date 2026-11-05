@@ -24,6 +24,7 @@ import { isComposing } from "../lib/ime";
 import { PageTree, sortMenu, useTreeOpen, type TreeHandle } from "./PageTree";
 import { newMenuItems } from "./newItems";
 import { focusItem, titleIfCut, treeKeyDown } from "./treeKeys";
+import { useToday } from "../lib/today";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -490,12 +491,13 @@ function TagsPane({ activeTag }: { activeTag?: string }) {
 
 function TodayHours() {
   const version = useApp((s) => s.entriesVersion);
+  // The window may stay open over midnight: the new day starts at zero.
+  const day = useToday();
   const [min, setMin] = useState(0);
   useEffect(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    const start = new Date(`${day}T00:00:00`);
     api.entries(start.toISOString()).then((rows) => setMin(rows.reduce((a, r) => a + (r.duration_minutes ?? 0), 0))).catch(() => {});
-  }, [version]);
+  }, [version, day]);
   return min > 0 ? <span className="nav-badge num">{fmtMinutes(min)} h</span> : null;
 }
 

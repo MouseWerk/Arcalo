@@ -53,26 +53,29 @@ fn check_color(color: &str) -> Result<()> {
     }
 }
 
-/// Collapses whitespace and joins words hyphenated at a line break (`Ver- arbeitung`).
+/// Collapses whitespace and joins words hyphenated at a line break (`Ver-⏎arbeitung`). A hyphen
+/// before a blank within a line stays: „Haus- und Gartenarbeit“ is not one word.
 pub fn clean_text(text: &str) -> String {
-    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut out = String::with_capacity(joined.len());
-    let chars: Vec<char> = joined.chars().collect();
+    let chars: Vec<char> = text.chars().collect();
+    let mut joined = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '-'
-            && i > 0
-            && chars[i - 1].is_lowercase()
-            && chars.get(i + 1) == Some(&' ')
-            && chars.get(i + 2).is_some_and(|c| c.is_lowercase())
-        {
-            i += 2;
-            continue;
+        if chars[i] == '-' && i > 0 && chars[i - 1].is_lowercase() {
+            let mut j = i + 1;
+            let mut line_break = false;
+            while j < chars.len() && chars[j].is_whitespace() {
+                line_break |= matches!(chars[j], '\n' | '\r');
+                j += 1;
+            }
+            if line_break && chars.get(j).is_some_and(|c| c.is_lowercase()) {
+                i = j;
+                continue;
+            }
         }
-        out.push(chars[i]);
+        joined.push(chars[i]);
         i += 1;
     }
-    out.chars().take(MAX_TEXT).collect()
+    joined.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_TEXT).collect()
 }
 
 /// Escapes what Markdown would read as formatting or a link inside a quote.
@@ -256,7 +259,7 @@ mod tests {
     #[test]
     fn stores_updates_and_deletes_highlights() {
         let db = Database::open_in_memory().unwrap();
-        let a = db.add_pdf_highlight(&new(3, "Die  Daten-\nver- arbeitung *läuft*")).unwrap();
+        let a = db.add_pdf_highlight(&new(3, "Die  Daten-\nverarbeitung *läuft*")).unwrap();
         let b = db.add_pdf_highlight(&new(1, "Erste Seite")).unwrap();
         assert_eq!(a.text, "Die Datenverarbeitung *läuft*");
         assert_eq!(a.rects, vec![[0.1, 0.2, 0.5, 0.02]]);
@@ -292,6 +295,13 @@ mod tests {
         assert_eq!((back.note.as_str(), back.page), ("Nachfragen", 3));
         assert_eq!(db.pdf_highlights("Bericht.pdf").unwrap().len(), 3);
         assert!(db.pdf_highlight(a.id).is_ok());
+    }
+
+    #[test]
+    fn a_hyphen_within_a_line_stays() {
+        assert_eq!(clean_text("Haus- und Gartenarbeit"), "Haus- und Gartenarbeit");
+        assert_eq!(clean_text("Ein- oder Ausgang, Daten-\r\n  verarbeitung"), "Ein- oder Ausgang, Datenverarbeitung");
+        assert_eq!(clean_text("Ost-\nWest"), "Ost- West", "a capital after the break: a compound, kept apart");
     }
 
     #[test]

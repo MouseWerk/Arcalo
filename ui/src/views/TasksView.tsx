@@ -39,6 +39,7 @@ import type { Recurrence, Task, TaskChange, TaskEdit, TaskStatus } from "../lib/
 import { t as tr, useT, withLabel } from "../lib/i18n";
 import { RecurDialog, TaskMoveDialog } from "./TaskDialogs";
 import { isComposing, isKey } from "../lib/ime";
+import { useToday } from "../lib/today";
 
 const STATUS: { value: TaskStatus; readonly label: string }[] = [
   withLabel({ value: "open" as TaskStatus }, "tasks.status.open"),
@@ -248,10 +249,12 @@ export function TasksView() {
   const now = new Date();
   const actions = useRef({ toggle, openLink, rowClick, rowMenu, recur: (t: Task) => setDialog({ kind: "recur", tasks: [t] }) });
   actions.current = { toggle, openLink, rowClick, rowMenu, recur: (t: Task) => setDialog({ kind: "recur", tasks: [t] }) };
+  // Regrouped on a new day (the window open over midnight): today's tasks become overdue.
+  const day = useToday();
   const groups = useMemo(() => {
-    const today = new Date();
+    const today = new Date(`${day}T12:00:00`);
     return TASK_GROUPS.map((g) => ({ ...g, tasks: (list ?? []).filter((t) => taskGroup(t.due, today) === g.id) })).filter((g) => g.tasks.length);
-  }, [list]);
+  }, [list, day]);
   const open = list?.filter((t) => !t.done).length ?? 0;
   // The rows in the order shown (for Shift ranges, Ctrl+A and the arrows).
   const order = useMemo(() => groups.flatMap((g) => g.tasks.map(key)), [groups]);

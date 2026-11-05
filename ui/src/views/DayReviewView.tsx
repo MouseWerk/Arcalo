@@ -31,6 +31,7 @@ import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/ty
 import { useT } from "../lib/i18n";
 import { copyText } from "../lib/clipboard";
 import { overlayOpen } from "../lib/overlays";
+import { useToday } from "../lib/today";
 
 export function DayReviewView() {
   const t = useT();
@@ -51,7 +52,7 @@ export function DayReviewView() {
   const aiOn = useAi();
   const root = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
-  const today = isoDay(new Date());
+  const today = useToday();
   const local = localProviders(providers);
   // Time tracking switched: the review comes back with (or without) its time parts.
   const timeOn = useTimeTracking();

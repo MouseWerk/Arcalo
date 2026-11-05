@@ -32,7 +32,6 @@ import {
   setSchema,
   setView,
   sortRows,
-  todayIso,
   writeValue,
   type CellWrite,
   type FilterSpec,
@@ -50,6 +49,7 @@ import { TableView } from "./TableView";
 import { BoardView } from "./BoardView";
 import { t, useT, type TKey } from "../../lib/i18n";
 import { isKey } from "../../lib/ime";
+import { useToday } from "../../lib/today";
 
 /** What the table and the board get from the view. */
 export interface Ctx {
@@ -132,7 +132,7 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
     };
   }, []);
 
-  const today = todayIso();
+  const today = useToday();
   const shown = useMemo(() => (rows ? sortRows(filterRows(rows, view.filters, defs, today), view.sort, defs) : []), [rows, view.filters, view.sort, defs, today]);
 
   // Changes of the view and the schema always start from the latest frontmatter.

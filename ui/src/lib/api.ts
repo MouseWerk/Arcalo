@@ -522,6 +522,9 @@ export const api = {
 // dozens of them. Handlers run in the order they subscribed, as separate listeners did.
 type Hub = { handlers: { h: (payload: unknown) => void }[]; ready: Promise<UnlistenFn> };
 const hubs = new Map<string, Hub>();
+// Under WebDriver: the handlers per event, so a test of a long session sees one that is not dropped.
+if (typeof navigator !== "undefined" && navigator.webdriver)
+  (window as unknown as { __arcaloHandlers?: () => Record<string, number> }).__arcaloHandlers = () => Object.fromEntries([...hubs].map(([k, h]) => [k, h.handlers.length]));
 
 export function on<P>(event: string, handler: (payload: P) => void): Promise<UnlistenFn> {
   let hub = hubs.get(event);

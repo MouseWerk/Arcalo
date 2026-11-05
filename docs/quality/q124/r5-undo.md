@@ -33,7 +33,7 @@ high; a missing undo or confirmation on a common destructive action is medium.
   written into them can be restored. Settings text and toast say so.
 - Tests: core `remove_keeps_user_pages_with_sample_titles_and_trashes_the_samples` (failed: the user's
   „Besprechung“ and „Projekte“ deleted), `samples_seeded_without_their_ids_are_told_by_title_and_icon`; e2e
-  `660-undo-destructive` (first test).
+  `662-undo-destructive` (first test).
 
 ### R5C-2 „Rückgängig“ after deleting a focus block brought it back unbooked and without its focus time (high)
 
@@ -48,7 +48,7 @@ high; a missing undo or confirmation on a common destructive action is medium.
   from it, whether it was in Outlook); the new `block_restore` puts it back with them (a booking deleted or taken
   by another block meanwhile is not linked) and writes its Outlook appointment again.
 - Tests: core `timeblocks::tests::a_deleted_block_comes_back_with_its_booking_and_focus_time`; e2e
-  `660-undo-destructive` (failed: `entry_id` null after the undo).
+  `662-undo-destructive` (failed: `entry_id` null after the undo).
 
 ### R5C-3 A PDF highlight was deleted with one click, its note with it, without undo (medium)
 
@@ -57,7 +57,7 @@ high; a missing undo or confirmation on a common destructive action is medium.
   once the id was handed out again, another highlight).
 - Fix: the delete returns the highlight; a toast offers „Rückgängig“, which puts it back with its note under its
   id while that is free (`restore_pdf_highlight`), so the links find it again.
-- Tests: core `pdfmarks::tests::a_deleted_highlight_comes_back_with_its_note_and_id`; e2e `660-undo-destructive`
+- Tests: core `pdfmarks::tests::a_deleted_highlight_comes_back_with_its_note_and_id`; e2e `662-undo-destructive`
   (third test).
 
 ## Low
@@ -111,7 +111,7 @@ high; a missing undo or confirmation on a common destructive action is medium.
 
 ## Tests added
 
-- e2e `660-undo-destructive`: sample removal with a user page titled like a sample, a booked focus block deleted
+- e2e `662-undo-destructive`: sample removal with a user page titled like a sample, a booked focus block deleted
   and taken back, a PDF highlight with a note deleted and taken back, a page typed into and deleted at once.
 - Core: `demo::tests::remove_keeps_user_pages_with_sample_titles_and_trashes_the_samples`,
   `demo::tests::samples_seeded_without_their_ids_are_told_by_title_and_icon`,
