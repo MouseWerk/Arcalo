@@ -433,12 +433,15 @@ mod tests {
         remove(&db).unwrap();
         assert_eq!(db.page_doc(meeting.id).unwrap().content, "Meine Notizen zur Besprechung\n");
         assert_eq!(db.page_doc(projects.id).unwrap().content, "Meine Projektliste\n");
-        assert!(db.page(meeting.id).unwrap().deleted_at.is_none() && db.page(projects.id).unwrap().deleted_at.is_none());
+        assert!(
+            db.page(meeting.id).unwrap().deleted_at.is_none() && db.page(projects.id).unwrap().deleted_at.is_none()
+        );
         // The samples are in the trash, not gone: what was written into them comes back.
         assert!(db.page(welcome.id).unwrap().deleted_at.is_some());
         db.restore_page(welcome.id).unwrap();
         assert_eq!(db.page_doc(welcome.id).unwrap().content, "Meine Gedanken\n");
-        let kb = db.list_trash().unwrap().into_iter().find(|e| e.page.title == "Wissensbasis").expect("sample in the trash");
+        let kb =
+            db.list_trash().unwrap().into_iter().find(|e| e.page.title == "Wissensbasis").expect("sample in the trash");
         assert_eq!(kb.descendants, 1, "with its subpage");
     }
 

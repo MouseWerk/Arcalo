@@ -26,23 +26,6 @@ const undoIn = (title) =>
     { timeout: 8000, timeoutMsg: `no „Rückgängig“ in a toast with „${title}“` },
   );
 
-test("removing the samples keeps the user's pages with a sample's title; the samples go to the trash", async () => {
-  const mine = await app.invoke("page_create", { parentId: null, title: "Besprechung", icon: null, content: "Meine Notizen zur Besprechung\n" });
-  const sample = Number(
-    await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.querySelector(".tree-label")?.textContent.trim() === "Willkommen")?.dataset.id),
-  );
-  assert.ok(sample, "the samples are there");
-  await app.invoke("page_save", { id: sample, content: "Meine Gedanken\n" });
-  await app.invoke("demo_remove");
-  const kept = await app.invoke("page_get", { id: mine.id }).catch((e) => ({ content: String(e) }));
-  assert.equal(kept.content, "Meine Notizen zur Besprechung\n", "the user's page was deleted");
-  assert.ok(!kept.deleted_at);
-  const trash = await app.invoke("trash_list");
-  assert.ok(trash.some((e) => e.id === sample), "the sample is not in the trash");
-  await app.invoke("page_restore", { id: sample });
-  assert.equal((await app.invoke("page_get", { id: sample })).content, "Meine Gedanken\n");
-});
-
 test("„Rückgängig“ after deleting a focus block brings it back booked, with its Vorgang", async () => {
   const np = (await app.invoke("wbs_tree")).flatMap((p) => p.netzplaene).find((n) => n.netzplan_nr === "NP-8801");
   assert.ok(np, "sample Netzplan");
@@ -60,8 +43,9 @@ test("„Rückgängig“ after deleting a focus block brings it back booked, wit
 
   await app.browser.execute(() => localStorage.setItem("arcalo.calendar.view", "day"));
   await app.click(".ribbon-calendar-view");
-  await app.waitFor(`.calv-block[data-block="${b.id}"]`, 10000);
-  await app.browser.execute((id) => document.querySelector(`.calv-block[data-block="${id}"]`).click(), b.id);
+  const el = await app.waitFor(`.calv-block[data-block="${b.id}"]`, 10000);
+  await el.scrollIntoView({ block: "center" });
+  await app.click(`.calv-block[data-block="${b.id}"]`);
   await app.click(".calv-block-delete");
   await app.browser.waitUntil(async () => !(await find()), { timeout: 8000, timeoutMsg: "block not deleted" });
   await undoIn("Konzept Rückgängig");
@@ -77,7 +61,8 @@ test("„Rückgängig“ after deleting a focus block brings it back booked, wit
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const proposal = await app.invoke("week_proposal", { weekStart: iso(monday), restOfToday: false });
-  assert.ok(!JSON.stringify(proposal).includes(`"id":"${back.id}"`), "the restored block is proposed for booking again");
+  const again = proposal.proposals.filter((p) => p.sources.some((s) => s.kind === "block" && s.id === String(back.id)));
+  assert.deepEqual(again, [], "the restored block is proposed for booking again");
 });
 
 test("a deleted PDF highlight comes back with its note and its id", async () => {
@@ -122,4 +107,22 @@ test("a page typed into and deleted right away comes back with the typing and it
     timeout: 8000,
     timeoutMsg: "the tab did not come back",
   });
+});
+
+// Last: it removes the sample project the tests above book on.
+test("removing the samples keeps the user's pages with a sample's title; the samples go to the trash", async () => {
+  const mine = await app.invoke("page_create", { parentId: null, title: "Besprechung", icon: null, content: "Meine Notizen zur Besprechung\n" });
+  const sample = Number(
+    await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.querySelector(".tree-label")?.textContent.trim() === "Willkommen")?.dataset.id),
+  );
+  assert.ok(sample, "the samples are there");
+  await app.invoke("page_save", { id: sample, content: "Meine Gedanken\n" });
+  await app.invoke("demo_remove");
+  const kept = await app.invoke("page_get", { id: mine.id }).catch((e) => ({ content: String(e) }));
+  assert.equal(kept.content, "Meine Notizen zur Besprechung\n", "the user's page was deleted");
+  assert.ok(!kept.deleted_at);
+  const trash = await app.invoke("trash_list");
+  assert.ok(trash.some((e) => e.id === sample), "the sample is not in the trash");
+  await app.invoke("page_restore", { id: sample });
+  assert.equal((await app.invoke("page_get", { id: sample })).content, "Meine Gedanken\n");
 });

@@ -84,6 +84,9 @@ high; a missing undo or confirmation on a common destructive action is medium.
 
 ## Checked without findings
 
+By the e2e tests run on this branch (08, 116, 143, 144, 662) and the existing unit and core tests, the rest read in
+the code.
+
 - Pages: delete of one page with undo (position, parent, tags, links and backlinks, properties, the tab back in
   its pane), a page typed into and deleted at once (the typing is saved and comes back), a subtree (asks, with the
   number of subpages), a selection (asks; one undo for all), restore into a trashed or purged parent (to the top
