@@ -77,6 +77,20 @@ behaviour counts at the severity of that behaviour.
   existing „closes on a scroll“ now moves the trigger, as its text says); e2e 681 „a dropdown scrolled into view and
   opened in the same moment stays open“ (closed in round 0 before the fix).
 
+### R5D-5 „Abschnitt zurücksetzen“ and a scope change reported „stored“ before they were sent (low, fixed)
+
+- Symptom: CI of this branch (run 42000681086): `133-settings-instant` „Abschnitt zurücksetzen“ read the stored
+  settings right after the click and found the old value; reproduced 4 of 5 runs pinned to one CPU. The reset was
+  stored a moment later: a log of `writeSettings` showed it sent the default against the copy with the change
+  (`next 450, base 1200`) and the core stored 450, so the three-way merge was right.
+- Root cause: the settings view marks itself pending (`data-pending`, and it does not follow the stored settings
+  meanwhile) only from the moment a change is queued. The reset asks the core for the defaults first, and a scope
+  change waits for the saves before it: in between the view said nothing was pending. With `settings_save` on the
+  main thread (before R5D-1) the read of the test queued behind the save; on a worker it no longer did.
+- Fix: both count as pending from the click on (`holdPending` in `SettingsView.tsx`).
+- Tests: e2e 133 unchanged (4 of 4 pinned runs pass); `a_save_from_an_older_copy_keeps_what_changed_since` covers the
+  merge of a reset to the default.
+
 ## Low findings (not fixed in this round)
 
 - R5D-L1 `settings_scope_set`, `settings_sync_undo`, the settings take-over of a Git sync and the command line's

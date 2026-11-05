@@ -393,8 +393,26 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     }, typing && !opts.now ? SAVE_PAUSE : 0);
   };
   const update = (p: Partial<Settings>) => apply(p);
+  /** Counts a change being prepared (it asks the core first) as pending; the returned call ends it. */
+  const holdPending = () => {
+    pending.current++;
+    setBusy(true);
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      if (--pending.current === 0) {
+        setBusy(false);
+        const stored = useApp.getState().settings;
+        if (stored) follow(stored.settings);
+      }
+    };
+  };
   /** The defaults of one section, applied like a change (with a longer undo). */
   const resetSection = async (id: Section) => {
+    // Pending from the click on: the defaults are asked for first, and the form must not report
+    // „stored“ (nor follow the stored settings) before the reset is on its way (R5D-5).
+    const done = holdPending();
     try {
       const defaults = await api.settingsDefaults(id);
       const base = latest.current ?? draft;
@@ -406,6 +424,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       apply(pick(defaults, keys), { destructive: true, title: t("settings.sectionReset") });
     } catch (e) {
       s().error(t("admin.resetFailed"), e);
+    } finally {
+      done();
     }
   };
   /** „Für alle Arbeitsbereiche“ / „Nur dieser Arbeitsbereich“ of a shareable section. */
@@ -413,6 +433,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     const choice = { layer, scope };
     setScopeChoice(choice);
     flush();
+    const done = holdPending();
     await queue.current;
     try {
       const saved = await api.setSettingsScope(layer, scope);
@@ -422,6 +443,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     } catch (e) {
       s().error(t("settings.saveFailed"), e);
     } finally {
+      done();
       // A later choice (clicked meanwhile) stays shown until it is applied itself.
       setScopeChoice((c) => (c === choice ? null : c));
     }

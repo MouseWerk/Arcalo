@@ -1300,6 +1300,13 @@ mod tests {
         let base = serde_json::json!({ "a": [1], "b": 1, "c": { "d": 1, "e": 1 } });
         let next = serde_json::json!({ "a": [1, 3], "c": { "d": 2, "e": 1 } });
         assert_eq!(merge_change(&cur, &base, &next), serde_json::json!({ "a": [1, 3], "c": { "d": 2, "e": 2 } }));
+        // „Abschnitt zurücksetzen“ after a change (q124 R5D-5): the reset sends the default against
+        // the copy with the change, and the default is stored, also back to the value of before.
+        let mut changed = Settings::default();
+        changed.editor.autosave_ms = 1200;
+        let reset: Settings =
+            serde_json::from_value(merge_change(&v(&changed), &v(&changed), &v(&Settings::default()))).unwrap();
+        assert_eq!(reset.editor.autosave_ms, Settings::default().editor.autosave_ms);
     }
 
     #[test]
