@@ -117,6 +117,10 @@ fn check_not_newer(version: usize) -> Result<()> {
 /// Pages are cached only as they are read, so a small workspace stays small.
 const CACHE_PRAGMA: &str = "PRAGMA cache_size = -16384;";
 
+/// The id of a new time entry: the highest + 1, as SQLite hands it out, but never below the floor
+/// a companion app sets (`id_floor` row `time_entries`, [`Database::own_entry_ids`]).
+pub(crate) const NEXT_ENTRY_ID: &str = "(SELECT MAX(COALESCE(MAX(id), 0),      COALESCE((SELECT value FROM id_floor WHERE name = 'time_entries'), 0)) + 1 FROM time_entries)";
+
 pub struct Database {
     conn: Connection,
     /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
@@ -684,9 +688,11 @@ impl Database {
         }
         let end = e.start_time + chrono::Duration::minutes(e.duration_minutes);
         self.conn.execute(
-            "INSERT INTO time_entries
-               (netzplan_id, vorgang_nr, leistungsart, start_time, end_time, duration_minutes, description, status_flag, source, page_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'draft', ?8, ?9)",
+            &format!(
+                "INSERT INTO time_entries
+                   (id, netzplan_id, vorgang_nr, leistungsart, start_time, end_time, duration_minutes, description, status_flag, source, page_id)
+                 VALUES ({NEXT_ENTRY_ID}, ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'draft', ?8, ?9)"
+            ),
             params![
                 e.netzplan_id,
                 e.vorgang_nr,
@@ -746,8 +752,10 @@ impl Database {
             )));
         }
         self.conn.execute(
-            "INSERT INTO time_entries (netzplan_id, vorgang_nr, leistungsart, start_time, description, status_flag, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'running', 'timer')",
+            &format!(
+                "INSERT INTO time_entries (id, netzplan_id, vorgang_nr, leistungsart, start_time, description, status_flag, source)
+                 VALUES ({NEXT_ENTRY_ID}, ?1, ?2, ?3, ?4, ?5, 'running', 'timer')"
+            ),
             params![netzplan_id, vorgang_nr, leistungsart, ts(at), description],
         )?;
         self.time_entry(self.conn.last_insert_rowid())
@@ -822,6 +830,20 @@ impl Database {
 
     /// Deletes a booking; its chip in the note stays, marked „Buchung gelöscht“. An exported
     /// one is already in the time system and stays; a running one is stopped (or discarded) first.
+    /// Makes this workspace's new time entries take ids of their own range, once: a companion app
+    /// (phone, tablet) writes its bookings into daily notes as chips with their ids, and the
+    /// desktop matches a chip's id against its own bookings. Ids counted from 1 on both sides
+    /// named the desktop's booking of the same note, which then wrote its values over the
+    /// phone's chip. The range starts at a random multiple of 2^32 (below 2^52, so ids stay exact
+    /// numbers in the UI); the desktop keeps counting from 1.
+    pub fn own_entry_ids(&self) -> Result<()> {
+        let mut b = [0u8; 4];
+        getrandom::fill(&mut b).map_err(|e| Error::State(e.to_string()))?;
+        let slot = i64::from(u32::from_le_bytes(b) % ((1 << 20) - 1)) + 1;
+        self.conn.execute("INSERT OR IGNORE INTO id_floor (name, value) VALUES ('time_entries', ?1)", [slot << 32])?;
+        Ok(())
+    }
+
     pub fn delete_time_entry(&self, id: i64) -> Result<()> {
         self.delete_entry(id, true)
     }

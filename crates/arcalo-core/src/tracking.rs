@@ -100,6 +100,30 @@ pub fn log_slash_command_as<Tz: TimeZone>(
     book_command(db, cmd, issue, now, offset, thresholds, ctx)
 }
 
+/// `v` as a Vorgang of `np` in its own spelling (budgets and exports match it); a Netzplan
+/// without modelled Vorgänge accepts free activity codes. The `/zeit` line, the timer of the
+/// command line and an edit of an entry's Vorgang check it alike.
+pub fn known_vorgang(db: &Database, np: &Netzplan, v: &str) -> Result<String> {
+    let vorgaenge = db.list_vorgaenge(np.id)?;
+    if vorgaenge.is_empty() {
+        return Ok(v.to_owned());
+    }
+    vorgaenge
+        .into_iter()
+        .find(|x| x.vorgang_nr.eq_ignore_ascii_case(v))
+        .map(|x| x.vorgang_nr)
+        .ok_or_else(|| Error::not_found("vorgang", format!("{}/{v}", np.netzplan_nr)))
+}
+
+/// `la` as a known Leistungsart in its own spelling.
+pub fn known_leistungsart(db: &Database, la: &str) -> Result<String> {
+    db.list_leistungsarten()?
+        .into_iter()
+        .map(|(code, _)| code)
+        .find(|code| code.eq_ignore_ascii_case(la.trim()))
+        .ok_or_else(|| Error::not_found("leistungsart", la.to_owned()))
+}
+
 /// Books a parsed `/zeit` command (also „Erneut buchen“ on a chip whose booking is gone).
 pub fn book_command<Tz: TimeZone>(
     db: &Database,
@@ -130,18 +154,7 @@ pub fn book_command<Tz: TimeZone>(
     cmd.duration_minutes = time.rounding.apply(cmd.duration_minutes);
 
     let np = db.netzplan_by_ref(&cmd.netzplan_ref)?;
-    let mut vorgang_nr = cmd.vorgang_nr.clone();
-    if let Some(v) = &cmd.vorgang_nr {
-        let vorgaenge = db.list_vorgaenge(np.id)?;
-        // A Netzplan without modelled Vorgänge accepts free activity codes.
-        if !vorgaenge.is_empty() {
-            // Store the canonical spelling so budgets and exports match.
-            let Some(found) = vorgaenge.iter().find(|x| x.vorgang_nr.eq_ignore_ascii_case(v)) else {
-                return Err(Error::not_found("vorgang", format!("{}/{v}", np.netzplan_nr)));
-            };
-            vorgang_nr = Some(found.vorgang_nr.clone());
-        }
-    }
+    let vorgang_nr = cmd.vorgang_nr.as_deref().map(|v| known_vorgang(db, &np, v)).transpose()?;
     if cmd.leistungsart.is_none()
         && let Some(la) = time.default_la_for(&np.netzplan_nr)
         && db.leistungsart_exists(la)?

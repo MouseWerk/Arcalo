@@ -121,15 +121,18 @@ enum Cmd {
         /// Last day (inclusive), YYYY-MM-DD.
         #[arg(long)]
         to: Option<chrono::NaiveDate>,
-        /// SAP personnel number for CATS.
+        /// SAP personnel number for CATS (default: the one of Settings → Zeiterfassung).
         #[arg(long)]
         pernr: Option<String>,
-        /// JSON file mapping "NP-8801/1020" or "NP-8801" to Jira issue keys.
+        /// JSON file mapping "NP-8801/1020" or "NP-8801" to Jira issue keys (default: the settings').
         #[arg(long)]
         jira_map: Option<PathBuf>,
         /// Flag exported entries as `exported`.
         #[arg(long)]
         mark: bool,
+        /// Also entries marked as exported (left out by default, as in the app).
+        #[arg(long)]
+        include_exported: bool,
     },
 }
 
@@ -593,8 +596,8 @@ fn run(cli: Cli, out: Out) -> Outcome<()> {
         Cmd::Schedule { netzplan } => wbs::schedule(&ctx, &netzplan),
         Cmd::Import { dir } => misc::import(&ctx, &dir),
         Cmd::ExportVault { dir } => misc::export_vault(&ctx, &dir),
-        Cmd::Export { format, from, to, pernr, jira_map, mark } => {
-            time::export(&ctx, time::ExportArgs { format, from, to, pernr, jira_map, mark })
+        Cmd::Export { format, from, to, pernr, jira_map, mark, include_exported } => {
+            time::export(&ctx, time::ExportArgs { format, from, to, pernr, jira_map, mark, include_exported })
         }
     }
 }

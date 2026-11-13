@@ -112,7 +112,16 @@ pub fn timer(ctx: &Ctx, action: TimerCmd) -> Outcome<()> {
                 None => (target, None),
             };
             let np = db.netzplan_by_ref(&np_ref)?;
-            let la = rest.iter().find(|w| w.starts_with('#')).map(|w| w[1..].to_uppercase());
+            // Checked as a `/zeit` line checks them: a typo never starts a booking on nothing.
+            let vorgang = vorgang
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| tracking::known_vorgang(db, &np, v.trim()))
+                .transpose()?;
+            let la = rest
+                .iter()
+                .find(|w| w.len() > 1 && w.starts_with('#'))
+                .map(|w| tracking::known_leistungsart(db, &w[1..]))
+                .transpose()?;
             let desc: Vec<_> = rest.iter().filter(|w| !w.starts_with('#')).cloned().collect();
             let e = ctx.ws.commit(|db| {
                 let e = db.start_timer(np.id, vorgang.as_deref(), la.as_deref(), &desc.join(" "), now)?;
@@ -170,6 +179,7 @@ pub struct ExportArgs {
     pub pernr: Option<String>,
     pub jira_map: Option<PathBuf>,
     pub mark: bool,
+    pub include_exported: bool,
 }
 
 pub fn export(ctx: &Ctx, a: ExportArgs) -> Outcome<()> {
@@ -180,17 +190,30 @@ pub fn export(ctx: &Ctx, a: ExportArgs) -> Outcome<()> {
             a.format
         ))
     })?;
+    let settings = &ctx.ws.settings;
     let jira_issue_map: HashMap<String, String> = match a.jira_map {
         Some(p) => serde_json::from_str(&std::fs::read_to_string(&p).map_err(|e| Error::file(&p, e))?)?,
-        None => HashMap::new(),
+        None => settings.jira_issue_map.clone(),
     };
     let filter = EntryFilter {
         from: a.from.map(day_start),
         to: a.to.and_then(|d| d.succ_opt()).map(day_start),
         ..Default::default()
     };
-    let rows = ctx.ws.db.list_time_entries(&filter)?;
-    let opts = ExportOptions { pernr: a.pernr, jira_issue_map, utc_offset_minutes: None, ..Default::default() };
+    let mut rows = ctx.ws.db.list_time_entries(&filter)?;
+    // As in the app: exported entries were booked in SAP or Jira already; again only when asked.
+    if !a.include_exported {
+        rows.retain(|r| r.entry.status_flag != StatusFlag::Exported);
+    }
+    // The file as the app writes it (Settings → Zeiterfassung); options given here win.
+    let opts = ExportOptions {
+        pernr: a.pernr.or_else(|| settings.pernr.clone()),
+        jira_issue_map,
+        utc_offset_minutes: None,
+        cats_delimiter: settings.time.cats_delimiter,
+        cats_columns: settings.time.cats_columns,
+        cats_decimal_point: settings.time.cats_decimal.point(&settings.locale),
+    };
     let res = export::export(&rows, format, &opts)?;
     let marked = if a.mark {
         let ids = res.exported_ids.clone();
@@ -276,8 +299,16 @@ pub fn run(ctx: &Ctx, cmd: TimeCmd) -> Outcome<()> {
                 Some(s) => start_time(&s, before.start_time.with_timezone(&Local).date_naive())?,
                 None => before.start_time,
             };
-            let vorgang = optional(vorgang, before.vorgang_nr.clone());
-            let la = optional(activity_type, before.leistungsart.clone());
+            // A new Vorgang or Leistungsart is checked as in a `/zeit` line; the entry's own stay.
+            let np = db.netzplan_by_id(before.netzplan_id)?;
+            let vorgang = match optional(vorgang, before.vorgang_nr.clone()) {
+                Some(v) if Some(&v) != before.vorgang_nr.as_ref() => Some(tracking::known_vorgang(db, &np, &v)?),
+                v => v,
+            };
+            let la = match optional(activity_type, before.leistungsart.clone()) {
+                Some(l) if Some(&l) != before.leistungsart.as_ref() => Some(tracking::known_leistungsart(db, &l)?),
+                l => l,
+            };
             let description = description.unwrap_or_else(|| before.description.clone());
             let settings = &ctx.ws.settings;
             let after = ctx.ws.commit(|db| {

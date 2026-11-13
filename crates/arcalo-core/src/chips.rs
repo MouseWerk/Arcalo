@@ -305,9 +305,12 @@ impl Database {
             self.conn().query_row("SELECT 1 FROM time_entries WHERE id = ?1", [e.id], |_| Ok(())).optional()?.is_none();
         let end = e.start_time + chrono::Duration::minutes(e.duration_minutes.unwrap_or(0));
         self.conn().execute(
-            "INSERT INTO time_entries
-               (id, netzplan_id, vorgang_nr, leistungsart, start_time, end_time, duration_minutes, description, status_flag, source, page_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', ?9, ?10)",
+            &format!(
+                "INSERT INTO time_entries
+                   (id, netzplan_id, vorgang_nr, leistungsart, start_time, end_time, duration_minutes, description, status_flag, source, page_id)
+                 VALUES (COALESCE(?1, {}), ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', ?9, ?10)",
+                crate::db::NEXT_ENTRY_ID
+            ),
             params![
                 free.then_some(e.id),
                 e.netzplan_id,
