@@ -1,7 +1,8 @@
 // The editor schema shared by the app and the Markdown round-trip tests.
 
 import { Extension, InputRule, type Editor, type Extensions, type MarkdownLexerConfiguration, type MarkdownToken, type MarkdownTokenizer } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { DOMParser } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -606,6 +607,16 @@ const MarkdownFidelity = Extension.create({
       const out = escapeText(text, atLineStart, { before: idx > 0 && inline(siblings[idx - 1]), after: idx >= 0 && inline(siblings[idx + 1]) });
       return parent?.attrs?.[IN_TABLE_CELL] ? out.replace(/\|/g, "\\|") : out;
     };
+  },
+  addProseMirrorPlugins() {
+    // Typing is read back from the page; ProseMirror then made every line end of the paragraph
+    // (`Zeile\nZeile`, kept as written) a hard break, written `  \n`, and a LaTeX `\\` at a line
+    // end lost a backslash. In a paragraph the line ends stay text. Paste (`parseSlice`) is unchanged.
+    const base = DOMParser.fromSchema(this.editor.schema);
+    const parser = Object.create(base) as DOMParser;
+    parser.parse = (dom, options = {}) =>
+      base.parse(dom, options.preserveWhitespace === true && options.topNode?.isTextblock ? { ...options, preserveWhitespace: "full" } : options);
+    return [new Plugin({ key: new PluginKey("softLineEnds"), props: { domParser: parser } })];
   },
 });
 

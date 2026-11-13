@@ -76,6 +76,19 @@ export.
   bare names keep the folder rule (`replace_file_refs_where`, `names_folder` in `vault.rs`).
 - Tests: `vault::tests::path_references_to_same_named_files_follow_their_path`, e2e 683.
 
+### R6A-9 Typing in a paragraph with line ends made them hard breaks (medium)
+
+- Symptom: in a paragraph written over several lines (`Zeile eins` / `Zeile zwei`, as Obsidian and most editors
+  write prose and LaTeX), typing one character saved every line end of the paragraph as a hard break
+  (`Zeile eins␣␣`): the file changed, and GitHub and other CommonMark tools then show line breaks where they joined
+  the lines. A LaTeX `\\` at a line end lost a backslash again (R6A-4 in the app; found by the e2e test on CI).
+- Root cause: ProseMirror reads typed text back from the page and, for a paragraph, turns each line end in it into the
+  schema's line-break node, Tiptap's hard break. Tests that set the text through commands never took that path.
+- Fix: typing is read back with the paragraph's line ends kept as text (a `domParser` in `MarkdownFidelity`,
+  `schema.ts`); paste is unchanged.
+- Tests: `realWorldMarkdown.test.ts` („typing in a paragraph with line ends keeps them“, through the page's DOM),
+  e2e 683.
+
 ### R6A-7 A numbered list starting at 0 was renumbered from 1 once edited (low, fixed)
 
 - `0. null` / `1. eins` became `1.` / `2.`: the start was read and written with `|| 1`. Test:

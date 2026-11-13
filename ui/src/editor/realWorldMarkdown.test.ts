@@ -124,6 +124,34 @@ describe("a backslash at the end of a line stays (R6A-4)", () => {
   });
 });
 
+describe("typing in a paragraph with line ends keeps them (R6A-9)", () => {
+  /** Changes the page's text as typing does and lets the editor read it back. */
+  function typeInPage(md: string, needle: string, typed: string): string {
+    const el = document.createElement("div");
+    document.body.append(el);
+    const editor = open(md);
+    el.append(editor.view.dom);
+    const walker = document.createTreeWalker(editor.view.dom, NodeFilter.SHOW_TEXT);
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null) && !node.data.includes(needle));
+    expect(node, `no text ${needle}`).not.toBeNull();
+    node!.data = node!.data.replace(needle, needle + typed);
+    (editor.view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+    const out = toMarkdown(editor);
+    editor.destroy();
+    el.remove();
+    return out;
+  }
+  it("line ends stay line ends, hard breaks stay hard breaks", () => {
+    expect(typeInPage("Zeile eins\nZeile zwei\n", "zwei", "!")).toBe("Zeile eins\nZeile zwei!\n");
+    expect(typeInPage("Zeile eins  \nZeile zwei\n", "zwei", "!")).toBe("Zeile eins  \nZeile zwei!\n");
+  });
+  it("a LaTeX line end keeps both backslashes", () => {
+    const md = "$$\n\\begin{aligned}\na &= b \\\\\nc &= d\n\\end{aligned}\n$$\n";
+    expect(typeInPage(md, "c &= d", " + e")).toBe(md.replace("c &= d", "c &= d + e"));
+  });
+});
+
 it("a numbered list starting at 0 keeps its numbers", () => {
   expect(editAt("0. null\n1. eins\n", "eins")).toBe("0. null\n1. xeins\n");
 });
