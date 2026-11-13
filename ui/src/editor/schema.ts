@@ -819,9 +819,17 @@ const SourceTaskList = TaskList.extend({
  * (letters, roman numerals), but only for a list of two or more items that starts at `a`, `A`, `i`
  * or `I`: a paragraph starting with an abbreviation (`ca. 5 Minuten`, `Fr. Müller`, `Mo. Termin`,
  * `z. B.`) is text, as in CommonMark and Obsidian, not a list whose marker an edit wrote as a number.
+ * Its items all have letters: Tiptap's tokenizer also took `Fr. Müller` with a numbered list
+ * below it for one list starting at 1.
  */
-export function letterListToken<T extends { start?: unknown; items?: unknown[] }>(token: T | undefined | void): T | undefined {
-  return token && Number(token.start) === 1 && (token.items?.length ?? 0) >= 2 ? token : undefined;
+export function letterListToken<T extends { start?: unknown; items?: unknown[]; typeMarker?: unknown; raw?: unknown }>(
+  token: T | undefined | void,
+): T | undefined {
+  if (!token || !["a", "A", "i", "I"].includes(String(token.typeMarker)) || Number(token.start) !== 1 || (token.items?.length ?? 0) < 2) return undefined;
+  const raw = String(token.raw ?? "");
+  const indent = /^ */.exec(raw)![0].length;
+  const numbered = new RegExp(`^ {${indent}}\\d{1,9}[.)](?:[ \\t]|$)`, "m");
+  return numbered.test(raw) ? undefined : token;
 }
 
 const SourceOrderedList = OrderedList.extend({

@@ -82,6 +82,12 @@ describe("a paragraph starting with an abbreviation is no list (R6A-2)", () => {
     expect(editAt("ca. 5 bis 10 Minuten\n", "Minuten")).toBe("ca. 5 bis 10 xMinuten\n");
     expect(editAt("Fr. Müller kommt\n", "kommt")).toBe("Fr. Müller xkommt\n");
   });
+  it("stays text when a numbered list follows it", () => {
+    for (const md of ["Fr. Müller kommt\n\n1. [ ] Angebot\n2. [x] Termin\n", "Fr. Müller kommt\n1. eins\n2. zwei\n", "ca. 5\n\nFr. Müller kommt\n\n1. eins\n"]) {
+      expect(shown(md).split("\n")).toContain("Fr. Müller kommt");
+    }
+    expect(editAt("Fr. Müller kommt\n\n1. eins\n2. zwei\n", "kommt")).toBe("Fr. Müller xkommt\n\n1. eins\n2. zwei\n");
+  });
   it("lists with letters or roman numerals of two or more items from the first stay lists", () => {
     expect(editAt("a. eins\nb. zwei\n", "zwei")).toBe("1. eins\n2. xzwei\n");
     expect(editAt("i. eins\nii. zwei\n", "zwei")).toBe("1. eins\n2. xzwei\n");

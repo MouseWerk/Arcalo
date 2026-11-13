@@ -33,8 +33,9 @@ export.
   letters (or roman numerals) with a period at the start of a paragraph, a common start of German notes.
 - Root cause: numbered lists with letters and roman numerals came from Tiptap's own tokenizer, which takes any one or
   two letters followed by `.` or `)` as a list marker. CommonMark and Obsidian have no such lists.
-- Fix: such a list is read only with two or more items starting at `a`, `A`, `i` or `I` (`letterListToken`); anything
-  else is text, as in Obsidian.
+- Fix: such a list is read only with two or more items, all with letters, starting at `a`, `A`, `i` or `I`
+  (`letterListToken`); anything else is text, as in Obsidian. The tokenizer also took „Fr. Müller“ with a numbered
+  list below it for one list (found by the e2e test on CI).
 - Tests: `realWorldMarkdown.test.ts` („a paragraph starting with an abbreviation is no list“), e2e 683.
 
 ### R6A-3 Numbered tasks lost their boxes and their state when the list was edited (high)
