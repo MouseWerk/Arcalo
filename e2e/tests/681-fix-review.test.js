@@ -101,11 +101,11 @@ test("a dropdown follows its trigger when content above it changes, closes when 
     const frame = () => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)));
     (async () => {
       const area = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-scroll");
-      const el = [...area.querySelectorAll('[role="combobox"]')].find((e) => {
-        const b = e.getBoundingClientRect();
-        return b.top > 200 && b.bottom < window.innerHeight - 200;
-      });
-      if (!el) return done({ error: "no dropdown in the middle of the settings" });
+      // A dropdown of the open section in the middle of the view (its scroll done before the click).
+      const el = area.querySelector('[role="combobox"]');
+      if (!el) return done({ error: "no dropdown in the settings section" });
+      el.scrollIntoView({ block: "center" });
+      await frame();
       el.click();
       await frame();
       // A row above it gets taller, and the area is scrolled a little (not by the person).
