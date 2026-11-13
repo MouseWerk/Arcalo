@@ -131,3 +131,23 @@ test("a dropdown follows its trigger when content above it changes, closes when 
   assert.ok(Math.abs(r.followed.gap - 4) <= 1 || r.followed.gap < 0, `the list sits at the trigger (gap ${r.followed.gap})`);
   assert.equal(r.scrolled, "false", "the person's scroll closes it");
 });
+
+// R6D-4: switching the language lays out every text anew; e2e 83 caught „ResizeObserver loop
+// completed with undelivered notifications“ (soak of q124-r6d, round 3). Back and forth twenty
+// times, the console stays clean (under WebDriver the message names the observers of its frame).
+test("switching the language back and forth leaves no ResizeObserver loop", async () => {
+  await app.keys(["Control", ","]);
+  await app.click('.settings-nav-item[data-section="locale"]');
+  const before = (await app.consoleErrors()).length;
+  for (let i = 0; i < 20; i++) {
+    const lang = i % 2 ? "de" : "en";
+    await app.click(`[role="radiogroup"] [role="radio"]:${lang === "de" ? "nth-child(2)" : "last-child"}`);
+    await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.locale.language === lang, { timeoutMsg: `${lang} not saved` });
+    await app.browser.waitUntil(
+      async () => app.browser.execute((l) => [...document.querySelectorAll(".ribbon [aria-label]")].some((b) => (l === "de" ? /^Einstellungen/ : /^Settings/).test(b.getAttribute("aria-label"))), lang),
+      { timeoutMsg: `UI not ${lang}` },
+    );
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  assert.deepEqual((await app.consoleErrors()).slice(before), []);
+});
