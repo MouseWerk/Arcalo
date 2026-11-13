@@ -255,6 +255,27 @@ function listRows(rows: string[][]): string[] | null {
 }
 
 /**
+ * A table of one cell is its content: a single cell copied from Excel or a web table (and the
+ * one-cell layout tables of mail signatures) pasted as a table with an empty header row.
+ */
+export function singleCellTablesToHtml(html: string): string {
+  if (!/<table[\s>]/i.test(html) || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  let changed = false;
+  for (const table of [...doc.body.querySelectorAll("table")]) {
+    if (!table.isConnected) continue;
+    const cells = [...table.querySelectorAll("td, th")].filter((c) => c.closest("table") === table);
+    if (cells.length !== 1) continue;
+    table.replaceWith(...cells[0].childNodes);
+    changed = true;
+  }
+  if (!changed) return html;
+  // Column widths a parser left outside their table (Excel writes `<col>` without `<colgroup>`).
+  for (const col of doc.body.querySelectorAll("col, colgroup")) if (!col.closest("table")) col.remove();
+  return doc.body.innerHTML;
+}
+
+/**
  * Word and Outlook copy lists as paragraphs (`<p style="mso-list:l0 level2 lfo1">`) with the bullet or
  * number as text in front: turned into real nested `<ul>`/`<ol>` lists, the marker dropped.
  */

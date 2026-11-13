@@ -1,6 +1,6 @@
 // The editor schema shared by the app and the Markdown round-trip tests.
 
-import { Extension, InputRule, type Editor, type Extensions } from "@tiptap/core";
+import { Extension, InputRule, type Editor, type Extensions, type MarkdownLexerConfiguration, type MarkdownToken, type MarkdownTokenizer } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
@@ -8,6 +8,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import Highlight from "@tiptap/extension-highlight";
+import Underline from "@tiptap/extension-underline";
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
@@ -68,8 +69,9 @@ export { lowlight };
  */
 export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean } = {}): string {
   let s = t
-    // A backslash before any ASCII punctuation is an escape in CommonMark: doubled to stay one.
-    .replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\")
+    // A backslash before any ASCII punctuation is an escape in CommonMark, one at the end of a line
+    // a line break (a line of LaTeX ending in `\\` lost a backslash and broke): doubled to stay one.
+    .replace(/\\(?=[!-/:-@[-`{-~]|\n)/g, "\\\\")
     .replace(/`/g, "\\`")
     .replace(/\[\[/g, "\\[\\[")
     .replace(/\[\^/g, "\\[^")
@@ -80,8 +82,9 @@ export function escapeText(t: string, atLineStart = true, around: { before?: boo
     .replace(/\*+/g, (run, at: number, all: string) => (flanking(all[at - 1], all[at + run.length]) ? run.replace(/\*/g, "\\*") : run))
     .replace(/_+/g, (run, at: number, all: string) => (flanking(all[at - 1], all[at + run.length]) ? run.replace(/_/g, "\\_") : run))
     .replace(EDGE_RE, "")
-    .replace(/~~/g, "\\~\\~")
-    .replace(/==/g, "\\=\\=")
+    .replace(/~~/g, "\\~\\~");
+  // `==` and `++` only where they would open a span (`a == b` and `C++` stay as typed).
+  s = escapeSpans(escapeSpans(s, "=="), "++")
     .replace(/&(?=#?\w+;)/g, "&amp;")
     // A no-break space is invisible in the file: written as the entity Obsidian users type.
     .replace(/\u00a0/g, "&nbsp;")
@@ -91,6 +94,18 @@ export function escapeText(t: string, atLineStart = true, around: { before?: boo
     .split("\n")
     .map((line, i) => (i > 0 || atLineStart ? escapeLineStart(line) : line))
     .join("\n");
+}
+
+/** `s` with the opening delimiter of every `delim` span (`flankedSpan`) escaped. */
+function escapeSpans(s: string, delim: string): string {
+  let out = "";
+  let i = 0;
+  for (let at = s.indexOf(delim); at >= 0; at = s.indexOf(delim, i)) {
+    const open = flankedSpan(s.slice(at), delim, s[at - 1] ?? "") !== null;
+    out += s.slice(i, at) + (open ? delim.replace(/./g, "\\$&") : delim);
+    i = at + delim.length;
+  }
+  return out + s.slice(i);
 }
 
 /** Stands for inline content next to a text while escaping it. */
@@ -348,7 +363,7 @@ const setSpaced = (node: JsonNode | null | undefined) => {
   };
 }
 
-type ListItemToken = { raw?: string; text?: string; task?: boolean; tokens?: { type: string }[] };
+type ListItemToken = { raw?: string; text?: string; task?: boolean; checked?: boolean; tokens?: { type: string }[] };
 const LIST_ITEM_HEAD = /^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]*)(.*)$/;
 
 /**
@@ -359,15 +374,27 @@ const LIST_ITEM_HEAD = /^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]*)(.*)$/;
  * inside the content stays). And text after a block in a tight item (`- ```…```` then a line)
  * is a `text` token, which Tiptap's list item takes as plain text unless it comes first (the
  * Markdown was shown and saved escaped, `\*\*` more on every save): such items get paragraphs.
+ * A numbered item with a box (`1. [ ] a`, a task in Obsidian) keeps its box as text: marked takes
+ * it out as a checkbox token, which a numbered list item has no place for, so an edit of the list
+ * wrote the item without it and the task was gone.
  */
 function keepListTabs(lexer: Lexer) {
-  const tokenizer = (lexer as unknown as { tokenizer?: { list?: (src: string) => { items?: ListItemToken[] } | undefined; keepsTabs?: boolean } }).tokenizer;
+  const tokenizer = (lexer as unknown as { tokenizer?: { list?: (src: string) => { ordered?: boolean; items?: ListItemToken[] } | undefined; keepsTabs?: boolean } }).tokenizer;
   if (!tokenizer?.list || tokenizer.keepsTabs) return;
   tokenizer.keepsTabs = true;
   const list = tokenizer.list;
   tokenizer.list = function (this: unknown, src: string) {
     const token = list.call(this, src);
     for (const item of token?.items ?? []) {
+      if (token?.ordered && item.task && item.raw) {
+        const text = listItemText(item.raw);
+        if (text != null) {
+          item.task = false;
+          delete item.checked;
+          item.text = text;
+          item.tokens = ((this as { lexer?: Lexer }).lexer ?? lexer).blockTokens(text, []) as ListItemToken["tokens"];
+        }
+      }
       if (!item.task && item.raw && /\n[ \t]*\t/.test(item.raw)) {
         const text = listItemText(item.raw);
         const own = (this as { lexer?: Lexer }).lexer ?? lexer;
@@ -490,8 +517,9 @@ const MarkdownFidelity = Extension.create({
         const [h, ctx] = rest as [ListHelpers, ListContext];
         const prefix = listMarker(ctx);
         const out = renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
-        // Text that starts with a box (`[ ] `) would make the item a task when read again.
-        return /^\[[ xX]\](?=\s|$)/.test(out.slice(prefix.length)) ? `${prefix}\\${out.slice(prefix.length)}` : out;
+        // Text that starts with a box (`[ ] `) would make a bullet item a task when read again; a
+        // numbered item keeps it as text (`1. [ ] a`, keepListTabs).
+        return ctx?.parentType !== "orderedList" && /^\[[ xX]\](?=\s|$)/.test(out.slice(prefix.length)) ? `${prefix}\\${out.slice(prefix.length)}` : out;
       };
     }
     // An empty task keeps the space after its box, which makes it a task when read again.
@@ -788,22 +816,76 @@ const SourceTaskList = TaskList.extend({
  * continuation lines by the number's width without its `.`/`)` and then trims the first of them,
  * so a fence below `1. ` read its code with one more space each time and the second of two bullets
  * indented under `1. ` became a child of the first. It stays for lists marked does not know
- * (letters, roman numerals).
+ * (letters, roman numerals), but only for a list of two or more items that starts at `a`, `A`, `i`
+ * or `I`: a paragraph starting with an abbreviation (`ca. 5 Minuten`, `Fr. Müller`, `Mo. Termin`,
+ * `z. B.`) is text, as in CommonMark and Obsidian, not a list whose marker an edit wrote as a number.
  */
+export function letterListToken<T extends { start?: unknown; items?: unknown[] }>(token: T | undefined | void): T | undefined {
+  return token && Number(token.start) === 1 && (token.items?.length ?? 0) >= 2 ? token : undefined;
+}
+
 const SourceOrderedList = OrderedList.extend({
   markdownTokenizer: OrderedList.config.markdownTokenizer && {
     ...OrderedList.config.markdownTokenizer,
-    tokenize: (src: string, tokens: unknown, lexer: unknown) =>
-      /^ {0,3}\d{1,9}[.)](?:[ \t]|$)/.test(src) ? undefined : (OrderedList.config.markdownTokenizer!.tokenize as (s: string, t: unknown, l: unknown) => never)(src, tokens, lexer),
+    tokenize: (src: string, tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration) =>
+      /^ {0,3}\d{1,9}[.)](?:[ \t]|$)/.test(src) ? undefined : letterListToken(OrderedList.config.markdownTokenizer!.tokenize(src, tokens, lexer)),
   },
   // Items through ListItem as in bullet lists (Tiptap's own reading of marked's items keeps their text unparsed).
   parseMarkdown: (token, helpers) => {
     if (token.type !== "list" || !token.ordered) return [];
-    const start = Number(token.start) || 1;
+    const start = token.start === "" || !Number.isFinite(Number(token.start)) ? 1 : Number(token.start);
     const attrs = { ...(start !== 1 ? { start } : {}), ...(token.typeMarker ? { type: token.typeMarker } : {}) };
     return { type: "orderedList", ...(Object.keys(attrs).length ? { attrs } : {}), content: token.items ? helpers.parseChildren(token.items) : [] };
   },
 });
+
+const SPACE = /\s/u;
+const PUNCT = /[\p{P}\p{S}]/u;
+
+/**
+ * A `==highlight==` or `++underline++` span at the start of `src`, with CommonMark's flanking rules
+ * for its delimiters: the opening one is not followed by a blank (nor by punctuation right after a
+ * letter), the closing one not preceded by one. Tiptap's tokenizers took any two delimiters, so
+ * `a == b und c == d` was highlighted and `C++ und C++` underlined, both shown without their
+ * operators and written back without the blanks next to them. `before` is the character before
+ * `src` ("" at the start of the text).
+ */
+export function flankedSpan(src: string, delim: string, before: string): { raw: string; text: string } | null {
+  const ch = delim[0];
+  const n = delim.length;
+  if (!src.startsWith(delim) || before === ch || src[n] === ch) return null;
+  const next = src[n] ?? "";
+  if (!next || SPACE.test(next) || (PUNCT.test(next) && before !== "" && !SPACE.test(before) && !PUNCT.test(before))) return null;
+  for (let at = src.indexOf(delim, n + 1); at > 0; at = src.indexOf(delim, at + 1)) {
+    const prev = src[at - 1];
+    const after = src[at + n] ?? "";
+    if (prev === ch || after === ch || SPACE.test(prev)) continue;
+    if (PUNCT.test(prev) && after !== "" && !SPACE.test(after) && !PUNCT.test(after)) continue;
+    return { raw: src.slice(0, at + n), text: src.slice(n, at) };
+  }
+  return null;
+}
+
+/** The last character of the inline tokens read so far. */
+function charBefore(tokens: MarkdownToken[] | undefined): string {
+  const raw = tokens?.length ? (tokens[tokens.length - 1].raw ?? "") : "";
+  return raw.slice(-1);
+}
+
+function flankedTokenizer(name: string, delim: string): MarkdownTokenizer {
+  return {
+    name,
+    level: "inline",
+    start: (src: string) => src.indexOf(delim),
+    tokenize: (src, tokens, h) => {
+      const span = flankedSpan(src, delim, charBefore(tokens));
+      return span ? { type: name, raw: span.raw, text: span.text, tokens: h.inlineTokens(span.text) } : undefined;
+    },
+  };
+}
+
+const FlankedHighlight = Highlight.extend({ markdownTokenizer: flankedTokenizer("highlight", "==") });
+const FlankedUnderline = Underline.extend({ markdownTokenizer: flankedTokenizer("underline", "++") });
 
 /**
  * `[ ] ` or `[x] ` typed at the start of a bullet item (`- [ ] ` as in Markdown) makes the item a task.
@@ -853,8 +935,10 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       link: false,
       paragraph: false,
       orderedList: false,
+      underline: false,
     }),
     SourceOrderedList,
+    FlankedUnderline,
     FocusSelection,
     ImageParagraph,
     MarkdownLink.configure({
@@ -870,7 +954,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     LazyHighlight,
     SourceTaskList,
     TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
-    Highlight,
+    FlankedHighlight,
     TableKit.configure({ table: false }),
     MarkdownTable.configure({ resizable: false }),
     Placeholder.configure({

@@ -3601,6 +3601,7 @@ export const de: Catalog = {
   "share.notIncluded": "nicht enthalten",
   "share.page": "Seite",
   "share.madeWith": "Erstellt mit Arcalo am {date}",
+  "share.asOf": "Stand: {date}",
   // ---- theme
   "theme.colorPicker": "{label} (Farbwähler)",
   "theme.mock.favorites": "Favoriten",

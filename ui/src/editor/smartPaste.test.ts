@@ -151,6 +151,22 @@ describe("smart paste", () => {
     editor.destroy();
   });
 
+  // q124 R6A-5: one cell copied from Excel or a web table pasted as a table with an empty header row.
+  it("pastes a single cell as its text, a one-cell layout table as its content", () => {
+    const editor = setup("Wert: \n");
+    const cell = `<html><body><table border=0><col width=64><tr height=20><td height=20 width=64>42,5 <b>h</b></td></tr></table></body></html>`;
+    expect(paste(editor, "42,5 h\r\n", cell)).toBe(false);
+    editor.view.pasteHTML(cell);
+    expect(toMarkdown(editor)).toBe("Wert: 42,5 **h**\n");
+    editor.destroy();
+    const sig = setup("\n");
+    sig.view.pasteHTML(`<p>Gruß</p><table><tr><td><p>Anna Muster</p><table><tr><td>Tel.</td><td>123</td></tr><tr><td>Mail</td><td>a@b.de</td></tr></table></td></tr></table>`);
+    const out = toMarkdown(sig);
+    expect(out.startsWith("Gruß\n\nAnna Muster\n\n|")).toBe(true);
+    expect(out).toMatch(/\| Tel\. \| 123 +\|\n\| Mail \| a@b\.de +\|\n$/);
+    sig.destroy();
+  });
+
   it("cleans titles", () => {
     expect(cleanTitle("  a \n b ", "u")).toBe("a b");
     expect(cleanTitle("u", "u")).toBeNull();

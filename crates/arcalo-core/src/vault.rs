@@ -133,7 +133,7 @@ pub struct ImportPlan {
     report: ImportReport,
     /// Attachments stored under another name (a different file had the name): old name, new
     /// name, and the vault folder whose notes refer to it.
-    renamed: Vec<(String, String, PathBuf)>,
+    renamed: Vec<Renamed>,
 }
 
 /// Imports `dir` under a new top-level page named after the folder; images go to `attachments_dir`.
@@ -243,17 +243,22 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     Ok(report)
 }
 
-fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[(String, String, PathBuf)]) -> Result<i64> {
+fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed]) -> Result<i64> {
     let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
     if let Some(mut content) = p.content {
         // The notes refer to renamed files by their old names.
-        for (old, new, scope) in renamed {
-            if p.dir.starts_with(scope) {
-                content = if p.canvas {
-                    crate::canvas::rename_file(&content, old, new)
-                } else {
-                    crate::attachment_manager::replace_file_refs(&content, old, new)
-                };
+        // A bare name means the file next to the note (its folder or one above); a path names
+        // its file, which Obsidian writes when two files share the name.
+        for (old, new, scope, file) in renamed {
+            if p.canvas {
+                if p.dir.starts_with(scope) {
+                    content = crate::canvas::rename_file(&content, old, new);
+                }
+            } else {
+                content = crate::attachment_manager::replace_file_refs_where(&content, old, new, |dir| match dir {
+                    None => p.dir.starts_with(scope),
+                    Some(dir) => names_folder(&p.dir, dir, file.parent().unwrap_or(Path::new(""))),
+                });
             }
         }
         if p.canvas {
@@ -263,6 +268,34 @@ fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[(String, St
         }
     }
     Ok(page.id)
+}
+
+/// A file stored under another name: its name in the vault, the stored name, the folder whose
+/// notes mean it by its bare name, and its path in the vault.
+type Renamed = (String, String, PathBuf, PathBuf);
+
+/// Whether the folders `dir` written before a file name in a note in `note_dir` are `folder`
+/// (paths relative to the vault, or to the note as Markdown links write them).
+fn names_folder(note_dir: &Path, dir: &str, folder: &Path) -> bool {
+    fn parts<'a>(base: impl Iterator<Item = String>, rel: impl Iterator<Item = &'a str>) -> Vec<String> {
+        let mut out: Vec<String> = base.collect();
+        for part in rel {
+            match part {
+                "" | "." => {}
+                ".." => {
+                    out.pop();
+                }
+                p => out.push(crate::nfc::nfc(p).to_lowercase()),
+            }
+        }
+        out
+    }
+    let comps = |p: &Path| {
+        p.components().map(|c| crate::nfc::nfc(&c.as_os_str().to_string_lossy()).to_lowercase()).collect::<Vec<_>>()
+    };
+    let want = comps(folder);
+    let split = || dir.split(['/', '\\']);
+    parts(std::iter::empty(), split()) == want || parts(comps(note_dir).into_iter(), split()) == want
 }
 
 /// Removes the pages of an import that did not finish (trashed and purged at once: they were
@@ -292,7 +325,7 @@ struct Walk<'a> {
     root: &'a Path,
     attachments_dir: &'a Path,
     report: ImportReport,
-    renamed: Vec<(String, String, PathBuf)>,
+    renamed: Vec<Renamed>,
     progress: ImportProgress,
     on_progress: &'a mut dyn FnMut(ImportProgress),
     cancel: &'a AtomicBool,
@@ -423,7 +456,8 @@ impl Walk<'_> {
         match attachments::import_file(self.attachments_dir, path) {
             Ok(saved) => {
                 if saved.name != name {
-                    self.renamed.push((name.to_owned(), saved.name, scope.to_path_buf()));
+                    let file = self.rel(path);
+                    self.renamed.push((name.to_owned(), saved.name, scope.to_path_buf(), file));
                 }
                 self.report.attachments += 1;
                 Ok(())
@@ -943,6 +977,43 @@ mod tests {
         assert_eq!(b, "![[bild 2.png]]");
         assert_eq!(fs::read_to_string(att.join("bild.png")).unwrap(), "a");
         assert_eq!(fs::read_to_string(att.join("bild 2.png")).unwrap(), "b");
+    }
+
+    /// q124 R6A: with two files of one name Obsidian writes the path (`![[Projekt B/assets/bild.png]]`);
+    /// such a reference follows the file its path names, wherever the note is.
+    #[test]
+    fn path_references_to_same_named_files_follow_their_path() {
+        let vault = tmp("in-paths");
+        for (folder, bytes) in [("Projekt A", "a"), ("Projekt B", "b")] {
+            fs::create_dir_all(vault.join(folder).join("assets")).unwrap();
+            fs::write(vault.join(folder).join("assets/bild.png"), bytes).unwrap();
+        }
+        fs::write(
+            vault.join("Übersicht.md"),
+            "![[Projekt A/assets/bild.png]] ![[Projekt B/assets/bild.png|200]] ![B](Projekt%20B/assets/bild.png)",
+        )
+        .unwrap();
+        fs::write(
+            vault.join("Projekt B/Notiz B.md"),
+            "![[bild.png]] ![[Projekt A/assets/bild.png]] ![a](../Projekt%20A/assets/bild.png) ![b](assets/bild.png)",
+        )
+        .unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let att = tmp("att-paths");
+        import_vault(&db, &vault, &att).unwrap();
+        let content = |title: &str| db.page_doc(db.page_by_title(title).unwrap().unwrap().id).unwrap().content;
+        assert_eq!(fs::read_to_string(att.join("bild 2.png")).unwrap(), "b");
+        assert_eq!(
+            content("Übersicht"),
+            "![[Projekt A/assets/bild.png]] ![[Projekt B/assets/bild 2.png|200]] ![B](Projekt%20B/assets/bild%202.png)"
+        );
+        assert_eq!(
+            content("Notiz B"),
+            "![[bild 2.png]] ![[Projekt A/assets/bild.png]] ![a](../Projekt%20A/assets/bild.png) ![b](assets/bild%202.png)"
+        );
+        for d in [vault, att] {
+            let _ = fs::remove_dir_all(d);
+        }
     }
 
     #[test]

@@ -698,7 +698,7 @@ export function renderListItem(node: JNode, h: RenderHelpers, prefix: string, in
 export function listMarker(ctx: RenderContext | undefined): string {
   const parent = ctx?.meta?.parentAttrs ?? {};
   if (ctx?.parentType === "orderedList") {
-    const start = Number(parent.start ?? 1) || 1;
+    const start = Number.isFinite(Number(parent.start ?? 1)) ? Number(parent.start ?? 1) : 1;
     const n = parent.lazy ? start : start + (ctx.index ?? 0);
     return `${n}${parent.delim === ")" ? ")" : "."} `;
   }

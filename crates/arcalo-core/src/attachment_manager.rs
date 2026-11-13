@@ -155,6 +155,8 @@ struct LinkRef {
     segment: std::ops::Range<usize>,
     name: String,
     encoded: bool,
+    /// The folders before the name (decoded, without the last `/`), empty for a bare name.
+    dir: String,
 }
 
 fn link_refs(markdown: &str) -> Vec<LinkRef> {
@@ -198,7 +200,8 @@ fn link_refs(markdown: &str) -> Vec<LinkRef> {
         let encoded = segment.contains('%');
         let Some(name) = attachments::percent_decode(segment) else { continue };
         if !name.is_empty() {
-            out.push(LinkRef { segment: offset + seg_start..offset + seg_start + segment.len(), name, encoded });
+            let dir = attachments::percent_decode(path[..seg_start].trim_end_matches(['/', '\\'])).unwrap_or_default();
+            out.push(LinkRef { segment: offset + seg_start..offset + seg_start + segment.len(), name, encoded, dir });
         }
         from = path_start + end + 1;
     }
@@ -225,17 +228,24 @@ fn encode_segment(name: &str) -> String {
 /// Rewrites every reference to the file `old` (case-insensitive) to `new`: embeds keep their
 /// folder prefix, anchor and alias, image links their path.
 pub fn replace_file_refs(markdown: &str, old: &str, new: &str) -> String {
+    replace_file_refs_where(markdown, old, new, |_| true)
+}
+
+/// [`replace_file_refs`] for the references `folder` accepts: it gets the folders written before
+/// the name (`Projekt B/assets` of `![[Projekt B/assets/bild.png]]`), `None` for a bare name.
+pub fn replace_file_refs_where(markdown: &str, old: &str, new: &str, folder: impl Fn(Option<&str>) -> bool) -> String {
     let old_l = old.to_lowercase();
     let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
     for r in embed_refs(markdown) {
-        if r.base.to_lowercase() == old_l {
-            let target = &markdown[r.target.clone()];
-            let prefix = &target[..target.len() - r.base.len()];
+        let target = &markdown[r.target.clone()];
+        let prefix = &target[..target.len() - r.base.len()];
+        let dir = prefix.trim_end_matches(['/', '\\']);
+        if r.base.to_lowercase() == old_l && folder((!dir.is_empty()).then_some(dir)) {
             edits.push((r.target, format!("{prefix}{new}")));
         }
     }
     for r in link_refs(markdown) {
-        if r.name.to_lowercase() == old_l {
+        if r.name.to_lowercase() == old_l && folder((!r.dir.is_empty()).then_some(r.dir.as_str())) {
             let plain_ok = !new.contains([' ', '(', ')', '<', '>', '%']);
             let text = if r.encoded || !plain_ok { encode_segment(new) } else { new.to_owned() };
             edits.push((r.segment, text));
