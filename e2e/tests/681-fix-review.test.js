@@ -133,14 +133,16 @@ test("a dropdown follows its trigger when content above it changes, closes when 
 });
 
 // R6D-4: switching the language lays out every text anew; e2e 83 caught „ResizeObserver loop
-// completed with undelivered notifications“ (soak of q124-r6d, round 3). Back and forth twenty
+// completed with undelivered notifications“ (soak of q124-r6d, round 3). Back and forth forty
 // times, the console stays clean (under WebDriver the message names the observers of its frame).
 test("switching the language back and forth leaves no ResizeObserver loop", async () => {
   await app.keys(["Control", ","]);
   await app.click('.settings-nav-item[data-section="locale"]');
   const before = (await app.consoleErrors()).length;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 40; i++) {
     const lang = i % 2 ? "de" : "en";
+    // As in e2e 83: no toast yet, the switch brings one while everything is laid out anew.
+    await app.dismissToasts();
     await app.click(`[role="radiogroup"] [role="radio"]:${lang === "de" ? "nth-child(2)" : "last-child"}`);
     await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.locale.language === lang, { timeoutMsg: `${lang} not saved` });
     await app.browser.waitUntil(
