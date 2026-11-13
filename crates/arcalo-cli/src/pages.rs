@@ -18,7 +18,18 @@ use crate::{Body, Ctx, DailyCmd, PagesCmd, TagsCmd, TrashCmd};
 const VERSION_GAP_SECONDS: i64 = 60;
 
 /// The Markdown of `body` (or `text`, given without an option); `None` when none was given.
+/// Markdown as the app stores it: without a byte order mark and with LF line ends (a file
+/// written on Windows, PowerShell's pipe), as the vault import reads files.
+fn as_stored(text: String) -> String {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    if text.contains('\r') { text.replace("\r\n", "\n") } else { text.to_owned() }
+}
+
 pub fn read_body(body: &Body, text: Option<&str>) -> Outcome<Option<String>> {
+    Ok(read_body_raw(body, text)?.map(as_stored))
+}
+
+fn read_body_raw(body: &Body, text: Option<&str>) -> Outcome<Option<String>> {
     let given = [body.body.is_some(), body.file.is_some(), body.stdin, text.is_some()];
     if given.iter().filter(|g| **g).count() > 1 {
         return Err(Failure::Usage(

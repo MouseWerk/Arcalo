@@ -186,7 +186,7 @@ given as one quoted argument, or with `--body "<markdown>"`, `--file <path>` or 
 | `time delete <id>` | Delete an entry (its chip in the note says so) |
 | `time week [--date <day>]` | Booked and target hours per day |
 | `absences list [--from] [--to]` / `absences add <from> [<to>] [--kind vacation\|sick\|comp\|other] [--half] [--note …]` / `absences delete <from> [<to>]` | Absences (a range gets the working days) and public holidays |
-| `export --format cats\|jira\|csv\|json [--from] [--to] [--pernr] [--jira-map <file>] [--mark]` | Export entries |
+| `export --format cats\|jira\|csv\|json [--from] [--to] [--pernr] [--jira-map <file>] [--mark] [--include-exported]` | Export entries as the app does (personnel number, Jira map and CATS layout of Settings → Zeiterfassung unless given); entries marked as exported only with `--include-exported` |
 | `budget <netzplan>` / `schedule <netzplan>` | Budget with ETC and EAC / critical path |
 
 ### Projects

@@ -808,3 +808,87 @@ fn a_command_is_refused_during_a_swap_and_holds_one_off() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(cmdlock::exclusive(&ws.dir, None, Duration::ZERO).is_ok(), "free once it ended");
 }
+
+#[test]
+fn an_export_takes_the_settings_and_leaves_out_what_was_exported() {
+    let ws = Ws::new("export-again");
+    ws.json(&["project", "add", "PRJ-1", "Rollout"]);
+    ws.json(&["project", "add-netzplan", "PRJ-1", "NP-1", "NP-1-WBS"]);
+    ws.json(&["project", "add-vorgang", "NP-1", "1010"]);
+    ws.json(&["settings", "set", "pernr", "\"00012345\""]);
+    ws.json(&["settings", "set", "time.cats_delimiter", "tab"]);
+    ws.json(&["settings", "set", "time.cats_decimal", "point"]);
+    ws.json(&["zeit", "NP-1/1010", "1.5h", "Workshop", "@2026-10-05"]);
+    // As Settings → Zeiterfassung say: the personnel number, a tab and the decimal point.
+    let first = ws.json(&["export", "--format", "cats", "--mark"]);
+    let line = first["content"].as_str().unwrap().lines().nth(1).unwrap().to_owned();
+    assert_eq!(line.split('\t').collect::<Vec<_>>()[..3], ["00012345", "20261005", "NP-1-WBS"], "{line}");
+    assert!(line.contains("\t1.50\t"), "{line}");
+    assert_eq!(first["marked"], json!(1));
+    // A script that exports and marks every week sends each booking once, as the app does.
+    ws.json(&["zeit", "NP-1/1010", "2h", "Review", "@2026-10-06"]);
+    let second = ws.json(&["export", "--format", "cats", "--mark"]);
+    assert_eq!(second["exported_ids"].as_array().unwrap().len(), 1, "{second}");
+    assert!(!second["content"].as_str().unwrap().contains("Workshop"), "{second}");
+    // Asked for: the exported ones again.
+    let all = ws.json(&["export", "--format", "csv", "--include-exported"]);
+    assert_eq!(all["exported_ids"].as_array().unwrap().len(), 2, "{all}");
+    // A personnel number given on the command line wins.
+    let other = ws.json(&["export", "--format", "cats", "--include-exported", "--pernr", "777"]);
+    assert!(other["content"].as_str().unwrap().lines().nth(1).unwrap().starts_with("777\t"), "{other}");
+}
+
+#[test]
+fn the_timer_and_an_edit_take_only_known_vorgaenge_and_activity_types() {
+    let ws = Ws::new("unknown-refs");
+    ws.json(&["project", "add", "PRJ-1", "Rollout"]);
+    ws.json(&["project", "add-netzplan", "PRJ-1", "NP-1", "NP-1-WBS"]);
+    ws.json(&["project", "add-vorgang", "NP-1", "1010"]);
+    // As `zeit` does: an unknown Vorgang or Leistungsart is refused, nothing is booked.
+    assert_eq!(ws.fails(&["zeit", "NP-1/9999", "1h", "Tippfehler"], 2)["code"], json!("not_found"));
+    assert_eq!(ws.fails(&["timer", "start", "NP-1/9999", "Tippfehler"], 2)["code"], json!("not_found"));
+    assert_eq!(ws.fails(&["timer", "start", "NP-1/1010", "#XYZ", "Tippfehler"], 2)["code"], json!("not_found"));
+    assert_eq!(ws.json(&["timer", "status"])["running"], json!(false));
+    // The Vorgang's own spelling is stored (budgets and exports match it).
+    let started = ws.json(&["timer", "start", "np-1/1010", "#dev", "Analyse"]);
+    assert_eq!((started["vorgang"].clone(), started["activity_type"].clone()), (json!("1010"), json!("DEV")));
+    ws.json(&["timer", "stop"]);
+    let id = ws.json(&["zeit", "NP-1/1010", "1h", "Workshop"])["entry"]["id"].as_i64().unwrap().to_string();
+    assert_eq!(ws.fails(&["time", "edit", &id, "--vorgang", "9999"], 2)["code"], json!("not_found"));
+    assert_eq!(ws.fails(&["time", "edit", &id, "--activity-type", "XYZ"], 2)["code"], json!("not_found"));
+    let list = ws.json(&["time", "list", "--from", "2000-01-01", "--to", "2100-01-01"]);
+    let e = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"].as_i64().map(|n| n.to_string()).as_deref() == Some(id.as_str()))
+        .unwrap();
+    assert_eq!((e["vorgang"].clone(), e["activity_type"].clone()), (json!("1010"), Value::Null));
+    // Known values, and removing them, still work.
+    let edited = ws.json(&["time", "edit", &id, "--activity-type", "dev", "--vorgang", "none"]);
+    assert_eq!((edited["vorgang"].clone(), edited["activity_type"].clone()), (Value::Null, json!("DEV")));
+}
+
+#[test]
+fn text_written_on_windows_is_stored_as_the_app_stores_it() {
+    let ws = Ws::new("crlf");
+    // Notepad's or PowerShell's UTF-8 with a byte order mark and CRLF line ends.
+    let file = ws.dir.join("notiz.md");
+    std::fs::write(&file, "\u{feff}---\r\nstatus: offen\r\n---\r\n# Notiz\r\n\r\n- [ ] Bericht due:2026-10-08\r\n")
+        .unwrap();
+    let page = ws.json(&["pages", "create", "Notiz", "--file", file.to_str().unwrap()]);
+    let id = page["id"].as_i64().unwrap();
+    assert_eq!(ws.content(id), "---\nstatus: offen\n---\n# Notiz\n\n- [ ] Bericht due:2026-10-08\n");
+    assert_eq!(ws.json(&["pages", "props", &format!("id:{id}")])["status"], json!("offen"));
+    let tasks = ws.json(&["tasks", "list", "--page", &format!("id:{id}")]);
+    assert_eq!((tasks[0]["text"].clone(), tasks[0]["due"].clone()), (json!("Bericht"), json!("2026-10-08")));
+    // Appended from standard input the same way.
+    let out = ws.run_stdin(
+        &["--json", "pages", "append", &format!("id:{id}"), "--stdin"],
+        "\u{feff}Zeile eins\r\nZeile zwei\r\n",
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let content = ws.content(id);
+    assert!(!content.contains('\r') && !content.contains('\u{feff}'), "{content:?}");
+    assert!(content.ends_with("Zeile eins\nZeile zwei\n"), "{content:?}");
+}

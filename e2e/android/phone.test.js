@@ -234,6 +234,21 @@ for (const [W, H] of [
       assert.deepEqual(lost, []);
     });
 
+    // R6B-1: the phone's bookings travel as chips with their ids into the desktop's daily notes; ids
+    // counted from 1 named the desktop's own booking of the same note, which then wrote its values
+    // over the phone's chip. The phone's ids lie in a range of their own (2^32 and above).
+    test("gives its bookings ids of their own", async () => {
+      const ids = await page.evaluate(async () => {
+        const call = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+        const booked = await call("mobile_book", { line: "/zeit NP-8802/2010 15m Rückfrage" });
+        const day = await call("mobile_daily", { date: null, create: false });
+        const doc = await call("page_get", { id: day.id });
+        return { id: booked.entry.id, chip: (doc.content.match(/<time-entry[^>]*\bid="(\d+)"[^>]*>Rückfrage</) ?? [])[1] ?? null };
+      });
+      assert.ok(ids.id >= 2 ** 32 && ids.id < 2 ** 53, `the booking's id ${ids.id}`);
+      assert.equal(ids.chip, String(ids.id), "the chip in the daily note names it");
+    });
+
     test("shows no stock Android UI", async () => {
       const dialogs = await page.evaluate(stock.nativeDialogs);
       assert.deepEqual([...new Set(stockFound)], [], "the platform's own UI");
