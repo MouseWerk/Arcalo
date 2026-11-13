@@ -503,15 +503,9 @@ pub struct IssueView {
 pub fn jira_issue_view(state: State<AppState>, key: String) -> Result<IssueView> {
     let db = state.reader();
     let backlinks = db.issue_backlinks(&key)?;
-    // Bookings made under the keys the issue had before it was moved count as well.
     let issue = db.issue_get(&key)?;
-    let keys = db.issue_keys_of(issue.as_ref().map_or(key.as_str(), |i| i.key.as_str()))?;
-    let booked_minutes: i64 = db.conn().query_row(
-        "SELECT IFNULL(SUM(e.duration_minutes), 0) FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id
-         WHERE l.issue_key IN (SELECT value FROM json_each(?1))",
-        [serde_json::to_string(&keys)?],
-        |r| r.get(0),
-    )?;
+    // Bookings made under the keys the issue had before it was moved count as well.
+    let booked_minutes = db.issue_booked_minutes(&key)?;
     Ok(IssueView {
         issue,
         note_page_id: backlinks.iter().find(|b| b.note).map(|b| b.page_id),
@@ -527,7 +521,7 @@ pub async fn jira_issue_fetch(app: AppHandle, key: String) -> Result<Issue> {
     let state = app.state::<AppState>();
     let site = site_for_key(&state, &key)?;
     let issue = client(&state, &site)?.get(&key).await?;
-    put_fetched(&state, &site.id, &key, &issue)?;
+    put_fetched(&app, &state, &site.id, &key, &issue)?;
     let _ = app.emit("jira://synced", &site.id);
     Ok(issue)
 }
@@ -539,24 +533,23 @@ pub async fn jira_issue_detail(app: AppHandle, key: String) -> Result<Issue> {
     let state = app.state::<AppState>();
     let site = site_for_key(&state, &key)?;
     let issue = client(&state, &site)?.get(&key).await?;
-    if put_fetched(&state, &site.id, &key, &issue)? {
+    if put_fetched(&app, &state, &site.id, &key, &issue)? {
         let _ = app.emit("jira://synced", &site.id);
     }
     Ok(issue)
 }
 
-/// Caches an issue Jira sent for `asked`; one that answers under another key was moved to
-/// another project, and the asked key follows it from now on. Returns whether it was moved.
-fn put_fetched(state: &AppState, site: &str, asked: &str, issue: &Issue) -> Result<bool> {
-    let db = state.db();
-    db.atomic(|| {
-        db.issue_put(site, issue, Utc::now())?;
-        let moved = !issue.key.eq_ignore_ascii_case(asked);
-        if moved {
-            db.issue_moved_record(site, asked, &issue.key)?;
+/// Caches an issue Jira sent for `asked` (moved to another project when it answers under another
+/// key); the tasks of an issue that became done are ticked, also those naming an old key. Returns
+/// whether it was moved.
+fn put_fetched(app: &AppHandle, state: &AppState, site: &str, asked: &str, issue: &Issue) -> Result<bool> {
+    let (moved, done) = state.db().issue_put_fetched(site, asked, issue, Utc::now())?;
+    if !done.is_empty() && state.settings().jira.tick_done_tasks {
+        for p in state.db().issues_tick_tasks(&done)? {
+            let _ = app.emit("data://tasks", p);
         }
-        Ok(moved)
-    })
+    }
+    Ok(moved)
 }
 
 #[derive(Serialize)]
@@ -575,7 +568,10 @@ pub fn jira_issue_note(state: State<AppState>, key: String) -> Result<IssueNote>
     if let Some(id) = db.issue_note(&key)? {
         return Ok(IssueNote { page: db.page(id)?, created: false });
     }
-    let summary = db.issue_get(&key)?.map(|i| i.summary).unwrap_or_default();
+    // An old key of a moved issue: the note is made for the issue under its key now.
+    let issue = db.issue_get(&key)?;
+    let key = issue.as_ref().map_or(key.clone(), |i| i.key.clone());
+    let summary = issue.map(|i| i.summary).unwrap_or_default();
     let title = format!("{key} {summary}");
     let page = db.atomic(|| {
         let page = db.create_page(None, &crate::unique_title(&db, title.trim())?, Some("ticket"))?;

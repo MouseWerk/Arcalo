@@ -854,6 +854,83 @@ async fn moved_and_deleted_issues_are_followed_by_their_old_keys() {
     assert_eq!(db.issue_keys_of("OPS-2").unwrap(), ["OPS-2", "NEW-5", "PROJ-1"]);
 }
 
+/// q124 R6D-3: after a move the issue keeps its note, its backlinks, its WBS and its bookings,
+/// which were written under the old key.
+#[test]
+fn a_moved_issue_keeps_its_note_backlinks_wbs_and_bookings() {
+    let db = setup();
+    let np = db.netzplan_by_ref("NP-8801").unwrap();
+    store(&db, &[(issue("PROJ-9", "new"), &["mine"])]);
+    let note = db.create_page(None, "PROJ-9 Docs", Some("ticket")).unwrap();
+    db.save_page_content(note.id, "---\njira: PROJ-9\n---\n\nWas zu tun ist\n").unwrap();
+    let plan = db.create_page(None, "Plan", None).unwrap();
+    db.save_page_content(plan.id, "Siehe PROJ-9\n").unwrap();
+    db.issue_wbs_set("issue", "PROJ-9", "NP-8801/1020", true).unwrap();
+    let e = db
+        .insert_time_entry(&crate::model::NewTimeEntry {
+            netzplan_id: np.id,
+            vorgang_nr: Some("1020".into()),
+            leistungsart: None,
+            start_time: now(),
+            duration_minutes: 90,
+            description: "Docs".into(),
+            source: crate::model::EntrySource::Manual,
+            page_id: None,
+        })
+        .unwrap();
+    db.issue_link_entry(e.id, "PROJ-9", None).unwrap();
+
+    db.issue_put("acme", &issue("NEW-6", "new"), now()).unwrap();
+    db.issue_moved_record("acme", "PROJ-9", "NEW-6").unwrap();
+    for key in ["NEW-6", "PROJ-9"] {
+        assert_eq!(db.issue_note(key).unwrap(), Some(note.id), "{key}: the note is found, no second one is made");
+        let mut pages: Vec<i64> = db.issue_backlinks(key).unwrap().iter().map(|b| b.page_id).collect();
+        pages.sort();
+        assert_eq!(pages, [note.id, plan.id], "{key}");
+        assert_eq!(db.issue_wbs_for(key).unwrap().as_deref(), Some("NP-8801/1020"), "{key}");
+        assert_eq!(db.issue_booked_minutes(key).unwrap(), 90, "{key}");
+    }
+}
+
+/// q124 R6D-2: the issue view or the hover card finding a move of an issue done meanwhile ticks
+/// the tasks of its old key (the next sync finds it done already and ticks nothing).
+#[test]
+fn an_issue_fetched_alone_under_its_new_key_ticks_the_tasks_of_its_old_key() {
+    let db = setup();
+    store(&db, &[(issue("PROJ-1", "indeterminate"), &["mine"])]);
+    let (moved, done) = db.issue_put_fetched("acme", "PROJ-1", &issue("NEW-5", "done"), now()).unwrap();
+    assert!(moved);
+    assert_eq!(done, ["NEW-5", "PROJ-1"]);
+    assert_eq!(db.issue_get("PROJ-1").unwrap().unwrap().key, "NEW-5");
+    // Asked again: nothing new to tick.
+    assert_eq!(db.issue_put_fetched("acme", "NEW-5", &issue("NEW-5", "done"), now()).unwrap(), (false, vec![]));
+}
+
+/// q124 R6D-2: an issue moved while open and done in a later sync ticks the tasks written with
+/// its old key, as one done in the sync that found the move does.
+#[test]
+fn an_issue_done_after_its_move_ticks_the_tasks_of_its_old_key() {
+    let db = setup();
+    store(&db, &[(issue("PROJ-9", "new"), &["mine"])]);
+    let page = db.create_page(None, "Plan", None).unwrap();
+    db.save_page_content(page.id, "- [ ] PROJ-9 Docs\n- [ ] NEW-6 Release\n").unwrap();
+    // The sync that finds the move: still open.
+    let mut f = Fetched::default();
+    f.issues.insert("NEW-6".into(), Issue { matches: vec!["mine".into()], ..issue("NEW-6", "new") });
+    f.moved.push(("PROJ-9".into(), "NEW-6".into()));
+    assert!(db.issues_store("acme", &f, now()).unwrap().newly_done.is_empty());
+    // A later sync: done.
+    let out = store(&db, &[(issue("NEW-6", "done"), &[])]);
+    let mut done = out.newly_done.clone();
+    done.sort();
+    assert_eq!(done, ["NEW-6", "PROJ-9"]);
+    db.issues_tick_tasks(&out.newly_done).unwrap();
+    let tasks = db
+        .list_tasks(&crate::tasks::TaskFilter { status: crate::tasks::TaskStatus::All, ..Default::default() })
+        .unwrap();
+    assert!(tasks.iter().all(|t| t.done), "{tasks:?}");
+}
+
 #[tokio::test]
 async fn a_worklog_deleted_in_jira_is_posted_again() {
     let fake = Fake { results: HashMap::new() };

@@ -1120,6 +1120,14 @@ impl Database {
                     _ => self.issue_put(site, issue, now)?,
                 }
             }
+            // The tasks of an issue moved earlier name its old keys: they are ticked with it.
+            for key in out.newly_done.clone() {
+                for old in self.issue_keys_of(&key)?.into_iter().skip(1) {
+                    if !out.newly_done.contains(&old) {
+                        out.newly_done.push(old);
+                    }
+                }
+            }
             out.issues = fetched.issues.values().filter(|i| !i.matches.is_empty()).count();
             self.conn().execute(
                 "DELETE FROM issues WHERE site = ?1 AND matches = '[]' AND seen_at < ?2",
@@ -1232,6 +1240,40 @@ impl Database {
             .optional()?)
     }
 
+    /// Caches an issue Jira sent when asked for `asked` alone (the issue view, the hover card). One
+    /// that answers under another key was moved to another project: the asked key follows it from
+    /// now on. Returns whether it was moved and the keys whose tasks are ticked: the issue's and
+    /// its old keys when it became done with this answer (the next sync finds it done already).
+    pub fn issue_put_fetched(
+        &self,
+        site: &str,
+        asked: &str,
+        issue: &Issue,
+        now: DateTime<Utc>,
+    ) -> Result<(bool, Vec<String>)> {
+        self.atomic(|| {
+            let open = |key: &str| -> Result<bool> {
+                Ok(self
+                    .conn()
+                    .query_row(
+                        "SELECT status_category FROM issues WHERE site = ?1 AND key = ?2",
+                        params![site, key],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .is_some_and(|c| c != "done"))
+            };
+            let was_open = open(asked)? || open(&issue.key)?;
+            self.issue_put(site, issue, now)?;
+            let moved = !issue.key.eq_ignore_ascii_case(asked);
+            if moved {
+                self.issue_moved_record(site, asked, &issue.key)?;
+            }
+            let done = if was_open && issue.done() { self.issue_keys_of(&issue.key)? } else { vec![] };
+            Ok((moved, done))
+        })
+    }
+
     /// Records that the issue `old` of `site` is `new` now (moved to another project): earlier
     /// moves follow it, the row under the old key goes.
     pub fn issue_moved_record(&self, site: &str, old: &str, new: &str) -> Result<()> {
@@ -1264,6 +1306,26 @@ impl Database {
         let mut out = vec![key.to_owned()];
         out.extend(st.query_map([key], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?);
         Ok(out)
+    }
+
+    /// Minutes booked on the issue `key`, also under the keys it had before it was moved.
+    pub fn issue_booked_minutes(&self, key: &str) -> Result<i64> {
+        Ok(self.conn().query_row(
+            "SELECT IFNULL(SUM(e.duration_minutes), 0) FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id
+             WHERE l.issue_key IN (SELECT value FROM json_each(?1))",
+            [serde_json::to_string(&self.issue_aliases(key)?)?],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Every key of the issue `key` names (its current key first, then the keys it had before it
+    /// was moved); `key` may be an old one.
+    pub fn issue_aliases(&self, key: &str) -> Result<Vec<String>> {
+        let current: Option<String> = self
+            .conn()
+            .query_row("SELECT new_key FROM issue_moved WHERE old_key = ?1 ORDER BY site LIMIT 1", [key], |r| r.get(0))
+            .optional()?;
+        self.issue_keys_of(current.as_deref().unwrap_or(key))
     }
 
     /// Keys of the cached projects, upper-case (only they become chips).
@@ -1380,27 +1442,29 @@ impl Database {
 
     /// Pages that name `key`, the issue's note (`jira: KEY`) first.
     pub fn issue_backlinks(&self, key: &str) -> Result<Vec<IssueBacklink>> {
-        let rows: Vec<(i64, String, Option<String>, String)> = {
-            let mut st = self.conn().prepare(
-                "SELECT id, title, icon, content FROM pages WHERE deleted_at IS NULL AND (instr(content, ?1) > 0 OR instr(title, ?1) > 0)
-                 ORDER BY updated_at DESC LIMIT 200",
-            )?;
-            st.query_map([key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-                .collect::<rusqlite::Result<_>>()?
-        };
-        let mut out: Vec<IssueBacklink> = rows
-            .into_iter()
-            .filter_map(|(page_id, title, icon, content)| {
+        // Pages written before the issue was moved name its old key.
+        let mut out: Vec<IssueBacklink> = vec![];
+        for key in self.issue_aliases(key)? {
+            let rows: Vec<(i64, String, Option<String>, String)> = {
+                let mut st = self.conn().prepare_cached(
+                    "SELECT id, title, icon, content FROM pages WHERE deleted_at IS NULL AND (instr(content, ?1) > 0 OR instr(title, ?1) > 0)
+                     ORDER BY updated_at DESC LIMIT 200",
+                )?;
+                st.query_map([&key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+                    .collect::<rusqlite::Result<_>>()?
+            };
+            for (page_id, title, icon, content) in rows {
                 let note =
-                    crate::pagework::frontmatter_value(&content, "jira").is_some_and(|v| v.eq_ignore_ascii_case(key));
-                (note || mentions(&content, key) || mentions(&title, key)).then_some(IssueBacklink {
-                    page_id,
-                    title,
-                    icon,
-                    note,
-                })
-            })
-            .collect();
+                    crate::pagework::frontmatter_value(&content, "jira").is_some_and(|v| v.eq_ignore_ascii_case(&key));
+                if !(note || mentions(&content, &key) || mentions(&title, &key)) {
+                    continue;
+                }
+                match out.iter_mut().find(|b| b.page_id == page_id) {
+                    Some(b) => b.note |= note,
+                    None => out.push(IssueBacklink { page_id, title, icon, note }),
+                }
+            }
+        }
         out.sort_by_key(|b| !b.note);
         Ok(out)
     }
@@ -1468,21 +1532,31 @@ impl Database {
 
     /// The WBS an issue books on: its own mapping, else its project's.
     pub fn issue_wbs_for(&self, key: &str) -> Result<Option<String>> {
-        let own: Option<String> = self
-            .conn()
-            .query_row("SELECT reference FROM issue_wbs_map WHERE kind = 'issue' AND key = ?1", [key], |r| r.get(0))
-            .optional()?;
-        if own.is_some() {
-            return Ok(own);
+        // A mapping made under an old key of a moved issue still holds; its own first.
+        let keys = self.issue_aliases(key)?;
+        for k in &keys {
+            let own: Option<String> = self
+                .conn()
+                .query_row("SELECT reference FROM issue_wbs_map WHERE kind = 'issue' AND key = ?1", [k], |r| r.get(0))
+                .optional()?;
+            if own.is_some() {
+                return Ok(own);
+            }
         }
-        Ok(self
-            .conn()
-            .query_row(
-                "SELECT reference FROM issue_wbs_map WHERE kind = 'project' AND key = ?1",
-                [project_of(key)],
-                |r| r.get(0),
-            )
-            .optional()?)
+        for k in &keys {
+            let project: Option<String> = self
+                .conn()
+                .query_row(
+                    "SELECT reference FROM issue_wbs_map WHERE kind = 'project' AND key = ?1",
+                    [project_of(k)],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if project.is_some() {
+                return Ok(project);
+            }
+        }
+        Ok(None)
     }
 
     /// The first known issue key in `text`.

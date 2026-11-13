@@ -118,6 +118,8 @@ export function typeAhead(options: SelectOption[], typed: string, from: number):
 
 const GAP = 4;
 const MARGIN = 8;
+/** How long after the person's last wheel or touch move a scroll still counts as theirs (kinetic scrolling). */
+const USER_SCROLL_MS = 600;
 
 export function Select({ value, onChange, options, children, disabled, className = "", id, title, placeholder, ...aria }: SelectProps) {
   const items = useMemo(() => options ?? optionsFromChildren(children), [options, children]);
@@ -179,6 +181,10 @@ export function Select({ value, onChange, options, children, disabled, className
   // move the trigger is one from before the list opened (an area scrolled to show the trigger and
   // clicked in the same frame, a field focused below the fold): it must not close the list.
   const placedAt = useRef<{ top: number; left: number } | null>(null);
+  // The person's own scrolling (wheel, touch) and where: only that closes the list when it moves
+  // the trigger. Other scrolls (into view, a focus, content above the trigger changing height
+  // and an area keeping its place) move the list with the trigger (R6D-1).
+  const userScroll = useRef<{ at: number; target: Node } | null>(null);
 
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
@@ -209,15 +215,25 @@ export function Select({ value, onChange, options, children, disabled, className
     if (!open) return;
     const inside = (t: EventTarget | null) => t instanceof Node && (pop.current?.contains(t) || trigger.current?.contains(t));
     const onDown = (e: MouseEvent) => !inside(e.target) && setOpen(false);
-    // Only a scroll that moves the trigger closes the list (not the list itself, nor another
-    // area such as the assistant panel scrolling to its newest message, nor a resize's own).
+    // Only a scroll of an area holding the trigger that moved it counts (not the list itself, nor
+    // another area such as the assistant panel scrolling to its newest message). The person
+    // scrolling that area closes the list, as does the trigger leaving the visible part of it;
+    // any other scroll places the list at the trigger again.
     const onScroll = (e: Event) => {
       if (!(e.target instanceof Node) || pop.current?.contains(e.target) || !trigger.current || !e.target.contains(trigger.current)) return;
       const r = trigger.current.getBoundingClientRect();
       const at = placedAt.current;
       if (at && Math.abs(r.top - at.top) < 1 && Math.abs(r.left - at.left) < 1) return;
-      if (resizing.current) setResized((n) => n + 1);
-      else setOpen(false);
+      const box = e.target instanceof Element ? e.target.getBoundingClientRect() : null;
+      const clip = box && box.height > 0 ? box : { top: 0, bottom: window.innerHeight };
+      const gone = r.bottom <= clip.top || r.top >= clip.bottom;
+      const u = userScroll.current;
+      const byPerson = !resizing.current && !!u && performance.now() - u.at < USER_SCROLL_MS && e.target.contains(u.target);
+      if (gone || byPerson) setOpen(false);
+      else setResized((n) => n + 1);
+    };
+    const onUserScroll = (e: Event) => {
+      if (e.target instanceof Node && !pop.current?.contains(e.target)) userScroll.current = { at: performance.now(), target: e.target };
     };
     const close = () => setOpen(false);
     const onKey = (e: KeyboardEvent) => {
@@ -279,6 +295,8 @@ export function Select({ value, onChange, options, children, disabled, className
     window.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("wheel", onUserScroll, { capture: true, passive: true });
+    window.addEventListener("touchmove", onUserScroll, { capture: true, passive: true });
     const onResize = () => {
       resizing.current = true;
       requestAnimationFrame(() => (resizing.current = false));
@@ -290,6 +308,8 @@ export function Select({ value, onChange, options, children, disabled, className
       window.removeEventListener("mousedown", onDown, true);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("wheel", onUserScroll, true);
+      window.removeEventListener("touchmove", onUserScroll, true);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("blur", close);
     };

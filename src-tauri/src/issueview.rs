@@ -57,11 +57,8 @@ fn view_of(state: &AppState, issue: IssueFull, fetched_at: DateTime<Utc>, offlin
     let db = state.reader();
     let settings = state.settings();
     let site = settings.jira.site(&issue.site).cloned().unwrap_or_default();
-    let booked_minutes: i64 = db.conn().query_row(
-        "SELECT IFNULL(SUM(e.duration_minutes), 0) FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id WHERE l.issue_key = ?1",
-        [&issue.key],
-        |r| r.get(0),
-    )?;
+    // Bookings made under the keys the issue had before it was moved count as well.
+    let booked_minutes = db.issue_booked_minutes(&issue.key)?;
     Ok(FullView {
         note_page_id: db.issue_note(&issue.key)?,
         wbs: db.issue_wbs_for(&issue.key)?,

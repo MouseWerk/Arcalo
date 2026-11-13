@@ -89,3 +89,45 @@ test("a dropdown scrolled into view and opened in the same moment stays open", a
     assert.match(r, /: true$/, `round ${i}: ${r}`);
   }
 });
+
+// R6D-1 (round 6): the trigger moved after the list was placed, by content above it changing height
+// and a scroll the person did not make (the provider rows of „KI & Modelle“ change height while
+// their status is checked): the list closed (e2e 37 in the soak of 2026-11-08: „… did not open“).
+// It follows the trigger; a scroll the person makes still closes it.
+test("a dropdown follows its trigger when content above it changes, closes when the person scrolls", async () => {
+  await app.keys(["Control", ","]);
+  await app.waitFor(".settings-head h1");
+  const r = await app.browser.executeAsync((done) => {
+    const frame = () => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)));
+    (async () => {
+      const area = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-scroll");
+      const el = [...area.querySelectorAll('[role="combobox"]')].find((e) => {
+        const b = e.getBoundingClientRect();
+        return b.top > 200 && b.bottom < window.innerHeight - 200;
+      });
+      if (!el) return done({ error: "no dropdown in the middle of the settings" });
+      el.click();
+      await frame();
+      // A row above it gets taller, and the area is scrolled a little (not by the person).
+      const spacer = document.createElement("div");
+      spacer.style.height = "40px";
+      area.querySelector(".settings-body").prepend(spacer);
+      area.scrollTop += 1;
+      await frame();
+      const pop = document.getElementById(el.getAttribute("aria-controls") ?? "");
+      const followed = { open: el.getAttribute("aria-expanded"), gap: pop ? Math.round(pop.getBoundingClientRect().top - el.getBoundingClientRect().bottom) : null };
+      // Now the person scrolls with the wheel.
+      area.dispatchEvent(new WheelEvent("wheel", { deltaY: 60, bubbles: true }));
+      area.scrollTop += 60;
+      await frame();
+      const scrolled = el.getAttribute("aria-expanded");
+      spacer.remove();
+      area.scrollTop = 0;
+      done({ followed, scrolled });
+    })();
+  });
+  assert.equal(r.error, undefined, r.error);
+  assert.equal(r.followed.open, "true", "the list stays open when the trigger is moved by the page");
+  assert.ok(Math.abs(r.followed.gap - 4) <= 1 || r.followed.gap < 0, `the list sits at the trigger (gap ${r.followed.gap})`);
+  assert.equal(r.scrolled, "false", "the person's scroll closes it");
+});

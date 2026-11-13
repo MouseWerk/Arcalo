@@ -186,6 +186,34 @@ describe("<Select>", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
+  // R6D-1: the trigger moved after the list was placed by a scroll the person did not make (content
+  // above it changing height, a scroll into view reported late): the list closed at once (e2e 37,
+  // soak 2026-11-08). It follows the trigger instead; the person scrolling still closes it.
+  it("follows the trigger through a scroll the person did not make, closes on one they make", async () => {
+    const trigger = mount("h2", () => {});
+    const frame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    const at = (top: number) => (trigger.getBoundingClientRect = () => ({ top, bottom: top + 30, left: 100, right: 300, width: 200, height: 30, x: 100, y: top, toJSON: () => ({}) }) as DOMRect);
+    at(400);
+    act(() => trigger.click());
+    await frame();
+    // A row above it got one line shorter, then a scroll is reported.
+    at(382);
+    act(() => {
+      host!.dispatchEvent(new Event("scroll"));
+    });
+    expect(list()).not.toBeNull();
+    expect((list() as HTMLElement).style.top).toBe(`${382 + 30 + 4}px`);
+    // The person scrolls the area (wheel): the list closes.
+    act(() => {
+      host!.dispatchEvent(new WheelEvent("wheel", { deltaY: 40, bubbles: true }));
+    });
+    at(342);
+    act(() => {
+      host!.dispatchEvent(new Event("scroll"));
+    });
+    expect(list()).toBeNull();
+  });
+
   it("chooses with the mouse and closes on a click outside", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));
