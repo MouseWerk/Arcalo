@@ -3604,6 +3604,7 @@ export const en = {
   "share.notIncluded": "not included",
   "share.page": "Page",
   "share.madeWith": "Made with Arcalo on {date}",
+  "share.asOf": "As of {date}",
   // ---- theme
   "theme.colorPicker": "{label} (color picker)",
   "theme.mock.favorites": "Favorites",

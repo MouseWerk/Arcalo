@@ -67,7 +67,7 @@ export function buildHtmlDocument(sections: ExportSection[], opts: { created: st
   const article = (s: ExportSection, first: boolean) =>
     `<article class="page" id="${s.id}">
 <header class="page-head"><h1 class="page-title${first ? "" : " sub"}">${escapeHtml(s.title)}</h1>
-<p class="page-date">Stand: ${escapeHtml(s.date)}</p></header>${first ? toc : ""}
+<p class="page-date">${escapeHtml(t("share.asOf", { date: s.date }))}</p></header>${first ? toc : ""}
 <div class="prose">${s.body}</div>
 </article>`;
   return `<!DOCTYPE html>

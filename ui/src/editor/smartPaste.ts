@@ -8,7 +8,7 @@ import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
-import { classifyPaste, wordListsToHtml, type ChatMessage, type PasteKind } from "./paste";
+import { classifyPaste, singleCellTablesToHtml, wordListsToHtml, type ChatMessage, type PasteKind } from "./paste";
 import { filesToStore } from "../lib/pasted";
 import { t } from "../lib/i18n";
 import { onHidden } from "../lib/keepalive";
@@ -211,8 +211,8 @@ export const SmartPaste = Extension.create<SmartPasteOptions>({
           decorations(state) {
             return key.getState(state)?.decos;
           },
-          // Lists from Word and Outlook come as paragraphs with the bullet as text.
-          transformPastedHTML: (html) => wordListsToHtml(html),
+          // Lists from Word and Outlook come as paragraphs with the bullet as text; one cell is no table.
+          transformPastedHTML: (html) => wordListsToHtml(singleCellTablesToHtml(html)),
           handlePaste(view, event) {
             if (forcePlain) return false;
             const input = (view as unknown as { input?: { shiftKey?: boolean; lastKeyCode?: number } }).input;
