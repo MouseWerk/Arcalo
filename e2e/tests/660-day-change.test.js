@@ -55,11 +55,15 @@ test("the views open in the evening show the new day the next morning", { timeou
 });
 
 test("the Zeiterfassung left open marks the new day", { timeout: 120000 }, async () => {
+  // Back to the day of the booking: the week grid shows only a week with bookings, and the day after
+  // a Sunday starts a week without any (the scheduled soak runs on Sundays).
+  await shiftWindowClock(app, 0);
+  assert.equal(await windowDay(app), today);
   await app.click(".side-foot-btn");
   await app.waitFor(`${RIGHT} .week-grid th.today`);
   const before = await windowDay(app);
   assert.ok((await marked()).some((l) => l.includes(dayIn(before))), "today is marked");
-  await shiftWindowClock(app, 2 * DAY);
+  await shiftWindowClock(app, DAY);
   const now = await windowDay(app);
   // The day before is no longer marked (the new one is, when it is in the week shown).
   await app.browser.waitUntil(async () => !(await marked()).some((l) => l.includes(dayIn(before))), { timeout: 45000, timeoutMsg: "the Zeiterfassung still marks yesterday" });
