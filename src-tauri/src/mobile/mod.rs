@@ -117,6 +117,9 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
     arcalo_core::i18n::set_lang(settings.locale.lang());
     arcalo_core::i18n::set_number_format(settings.locale.number_format);
     arcalo_core::i18n::set_date_format(settings.locale.date_format);
+    if let Err(e) = db.own_entry_ids() {
+        devlog::warn("core", format!("booking ids not set apart: {e}"));
+    }
     if let Err(e) = db.localize_default_leistungsarten() {
         devlog::warn("core", format!("activity types not localized: {e}"));
     }

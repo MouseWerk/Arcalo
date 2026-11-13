@@ -660,4 +660,59 @@ mod tests {
         );
         assert_eq!(db.time_entry(entries[0].id).unwrap().page_id, Some(day.id));
     }
+
+    #[test]
+    fn a_booking_made_on_the_phone_never_names_a_desktop_booking() {
+        let t = Thresholds::default();
+        let now = at("2026-10-08T15:00:00+02:00");
+        let day = NaiveDate::from_ymd_opt(2026, 10, 8).unwrap();
+        // The desktop books twice from the daily note: entries 1 and 2 belong to that note.
+        let desk = Database::open_in_memory().unwrap();
+        wbs(&desk);
+        let d1 = book(&desk, "/zeit NP-8801/1020 2h Desktop eins", now, &tz(), &t).unwrap().entry;
+        let d2 = book(&desk, "/zeit NP-8801 1h Desktop zwei", now, &tz(), &t).unwrap().entry;
+        // A new phone: a booking, and a timer stopped after midnight (two entries).
+        let phone = Database::open_in_memory().unwrap();
+        wbs(&phone);
+        phone.own_entry_ids().unwrap();
+        phone.own_entry_ids().unwrap();
+        let p1 = book(&phone, "/zeit NP-8801/1020 30m Telefon", now, &tz(), &t).unwrap().entry;
+        let np = phone.netzplan_by_ref("NP-8801").unwrap();
+        phone.start_timer(np.id, None, None, "Abends", at("2026-10-08T23:00:00+02:00")).unwrap();
+        let split = stop_timer(&phone, at("2026-10-09T01:00:00+02:00"), &tz()).unwrap();
+        assert_eq!(split.len(), 2);
+        let mut ids = vec![p1.id, split[0].id, split[1].id];
+        // A booking deleted with its chip and put back keeps its id; one whose id is taken gets a new one.
+        phone.delete_time_entry(p1.id).unwrap();
+        let back = phone.restore_time_entry(&p1).unwrap();
+        assert_eq!(back.id, p1.id);
+        ids.push(phone.restore_time_entry(&p1).unwrap().id);
+        for id in &ids {
+            assert!(
+                *id != d1.id && *id != d2.id && *id > 1 << 32 && *id < 1 << 53,
+                "{id} names a desktop booking or is out of range"
+            );
+        }
+        // The sync brings the phone's chip into the desktop's daily note: a booking from another
+        // device, never the desktop's own (whose values the editor would write over it).
+        let phone_day = phone.daily_note(day).unwrap();
+        let chip = crate::chips::chips(&phone.page_doc(phone_day.id).unwrap().content)
+            .into_iter()
+            .find(|c| c.entry_id() == Some(p1.id))
+            .unwrap();
+        let desk_day = desk.daily_note(day).unwrap();
+        let synced = format!(
+            "{}
+{}
+",
+            desk.page_doc(desk_day.id).unwrap().content,
+            chip_markdown(&phone, &p1, &tz()).unwrap()
+        );
+        desk.save_page_content(desk_day.id, &synced).unwrap();
+        let q = crate::chips::ChipQuery { id: p1.id, target: chip.attr("target").unwrap().to_owned() };
+        assert_eq!(desk.chip_states(desk_day.id, &[q]).unwrap()[0].link, crate::chips::ChipLink::Missing);
+        // The desktop keeps numbering its own bookings as before.
+        let d3 = book(&desk, "/zeit NP-8801 1h Desktop drei", now, &tz(), &t).unwrap().entry;
+        assert_eq!(d3.id, d2.id + 1);
+    }
 }
