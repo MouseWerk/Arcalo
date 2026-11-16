@@ -283,9 +283,8 @@ pub fn clean_name(name: &str) -> Result<String> {
 /// The name a new file `name` is stored under: `name` itself when free or when that file
 /// already holds the same bytes (`same`, then nothing is written), else `stem 2.ext`, …
 fn free_name(dir: &Path, name: &str, same: impl Fn(&Path) -> bool) -> Result<(String, bool)> {
-    let (stem, ext) = name.rsplit_once('.').unwrap_or((name, ""));
-    let mut candidate = name.to_owned();
-    for n in 2..10_000 {
+    for n in 1..MAX_NAME_RUN {
+        let candidate = numbered(name, n);
         let path = dir.join(&candidate);
         if !path.exists() {
             return Ok((candidate, false));
@@ -293,9 +292,42 @@ fn free_name(dir: &Path, name: &str, same: impl Fn(&Path) -> bool) -> Result<(St
         if path.is_file() && same(&path) {
             return Ok((candidate, true));
         }
-        candidate = format!("{stem} {n}.{ext}");
     }
-    Err(Error::State(trf!("Kein freier Dateiname für „{name}“", "No free file name for “{name}”")))
+    Err(no_free_name(name))
+}
+
+/// Candidates of one name [`free_name`] tries (`name`, `stem 2.ext` … below this).
+const MAX_NAME_RUN: usize = 10_000;
+
+/// The `n`-th candidate for `name`: the name itself, then `stem 2.ext`, `stem 3.ext`, …
+fn numbered(name: &str, n: usize) -> String {
+    if n <= 1 {
+        return name.to_owned();
+    }
+    let (stem, ext) = name.rsplit_once('.').unwrap_or((name, ""));
+    format!("{stem} {n}.{ext}")
+}
+
+fn no_free_name(name: &str) -> Error {
+    Error::State(trf!("Kein freier Dateiname für „{name}“", "No free file name for “{name}”"))
+}
+
+/// What an import of many files learned about the names in the attachments folder: per name the
+/// candidates it found taken (with their size, and their hash once read) and where its search
+/// stopped. The next file of that name compares with those and goes on from there, instead of
+/// checking and reading every earlier `image 2.png` … again (a vault with an `image.png` next to
+/// each of thousands of notes took minutes).
+#[derive(Default)]
+pub struct ImportNames {
+    runs: std::collections::HashMap<String, NameRun>,
+}
+
+#[derive(Default)]
+struct NameRun {
+    /// Candidates that exist by their size: name and hash (read when a file of that size comes).
+    taken: std::collections::HashMap<u64, Vec<(String, Option<[u8; 32]>)>>,
+    /// The next candidate to try ([`numbered`]).
+    next: usize,
 }
 
 fn file_hash(path: &Path) -> Option<[u8; 32]> {
@@ -341,6 +373,12 @@ pub fn store_file(attachments_dir: &Path, name: &str, bytes: &[u8]) -> Result<Sa
 /// Copies a file chosen in the file dialog into the attachments folder, streaming instead of
 /// loading it into memory. Folders, empty and oversized files are refused.
 pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachment> {
+    import_file_named(attachments_dir, source, &mut ImportNames::default())
+}
+
+/// [`import_file`] for one of many files (a vault import): `names` carries over what the files
+/// before it found, so each name is searched once per import.
+pub fn import_file_named(attachments_dir: &Path, source: &Path, names: &mut ImportNames) -> Result<SavedAttachment> {
     let meta = fs::metadata(source).at(source)?;
     let name = source.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if !meta.is_file() {
@@ -358,17 +396,44 @@ pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachm
     let hash = file_hash(source)
         .ok_or_else(|| Error::State(trf!("„{name}“ ließ sich nicht lesen", "“{name}” could not be read")))?;
     let len = meta.len();
-    let (file, exists) = free_name(attachments_dir, &clean, |p| {
-        fs::metadata(p).is_ok_and(|m| m.len() == len) && file_hash(p) == Some(hash)
-    })?;
+    let run = names.runs.entry(clean.clone()).or_default();
+    // A candidate found before that holds these bytes: stored already.
+    for (file, known) in run.taken.entry(len).or_default() {
+        if *known.get_or_insert_with(|| file_hash(&attachments_dir.join(&*file)).unwrap_or_default()) == hash {
+            return Ok(saved(attachments_dir, file.clone(), len));
+        }
+    }
+    let mut found = None;
+    for n in run.next.max(1)..MAX_NAME_RUN {
+        let candidate = numbered(&clean, n);
+        let path = attachments_dir.join(&candidate);
+        run.next = n + 1;
+        let Ok(m) = fs::metadata(&path) else {
+            found = Some((candidate, false));
+            break;
+        };
+        if !m.is_file() {
+            continue;
+        }
+        let known = if m.len() == len { file_hash(&path) } else { None };
+        run.taken.entry(m.len()).or_default().push((candidate.clone(), known));
+        if known == Some(hash) {
+            found = Some((candidate, true));
+            break;
+        }
+    }
+    let (file, exists) = found.ok_or_else(|| no_free_name(&clean))?;
     if !exists {
         // Copy under a hidden name and rename, so an interrupted copy leaves no truncated file.
         let tmp = attachments_dir.join(format!(".{file}.part"));
         let target = attachments_dir.join(&file);
         if let Err(e) = crate::error::copy_file(source, &tmp).and_then(|_| fs::rename(&tmp, &target).at(&target)) {
             let _ = fs::remove_file(&tmp);
+            // The name is still free for the next file.
+            run.next -= 1;
             return Err(e);
         }
+        run.taken.entry(len).or_default().push((file.clone(), Some(hash)));
     }
     Ok(saved(attachments_dir, file, len))
 }
