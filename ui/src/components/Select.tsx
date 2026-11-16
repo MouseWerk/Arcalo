@@ -181,6 +181,10 @@ export function Select({ value, onChange, options, children, disabled, className
   // move the trigger is one from before the list opened (an area scrolled to show the trigger and
   // clicked in the same frame, a field focused below the fold): it must not close the list.
   const placedAt = useRef<{ top: number; left: number } | null>(null);
+  // When the list opened. A wheel or touch move after that is the person scrolling, also when a
+  // placement for a scroll the page made renders between it and its scroll event (that placement
+  // already records where the person's scroll left the trigger).
+  const openedAt = useRef(0);
   // The person's own scrolling (wheel, touch) and where: only that closes the list when it moves
   // the trigger. Other scrolls (into view, a focus, content above the trigger changing height
   // and an area keeping its place) move the list with the trigger (R6D-1).
@@ -188,10 +192,14 @@ export function Select({ value, onChange, options, children, disabled, className
 
   // Placement: below the trigger (at least as wide), above it when there is more room there.
   useLayoutEffect(() => {
-    if (!open) return setPos(null);
+    if (!open) {
+      placedAt.current = null;
+      return setPos(null);
+    }
     const el = pop.current;
     const r = trigger.current?.getBoundingClientRect();
     if (!el || !r) return;
+    if (!placedAt.current) openedAt.current = performance.now();
     placedAt.current = { top: r.top, left: r.left };
     el.style.maxHeight = "";
     const natural = el.offsetHeight;
@@ -221,15 +229,16 @@ export function Select({ value, onChange, options, children, disabled, className
     // any other scroll places the list at the trigger again.
     const onScroll = (e: Event) => {
       if (!(e.target instanceof Node) || pop.current?.contains(e.target) || !trigger.current || !e.target.contains(trigger.current)) return;
+      const u = userScroll.current;
+      const byPerson = !resizing.current && !!u && u.at >= openedAt.current && performance.now() - u.at < USER_SCROLL_MS && e.target.contains(u.target);
+      if (byPerson) return setOpen(false);
       const r = trigger.current.getBoundingClientRect();
       const at = placedAt.current;
       if (at && Math.abs(r.top - at.top) < 1 && Math.abs(r.left - at.left) < 1) return;
       const box = e.target instanceof Element ? e.target.getBoundingClientRect() : null;
       const clip = box && box.height > 0 ? box : { top: 0, bottom: window.innerHeight };
       const gone = r.bottom <= clip.top || r.top >= clip.bottom;
-      const u = userScroll.current;
-      const byPerson = !resizing.current && !!u && performance.now() - u.at < USER_SCROLL_MS && e.target.contains(u.target);
-      if (gone || byPerson) setOpen(false);
+      if (gone) setOpen(false);
       else setResized((n) => n + 1);
     };
     const onUserScroll = (e: Event) => {
