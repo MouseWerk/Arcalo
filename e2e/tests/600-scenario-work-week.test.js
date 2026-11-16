@@ -199,8 +199,9 @@ test("a /zeit without a date written up later in Tuesday's daily note books on T
   assert.equal(iso(new Date(r.start_time)), iso(day(1)));
   assert.equal(r.page_id, notes[1]);
   BOOKED[1] += 30;
-  // The chip names that day.
-  const chip = `<time-entry id="${r.id}" hours="0,50" target="NP-6000/20" date="${iso(day(1))}">Nachtrag Telefonat</time-entry>`;
+  // The chip names that day and this computer's workspace.
+  const ws = await app.invoke("time_chip_workspace");
+  const chip = `<time-entry id="${r.id}" hours="0,50" target="NP-6000/20" date="${iso(day(1))}" ws="${ws}">Nachtrag Telefonat</time-entry>`;
   await until(async () => (await app.invoke("page_get", { id: notes[1] })).content.includes(chip), "the chip is not saved with the day");
 });
 
