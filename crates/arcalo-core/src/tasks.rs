@@ -240,23 +240,13 @@ fn rule_value(t: &str) -> Option<&str> {
     ["every:", "Every:", "EVERY:", "wdh:", "Wdh:"].iter().find_map(|p| t.strip_prefix(p))
 }
 
-/// All task items outside fenced code blocks (```` ``` ```` or `~~~`, each closed by its own marker).
+/// All task items outside fenced code blocks (```` ``` ```` or `~~~`, see `notes::Fence`).
 pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
     let mut out = vec![];
-    let mut fence: Option<&str> = None;
+    let mut fences = crate::notes::CodeFences::default();
     for (line_no, line) in markdown.lines().enumerate() {
-        match (fence, crate::notes::fence_marker(line)) {
-            (Some(f), m) => {
-                if m == Some(f) {
-                    fence = None;
-                }
-                continue;
-            }
-            (None, Some(m)) => {
-                fence = Some(m);
-                continue;
-            }
-            (None, None) => {}
+        if fences.code(line) {
+            continue;
         }
         let Some((check, done, rest)) = checkbox(line) else { continue };
         let base = check + 2;
@@ -773,6 +763,17 @@ mod tests {
         assert_eq!(texts, ["eins", "zwei", "vier"]);
         let done = set_task_state(md, 1, true).unwrap();
         assert!(done.contains("- [x] zwei") && done.contains("- [ ] Code"), "{done}");
+    }
+
+    /// A fence of four backticks (the editor writes one around code that holds three) ends only at
+    /// four or more; a fence with text after it does not close a block (CommonMark).
+    #[test]
+    fn tasks_in_longer_fences_are_code() {
+        let md = "- [ ] eins\n````markdown\n```\n- [ ] Beispiel\n```\n````\n- [ ] zwei\n```\n``` nicht zu\n- [ ] Code\n```\n- [ ] drei\n";
+        let texts: Vec<String> = parse_tasks(md).into_iter().map(|t| t.text).collect();
+        assert_eq!(texts, ["eins", "zwei", "drei"]);
+        let done = set_task_state(md, 1, true).unwrap();
+        assert!(done.contains("- [x] zwei") && done.contains("- [ ] Beispiel"), "{done}");
     }
 
     #[test]
