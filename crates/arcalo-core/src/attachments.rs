@@ -322,10 +322,13 @@ pub struct ImportNames {
     runs: std::collections::HashMap<String, NameRun>,
 }
 
+/// A taken name and its file's hash, once read.
+type Candidate = (String, Option<[u8; 32]>);
+
 #[derive(Default)]
 struct NameRun {
     /// Candidates that exist by their size: name and hash (read when a file of that size comes).
-    taken: std::collections::HashMap<u64, Vec<(String, Option<[u8; 32]>)>>,
+    taken: std::collections::HashMap<u64, Vec<Candidate>>,
     /// The next candidate to try ([`numbered`]).
     next: usize,
 }
