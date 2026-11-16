@@ -6,7 +6,7 @@ import { DOMParser } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { OrderedList, TaskItem, TaskList } from "@tiptap/extension-list";
+import { OrderedList, TaskItem, TaskList, areOrderedListMarkersSequential } from "@tiptap/extension-list";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import Highlight from "@tiptap/extension-highlight";
 import Underline from "@tiptap/extension-underline";
@@ -852,11 +852,38 @@ export function letterListToken<T extends { start?: unknown; items?: unknown[]; 
   return numbered.test(raw) ? undefined : token;
 }
 
+/**
+ * Where the items of a list with letters stop counting on (`a.`, `b.`, then `i.` after a blank
+ * line): the offset of that item's line in `raw`, 0 when fewer than two items count on, null when
+ * all do. Tiptap's tokenizer read `a.`/`b.` and an `i.`/`ii.` list below as one list, and an edit
+ * wrote `i.` as `c.`.
+ */
+export function letterListEnd(raw: string): number | null {
+  const indent = /^ */.exec(raw)![0].length;
+  const item = new RegExp(`^ {${indent}}([A-Za-z]{1,2}|[ivxlcdmIVXLCDM]+)[.)](?:[ \\t]|$)`);
+  const markers: string[] = [];
+  let at = 0;
+  for (const line of raw.split("\n")) {
+    const m = item.exec(line);
+    if (m) {
+      if (!areOrderedListMarkersSequential([...markers, m[1]])) return markers.length >= 2 ? at : 0;
+      markers.push(m[1]);
+    }
+    at += line.length + 1;
+  }
+  return null;
+}
+
 const SourceOrderedList = OrderedList.extend({
   markdownTokenizer: OrderedList.config.markdownTokenizer && {
     ...OrderedList.config.markdownTokenizer,
-    tokenize: (src: string, tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration) =>
-      /^ {0,3}\d{1,9}[.)](?:[ \t]|$)/.test(src) ? undefined : letterListToken(OrderedList.config.markdownTokenizer!.tokenize(src, tokens, lexer)),
+    tokenize: (src: string, tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration) => {
+      if (/^ {0,3}\d{1,9}[.)](?:[ \t]|$)/.test(src)) return undefined;
+      const read = (text: string) => letterListToken(OrderedList.config.markdownTokenizer!.tokenize(text, tokens, lexer));
+      const token = read(src);
+      const end = token ? letterListEnd(String(token.raw ?? "")) : null;
+      return end == null ? token : end > 0 ? read(src.slice(0, end)) : undefined;
+    },
   },
   // Items through ListItem as in bullet lists (Tiptap's own reading of marked's items keeps their text unparsed).
   parseMarkdown: (token, helpers) => {

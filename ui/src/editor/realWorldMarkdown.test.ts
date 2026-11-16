@@ -167,6 +167,16 @@ describe("lists with letters or roman numerals keep their markers (R7A-1)", () =
     expect(editAt("I. Teil eins\nII. Teil zwei\n", "zwei")).toBe("I. Teil eins\nII. Teil xzwei\n");
     expect(editAt("1. eins\n   a. unter\n   b. auch\n2. zwei\n", "auch")).toBe("1. eins\n   a. unter\n   b. xauch\n2. zwei\n");
   });
+  it("a list with letters ends where its letters stop counting on", () => {
+    const md = "a. Angebot\nb. Termin\n\ni. eins\nii. zwei\niii. drei\n";
+    expect(editAt(md, "drei")).toBe(md.replace("drei", "xdrei"));
+    expect(editAt(md, "Termin")).toBe(md.replace("Termin", "xTermin"));
+    const editor = open(md);
+    expect(editor.getJSON().content!.map((n) => [n.type, n.attrs?.type])).toEqual([["orderedList", "a"], ["orderedList", "i"]]);
+    editor.destroy();
+    // Fewer than two items that count on: text, as a single item with letters.
+    expect(shown("a. eins\nc. drei\n")).toBe("a. eins\nc. drei");
+  });
   it("written from the document alone too", () => {
     setSourceBlocks(false);
     try {
