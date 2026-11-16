@@ -325,60 +325,75 @@ impl NotePaths {
         (plain && !self.shared.contains(&crate::nfc::nfc(title).to_lowercase())).then_some(title.as_str())
     }
 
-    /// `content` with the targets of its `[[path links]]` to notes of the vault written as the
-    /// page title (`[[Projekte/Alpha/Plan#Ziele|Plan]]` → `[[Plan#Ziele|Plan]]`): links resolve by
-    /// title, so the path named no page, and following it created an empty page of that name.
-    /// Code is left as it is.
+    /// `content` with its `[[path links]]` to notes of the vault naming the page by its title
+    /// (`[[Projekte/Alpha/Plan]]` → `[[Plan|Projekte/Alpha/Plan]]`): links resolve by title, so the
+    /// path named no page, and following it created an empty page of that name.
     fn rewrite(&self, content: &str, note_dir: &Path) -> String {
-        if !content.contains("[[") {
-            return content.to_owned();
-        }
-        let mut out = String::with_capacity(content.len());
-        let mut fence: Option<&str> = None;
-        for line in content.split_inclusive('\n') {
-            match (fence, crate::notes::fence_marker(line)) {
-                (Some(f), m) => {
-                    if m == Some(f) {
-                        fence = None;
-                    }
-                    out.push_str(line);
-                    continue;
-                }
-                (None, Some(m)) => {
-                    fence = Some(m);
-                    out.push_str(line);
-                    continue;
-                }
-                (None, None) => {}
-            }
-            let mut at = 0;
-            let mut from = 0;
-            while let Some(i) = line[from..].find("[[") {
-                let start = from + i + 2;
-                let Some(len) = line[start..].find("]]") else { break };
-                from = start + len + 2;
-                // Inside inline code: an odd number of backticks before it.
-                if line[..start].matches('`').count() % 2 == 1 {
-                    continue;
-                }
-                let inner = &line[start..start + len];
-                let raw = &inner[..crate::notes::link_target_len(inner)];
-                let target = raw.trim();
-                // A file embed (`![[Ordner/bild.png]]`) stays.
-                let Some(title) =
-                    (!crate::attachments::embeddable(target)).then(|| self.title_for(target, note_dir)).flatten()
-                else {
-                    continue;
-                };
-                let lead = raw.len() - raw.trim_start().len();
-                out.push_str(&line[at..start + lead]);
-                out.push_str(title);
-                at = start + lead + target.len();
-            }
-            out.push_str(&line[at..]);
-        }
-        out
+        retarget_wiki_links(content, |target| self.title_for(target, note_dir).map(str::to_owned))
     }
+}
+
+/// `content` with the target of each `[[link]]` and page embed for which `new_target` gives
+/// another one; the link keeps the text it showed (the old target becomes its alias, `\|` in a
+/// table row). File embeds and links (`![[bild.png]]`) and code are left as they are.
+fn retarget_wiki_links(content: &str, new_target: impl Fn(&str) -> Option<String>) -> String {
+    if !content.contains("[[") {
+        return content.to_owned();
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut fence: Option<&str> = None;
+    for line in content.split_inclusive('\n') {
+        match (fence, crate::notes::fence_marker(line)) {
+            (Some(f), m) => {
+                if m == Some(f) {
+                    fence = None;
+                }
+                out.push_str(line);
+                continue;
+            }
+            (None, Some(m)) => {
+                fence = Some(m);
+                out.push_str(line);
+                continue;
+            }
+            (None, None) => {}
+        }
+        let alias_sep = if line.trim_start().starts_with('|') { "\\|" } else { "|" };
+        let mut at = 0;
+        let mut from = 0;
+        while let Some(i) = line[from..].find("[[") {
+            let start = from + i + 2;
+            let Some(len) = line[start..].find("]]") else { break };
+            from = start + len + 2;
+            // Inside inline code: an odd number of backticks before it.
+            if line[..start].matches('`').count() % 2 == 1 {
+                continue;
+            }
+            let inner = &line[start..start + len];
+            let raw = &inner[..crate::notes::link_target_len(inner)];
+            let target = raw.trim();
+            let Some(new) =
+                (!target.is_empty() && !crate::attachments::embeddable(target)).then(|| new_target(target)).flatten()
+            else {
+                continue;
+            };
+            if new == target {
+                continue;
+            }
+            let rest = &inner[raw.len()..];
+            let embed = line[..start - 2].ends_with('!');
+            // Without an alias and a section the link showed its target; it still does.
+            let alias = if embed || !rest.is_empty() { String::new() } else { format!("{alias_sep}{target}") };
+            let lead = raw.len() - raw.trim_start().len();
+            out.push_str(&line[at..start + lead]);
+            out.push_str(&new);
+            out.push_str(&raw[lead + target.len()..]);
+            out.push_str(&alias);
+            at = start + raw.len();
+        }
+        out.push_str(&line[at..]);
+    }
+    out
 }
 
 /// The lower-cased, composed folder names of a relative path.
@@ -893,6 +908,14 @@ pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path)
         let content = if canvas && snap.export {
             moved = crate::canvas::with_paths(snap.content(path.page_id), &by_title);
             moved.as_str()
+        } else if snap.export {
+            // A title a file name cannot hold (`Meeting: Kunde X` → `Meeting- Kunde X.md`): links
+            // name the file, or they lead nowhere in the folder (Obsidian made a new note).
+            moved = retarget_wiki_links(snap.content(path.page_id), |target| {
+                let stem = path_stem(by_title.get(&crate::nfc::nfc(target).to_lowercase())?);
+                (stem.to_lowercase() != target.to_lowercase()).then(|| stem.to_owned())
+            });
+            moved.as_str()
         } else {
             snap.content(path.page_id)
         };
@@ -1147,21 +1170,49 @@ mod tests {
         fs::write(
             vault.join("Start.md"),
             "[[Projekte/Alpha/Plan]] ![[Projekte/Beta.md]] [[projekte/beta]] | [[Projekte/Alpha/Plan\\|x]] \
-             [[B/Notiz]] [[Fehlt/Seite]] ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`",
+             [[B/Notiz]] [[Fehlt/Seite]] ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`\n\
+             | [[Projekte/Beta]] | a |\n```\n[[Projekte/Beta]]\n```\n",
         )
         .unwrap();
         let db = Database::open_in_memory().unwrap();
         import_vault(&db, &vault, &tmp("att-notepaths")).unwrap();
         let content = |title: &str| db.page_doc(db.page_by_title(title).unwrap().unwrap().id).unwrap().content;
-        // A name two notes share keeps its path (it would name the first of them); so do links to
-        // no note, file embeds and inline code.
+        // The links show what they showed (the path as alias). A name two notes share keeps its
+        // path (the title would name the first of them); so do links to no note, file embeds and code.
         assert_eq!(
             content("Start"),
-            "[[Plan]] ![[Beta]] [[Beta]] | [[Plan\\|x]] [[B/Notiz]] [[Fehlt/Seite]] ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`"
+            "[[Plan|Projekte/Alpha/Plan]] ![[Beta]] [[Beta|projekte/beta]] | [[Plan\\|x]] [[B/Notiz]] [[Fehlt/Seite]] \
+             ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`\n| [[Beta\\|Projekte/Beta]] | a |\n```\n[[Projekte/Beta]]\n```\n"
         );
         assert_eq!(content("Beta"), "[[Plan|Der Plan]] [[Plan#Ziele]]");
         assert!(db.unresolved_links(crate::notes::wiki_links(&content("Beta"))).unwrap().is_empty());
         let _ = fs::remove_dir_all(vault);
+    }
+
+    #[test]
+    fn export_links_name_the_files_of_titles_a_file_name_cannot_hold() {
+        // „Meeting: Kunde X“ is written as `Meeting- Kunde X.md`; a link by the title named no
+        // file there, and Obsidian created a new note when it was followed.
+        let db = Database::open_in_memory().unwrap();
+        let meeting = db.create_page(None, "Meeting: Kunde X", None).unwrap();
+        db.save_page_content(meeting.id, "Notizen").unwrap();
+        let normal = db.create_page(None, "Normal", None).unwrap();
+        db.save_page_content(normal.id, "n").unwrap();
+        let start = db.create_page(None, "Start", None).unwrap();
+        let text = "[[Meeting: Kunde X]] [[meeting: kunde x#Punkte]] ![[Meeting: Kunde X]] [[Meeting: Kunde X|Termin]] \
+                    [[Normal]] `[[Meeting: Kunde X]]`\n| [[Meeting: Kunde X]] | b |\n";
+        db.save_page_content(start.id, text).unwrap();
+        let out = tmp("out-titles");
+        export_vault(&db, &out, &tmp("att-titles")).unwrap();
+        assert_eq!(
+            fs::read_to_string(out.join("Start.md")).unwrap(),
+            "[[Meeting- Kunde X|Meeting: Kunde X]] [[Meeting- Kunde X#Punkte]] ![[Meeting- Kunde X]] \
+             [[Meeting- Kunde X|Termin]] [[Normal]] `[[Meeting: Kunde X]]`\n| [[Meeting- Kunde X\\|Meeting: Kunde X]] | b |\n"
+        );
+        assert_eq!(fs::read_to_string(out.join("Meeting- Kunde X.md")).unwrap(), "Notizen");
+        // The page itself is unchanged.
+        assert_eq!(db.page_doc(start.id).unwrap().content, text);
+        let _ = fs::remove_dir_all(out);
     }
 
     #[test]
