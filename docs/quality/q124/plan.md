@@ -37,6 +37,7 @@ are green on the same commit. Any medium or high finding is fixed, and the next 
 | 3 | `ffd4bb06` | 11 / 7 / 24 (A 1/3/3, B 1/2/9, C 3/1/7, D 6/1/5) | `1131ec17`, `b61cacf3`, `4b0cb96c` | no |
 | 4 | `35d8809a` | 5 / 12 / 26 (A 0/2/3, B 1/3/8, C 2/5/6, D 2/2/9) | `fa9b53b6`, `d3b10e55`, `d53c0a47`, `8d35cbff` | no |
 | 5 | `10181bc1` | 7 / 6 / 34 (A 0/2/6, B 3/1/?, C 2/1/10, D 2/2/8) | `ce9231f5`, `170edb48`, `4d7b033e`, `3c81570b` | no |
+| 6 | `e69a311d` | 7 / 14 / 38 (A 3/4/16, B 2/2/7, C 2/5/9, D 0/3/6) | `6cda1c84`, `b127ada9`, `719bac64`, `c08b25fb` | no |
 
 Round 2 adds areas: H5 import, export and sharing; H6 updates, migrations from older versions and the CLI; H7 the
 phone and tablet app; H8 performance with large data (10,000 pages, long notes, many bookings).
