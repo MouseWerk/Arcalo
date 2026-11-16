@@ -199,6 +199,7 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     let ImportPlan { name, pages, mut report, renamed } = plan;
     let mut items = Vec::new();
     flatten(pages, None, &mut items);
+    let notes = NotePaths::new(&items);
     let total = items.len();
     let root = {
         let db = lock();
@@ -225,7 +226,7 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
                 for f in batch {
                     // A parent is written before its children (earlier batch or this one).
                     let parent = f.parent.map_or(root, |i| if i < ids.len() { ids[i] } else { out[i - ids.len()] });
-                    out.push(create_planned(&db, parent, f.page, &renamed)?);
+                    out.push(create_planned(&db, parent, f.page, &renamed, &notes)?);
                 }
                 Ok(out)
             })
@@ -243,9 +244,12 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     Ok(report)
 }
 
-fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed]) -> Result<i64> {
+fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed], notes: &NotePaths) -> Result<i64> {
     let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
     if let Some(mut content) = p.content {
+        if !p.canvas {
+            content = notes.rewrite(&content, &p.dir);
+        }
         // The notes refer to renamed files by their old names.
         // A bare name means the file next to the note (its folder or one above); a path names
         // its file, which Obsidian writes when two files share the name.
@@ -268,6 +272,118 @@ fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed]) -
         }
     }
     Ok(page.id)
+}
+
+/// The notes of a vault by their path, for links that name a note by its path.
+struct NotePaths {
+    /// Lower-cased path without `.md` (`projekte/alpha/plan`) to the page title.
+    titles: std::collections::HashMap<String, String>,
+    /// Lower-cased titles that more than one note of the vault has.
+    shared: std::collections::HashSet<String>,
+}
+
+impl NotePaths {
+    fn new(items: &[Flat]) -> Self {
+        let mut titles = std::collections::HashMap::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut shared = std::collections::HashSet::new();
+        for f in items.iter().filter(|f| !f.page.canvas) {
+            let key = crate::nfc::nfc(&f.page.title).to_lowercase();
+            if !seen.insert(key.clone()) {
+                shared.insert(key.clone());
+            }
+            let mut parts = path_parts(&f.page.dir);
+            parts.push(key);
+            titles.insert(parts.join("/"), f.page.title.clone());
+        }
+        NotePaths { titles, shared }
+    }
+
+    /// The title of the note `target` (`Ordner/Notiz`, `../Notiz.md`) names from a note in
+    /// `note_dir`, relative to the vault or to the note; `None` for a target without a path, one
+    /// that names no note, or a title more than one note has (the bare title would name the first).
+    fn title_for(&self, target: &str, note_dir: &Path) -> Option<&str> {
+        let lower = target.to_lowercase();
+        let bare = if lower.ends_with(".md") { &target[..target.len() - 3] } else { target };
+        if !bare.contains(['/', '\\']) && bare.len() == target.len() {
+            return None;
+        }
+        let resolve = |mut base: Vec<String>| {
+            for part in bare.split(['/', '\\']) {
+                match part {
+                    "" | "." => {}
+                    ".." => {
+                        base.pop();
+                    }
+                    p => base.push(crate::nfc::nfc(p).to_lowercase()),
+                }
+            }
+            base.join("/")
+        };
+        let title = self.titles.get(&resolve(vec![])).or_else(|| self.titles.get(&resolve(path_parts(note_dir))))?;
+        let plain = !title.contains(['|', '#', '^', '[', ']']);
+        (plain && !self.shared.contains(&crate::nfc::nfc(title).to_lowercase())).then_some(title.as_str())
+    }
+
+    /// `content` with the targets of its `[[path links]]` to notes of the vault written as the
+    /// page title (`[[Projekte/Alpha/Plan#Ziele|Plan]]` → `[[Plan#Ziele|Plan]]`): links resolve by
+    /// title, so the path named no page, and following it created an empty page of that name.
+    /// Code is left as it is.
+    fn rewrite(&self, content: &str, note_dir: &Path) -> String {
+        if !content.contains("[[") {
+            return content.to_owned();
+        }
+        let mut out = String::with_capacity(content.len());
+        let mut fence: Option<&str> = None;
+        for line in content.split_inclusive('\n') {
+            match (fence, crate::notes::fence_marker(line)) {
+                (Some(f), m) => {
+                    if m == Some(f) {
+                        fence = None;
+                    }
+                    out.push_str(line);
+                    continue;
+                }
+                (None, Some(m)) => {
+                    fence = Some(m);
+                    out.push_str(line);
+                    continue;
+                }
+                (None, None) => {}
+            }
+            let mut at = 0;
+            let mut from = 0;
+            while let Some(i) = line[from..].find("[[") {
+                let start = from + i + 2;
+                let Some(len) = line[start..].find("]]") else { break };
+                from = start + len + 2;
+                // Inside inline code: an odd number of backticks before it.
+                if line[..start].matches('`').count() % 2 == 1 {
+                    continue;
+                }
+                let inner = &line[start..start + len];
+                let raw = &inner[..crate::notes::link_target_len(inner)];
+                let target = raw.trim();
+                // A file embed (`![[Ordner/bild.png]]`) stays.
+                let Some(title) =
+                    (!crate::attachments::embeddable(target)).then(|| self.title_for(target, note_dir)).flatten()
+                else {
+                    continue;
+                };
+                let lead = raw.len() - raw.trim_start().len();
+                out.push_str(&line[at..start + lead]);
+                out.push_str(title);
+                at = start + lead + target.len();
+            }
+            out.push_str(&line[at..]);
+        }
+        out
+    }
+}
+
+/// The lower-cased, composed folder names of a relative path.
+fn path_parts(dir: &Path) -> Vec<String> {
+    dir.components().map(|c| crate::nfc::nfc(&c.as_os_str().to_string_lossy()).to_lowercase()).collect()
 }
 
 /// A file stored under another name: its name in the vault, the stored name, the folder whose
@@ -1014,6 +1130,38 @@ mod tests {
         for d in [vault, att] {
             let _ = fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn path_links_to_notes_name_the_page() {
+        // Obsidian writes `[[Ordner/Notiz]]` with its link format „absolute“ or „relative“ (and
+        // for a name two notes share): the link has to name the imported page.
+        let vault = tmp("in-notepaths");
+        fs::create_dir_all(vault.join("Projekte/Alpha")).unwrap();
+        fs::create_dir_all(vault.join("A")).unwrap();
+        fs::create_dir_all(vault.join("B")).unwrap();
+        fs::write(vault.join("Projekte/Alpha/Plan.md"), "Plan").unwrap();
+        fs::write(vault.join("Projekte/Beta.md"), "[[../Projekte/Alpha/Plan|Der Plan]] [[Alpha/Plan#Ziele]]").unwrap();
+        fs::write(vault.join("A/Notiz.md"), "a").unwrap();
+        fs::write(vault.join("B/Notiz.md"), "b").unwrap();
+        fs::write(
+            vault.join("Start.md"),
+            "[[Projekte/Alpha/Plan]] ![[Projekte/Beta.md]] [[projekte/beta]] | [[Projekte/Alpha/Plan\\|x]] \
+             [[B/Notiz]] [[Fehlt/Seite]] ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`",
+        )
+        .unwrap();
+        let db = Database::open_in_memory().unwrap();
+        import_vault(&db, &vault, &tmp("att-notepaths")).unwrap();
+        let content = |title: &str| db.page_doc(db.page_by_title(title).unwrap().unwrap().id).unwrap().content;
+        // A name two notes share keeps its path (it would name the first of them); so do links to
+        // no note, file embeds and inline code.
+        assert_eq!(
+            content("Start"),
+            "[[Plan]] ![[Beta]] [[Beta]] | [[Plan\\|x]] [[B/Notiz]] [[Fehlt/Seite]] ![[Projekte/Alpha/bild.png]] `[[Projekte/Beta]]`"
+        );
+        assert_eq!(content("Beta"), "[[Plan|Der Plan]] [[Plan#Ziele]]");
+        assert!(db.unresolved_links(crate::notes::wiki_links(&content("Beta"))).unwrap().is_empty());
+        let _ = fs::remove_dir_all(vault);
     }
 
     #[test]
