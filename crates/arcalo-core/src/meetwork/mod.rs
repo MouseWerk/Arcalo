@@ -25,9 +25,12 @@ pub fn list_sections(markdown: &str) -> Vec<(String, Vec<String>)> {
     sections(markdown).into_iter().map(|(h, _, items)| (h, items.into_iter().map(|(_, i)| i).collect())).collect()
 }
 
+/// A list section: its heading (lower case), the heading's level, and its items with their lines.
+type Section = (String, usize, Vec<(usize, String)>);
+
 /// [`list_sections`] with each heading's level and each item's line.
-fn sections(markdown: &str) -> Vec<(String, usize, Vec<(usize, String)>)> {
-    let mut out: Vec<(String, usize, Vec<(usize, String)>)> = vec![];
+fn sections(markdown: &str) -> Vec<Section> {
+    let mut out: Vec<Section> = vec![];
     let mut fences = crate::notes::CodeFences::default();
     for (no, line) in markdown.lines().enumerate() {
         let t = line.trim_start();
