@@ -155,6 +155,8 @@ export const api = {
   timerPause: (paused: boolean) => call<void>("timer_pause", { paused }),
   /** `/zeit` chips of a note: linked to their booking, a copy, or without booking. */
   chipStates: (pageId: number, chips: { id: number; target: string }[]) => call<T.ChipState[]>("time_chip_states", { pageId, chips }),
+  /** This workspace's identity in its chips (`ws`): chips of another one are from another device. */
+  chipWorkspace: () => call<string>("time_chip_workspace"),
   /** The chip was removed from its note: its booking goes too; returns it for an undo. */
   chipDelete: (id: number) => call<T.TimeEntry>("time_chip_delete", { id }),
   /** The removed chip came back: its booking is put back (same id when free). */

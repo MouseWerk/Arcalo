@@ -1482,6 +1482,13 @@ fn time_chip_states(
     state.db().chip_states(page_id, &chips)
 }
 
+/// This workspace's identity in its chips (`ws`): the editor writes it into new chips and treats
+/// chips of another workspace (a computer or phone that synced the note) as from another device.
+#[tauri::command(async)]
+fn time_chip_workspace(state: State<AppState>) -> Result<String> {
+    state.db().chip_workspace()
+}
+
 /// The user removed a booked chip from its note: its booking goes too (after the undo toast).
 /// Returns the deleted booking, to put back when the chip comes back.
 #[tauri::command(async)]
@@ -5345,6 +5352,7 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         set_entry_status,
         delete_time_entry,
         time_chip_states,
+        time_chip_workspace,
         time_chip_delete,
         time_chip_restore,
         time_chip_book,

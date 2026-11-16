@@ -539,6 +539,8 @@ export interface ZeitResult {
   /** Leistungsart and local day (`YYYY-MM-DD`) of the booking (1.12). */
   la?: string;
   date?: string;
+  /** The workspace that booked it (timeChip.ts). */
+  ws?: string;
 }
 
 /** Enter on a paragraph that starts with `/zeit …` books the time and turns the line into a chip. */

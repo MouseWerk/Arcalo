@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { chipDiff, retargetChip, sourceChipIds, sourceChips, useSourceChips } from "./sourceChips";
-import { chipAwaited, chipRemoved, chipReturned, chipsParked, chipsPresent } from "./timeChip";
+import { chipAwaited, chipMarkdown, chipRemoved, chipReturned, chipsParked, chipsPresent, loadChipWorkspace } from "./timeChip";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import type { ChipLink, TimeEntry } from "../lib/types";
 
 vi.mock("../lib/api", async (orig) => {
   const m = await orig<typeof import("../lib/api")>();
-  return { ...m, api: { ...m.api, chipDelete: vi.fn(), chipRestore: vi.fn(), chipStates: vi.fn(), timerStatus: vi.fn(async () => null) } };
+  return { ...m, api: { ...m.api, chipDelete: vi.fn(), chipRestore: vi.fn(), chipStates: vi.fn(), chipWorkspace: vi.fn(async () => "aaaa"), timerStatus: vi.fn(async () => null) } };
 });
 
 const chip = (id: number, text = "Review", extra = "") => `<time-entry id="${id}" hours="1,50" target="NP-8801/1020"${extra}>${text}</time-entry>`;
@@ -23,6 +23,16 @@ describe("chips in the Markdown source", () => {
     expect(found[0].attrs).toMatchObject({ entryId: "12", hours: "1,50", target: "NP-8801/1020", la: "DEV", date: "2026-10-02", text: "A & B" });
     expect(md.slice(found[1].start, found[1].end)).toBe(chip(14));
     expect(sourceChipIds("ohne Chips")).toEqual(new Set());
+  });
+
+  it("takes a chip booked in another workspace for a booking from another device (q124 R7B-1)", async () => {
+    await loadChipWorkspace();
+    // Another computer's chip of id 12 next to this one's: it never names booking 12 here.
+    const md = `${chip(12, "Laptop", ' ws="bbbb"')} ${chip(12, "Büro", ' ws="aaaa"')} ${chip(14)}`;
+    expect(sourceChips(md).map((c) => c.id)).toEqual([null, 12, 14]);
+    expect(chipDiff(md, `${chip(12, "Büro", ' ws="aaaa"')} ${chip(14)}`, linked(12, 14)).removed).toEqual([]);
+    // New chips name their workspace, after the known attributes (as the backend writes them).
+    expect(chipMarkdown({ entryId: 3, hours: "1,00", target: "NP-1", ws: "aaaa" })).toBe('<time-entry id="3" hours="1,00" target="NP-1" ws="aaaa"></time-entry>');
   });
 
   it("finds booked chips whose id is gone, and ids that came back", () => {

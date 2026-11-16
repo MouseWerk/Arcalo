@@ -10,7 +10,7 @@ import { timeTrackingEnabled } from "../lib/timetracking";
 import { useApp } from "../store/app";
 import { merge3 } from "../lib/merge3";
 import { flushAllEditors } from "./saves";
-import { chipAwaited, chipRemoved, chipReturned, chipsPresent, chipStatuses, type ChipAttrs } from "./timeChip";
+import { chipAwaited, chipRemoved, chipReturned, chipsPresent, chipStatuses, foreignChip, loadChipWorkspace, type ChipAttrs } from "./timeChip";
 
 /** A chip in Markdown: where it is (`start`..`end`), its id and attributes. */
 export interface SourceChip {
@@ -33,10 +33,11 @@ export function sourceChips(md: string): SourceChip[] {
     for (const a of (m[1] ?? "").matchAll(/([A-Za-z0-9_]+)="([^"]*)"/g)) raw[a[1]] = unescape(a[2]);
     const n = Number(raw.id);
     out.push({
-      id: Number.isInteger(n) && n > 0 ? n : null,
+      // A chip of another workspace names no booking here (see timeChip.ts).
+      id: Number.isInteger(n) && n > 0 && !foreignChip(raw.ws) ? n : null,
       start: m.index,
       end: m.index + m[0].length,
-      attrs: { entryId: raw.id ?? null, hours: raw.hours ?? "", target: raw.target ?? "", la: raw.la ?? "", date: raw.date ?? "", state: raw.state ?? "", text: unescape(m[2]) },
+      attrs: { entryId: raw.id ?? null, hours: raw.hours ?? "", target: raw.target ?? "", la: raw.la ?? "", date: raw.date ?? "", state: raw.state ?? "", ws: raw.ws ?? "", text: unescape(m[2]) },
     });
   }
   return out;
@@ -93,6 +94,7 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
 
   /** The links and booking rows of the chips in `texts` (an id's first chip is asked for). */
   const statesOf = async (texts: string[], flush: boolean) => {
+    await loadChipWorkspace();
     const seen = new Set<number>();
     const chips = texts
       .flatMap((md) => sourceChips(md))
