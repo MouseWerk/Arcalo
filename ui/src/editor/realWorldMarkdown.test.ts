@@ -178,3 +178,18 @@ describe("lists with letters or roman numerals keep their markers (R7A-1)", () =
     }
   });
 });
+
+describe("indented lines inside a paragraph keep their blanks (R7A-2)", () => {
+  it("an edit writes them as they were, without an entity", () => {
+    expect(editAt("Text\n    eingerückt\nmehr\n", "mehr")).toBe("Text\n    eingerückt\nxmehr\n");
+    expect(editAt("Text\n\teingerückt\nmehr\n", "mehr")).toBe("Text\n\teingerückt\nxmehr\n");
+    expect(editAt("Zeile  \n    nach dem Umbruch\n", "Zeile")).toBe("xZeile  \n    nach dem Umbruch\n");
+    expect(editAt("> Text\n>     eingerückt\n> mehr\n", "mehr")).toBe("> Text\n>     eingerückt\n> xmehr\n");
+  });
+  it("a paragraph's first line still keeps them as the entity (they would make code)", () => {
+    const editor = open("\n");
+    editor.commands.insertContent("    eingerückt");
+    expect(toMarkdown(editor)).toBe("&#32;   eingerückt\n");
+    editor.destroy();
+  });
+});

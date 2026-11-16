@@ -68,7 +68,7 @@ export { lowlight };
  * The default serializer escapes every `[ ] _ * ~`, which litters files
  * (`a\_b`, `\[Entwurf\]`) that Obsidian users read and edit directly.
  */
-export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean } = {}): string {
+export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean; afterBreak?: boolean } = {}): string {
   let s = t
     // A backslash before any ASCII punctuation is an escape in CommonMark, one at the end of a line
     // a line break (a line of LaTeX ending in `\\` lost a backslash and broke): doubled to stay one.
@@ -93,7 +93,7 @@ export function escapeText(t: string, atLineStart = true, around: { before?: boo
     .replace(/<(?=[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>|\/[A-Za-z][A-Za-z0-9-]*\s*>|[!?]|[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|[^\s<>@]+@[^\s<>]+>)/g, "&lt;");
   return s
     .split("\n")
-    .map((line, i) => (i > 0 || atLineStart ? escapeLineStart(line) : line))
+    .map((line, i) => (i > 0 || atLineStart ? escapeLineStart(line, i > 0 || !!around.afterBreak) : line))
     .join("\n");
 }
 
@@ -124,11 +124,16 @@ function flanking(prev: string | undefined, next: string | undefined): boolean {
   return opens || closes;
 }
 
-/** Escapes what would turn a line into a block (heading, list, quote, setext underline, indented code). */
-function escapeLineStart(line: string): string {
+/**
+ * Escapes what would turn a line into a block (heading, list, quote, setext underline, indented
+ * code). `continued`: the line follows a line end or a line break of the same paragraph.
+ */
+function escapeLineStart(line: string, continued = false): string {
   // Four columns of indentation (a tab reaches the next stop) make indented code, and a paragraph
   // drops its leading blanks: the first one is written as its entity, the rest stays as typed.
-  if (/^(?: {0,3}\t| {4})/.test(line)) return (line[0] === "\t" ? "&#9;" : "&#32;") + line.slice(1);
+  // A continued line can start no code and keeps its blanks when read (`Text` / `    eingerückt`
+  // was written `&#32;   eingerückt` once edited).
+  if (!continued && /^(?: {0,3}\t| {4})/.test(line)) return (line[0] === "\t" ? "&#9;" : "&#32;") + line.slice(1);
   if (/^\s{0,3}(?:-+|=+)\s*$/.test(line)) return line.replace(/^(\s*)/, "$1\\");
   return line.replace(/^(\s{0,3})(#{1,6}(?=\s|$)|[-+*](?=\s|$)|>)/, "$1\\$2").replace(/^(\s{0,3}\d+)([.)])(?=\s|$)/, "$1\\$2");
 }
@@ -604,7 +609,11 @@ const MarkdownFidelity = Extension.create({
       // A footnote definition's text follows `[^1]: `, never at the start of a line.
       const atLineStart = !node.marks?.length && parent?.type !== "footnoteDefinition" && (idx === 0 || (idx > 0 && siblings[idx - 1].type === "hardBreak"));
       const inline = (n: JsonNode | undefined) => n != null && n.type !== "hardBreak";
-      const out = escapeText(text, atLineStart, { before: idx > 0 && inline(siblings[idx - 1]), after: idx >= 0 && inline(siblings[idx + 1]) });
+      const out = escapeText(text, atLineStart, {
+        before: idx > 0 && inline(siblings[idx - 1]),
+        after: idx >= 0 && inline(siblings[idx + 1]),
+        afterBreak: idx > 0 && siblings[idx - 1].type === "hardBreak",
+      });
       return parent?.attrs?.[IN_TABLE_CELL] ? out.replace(/\|/g, "\\|") : out;
     };
   },
