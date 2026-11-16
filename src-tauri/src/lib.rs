@@ -2433,11 +2433,17 @@ fn settings_save(
     }
     lock(&state.idle).set_threshold(Duration::from_secs(settings.idle_threshold_minutes * 60));
     devlog::apply_settings(&settings);
-    // Keys of removed providers are deleted with them.
-    for gone in previous.providers.iter().filter(|p| !settings.providers.iter().any(|n| n.id == p.id)) {
-        if let Err(e) = state.provider_secret(&gone.id).set(None) {
-            devlog::warn("ai", format!("key of the removed provider “{}” not deleted: {e}", gone.id));
-        }
+    // Keys of removed providers are deleted with them, once the removal can no longer be
+    // undone (the undo saves the provider again and needs its key).
+    let gone: Vec<String> = previous
+        .providers
+        .iter()
+        .filter(|p| !settings.providers.iter().any(|n| n.id == p.id))
+        .map(|p| p.id.clone())
+        .collect();
+    if !gone.is_empty() {
+        lock(&REMOVED_PROVIDER_KEYS).extend(gone.into_iter().map(|id| (id, Instant::now())));
+        after_undo_time(&app, |state| forget_removed_provider_keys(state, false));
     }
     // Outlook switched on, another window or other privacy rules: read the calendars again now.
     let (old_cal, new_cal) = (&previous.calendar, &settings.calendar);
@@ -2461,8 +2467,9 @@ fn settings_save(
     if time_switched {
         desktop::refresh_tray(&app);
     }
+    // Old chats go once the change can no longer be undone.
     if chat_retention {
-        chats::prune(&state);
+        after_undo_time(&app, chats::prune);
     }
     backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
@@ -2628,6 +2635,45 @@ fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsVi
     state.secrets.set(key.as_deref().map(str::trim)).map_err(Error::State)?;
     state.refresh_ai();
     Ok(settings_get(state))
+}
+
+/// Removed providers whose keys are still kept (for an undo), and since when.
+static REMOVED_PROVIDER_KEYS: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+
+/// How long a settings change can be taken back: its toast's „Rückgängig“ (15 s at most) and
+/// some time to spare; `ARCALO_UNDO_GRACE_SECS` in tests.
+fn undo_grace() -> Duration {
+    Duration::from_secs(std::env::var("ARCALO_UNDO_GRACE_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(60))
+}
+
+/// Runs `f` once a settings change saved now can no longer be undone.
+fn after_undo_time(app: &AppHandle, f: impl FnOnce(&AppState) + Send + 'static) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(undo_grace());
+        f(&app.state::<AppState>());
+    });
+}
+
+/// Deletes the keys of providers removed longer than the undo time ago (`all`: every one, on
+/// quit) that were not saved again meanwhile.
+fn forget_removed_provider_keys(state: &AppState, all: bool) {
+    let due: Vec<String> = {
+        let mut pending = lock(&REMOVED_PROVIDER_KEYS);
+        let grace = undo_grace();
+        let (due, keep): (Vec<_>, Vec<_>) = pending.drain(..).partition(|(_, at)| all || at.elapsed() >= grace);
+        *pending = keep;
+        due.into_iter().map(|(id, _)| id).collect()
+    };
+    let providers = state.settings().providers;
+    for id in due {
+        if providers.iter().any(|p| p.id == id) || lock(&REMOVED_PROVIDER_KEYS).iter().any(|(p, _)| *p == id) {
+            continue;
+        }
+        if let Err(e) = state.provider_secret(&id).set(None) {
+            devlog::warn("ai", format!("key of the removed provider “{id}” not deleted: {e}"));
+        }
+    }
 }
 
 /// Stores (or with `None`, removes) the API key of the provider `id` in the OS credential store.
@@ -5792,6 +5838,8 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
             // A running recording is closed properly (offered at the next start), a transcription
             // marked as interrupted, as for a restart or an update.
             voice::shutdown(app);
+            // Keys of providers removed in the last minute (their undo ends with the app).
+            forget_removed_provider_keys(&app.state::<AppState>(), true);
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);
