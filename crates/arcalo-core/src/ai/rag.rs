@@ -160,9 +160,13 @@ fn public_filter(markers: &[String]) -> (String, Vec<String>) {
         let tag = args.len();
         args.push(m.clone());
         let text = args.len();
+        // SQLite's `lower` lower-cases ASCII only: „ÄRZTLICH“ and „Ärztlich“ become „Ärztlich“.
+        // So the marker is looked for with its other letters in capitals, too.
+        args.push(m.chars().map(|c| if c.is_ascii() { c.to_string() } else { c.to_uppercase().to_string() }).collect());
+        let caps = args.len();
         sql.push_str(&format!(
             " AND NOT EXISTS (SELECT 1 FROM page_tags t WHERE t.page_id = b.page_id AND lower(t.tag) = ?{tag})
-              AND instr(lower(p.content), ?{text}) = 0"
+              AND instr(lower(p.content), ?{text}) = 0 AND instr(lower(p.content), ?{caps}) = 0"
         ));
     }
     (sql, args)
@@ -496,6 +500,29 @@ mod tests {
         assert_eq!(got, [open.id]);
         // Without markers every block is pending, as before.
         assert_eq!(pending_public_blocks(&db, 10, &[]).unwrap(), pending_blocks(&db, 10).unwrap());
+    }
+
+    /// A marker with letters SQLite does not lower-case (`lower` knows ASCII only): written in
+    /// capitals on the page, „ÄRZTLICH“ was not found, and the page went to the cloud model
+    /// (`privacy::page_is_private` finds it, the chat and the assistant kept it local).
+    #[test]
+    fn markers_with_umlauts_in_capitals_keep_the_page_from_other_providers() {
+        let db = Database::open_in_memory().unwrap();
+        let caps = db.create_page(None, "Befund", None).unwrap();
+        db.save_page_content(caps.id, "ÄRZTLICH: Befund vom Oktober.").unwrap();
+        let capital = db.create_page(None, "Termin", None).unwrap();
+        db.save_page_content(capital.id, "Ärztlich: Termin am Montag.").unwrap();
+        let open = db.create_page(None, "Projekt", None).unwrap();
+        db.save_page_content(open.id, "Der Rollout startet im Oktober.").unwrap();
+        let markers = vec!["Ärztlich".to_string()];
+        assert!(crate::ai::privacy::page_is_private(&db, caps.id, &markers).unwrap());
+        let page_of = |id: i64| -> i64 {
+            db.conn().query_row("SELECT page_id FROM notes_blocks WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+        };
+        let got: Vec<i64> =
+            pending_public_blocks(&db, 10, &markers).unwrap().iter().map(|(id, _)| page_of(*id)).collect();
+        assert_eq!(got, [open.id]);
+        assert_eq!(pending_counts(&db, &markers).unwrap().1, 1);
     }
 
     #[test]
