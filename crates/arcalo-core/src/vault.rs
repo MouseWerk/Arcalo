@@ -134,6 +134,8 @@ pub struct ImportPlan {
     /// Attachments stored under another name (a different file had the name): old name, new
     /// name, and the vault folder whose notes refer to it.
     renamed: Vec<Renamed>,
+    files: Vec<(String, PathBuf)>,
+    notes: std::collections::HashMap<String, String>,
 }
 
 /// Imports `dir` under a new top-level page named after the folder; images go to `attachments_dir`.
@@ -156,13 +158,16 @@ pub fn plan_import(
         attachments_dir,
         report: ImportReport::default(),
         renamed: vec![],
+        files: vec![],
+        notes: Default::default(),
+        titles: read_titles(dir),
         progress: ImportProgress { done: 0, total: count_files(dir), writing: false },
         on_progress: progress,
         cancel,
     };
     let pages = walk.dir(dir)?;
     (walk.on_progress)(walk.progress);
-    Ok(ImportPlan { name, pages, report: walk.report, renamed: walk.renamed })
+    Ok(ImportPlan { name, pages, report: walk.report, renamed: walk.renamed, files: walk.files, notes: walk.notes })
 }
 
 /// Creates the pages of `plan`; all or nothing (see [`apply_import_batched`]).
@@ -196,7 +201,8 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     progress: &mut dyn FnMut(ImportProgress),
     cancel: &AtomicBool,
 ) -> Result<ImportReport> {
-    let ImportPlan { name, pages, mut report, renamed } = plan;
+    let ImportPlan { name, pages, mut report, renamed, files, notes } = plan;
+    let names = Names { renamed: &renamed, files: &files, notes: &notes };
     let mut items = Vec::new();
     flatten(pages, None, &mut items);
     let total = items.len();
@@ -225,7 +231,7 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
                 for f in batch {
                     // A parent is written before its children (earlier batch or this one).
                     let parent = f.parent.map_or(root, |i| if i < ids.len() { ids[i] } else { out[i - ids.len()] });
-                    out.push(create_planned(&db, parent, f.page, &renamed)?);
+                    out.push(create_planned(&db, parent, f.page, &names)?);
                 }
                 Ok(out)
             })
@@ -243,20 +249,74 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     Ok(report)
 }
 
-fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed]) -> Result<i64> {
+/// What the notes of a vault name: the files stored under another name, every file with its
+/// folder, and the notes by their path.
+struct Names<'a> {
+    renamed: &'a [Renamed],
+    files: &'a [(String, PathBuf)],
+    notes: &'a std::collections::HashMap<String, String>,
+}
+
+impl Names<'_> {
+    /// Whether a bare `name` in a note in `dir` means the file of `scope`: the file of that name
+    /// nearest to the note (its own folder, then the ones above), not one of a folder further up.
+    fn bare_means(&self, dir: &Path, name: &str, scope: &Path) -> bool {
+        dir.starts_with(scope)
+            && !self.files.iter().any(|(n, s)| n == name && s != scope && s.starts_with(scope) && dir.starts_with(s))
+    }
+}
+
+/// A note's path in the vault without its extension, `/` separated, as links compare it.
+fn note_key(rel: &Path) -> String {
+    let parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    crate::nfc::nfc(&parts.join("/")).to_lowercase()
+}
+
+/// Links written with the note's path (`[[Projekte/Plan]]`, `[[../Plan.md|der Plan]]`: Obsidian
+/// writes them when two notes share a name, or always with the link format „Absolute path in
+/// vault“ or „Relative path to file“) name the imported page by its title, as page links do.
+fn path_links_to_titles(content: &str, note_dir: &Path, notes: &std::collections::HashMap<String, String>) -> String {
+    let mut out = content.to_owned();
+    for target in crate::notes::wiki_links(content) {
+        if !target.contains(['/', '\\']) {
+            continue;
+        }
+        let path = target.strip_suffix(".md").unwrap_or(&target);
+        let resolve = |base: Vec<String>| {
+            let mut parts = base;
+            for part in path.split(['/', '\\']) {
+                match part {
+                    "" | "." => {}
+                    ".." => {
+                        parts.pop();
+                    }
+                    p => parts.push(p.to_owned()),
+                }
+            }
+            crate::nfc::nfc(&parts.join("/")).to_lowercase()
+        };
+        let here: Vec<String> = note_dir.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+        if let Some(title) = [resolve(vec![]), resolve(here)].into_iter().find_map(|k| notes.get(&k)) {
+            out = crate::notes::replace_link_target(&out, &target, title);
+        }
+    }
+    out
+}
+
+fn create_planned(db: &Database, parent: i64, p: Planned, names: &Names) -> Result<i64> {
     let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
     if let Some(mut content) = p.content {
         // The notes refer to renamed files by their old names.
         // A bare name means the file next to the note (its folder or one above); a path names
         // its file, which Obsidian writes when two files share the name.
-        for (old, new, scope, file) in renamed {
+        for (old, new, scope, file) in names.renamed {
             if p.canvas {
-                if p.dir.starts_with(scope) {
+                if names.bare_means(&p.dir, old, scope) {
                     content = crate::canvas::rename_file(&content, old, new);
                 }
             } else {
                 content = crate::attachment_manager::replace_file_refs_where(&content, old, new, |dir| match dir {
-                    None => p.dir.starts_with(scope),
+                    None => names.bare_means(&p.dir, old, scope),
                     Some(dir) => names_folder(&p.dir, dir, file.parent().unwrap_or(Path::new(""))),
                 });
             }
@@ -264,6 +324,7 @@ fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[Renamed]) -
         if p.canvas {
             db.make_canvas(page.id, &content)?;
         } else {
+            let content = path_links_to_titles(&content, &p.dir, names.notes);
             db.save_page_content(page.id, &content)?;
         }
     }
@@ -326,6 +387,12 @@ struct Walk<'a> {
     attachments_dir: &'a Path,
     report: ImportReport,
     renamed: Vec<Renamed>,
+    /// Every attachment by its name in the vault and the folder whose notes mean it by that name.
+    files: Vec<(String, PathBuf)>,
+    /// The notes by their path in the vault ([`note_key`]), for links written with a path.
+    notes: std::collections::HashMap<String, String>,
+    /// The titles an Arcalo Markdown copy's names do not hold ([`TITLES_FILE`]), by lower-case path.
+    titles: std::collections::HashMap<String, String>,
     progress: ImportProgress,
     on_progress: &'a mut dyn FnMut(ImportProgress),
     cancel: &'a AtomicBool,
@@ -334,6 +401,13 @@ struct Walk<'a> {
 impl Walk<'_> {
     fn rel(&self, p: &Path) -> PathBuf {
         p.strip_prefix(self.root).map(Path::to_path_buf).unwrap_or_default()
+    }
+
+    /// The title of the note or folder `p` named `name`: the one an Arcalo Markdown copy recorded
+    /// for it ([`TITLES_FILE`]: „Q3: Ziele“ for `Q3- Ziele.md`), else the name.
+    fn title(&self, p: &Path, name: String) -> String {
+        let key = self.rel(p).components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        self.titles.get(&key.to_lowercase()).cloned().unwrap_or(name)
     }
 
     /// One file done: progress now and then, and the chance to stop.
@@ -358,9 +432,14 @@ impl Walk<'_> {
         let mut entries = visible_entries(dir)?;
         entries.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|n| n.to_ascii_lowercase())));
         let here = self.rel(dir);
-        // Full folder names: `v1.2/` pairs with `v1.2.md`, whose stem is also `v1.2`.
-        let folder_names: Vec<String> =
-            entries.iter().filter(|p| p.is_dir()).filter_map(|p| p.file_name()?.to_str().map(str::to_owned)).collect();
+        // Full folder names: `v1.2/` pairs with `v1.2.md`, whose stem is also `v1.2`. Only folders
+        // that become pages take their note; a folder of files only (Notion's `Reise.md` next to
+        // `Reise/` with its images) leaves the note a page of its own.
+        let folder_names: Vec<String> = entries
+            .iter()
+            .filter(|p| p.is_dir() && has_markdown(p))
+            .filter_map(|p| p.file_name()?.to_str().map(str::to_owned))
+            .collect();
         let mut out = vec![];
         for path in &entries {
             if path.is_dir() && !has_markdown(path) {
@@ -378,6 +457,9 @@ impl Walk<'_> {
                 };
                 self.report.folders += 1;
                 let children = self.dir(path)?;
+                let key = note_key(&here.join(&title));
+                let title = self.title(path, title);
+                self.notes.insert(key, title.clone());
                 out.push(Planned { title, icon: "folder", content, canvas: false, dir: here.clone(), children });
             } else if is_md(path) {
                 let title = stem(path);
@@ -386,6 +468,9 @@ impl Walk<'_> {
                 }
                 let content = self.note(path)?;
                 self.report.pages += 1;
+                let key = note_key(&here.join(&title));
+                let title = self.title(path, title);
+                self.notes.insert(key, title.clone());
                 out.push(Planned {
                     title,
                     icon: "file-text",
@@ -410,7 +495,7 @@ impl Walk<'_> {
                 }
                 self.report.pages += 1;
                 out.push(Planned {
-                    title: stem(path),
+                    title: self.title(path, stem(path)),
                     icon: crate::canvas::ICON,
                     content: Some(text),
                     canvas: true,
@@ -455,6 +540,7 @@ impl Walk<'_> {
         }
         match attachments::import_file(self.attachments_dir, path) {
             Ok(saved) => {
+                self.files.push((name.to_owned(), scope.to_path_buf()));
                 if saved.name != name {
                     let file = self.rel(path);
                     self.renamed.push((name.to_owned(), saved.name, scope.to_path_buf(), file));
@@ -517,6 +603,11 @@ pub fn file_name(title: &str) -> String {
         cut.push(c);
     }
     let mut cleaned = cut.trim_end_matches(['.', ' ']).to_owned();
+    // A leading dot hides the file: Obsidian, the vault import and the copies to the backup
+    // destinations skip it, and `.git` is the Git sync's own folder. [`TITLES_FILE`] keeps the title.
+    if cleaned.starts_with('.') {
+        cleaned.insert(0, '_');
+    }
     // CON, NUL, COM1 … are reserved device names on Windows, also with any extension
     // („NUL.txt.md“ is NUL too): the `_` goes before the first dot.
     let dot = cleaned.find('.').unwrap_or(cleaned.len());
