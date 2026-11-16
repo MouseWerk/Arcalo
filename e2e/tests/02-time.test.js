@@ -32,7 +32,7 @@ test("/zeit in a note books time and leaves a chip", async () => {
   await app.browser.pause(800);
   const doc = await app.invoke("page_get", { id: (await app.invoke("page_resolve", { title: "Jour fixe 22.09.", create: false })).id });
   // 1.12: the chip also names the Leistungsart and the day of its booking.
-  assert.match(doc.content, /<time-entry id="\d+" hours="1,50" target="NP-8801\/1040" la="TEST" date="\d{4}-\d{2}-\d{2}">Testdaten vorbereitet<\/time-entry>/);
+  assert.match(doc.content, /<time-entry id="\d+" hours="1,50" target="NP-8801\/1040" la="TEST" date="\d{4}-\d{2}-\d{2}" ws="[0-9a-f]{16}">Testdaten vorbereitet<\/time-entry>/);
   await app.shot("time-chip");
 });
 

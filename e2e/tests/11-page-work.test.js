@@ -65,7 +65,7 @@ test("/zeit without reference books on the page's Vorgang", async () => {
   assert.equal(e.duration_minutes, 30);
   assert.equal(e.page_id, pageId);
   // 1.12: the chip also names the Leistungsart (when set) and the day of its booking.
-  await saved(/<time-entry id="\d+" hours="0,50" target="NP-8801\/1020"(?: la="[A-Z]+")? date="\d{4}-\d{2}-\d{2}">Abstimmung<\/time-entry>/, "chip not saved");
+  await saved(/<time-entry id="\d+" hours="0,50" target="NP-8801\/1020"(?: la="[A-Z]+")? date="\d{4}-\d{2}-\d{2}" ws="[0-9a-f]{16}">Abstimmung<\/time-entry>/, "chip not saved");
 
   await app.waitText(".pane.active > .pane-content:not([hidden]) .work-card .work-stats", /0,50 h von dieser Seite/);
   await app.click(".pane.active > .pane-content:not([hidden]) .work-card .work-toggle");
