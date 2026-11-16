@@ -3,6 +3,8 @@
 
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { launch, guarded } from "../lib/harness.js";
 import { startFakeOpenAI } from "../lib/fake-openai.js";
 
@@ -49,4 +51,38 @@ test("a provider row keeps its height while its connection is checked again", as
   }
   await app.shot("760-provider-rows-900");
   await app.browser.setWindowSize(1480, 920);
+});
+
+/** Runs a command of the palette (Strg+K) by its title. */
+async function palette(command) {
+  await app.keys(["Control", "k"]);
+  const input = await app.waitFor(".palette input");
+  await input.setValue(command);
+  await app.waitText(".pal-item", new RegExp(`^${command}`));
+  await app.browser.execute((c) => [...document.querySelectorAll(".pal-item")].find((el) => el.innerText.trim().startsWith(c))?.click(), command);
+}
+
+// R7D-4: a vault with an image next to each note (R7D-2) leaves thousands of files in the
+// attachments folder. „Anhänge verwalten“ drew a table row for every one of them.
+test("the attachments view opens quickly with 10,000 files", async () => {
+  const dir = path.join(app.dataDir, "attachments");
+  fs.mkdirSync(dir, { recursive: true });
+  for (let i = 0; i < 10000; i++) fs.writeFileSync(path.join(dir, `image ${i + 2}.png`), `png ${i}`);
+  const t0 = Date.now();
+  await palette("Anhänge verwalten");
+  await app.waitFor(".pane.active .att-table .att-row:not(.att-head)", 60000);
+  // Painted: two frames after the rows are there.
+  await app.browser.executeAsync((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const ms = Date.now() - t0;
+  const rows = await app.browser.execute(() => document.querySelectorAll(".pane.active .att-table .att-row:not(.att-head)").length);
+  const nodes = await app.browser.execute(() => document.getElementsByTagName("*").length);
+  console.log(`attachments view with 10,000 files: ${ms} ms, ${rows} rows, ${nodes} elements`);
+  assert.ok(ms < 3000, `the view took ${ms} ms (${rows} rows, ${nodes} elements)`);
+  // Scrolling to the end shows the last file.
+  await app.browser.execute(() => {
+    const s = document.querySelector(".pane.active .att-table").closest(".att-scroll, .pane-content, [class*=scroll]");
+    s.scrollTop = s.scrollHeight;
+  });
+  await app.waitText(".pane.active .att-table", /image 9999\.png/);
+  await app.shot("760-attachments-end");
 });
