@@ -12,7 +12,7 @@ open conflict and the user's own git configuration, the vault import as data. Th
 command line's export and its checks) were checked for their neighbours, and two of the findings below are such
 neighbours (R7B-3, R7B-9).
 
-Severity as in the plan. Findings: 4 high, 8 medium, 15 low; the high and medium ones are fixed at the root with tests.
+Severity as in the plan. Findings: 4 high, 8 medium, 16 low; the high and medium ones are fixed at the root with tests.
 
 ## Findings
 
@@ -202,6 +202,11 @@ Severity as in the plan. Findings: 4 high, 8 medium, 15 low; the high and medium
 - R7B-L15: chips written before 1.23, and a chip typed in the first moment after the start before the editor knows the
   workspace's identity, have no `ws`; such a chip of another computer can still be taken for a booking here (R7B-3 holds
   for every chip written after that).
+- R7B-L16 (fixed, found by e2e 681 on CI): on a busy machine a dropdown stayed open when the person scrolled right
+  after a scroll the page made (content above the trigger changing height). The list's new placement for the page's
+  scroll rendered after the person's scroll and recorded where that left the trigger, so the person's scroll, reported
+  after it, looked like one that did not move the trigger. A wheel or touch move after the list opened now always
+  closes it; the rule for scrolls that did not move the trigger is kept for those made before it opened (R5D-4).
 
 ## Looked at, no finding
 
@@ -240,7 +245,8 @@ Severity as in the plan. Findings: 4 high, 8 medium, 15 low; the high and medium
 - Rust, `arcalo-core`: `tests/r7b_backup_mirror.rs` (5 tests), `tests/r7b_sync.rs` (3), `tests/r7b_migrate_import.rs`
   (3), `merge::tests::front_matter_merges_key_by_key`; `arcalo`: `syncmerge::tests::a_page_renamed_while_its_conflict_is_open_stays_one_page_on_the_other_computer`;
   `arcalo-cli`: `an_export_that_could_not_be_written_marks_nothing`.
-- UI: `sourceChips.test.ts` (a chip of another workspace names no booking).
+- UI: `sourceChips.test.ts` (a chip of another workspace names no booking), `Select.test.ts` (the person's scroll
+  before the list was placed again for the page's).
 - e2e: `720-chips-two-desktops.test.js`.
 
 No migration and no settings step were added (the workspace identity is a meta row made when first asked for).
