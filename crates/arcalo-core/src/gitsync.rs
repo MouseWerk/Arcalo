@@ -587,7 +587,7 @@ fn write_list(stage: Option<&Git>, repo: &Path, list: &KeptList) -> Result<()> {
     }
     if let Some(git) = stage {
         if path.exists() {
-            git.check(Some(repo), &["add", "--", KEPT_FILE])?;
+            git.check(Some(repo), &["add", "--force", "--", KEPT_FILE])?;
         } else {
             git.check(Some(repo), &["rm", "-q", "-f", "--ignore-unmatch", "--", KEPT_FILE])?;
         }
@@ -1554,6 +1554,11 @@ impl Git {
             // macOS: file names with umlauts as one character (NFC), as the other computers write them.
             "-c",
             "core.precomposeunicode=true",
+            // Every file of the mirror is synced: the user's global ignore file (`*.log`, `build/`)
+            // must not keep an attachment or a page folder off the server. The adds also take
+            // `--force` (`.git/info/exclude`, a `.gitignore` from the server).
+            "-c",
+            "core.excludesFile=",
         ]);
         // No hooks: neither the user's global ones (`core.hooksPath`: a secret scanner that
         // blocks or stalls the push) nor any in the working tree. The path is this program's
@@ -1739,9 +1744,9 @@ pub struct SyncRequest<'a> {
     /// Computer name for the fallback branch.
     pub host: &'a str,
     pub now: DateTime<Local>,
-    /// Paths (`/` separated) of notes with an undecided conflict: they keep the committed
-    /// (server's) version in the working tree until the user has merged them.
-    pub hold: &'a [String],
+    /// Notes with an undecided conflict: they keep the committed (server's) version in the
+    /// working tree until the user has merged them.
+    pub hold: &'a [Held],
     /// The user confirmed a commit that deletes many notes (see [`mass_deletion`]).
     pub allow_deletions: bool,
     /// This computer's settings file ([`crate::settings_sync::FILE`]) when the settings are
@@ -1751,6 +1756,23 @@ pub struct SyncRequest<'a> {
     /// desktop produces, the database copy ([`DB_FILE`]) and the time sheets
     /// ([`crate::mirror::TIME_DIR`]); its own bookings travel as chips in the notes.
     pub companion: bool,
+}
+
+/// A note with an undecided conflict ([`SyncRequest::hold`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    /// Where the note is now (`/` separated): the page may have been renamed or moved since.
+    pub path: String,
+    /// Where the server's version was when the conflict was recorded.
+    pub committed: String,
+}
+
+impl Held {
+    /// A note held where its conflict was recorded.
+    pub fn at(path: impl Into<String>) -> Held {
+        let path = path.into();
+        Held { committed: path.clone(), path }
+    }
 }
 
 /// Start of the error a sync returns when it stopped before deleting many notes; the shell
@@ -2570,15 +2592,15 @@ fn sync_once(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         }
     };
     if has_head(git, repo)? {
-        for path in req.hold {
-            hold_path(git, repo, path)?;
+        for held in req.hold {
+            hold_path(git, repo, held)?;
         }
     }
     if let Some(ours) = &req.settings_file {
         write_settings_file(repo, ours)?;
     }
     raw_attachments(git, repo)?;
-    git.check(Some(repo), &["add", "-A"])?;
+    git.check(Some(repo), &["add", "-A", "--force"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
     if changed > 0 && !req.allow_deletions && has_head(git, repo)? {
@@ -2791,16 +2813,31 @@ fn take_path(git: &Git, repo: &Path, rev: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
-/// A held path (see [`SyncRequest::hold`]) as committed; paths leaving the tree are ignored.
-fn hold_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
-    let p = Path::new(path);
-    if path.is_empty() || p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+/// A held note (see [`SyncRequest::hold`]) as committed; paths leaving the tree are ignored. A
+/// note renamed or moved here since the conflict takes the server's version to its new path, so
+/// the rename goes up as a rename and the undecided text stays here.
+fn hold_path(git: &Git, repo: &Path, held: &Held) -> Result<()> {
+    let inside = |path: &str| {
+        let p = Path::new(path);
+        !path.is_empty() && !p.is_absolute() && p.components().all(|c| matches!(c, std::path::Component::Normal(_)))
+    };
+    let path = held.path.as_str();
+    if !inside(path) {
         return Ok(());
     }
+    let full = repo.join(path);
     if blob_id(git, repo, "HEAD", path)?.is_some() {
         git.check(Some(repo), &["checkout", "-q", "HEAD", "--", path])?;
-    } else if repo.join(p).is_file() {
-        fs::remove_file(repo.join(p))?;
+    } else if held.committed != path
+        && inside(&held.committed)
+        && let Some(text) = blob_text(git, repo, "HEAD", &held.committed)?
+    {
+        if let Some(dir) = full.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::write(&full, text)?;
+    } else if full.is_file() {
+        fs::remove_file(&full)?;
     }
     Ok(())
 }
@@ -2880,7 +2917,7 @@ fn put_path(git: &Git, repo: &Path, path: &str, text: &str) -> Result<()> {
         fs::create_dir_all(dir)?;
     }
     fs::write(&full, text)?;
-    git.check(Some(repo), &["add", "--", path])?;
+    git.check(Some(repo), &["add", "--force", "--", path])?;
     Ok(())
 }
 
@@ -3003,7 +3040,7 @@ fn keep_both_files(
         }
         for (from, to) in &moves {
             fs::copy(repo.join(from), repo.join(to))?;
-            git.check(Some(repo), &["add", "--", to])?;
+            git.check(Some(repo), &["add", "--force", "--", to])?;
             take_path(git, repo, theirs, from)?;
         }
         out.push((path.clone(), format!("{dir}/{new_name}")));
@@ -3069,7 +3106,7 @@ fn follow_file_renames(
             // The working tree holds this computer's files (the commit just made).
             for (from, to) in &moves {
                 fs::copy(repo.join(from), repo.join(to))?;
-                git.check(Some(repo), &["add", "--", to])?;
+                git.check(Some(repo), &["add", "--force", "--", to])?;
                 drop_path(git, repo, from)?;
             }
         }
@@ -3364,7 +3401,7 @@ fn merge_remote(
         if path == crate::settings_sync::FILE && mine_id != theirs_id {
             if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
                 fs::write(repo.join(path), crate::settings_sync::merge_text(Some(&t), &m))?;
-                git.check(Some(repo), &["add", "--", path])?;
+                git.check(Some(repo), &["add", "--force", "--", path])?;
             }
             continue;
         }
@@ -3372,7 +3409,7 @@ fn merge_remote(
         if path == crate::vault::TITLES_FILE && mine_id != theirs_id {
             if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
                 fs::write(repo.join(path), crate::vault::merge_titles(&t, &m))?;
-                git.check(Some(repo), &["add", "--", path])?;
+                git.check(Some(repo), &["add", "--force", "--", path])?;
             }
             continue;
         }
@@ -3606,13 +3643,13 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
     }
     let res = (|| {
         raw_attachments(git, repo)?;
-        git.check(Some(repo), &["add", "-A"])?;
+        git.check(Some(repo), &["add", "-A", "--force"])?;
         let diff = git.check(Some(repo), &["diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"])?;
         let mut parts = diff.split('\0').filter(|p| !p.is_empty());
         let mut out = RestoreCompare::default();
         let mut history = None;
         while let (Some(status), Some(path)) = (parts.next(), parts.next()) {
-            if !is_note(path) || path == README_FILE || req.hold.iter().any(|h| h == path) {
+            if !is_note(path) || path == README_FILE || req.hold.iter().any(|h| h.path == path) {
                 continue;
             }
             match status {
@@ -4224,7 +4261,7 @@ mod tests {
         let settings =
             GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
         let git = Git::new(None, &settings.remote_url);
-        let run = |pc: &str, hold: &[String]| {
+        let run = |pc: &str, hold: &[Held]| {
             sync(
                 &git,
                 &SyncRequest {
@@ -4297,7 +4334,7 @@ mod tests {
         put("a", "Neu.md", "neu von B\n");
         fs::remove_file(base.join("a/mirror/Weg.md")).unwrap();
         taken_over(&base.join("a/git-sync"));
-        let hold = vec!["Notiz.md".to_owned(), "../ausserhalb.md".to_owned()];
+        let hold = vec![Held::at("Notiz.md"), Held::at("../ausserhalb.md")];
         let held = run("a", &hold);
         assert!(!held.committed, "{held:?}");
         assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "# Notiz\n\nGemeinsam, von B.\n");
