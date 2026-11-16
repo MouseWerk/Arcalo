@@ -162,7 +162,8 @@ pub fn parse_item(raw: &str, today: NaiveDate) -> Option<ActionItem> {
     // „bis Freitag“ / „by 2026-10-05“ at the end.
     if due.is_none() {
         for kw in [" bis zum ", " bis ", " by ", " until ", " due "] {
-            if let Some(at) = text.to_lowercase().rfind(kw) {
+            // ASCII lower case keeps every byte offset (`to_lowercase` makes „İ“ and „ẞ“ longer).
+            if let Some(at) = text.to_ascii_lowercase().rfind(kw) {
                 let tail = text[at + kw.len()..].trim().trim_end_matches('.');
                 if let Some(d) = parse_date(tail, today) {
                     due = Some(d);
@@ -321,6 +322,17 @@ mod tests {
     fn today() -> NaiveDate {
         // A Thursday.
         NaiveDate::from_ymd_opt(2026, 10, 1).unwrap()
+    }
+
+    /// Letters that grow when lower-cased (Turkish „İ“, capital „ẞ“) before „bis …“: the phrase was
+    /// found in the lower-cased text and cut out of the original at that offset, inside the „Ü“
+    /// of „Übermorgen“ (a panic, which quits the app).
+    #[test]
+    fn a_due_phrase_after_letters_that_grow_lower_cased_is_cut_safely() {
+        let a = parse_item("İlkay Angebot schicken bis Übermorgen", today()).unwrap();
+        assert_eq!((a.text.as_str(), a.due.as_deref()), ("İlkay Angebot schicken", Some("2026-10-03")));
+        let a = parse_item("GROẞE Lieferung prüfen bis 05.10.", today()).unwrap();
+        assert_eq!((a.text.as_str(), a.due.as_deref()), ("GROẞE Lieferung prüfen", Some("2026-10-05")));
     }
 
     #[test]
