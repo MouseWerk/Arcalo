@@ -543,6 +543,14 @@ pub fn run_pending_keys(
     let Some(mut m) = read_marker(dir) else { return Ok(None) };
     let (db, new, old) = (dir.join(DB_FILE), dir.join(NEW_FILE), dir.join(OLD_FILE));
     let crashed = || Err(Error::State("killed (test)".into()));
+    // An export verified at an earlier start whose swap never began: the database may have been
+    // written since (the app opened it after a failed swap, a terminal command after a crash), so
+    // swapping the export in would lose that work. It is written again from the database as it is.
+    if m.step == Step::Verified && db.exists() && !old.exists() {
+        let _ = fs::remove_file(&new);
+        m.step = Step::Requested;
+        write_marker(dir, &m)?;
+    }
     if m.step == Step::Requested {
         let rollback = |e: Error| {
             let _ = fs::remove_file(&new);
@@ -589,11 +597,28 @@ pub fn run_pending_keys(
     if m.step == Step::Verified {
         // Each rename is checked against the files present, so a crash between them resumes.
         if new.exists() && db.exists() && !old.exists() {
+            // A rename refused (a file another program holds open on Windows): the switch is
+            // undone, so the database the app opens now stays the one the next start exports.
+            let mut undo = |e: Error| {
+                let _ = fs::remove_file(&new);
+                m.step = Step::Requested;
+                let _ = write_marker(dir, &m);
+                Err(e)
+            };
             let _ = fs::remove_file(dir.join(format!("{DB_FILE}-shm")));
-            fs::rename(&db, &old).at(&db)?;
+            if let Err(e) = fs::rename(&db, &old).at(&db) {
+                return undo(e);
+            }
             let wal = dir.join(format!("{DB_FILE}-wal"));
-            if wal.exists() {
-                fs::rename(&wal, dir.join(format!("{OLD_FILE}-wal"))).at(&wal)?;
+            if wal.exists()
+                && let Err(e) = fs::rename(&wal, dir.join(format!("{OLD_FILE}-wal"))).at(&wal)
+            {
+                // The database goes back to its place; if even that fails, the next start
+                // finishes the swap (the export is the database's current state).
+                if fs::rename(&old, &db).is_ok() {
+                    return undo(e);
+                }
+                return Err(e);
             }
             fsync_dir(dir);
         }

@@ -34,10 +34,10 @@ pub const STAGING_DIR: &str = ".arcalo-move-tmp";
 /// backups, the file trash, the logs, the Git sync's working tree, unfinished recordings, the
 /// secrets file, the password-wrapped key and the state of an encryption switch, the capture
 /// queue, the marker of a restore the Git sync has to compare first, the backup destinations
-/// and a restore waiting for the next start. Everything else the app keeps there is in
+/// a restore waiting for the next start and the files a restore still has to bring back. Everything else the app keeps there is in
 /// [`STAYS`]; a test makes sure every name the app writes is in one of the lists.
 pub const DATA_DIRS: [&str; 6] = ["attachments", "backups", "trash", "logs", "git-sync", "voice"];
-pub const DATA_FILES: [&str; 12] = [
+pub const DATA_FILES: [&str; 13] = [
     "secrets.json",
     CREDENTIALS_MOVED,
     crate::cipher::MARKER,
@@ -50,6 +50,7 @@ pub const DATA_FILES: [&str; 12] = [
     crate::backupdest::REGISTRY_FILE,
     crate::backupdest::PENDING_RESTORE,
     "restore-pending.db.from",
+    crate::backupdest::RESTORED_FILES,
 ];
 /// What stays in the old folder on a move: bound to this installation (updates, rollback,
 /// health, the instance and command locks, the portable copy's WebView profile, the Android

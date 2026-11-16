@@ -5014,6 +5014,13 @@ pub fn run() {
                 Ok(None) => {}
                 Err(e) => devlog::warn("import", format!("unfinished vault import not removed: {e}")),
             }
+            // A restored backup: the files its pages embed that were deleted since come back
+            // (before the file trash below is emptied).
+            match arcalo_core::backupdest::bring_back_files(&db, &dir) {
+                Ok(back) if !back.is_empty() => devlog::info("backup", format!("{} files of the restored backup brought back", back.len())),
+                Ok(_) => {}
+                Err(e) => devlog::warn("backup", format!("files of the restored backup not brought back: {e}")),
+            }
             if let Err(e) = db.purge_expired_trash(Utc::now()) {
                 devlog::warn("core", format!("trash cleanup failed: {e}"));
             }

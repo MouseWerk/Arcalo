@@ -630,10 +630,28 @@ pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
 /// in the file trash come back (the newest deletion of each); for a restored page version that
 /// embeds a file deleted since. Returns the names restored.
 pub fn bring_back_missing(data_dir: &Path, content: &str) -> Result<Vec<String>> {
+    bring_back(data_dir, std::iter::once(content), None)
+}
+
+/// [`bring_back_missing`] for the notes and canvases `contents` (a whole restored workspace). A
+/// file not in the file trash is copied from `copy` when given (the attachments a backup folder
+/// keeps next to its backups).
+pub fn bring_back<'a>(
+    data_dir: &Path,
+    contents: impl IntoIterator<Item = &'a str>,
+    copy: Option<&Path>,
+) -> Result<Vec<String>> {
     let dir = attachments::dir(data_dir);
-    let mut names = referenced_files(content);
-    names.extend(crate::canvas::files(content));
-    let missing: Vec<String> = names.into_iter().filter(|n| !dir.join(n).exists()).collect();
+    let mut missing: Vec<String> = Vec::new();
+    for content in contents {
+        let mut names = referenced_files(content);
+        names.extend(crate::canvas::files(content));
+        for n in names {
+            if !dir.join(&n).exists() && !missing.iter().any(|m| m.eq_ignore_ascii_case(&n)) {
+                missing.push(n);
+            }
+        }
+    }
     if missing.is_empty() {
         return Ok(vec![]);
     }
@@ -648,6 +666,16 @@ pub fn bring_back_missing(data_dir: &Path, content: &str) -> Result<Vec<String>>
         if let Some(t) = trashed.iter().find(|t| t.name.eq_ignore_ascii_case(&name)) {
             restore_file(data_dir, &t.id, &t.name)?;
             back.push(t.name.clone());
+        } else if let Some(copy) = copy
+            && let Some(src) = attachments::resolve(copy, &name)
+        {
+            fs::create_dir_all(&dir).at(&dir)?;
+            copy_file(&src, &dir.join(&name))?;
+            let preview = drawings::preview_name(&name);
+            if is_drawing(&name) && copy.join(&preview).is_file() && !dir.join(&preview).exists() {
+                let _ = copy_file(&copy.join(&preview), &dir.join(&preview));
+            }
+            back.push(name);
         }
     }
     Ok(back)
