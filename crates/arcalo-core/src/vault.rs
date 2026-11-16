@@ -47,6 +47,8 @@ pub struct ImportProgress {
 
 /// Pages written per transaction: the database is free for the app between two batches.
 pub const WRITE_BATCH: usize = 200;
+/// How long an import leaves the database to the app after each batch (a waiting command's turn).
+const BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(5);
 /// Meta key holding the top page of an import still being written; an import cut off by a
 /// crash is removed at the next start ([`discard_unfinished_import`]).
 pub const PENDING_IMPORT: &str = "vault.import_root";
@@ -241,6 +243,11 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
             }
         }
         progress(ImportProgress { done: ids.len(), total, writing: true });
+        // A mutex is not fair: taken again at once, the next batch got the database before a
+        // command waiting for it, and the app waited for the whole import. The pause lets it in.
+        if rest.peek().is_some() {
+            std::thread::sleep(BATCH_PAUSE);
+        }
     }
     lock().meta_set(PENDING_IMPORT, "")?;
     Ok(report)
@@ -1144,6 +1151,59 @@ mod tests {
         assert_eq!(apply_import(&db, plan).unwrap().pages, 60);
         let err = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(true)).err().unwrap();
         assert_eq!(err.to_string(), "Import abgebrochen");
+    }
+
+    /// q124 R7D-3: a command waiting for the database while an import writes gets it at the end
+    /// of the batch it waited for; the import took the lock straight back (a mutex is not fair)
+    /// and the app waited for several batches (e2e 230 in the soak: 2.2 s).
+    #[test]
+    fn the_app_gets_the_database_between_two_batches() {
+        let vault = tmp("in-fair");
+        for i in 0..WRITE_BATCH * 6 {
+            let dir = vault.join(format!("Ordner {}", i % 5));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("Notiz {i}.md")), format!("Text {i} mit [[Notiz {}]] #tag{}", i + 1, i % 9))
+                .unwrap();
+        }
+        let att = tmp("att-fair");
+        let path = std::env::temp_dir().join(format!("arcalo-vault-fair-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = std::sync::Mutex::new(Database::open(&path).unwrap());
+        let plan = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+        let batches = std::sync::atomic::AtomicUsize::new(0);
+        let done = AtomicBool::new(false);
+        let mut waits = vec![];
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                apply_import_batched(
+                    || db.lock().unwrap(),
+                    plan,
+                    &mut |_| {
+                        batches.fetch_add(1, Ordering::SeqCst);
+                    },
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+                done.store(true, Ordering::SeqCst);
+            });
+            while batches.load(Ordering::SeqCst) < 2 {
+                std::thread::yield_now();
+            }
+            while !done.load(Ordering::SeqCst) {
+                let before = batches.load(Ordering::SeqCst);
+                let g = db.lock().unwrap();
+                waits.push(batches.load(Ordering::SeqCst) - before);
+                drop(g);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+        assert!(waits.len() >= 3, "{waits:?}");
+        assert!(waits.iter().all(|w| *w <= 2), "batches written while the app waited for the database: {waits:?}");
+        drop(db);
+        for p in [vault, att, path] {
+            let _ = fs::remove_dir_all(&p);
+            let _ = fs::remove_file(&p);
+        }
     }
 
     #[test]
