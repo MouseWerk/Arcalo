@@ -111,7 +111,7 @@ export function parseHtmlTable(html: string): string[][] | null {
     const row: string[] = [];
     for (const cell of tr.children) {
       if (!/^t[hd]$/i.test(cell.tagName)) continue;
-      row.push(cell.querySelector("p, div, br") ? cellLines(cell) : text(cell.textContent));
+      row.push(cell.querySelector(CELL_BLOCKS) ? cellLines(cell) : text(cell.textContent));
       const span = Math.min(20, Number(cell.getAttribute("colspan")) || 1);
       for (let k = 1; k < span; k++) row.push("");
     }
@@ -122,7 +122,10 @@ export function parseHtmlTable(html: string): string[][] | null {
   return rows.map((r) => [...r, ...Array<string>(width - r.length).fill("")]);
 }
 
-/** Text of a cell with its paragraphs and line breaks as `\n`. */
+/** Blocks in a table cell that start a line of their own (list items and headings were glued together). */
+const CELL_BLOCKS = "p, div, br, li, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre";
+
+/** Text of a cell with its paragraphs, list items, headings and line breaks as `\n`. */
 function cellLines(cell: Element): string {
   const parts: string[] = [];
   let cur = "";
@@ -130,7 +133,7 @@ function cellLines(cell: Element): string {
     if (n.nodeType === 3) cur += n.textContent;
     else if (n.nodeName === "BR") (parts.push(cur), (cur = ""));
     else {
-      const block = /^(P|DIV|LI)$/.test(n.nodeName);
+      const block = /^(P|DIV|LI|H[1-6]|UL|OL|BLOCKQUOTE|PRE)$/.test(n.nodeName);
       if (block && cur.trim()) (parts.push(cur), (cur = ""));
       n.childNodes.forEach(walk);
       if (block) (parts.push(cur), (cur = ""));

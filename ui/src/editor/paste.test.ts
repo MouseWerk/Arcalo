@@ -21,6 +21,14 @@ describe("spreadsheet rows", () => {
     expect(parseHtmlTable(html)).toEqual([["Projekt", "Status"], ["Rollout Phase 2", ""]]);
     expect(parseHtmlTable("<table><tr><td><p>a</p><p>b</p></td><td>c</td></tr></table>")).toEqual([["a\nb", "c"]]);
   });
+  // q124 R7A-5: list items and headings in a cell (Confluence, Jira, web pages) were glued together.
+  it("keeps the lines of a cell's lists and headings apart", () => {
+    expect(parseHtmlTable("<table><tr><th>Thema</th><th>Punkte</th></tr><tr><td><h4>Rollout</h4>Phase 2</td><td><ul><li>Server</li><li>Clients</li></ul></td></tr></table>")).toEqual([
+      ["Thema", "Punkte"],
+      ["Rollout\nPhase 2", "Server\nClients"],
+    ]);
+    expect(parseHtmlTable("<table><tr><td>a<ol><li>x</li><li>y</li></ol>b</td><td>c</td></tr></table>")).toEqual([["a\nx\ny\nb", "c"]]);
+  });
   it("ignores a table inside a longer page selection", () => {
     const html = `<p>${"Viel Text davor. ".repeat(20)}</p><table><tr><td>a</td><td>b</td></tr></table>`;
     expect(parseHtmlTable(html)).toBeNull();
