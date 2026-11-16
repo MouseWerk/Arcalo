@@ -89,9 +89,10 @@ describe("a paragraph starting with an abbreviation is no list (R6A-2)", () => {
     expect(editAt("Fr. Müller kommt\n\n1. eins\n2. zwei\n", "kommt")).toBe("Fr. Müller xkommt\n\n1. eins\n2. zwei\n");
   });
   it("lists with letters or roman numerals of two or more items from the first stay lists", () => {
-    expect(editAt("a. eins\nb. zwei\n", "zwei")).toBe("1. eins\n2. xzwei\n");
-    expect(editAt("i. eins\nii. zwei\n", "zwei")).toBe("1. eins\n2. xzwei\n");
-    expect(editAt("1. x\n   a. sub\n   b. sub2\n", "sub2")).toBe("1. x\n   1. sub\n   2. xsub2\n");
+    // With their letters (R7A-1: an edit wrote them as numbers).
+    expect(editAt("a. eins\nb. zwei\n", "zwei")).toBe("a. eins\nb. xzwei\n");
+    expect(editAt("i. eins\nii. zwei\n", "zwei")).toBe("i. eins\nii. xzwei\n");
+    expect(editAt("1. x\n   a. sub\n   b. sub2\n", "sub2")).toBe("1. x\n   a. sub\n   b. xsub2\n");
   });
 });
 
@@ -154,4 +155,26 @@ describe("typing in a paragraph with line ends keeps them (R6A-9)", () => {
 
 it("a numbered list starting at 0 keeps its numbers", () => {
   expect(editAt("0. null\n1. eins\n", "eins")).toBe("0. null\n1. xeins\n");
+});
+
+// q124 round 7, hunt A (docs/quality/q124/r7-editor-import-export.md).
+
+describe("lists with letters or roman numerals keep their markers (R7A-1)", () => {
+  it("an edit writes the letters, not numbers", () => {
+    expect(editAt("a. eins\nb. zwei\n", "zwei")).toBe("a. eins\nb. xzwei\n");
+    expect(editAt("A) eins\nB) zwei\n", "zwei")).toBe("A) eins\nB) xzwei\n");
+    expect(editAt("i. eins\nii. zwei\niii. drei\niv. vier\n", "vier")).toBe("i. eins\nii. zwei\niii. drei\niv. xvier\n");
+    expect(editAt("I. Teil eins\nII. Teil zwei\n", "zwei")).toBe("I. Teil eins\nII. Teil xzwei\n");
+    expect(editAt("1. eins\n   a. unter\n   b. auch\n2. zwei\n", "auch")).toBe("1. eins\n   a. unter\n   b. xauch\n2. zwei\n");
+  });
+  it("written from the document alone too", () => {
+    setSourceBlocks(false);
+    try {
+      const editor = open("a. eins\nb. zwei\n");
+      expect(toMarkdown(editor)).toBe("a. eins\nb. zwei\n");
+      editor.destroy();
+    } finally {
+      setSourceBlocks(true);
+    }
+  });
 });

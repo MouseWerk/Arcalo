@@ -10,6 +10,7 @@
 //   New content uses the editor's defaults.
 
 import { Extension, Node, type Editor } from "@tiptap/core";
+import { getListMarker } from "@tiptap/extension-list";
 import { MarkdownManager, extractAbsorbedBlankLines } from "@tiptap/markdown";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -700,7 +701,10 @@ export function listMarker(ctx: RenderContext | undefined): string {
   if (ctx?.parentType === "orderedList") {
     const start = Number.isFinite(Number(parent.start ?? 1)) ? Number(parent.start ?? 1) : 1;
     const n = parent.lazy ? start : start + (ctx.index ?? 0);
-    return `${n}${parent.delim === ")" ? ")" : "."} `;
+    const delim = parent.delim === ")" ? ")" : ".";
+    // A list with letters or roman numerals keeps them (`a.`, `ii)`); an edit wrote them as numbers.
+    if (parent.type === "a" || parent.type === "A" || parent.type === "i" || parent.type === "I") return getListMarker(parent.type, n - 1, `${delim} `);
+    return `${n}${delim} `;
   }
   return `${typeof parent.bullet === "string" ? parent.bullet : "-"} `;
 }
