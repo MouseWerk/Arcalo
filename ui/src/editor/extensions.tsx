@@ -283,9 +283,9 @@ function allSlashItems(o: SlashOptions): SlashItem[] {
     { id: "todo", title: t("slash.todo"), icon: ic(CheckSquare), Icon: CheckSquare, hint: "[ ]", section: lists, keywords: "todo task checkbox aufgabe aufgabenliste", run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
     { id: "ul", title: t("slash.ul"), icon: ic(List), Icon: List, hint: "-", section: lists, keywords: "bullet liste list aufzählung", run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
     { id: "ol", title: t("slash.ol"), icon: ic(ListOrdered), Icon: ListOrdered, hint: "1.", section: lists, keywords: "ordered nummer numbered nummerierte", run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
-    { id: "quote", title: t("slash.quote"), icon: ic(Quote), Icon: Quote, hint: ">", section: blocks, keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
-    { id: "callout", title: t("slash.callout"), subtitle: t("slash.callout.sub"), icon: ic(Info), Icon: Info, section: blocks, keywords: "callout hinweis hinweisbox info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
-    { id: "warn", title: t("slash.warn"), icon: ic(AlertTriangle), Icon: AlertTriangle, section: blocks, keywords: "callout warnung warnbox warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
+    { id: "quote", title: t("slash.quote"), icon: ic(Quote), Icon: Quote, hint: ">", section: blocks, keywords: "quote zitat", run: (e, r) => insertQuote(e, r) },
+    { id: "callout", title: t("slash.callout"), subtitle: t("slash.callout.sub"), icon: ic(Info), Icon: Info, section: blocks, keywords: "callout hinweis hinweisbox info note", run: (e, r) => insertQuote(e, r, "[!note] ") },
+    { id: "warn", title: t("slash.warn"), icon: ic(AlertTriangle), Icon: AlertTriangle, section: blocks, keywords: "callout warnung warnbox warning", run: (e, r) => insertQuote(e, r, "[!warning] ") },
     { id: "fold", title: t("slash.fold"), subtitle: t("slash.fold.sub"), icon: ic(ListCollapse), Icon: ListCollapse, section: blocks, keywords: "aufklappbar einklappen toggle details collapsible falten callout fold", run: (e, r) => insertFoldable(e, r) },
     { id: "columns2", title: t("slash.columns2"), subtitle: t("slash.columns.sub"), icon: ic(Columns2), Icon: Columns2, section: blocks, keywords: "spalten columns layout nebeneinander zwei two", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 2)) },
     { id: "columns3", title: t("slash.columns3"), subtitle: t("slash.columns.sub"), icon: ic(Columns3), Icon: Columns3, section: blocks, keywords: "spalten columns layout nebeneinander drei three", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 3)) },
@@ -816,6 +816,42 @@ export function toggleCalloutFold(view: EditorView, pos: number): boolean {
 }
 
 /** `/Aufklappbar`: an expanded foldable callout with a selected title and an empty line for the content. */
+/**
+ * `/zitat`, `/callout`, `/warnung`: the line becomes a quote, a callout with `marker` (`[!note] `)
+ * at its start; in a quote the callout commands make it a callout. The line of a list or task item
+ * starts the item and cannot be quoted: the quote goes below it in the item. (The marker was
+ * written into the line where no quote came about, after the line's text, or into a heading, and
+ * a quote lost its `>`: no callout, `[!note]` as text.)
+ */
+export function insertQuote(editor: Editor, range: Range, marker = "") {
+  editor.chain().focus().deleteRange(range).run();
+  const quoteDepth = () => {
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === "blockquote") return d;
+    return 0;
+  };
+  if (!(marker && quoteDepth()) && !editor.commands.toggleBlockquote()) {
+    const after = editor.state.selection.$from.after();
+    editor
+      .chain()
+      .insertContentAt(after, { type: "blockquote", content: [{ type: "paragraph", content: marker ? [{ type: "text", text: marker }] : [] }] })
+      .setTextSelection(after + 2 + marker.length)
+      .run();
+    return;
+  }
+  const d = quoteDepth();
+  if (!marker || !d) return;
+  const { $from, from } = editor.state.selection;
+  const start = $from.before(d) + 1;
+  const first = $from.node(d).firstChild!;
+  if (first.type.name !== "paragraph") {
+    const line = marker.trimEnd();
+    editor.chain().insertContentAt(start, { type: "paragraph", content: [{ type: "text", text: line }] }).setTextSelection(from + line.length + 2).run();
+  } else if (!/^\[!\w+\]/.test(first.textContent)) {
+    editor.chain().insertContentAt(start + 1, marker).setTextSelection(from + marker.length).run();
+  }
+}
+
 export function insertFoldable(editor: Editor, range: Range) {
   editor
     .chain()
