@@ -124,3 +124,14 @@ export function quickItems(query: string, ctx: QsContext): QsItem[] {
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** FTS snippets wrap hits in STX/ETX control characters: escaped HTML with <mark>. */
 export const snippetHtml = (sn: string) => esc(stripMarkdown(sn)).replace(/\u0002([^\u0003]*)\u0003/g, "<mark>$1</mark>");
+
+/**
+ * The selection after the list changed under it (pages found by meaning arrive after the exact
+ * hits and can land between them): the item that was selected, where it is now; else the same
+ * place, kept in range. Without this, Enter right after moving down opened another page.
+ */
+export function followSelection(prev: readonly { id: string }[], sel: number, next: readonly { id: string }[]): number {
+  const id = prev[sel]?.id;
+  const at = id == null ? -1 : next.findIndex((i) => i.id === id);
+  return at >= 0 ? at : Math.min(sel, Math.max(0, next.length - 1));
+}

@@ -9,7 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ClipboardCopy, ClipboardList, FileDown, FileText, Mail, Printer, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { api, on } from "../lib/api";
-import { useApp } from "../store/app";
+import { useApp, activeNoteId } from "../store/app";
 import { t, useT } from "../lib/i18n";
 import { fmtDate } from "../lib/format";
 import { attendeeName } from "../lib/agenda";
@@ -125,8 +125,8 @@ export async function prepareFromPalette() {
 
 /** The palette: „Nachfass-Mail“ for the page in front. */
 export function followUpFromPalette() {
-  const tab = s().tabs.find((x) => x.id === s().activeTabId);
-  if (tab?.kind === "page" && tab.pageId != null) openFollowUp(tab.pageId);
+  const id = activeNoteId();
+  if (id != null) openFollowUp(id);
   else s().toast({ tone: "info", title: t("mw.fu.openNote") });
 }
 

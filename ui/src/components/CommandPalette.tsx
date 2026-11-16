@@ -14,7 +14,7 @@ import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
 import { TIME_COMMANDS, useTimeTracking } from "../lib/timetracking";
 import { AI_COMMANDS, useAi } from "../lib/aiswitch";
-import { useApp, savePref } from "../store/app";
+import { useApp, savePref, activeNoteId } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
 import { entriesAvailable, newCalendarEntry } from "../lib/calentries";
@@ -30,7 +30,7 @@ import type { SearchHit } from "../lib/types";
 import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
 import { insertDrawingInActiveNote } from "../editor/drawings";
-import { snippetHtml } from "../lib/quicksearch";
+import { followSelection, snippetHtml } from "../lib/quicksearch";
 import { setExactOnly, useExactOnly, useMeaningSearch } from "../lib/meaningSearch";
 import { stripMarkdown } from "../lib/plaintext";
 import { fuzzy } from "../lib/fuzzy";
@@ -134,7 +134,9 @@ export function CommandPalette() {
   const exactOnly = useExactOnly();
   const searching = open && mode !== "pages" && query.length >= 2 && !query.startsWith("/") && !query.startsWith("?");
   const found = useMeaningSearch(query, 12, { enabled: searching, exact: exactOnly, delay: 90 });
-  const hits: SearchHit[] = useMemo(() => (searching ? (found.hits ?? []) : []), [searching, found.hits]);
+  // Only hits of what is typed now: the previous query's stayed until the new answer, and Enter
+  // right after typing opened one of them.
+  const hits: SearchHit[] = useMemo(() => (searching && found.answered === query ? (found.hits ?? []) : []), [searching, found.hits, found.answered, query]);
 
   const close = () => s().set({ paletteOpen: false });
 
@@ -245,6 +247,12 @@ export function CommandPalette() {
                 if (id != null) setTimeout(() => openMoveTo([id]), 0);
               },
             },
+          ]
+        : []),
+      // The editor's commands: not on a canvas (its board does not answer them, and „Präsentieren“
+      // showed the board's JSON as a slide).
+      ...(activeNoteId() != null
+        ? [
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },
             { id: "toggle-source", title: t("cmd.toggleSource"), icon: ic(FileCode2), hint: hint("toggle_source"), run: () => setTimeout(() => requestPageCommand("source"), 0) },
             { id: "full-width", title: t("cmd.fullWidth"), icon: ic(MoveHorizontal), hint: hint("full_width"), run: () => setTimeout(() => requestPageCommand("full"), 0) },
@@ -256,7 +264,7 @@ export function CommandPalette() {
               icon: ic(Presentation),
               hint: hint("present"),
               run: () => {
-                const id = s().tabs.find((x) => x.id === s().activeTabId)?.pageId;
+                const id = activeNoteId();
                 if (id != null) void startPresentation(id);
               },
             },
@@ -419,7 +427,14 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj, entriesHere, calOutlook]);
 
-  useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
+  // The selected item stays selected when the list changes under it (meaning hits arrive later; typing selects the first again).
+  const shownItems = useRef({ items, query });
+  useEffect(() => {
+    const prev = shownItems.current;
+    shownItems.current = { items, query };
+    setSel((v) => followSelection(prev.query === query ? prev.items : [], v, items));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
   useEffect(() => {
     list.current?.querySelector(".pal-item.sel")?.scrollIntoView({ block: "nearest" });
   }, [sel]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KEEP_QUERY_MS, keepQuery, quickItems, snippetHtml, type QsContext } from "./quicksearch";
+import { KEEP_QUERY_MS, followSelection, keepQuery, quickItems, snippetHtml, type QsContext } from "./quicksearch";
 import type { Page, SearchHit } from "./types";
 
 const page = (id: number, title: string): Page => ({ id, title, parent_id: null, icon: null, position: 0, updated_at: "2026-09-20T10:00:00Z", favorite: false, daily_date: null });
@@ -51,5 +51,18 @@ describe("quick search", () => {
 
   it("escapes snippets and marks the hits", () => {
     expect(snippetHtml("<b>\u0002a&b\u0003</b>")).toBe("&lt;b&gt;<mark>a&amp;b</mark>&lt;/b&gt;");
+  });
+
+  it("keeps the selected item selected when pages found by meaning arrive (R7C-7)", () => {
+    const note = (id: number): SearchHit => ({ kind: "note", page_id: id, title: `Seite ${id}`, icon: null, snippet: "x", score: 1 });
+    const similar: SearchHit = { kind: "similar", page_id: 9, title: "Ähnlich", icon: null, passage: "y", similarity: 0.8, score: 1 };
+    const exact = quickItems("budget", ctx({ hits: [note(1), note(2), note(3), note(4), note(5)] }));
+    // The meaning answer keeps the first three exact hits in front and puts its page before the fourth.
+    const fused = quickItems("budget", ctx({ hits: [note(1), note(2), note(3), similar, note(4), note(5)] }));
+    const sel = exact.findIndex((i) => i.id === "page-4");
+    expect(fused[followSelection(exact, sel, fused)].id).toBe("page-4");
+    // An item that went away: the same place, in range.
+    expect(followSelection(exact, 4, fused.slice(0, 2))).toBe(1);
+    expect(followSelection(exact, 2, [])).toBe(0);
   });
 });
