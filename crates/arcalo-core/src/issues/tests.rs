@@ -1700,3 +1700,27 @@ async fn the_sprint_reads_every_page_of_its_issues() {
     let keys: HashSet<&str> = sprint.issues.iter().map(|i| i.key.as_str()).collect();
     assert_eq!(keys.len(), 120, "each issue once");
 }
+
+/// q124 r7c, neighbours of R6C-1: an issue moved twice, and moved back. Every old key follows it
+/// to its current key, the hours booked under any of them count, and a key moved back is current
+/// again (no alias pointing at itself).
+#[test]
+fn an_issue_moved_twice_or_back_is_followed_by_every_old_key() {
+    let db = setup();
+    store(&db, &[(issue("PROJ-1", "new"), &["mine"])]);
+    db.issue_moved_record("acme", "PROJ-1", "NEW-5").unwrap();
+    db.issue_put("acme", &issue("NEW-5", "new"), now()).unwrap();
+    db.issue_moved_record("acme", "NEW-5", "OPS-2").unwrap();
+    db.issue_put("acme", &issue("OPS-2", "new"), now()).unwrap();
+    for old in ["PROJ-1", "NEW-5", "OPS-2"] {
+        assert_eq!(db.issue_get(old).unwrap().map(|i| i.key).as_deref(), Some("OPS-2"), "{old}");
+        assert_eq!(db.issue_aliases(old).unwrap(), ["OPS-2", "NEW-5", "PROJ-1"], "{old}");
+    }
+    // Moved back to where it was: PROJ-1 is current, the others follow it.
+    db.issue_moved_record("acme", "OPS-2", "PROJ-1").unwrap();
+    db.issue_put("acme", &issue("PROJ-1", "new"), now()).unwrap();
+    assert_eq!(db.issue_aliases("PROJ-1").unwrap(), ["PROJ-1", "NEW-5", "OPS-2"]);
+    assert_eq!(db.issue_get("NEW-5").unwrap().map(|i| i.key).as_deref(), Some("PROJ-1"));
+    let moves = db.issue_moves().unwrap();
+    assert!(moves.iter().all(|(_, old, new)| old != new && new == "PROJ-1"), "{moves:?}");
+}
