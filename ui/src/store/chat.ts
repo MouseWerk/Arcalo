@@ -107,6 +107,8 @@ export interface ChatSession {
   adopt: (from: ChatSession, quiet?: boolean) => void;
   /** Leaves the current chat without a trace (it was deleted). */
   clear: () => void;
+  /** Settles once the running answer (if any) has ended and what it saved is stored. */
+  idle: () => Promise<void>;
   /** The model's view of the current chat. */
   history: () => ChatMessage[];
 }
@@ -232,6 +234,8 @@ function createSession(id: SessionId): ChatSession {
   const approvals = new Set<(ok: boolean) => void>();
   // The send that owns `busy` (a send of an abandoned chat no longer clears it).
   let activeSend: object | null = null;
+  /** The running send (see `idle`). */
+  let sending: Promise<void> | null = null;
   // Counts chat changes: a chat still being read when another one was opened (or a new one
   // started) is not shown.
   let shown = 0;
@@ -359,7 +363,24 @@ function createSession(id: SessionId): ChatSession {
    * Asks `textArg`, or with `resume` continues that question after the steps it already ran (its
    * tool results are in the history): only the answer after them is asked again.
    */
-  async function send(textArg: string, opts: SendOpts = {}, resume?: Extract<Turn, { kind: "user" }>) {
+  function send(textArg: string, opts: SendOpts = {}, resume?: Extract<Turn, { kind: "user" }>) {
+    const p = sendNow(textArg, opts, resume);
+    const mine = p.catch(() => {});
+    sending = mine;
+    void mine.finally(() => {
+      if (sending === mine) sending = null;
+    });
+    return p;
+  }
+
+  function idle(): Promise<void> {
+    return (sending ?? Promise.resolve()).then(() => saveChain).then(
+      () => {},
+      () => {},
+    );
+  }
+
+  async function sendNow(textArg: string, opts: SendOpts = {}, resume?: Extract<Turn, { kind: "user" }>) {
     const text = textArg.trim();
     const st = get();
     if (!text || st.busy || busyElsewhere(session)) return;
@@ -402,8 +423,10 @@ function createSession(id: SessionId): ChatSession {
       if (!live() || !current()) {
         const cancelled: Turn = { id: turnId(), kind: "assistant", text: "", streaming: false, cancelled: true };
         if (current()) set((s) => ({ turns: [...s.turns, cancelled] }));
-        pending.push({ role: "assistant", content: "", cancelled: true });
-        chat.push({ role: "assistant", content: "" });
+        // Shown, not sent: an empty answer is refused by strict providers (see below).
+        if (pending.includes(userRecord)) userRecord.in_context = false;
+        pending.push({ role: "assistant", content: "", cancelled: true, in_context: false });
+        chat.splice(keep);
         return;
       }
       for (let round = 0; round < 5; round++) {
@@ -439,7 +462,16 @@ function createSession(id: SessionId): ChatSession {
         };
         // Stopped: tool calls of this answer are not run (and not kept in the history).
         const keepCalls = live() && c.finish_reason !== "cancelled" && c.tool_calls.length > 0;
-        pending.push(answerRecord(done, out.route, keepCalls ? c.tool_calls : undefined));
+        // Stopped before the first word: shown as stopped, but neither the empty answer nor the
+        // question it leaves unanswered goes to the model again (an assistant message without
+        // content is refused by strict providers, and every later question of the chat failed).
+        const empty = !!done.cancelled && !c.content && !c.tool_calls.length;
+        const record = answerRecord(done, out.route, keepCalls ? c.tool_calls : undefined);
+        if (empty) {
+          record.in_context = false;
+          if (pending.includes(userRecord)) userRecord.in_context = false;
+        }
+        pending.push(record);
         // A new chat meanwhile: this answer belongs to the old one (saved there, not shown).
         if (!current()) {
           save(convId, pending, page, priv, onSaved);
@@ -451,6 +483,10 @@ function createSession(id: SessionId): ChatSession {
         updateTurn(aid, done);
         if (priv && !get().private) set({ private: true });
         useApp.getState().set({ meter: out.meter });
+        if (empty) {
+          chat.splice(keep);
+          break;
+        }
         if (!live() && c.tool_calls.length) {
           chat.push({ role: "assistant", content: c.content || "" });
           break;
@@ -640,7 +676,7 @@ function createSession(id: SessionId): ChatSession {
     set({ busy: false, turns: [], conversation: null, private: false, notice: null });
   }
 
-  const session: ChatSession = { id, use, send, stop, newChat, open, regenerate, editAndResend, rename, adopt, clear, history: () => history };
+  const session: ChatSession = { id, use, send, stop, newChat, open, regenerate, editAndResend, rename, adopt, clear, idle, history: () => history };
   sessions.push(session);
   // A saved chat open in both sessions: the other one shows what this one adds (live while
   // the answer streams in) and continues with the same history.
@@ -731,13 +767,16 @@ export async function togglePinChat(conv: ChatConversation) {
 /** Deletes a saved chat with „Rückgängig“ in the toast; where it was open a new chat starts. */
 export async function deleteChat(conv: ChatConversation) {
   const s = useApp.getState();
+  const openIn = sessions.filter((x) => x.use.getState().conversation?.id === conv.id);
+  // An answer on its way is stopped first and its question saved, so „Rückgängig“ brings the
+  // chat back whole (saved after the delete, it was refused and lost).
+  await stopAndSettle(openIn.filter((x) => x.use.getState().busy));
   try {
     await api.chatDelete(conv.id);
   } catch (e) {
     s.error(t("chat.deleteFailed"), e);
     return;
   }
-  const openIn = sessions.filter((x) => x.use.getState().conversation?.id === conv.id);
   for (const x of openIn) x.clear();
   bumpList();
   s.toast({
@@ -756,6 +795,12 @@ export async function deleteChat(conv: ChatConversation) {
       },
     },
   });
+}
+
+/** Stops the answers of `list` and waits (5 s at most) until they ended and are saved. */
+async function stopAndSettle(list: ChatSession[]) {
+  for (const x of list) x.stop();
+  await Promise.race([Promise.all(list.map((x) => x.idle())), new Promise((r) => setTimeout(r, 5000))]);
 }
 
 /** „Duplizieren“: a copy to continue separately, opened in `into`. */
@@ -811,6 +856,9 @@ export async function openChatView(opts: { id?: number; from?: ChatSession; fres
     if (opts.fresh) viewChat.newChat();
     else if (opts.from) {
       const unsaved = !opts.from.use.getState().conversation;
+      // An unsaved chat answering: its answer ends here first (it would stream on in the chat
+      // it left, and the view kept a turn streaming for ever). A saved one is mirrored live.
+      if (unsaved && opts.from.use.getState().busy) await stopAndSettle([opts.from]);
       viewChat.adopt(opts.from);
       // An unsaved chat moves (there is nothing to keep both in step with).
       if (unsaved) opts.from.newChat();
@@ -828,6 +876,7 @@ export async function openInPanel(opts: { id?: number; from?: ChatSession }) {
   try {
     if (opts.from) {
       const unsaved = !opts.from.use.getState().conversation;
+      if (unsaved && opts.from.use.getState().busy) await stopAndSettle([opts.from]);
       panelChat.adopt(opts.from);
       if (unsaved) opts.from.newChat();
     } else if (opts.id != null && panelChat.use.getState().conversation?.id !== opts.id) await panelChat.open(opts.id);
