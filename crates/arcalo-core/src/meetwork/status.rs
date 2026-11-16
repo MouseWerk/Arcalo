@@ -435,8 +435,20 @@ pub fn jira_progress(issues: &[Issue], from: NaiveDate, to: NaiveDate) -> Report
 /// Decisions in a note: the items under decision headings, headings that name a decision
 /// („### Entscheidung: …“) and lines tagged `#entscheidung` / `#decision`.
 pub fn decisions_in(content: &str) -> Vec<String> {
-    let mut out: Vec<String> = items_under(content, DECISION_HEADINGS);
-    for line in content.lines() {
+    let untagged = |text: &str| {
+        text.split_whitespace()
+            .filter(|w| !w.eq_ignore_ascii_case("#entscheidung") && !w.eq_ignore_ascii_case("#decision"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    // By line, so they keep the note's order.
+    let mut out: Vec<(usize, String)> =
+        super::items_under_at(content, DECISION_HEADINGS).iter().map(|(no, i)| (*no, untagged(i))).collect();
+    let mut fences = crate::notes::CodeFences::default();
+    for (no, line) in content.lines().enumerate() {
+        if fences.code(line) {
+            continue;
+        }
         let t = line.trim();
         if let Some(level) = heading_level(t) {
             let h = t[level..].trim();
@@ -444,7 +456,7 @@ pub fn decisions_in(content: &str) -> Vec<String> {
             if !DECISION_HEADINGS.contains(&lower.trim_end_matches(':')) {
                 for p in ["entscheidung:", "decision:", "beschluss:"] {
                     if lower.starts_with(p) {
-                        out.push(h[p.len()..].trim().to_owned());
+                        out.push((no, h[p.len()..].trim().to_owned()));
                     }
                 }
             }
@@ -452,17 +464,13 @@ pub fn decisions_in(content: &str) -> Vec<String> {
         }
         let lower = t.to_lowercase();
         if lower.contains("#entscheidung") || lower.contains("#decision") {
-            let text = super::list_item(t).unwrap_or(t);
-            let cleaned: Vec<&str> = text
-                .split_whitespace()
-                .filter(|w| !w.eq_ignore_ascii_case("#entscheidung") && !w.eq_ignore_ascii_case("#decision"))
-                .collect();
-            out.push(cleaned.join(" "));
+            out.push((no, untagged(super::list_item(t).unwrap_or(t))));
         }
     }
-    out.retain(|d| !d.trim().is_empty());
-    out.dedup();
-    out
+    out.sort_by_key(|(no, _)| *no);
+    // An item under the heading that is tagged, too, counts once.
+    let mut seen = std::collections::HashSet::new();
+    out.into_iter().map(|(_, d)| d).filter(|d| !d.trim().is_empty() && seen.insert(d.clone())).collect()
 }
 
 /// The report of `req` as of `today` (local days in `tz`).

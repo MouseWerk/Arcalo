@@ -777,3 +777,42 @@ fn followup_mail_leaves_out_the_users_own_addresses() {
     // Nothing configured: everyone stays.
     assert_eq!(followup::without_own(to.clone(), &[]), to);
 }
+
+/// q124 r7c: what the follow-up mail and the status report read from a meeting note.
+#[test]
+fn followup_keeps_due_dates_in_words_links_and_sub_headings() {
+    let note = "## Ergebnisse\n\n- Budget [geschätzt] siehe [Doku](https://wiki/doku)\n- [x] Release freigegeben ([Protokoll](https://wiki/x))\n\n\
+                ## Entscheidungen\n\n### Backend\n\n- Wir nehmen Postgres\n\n### Frontend\n\n- React bleibt\n\n## Offene Punkte\n\n- Hosting\n\n\
+                ## Aufgaben\n\n- [ ] Angebot schicken bis 20.11.2026 @Anna\n- [ ] İlkay Vertrag prüfen bis Übermorgen\n";
+    let f = followup::extract(7, note, "Jour fixe", None, vec![], "de", day(2026, 11, 16));
+    assert_eq!(f.results, ["Budget [geschätzt] siehe Doku"], "links to their text, done tasks left out");
+    assert_eq!(f.decisions, ["Wir nehmen Postgres", "React bleibt"], "items of sub-headings belong to the section");
+    let actions: Vec<(&str, Option<&str>)> = f.actions.iter().map(|a| (a.text.as_str(), a.due.as_deref())).collect();
+    assert_eq!(
+        actions,
+        [
+            ("Release freigegeben (Protokoll)", None),
+            ("Angebot schicken", Some("2026-11-20")),
+            ("İlkay Vertrag prüfen", Some("2026-11-18")),
+        ],
+        "a due date in words is the action's due date"
+    );
+    assert_eq!(items_under(note, &["offene punkte"]), ["Hosting"], "a section ends at a heading of its level");
+}
+
+#[test]
+fn decisions_tagged_under_the_decision_heading_count_once() {
+    let d = status::decisions_in(
+        "## Entscheidungen\n\n- Go-Live #entscheidung\n- Pilot mit drei Kunden\n\n## Notizen\n\n- Go-Live #entscheidung\n",
+    );
+    assert_eq!(d, ["Go-Live", "Pilot mit drei Kunden"]);
+}
+
+/// The editor writes a longer fence around code that holds ```` ``` ````: a task in a Markdown
+/// example inside it is code, not a task, and the same for decisions in a `~~~` block.
+#[test]
+fn sections_skip_code_in_longer_fences() {
+    let note =
+        "## Entscheidungen\n\n- Echt\n\n~~~markdown\n```\n## Entscheidungen\n- Beispiel\n```\n~~~\n\n- Auch echt\n";
+    assert_eq!(items_under(note, DECISION_HEADINGS), ["Echt", "Auch echt"]);
+}
