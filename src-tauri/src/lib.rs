@@ -2651,7 +2651,9 @@ fn after_undo_time(app: &AppHandle, f: impl FnOnce(&AppState) + Send + 'static) 
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(undo_grace());
-        f(&app.state::<AppState>());
+        if let Some(state) = app.try_state::<AppState>() {
+            f(&state);
+        }
     });
 }
 
@@ -5838,8 +5840,11 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
             // A running recording is closed properly (offered at the next start), a transcription
             // marked as interrupted, as for a restart or an update.
             voice::shutdown(app);
-            // Keys of providers removed in the last minute (their undo ends with the app).
-            forget_removed_provider_keys(&app.state::<AppState>(), true);
+            // Keys of providers removed in the last minute (their undo ends with the app). No
+            // state before the workspace opened (the key and recovery screens restart the app).
+            if let Some(state) = app.try_state::<AppState>() {
+                forget_removed_provider_keys(&state, true);
+            }
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);
