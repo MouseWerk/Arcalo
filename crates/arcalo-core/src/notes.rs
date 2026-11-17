@@ -62,34 +62,56 @@ pub struct SavedPage {
 
 // ------------------------------------------------------------------ parsing
 
-/// The fence marker a line opens or closes a code block with (```` ``` ```` or `~~~`).
-pub(crate) fn fence_marker(line: &str) -> Option<&'static str> {
-    let l = line.trim_start();
-    if l.starts_with("```") {
-        Some("```")
-    } else if l.starts_with("~~~") {
-        Some("~~~")
-    } else {
-        None
+/// The fence a line opens a code block with: three or more backticks or tildes. A block ends at
+/// a line of the same character, at least as long, with nothing after it (CommonMark): the
+/// editor writes four backticks around code that holds three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Fence {
+    ch: char,
+    len: usize,
+}
+
+impl Fence {
+    pub(crate) fn open(line: &str) -> Option<Fence> {
+        let l = line.trim_start();
+        let ch = l.chars().next().filter(|c| *c == '`' || *c == '~')?;
+        let len = l.chars().take_while(|c| *c == ch).count();
+        // A backtick fence's info string holds no backtick (else it is inline code).
+        (len >= 3 && !(ch == '`' && l[len..].contains('`'))).then_some(Fence { ch, len })
+    }
+
+    pub(crate) fn closed_by(&self, line: &str) -> bool {
+        let l = line.trim();
+        l.len() >= self.len && l.chars().all(|c| c == self.ch)
     }
 }
 
-/// Lines outside fenced code blocks (```` ``` ```` or `~~~`; a block ends at its own marker).
-fn prose_lines(markdown: &str) -> impl Iterator<Item = &str> {
-    let mut fence: Option<&str> = None;
-    markdown.lines().filter(move |l| match (fence, fence_marker(l)) {
-        (Some(f), m) => {
-            if m == Some(f) {
-                fence = None;
+/// Tells code lines (fences and what they hold) from prose, line by line.
+#[derive(Debug, Default)]
+pub(crate) struct CodeFences(Option<Fence>);
+
+impl CodeFences {
+    /// Whether `line` is part of a fenced code block (its fences included).
+    pub(crate) fn code(&mut self, line: &str) -> bool {
+        match self.0 {
+            Some(f) => {
+                if f.closed_by(line) {
+                    self.0 = None;
+                }
+                true
             }
-            false
+            None => {
+                self.0 = Fence::open(line);
+                self.0.is_some()
+            }
         }
-        (None, Some(m)) => {
-            fence = Some(m);
-            false
-        }
-        (None, None) => true,
-    })
+    }
+}
+
+/// Lines outside fenced code blocks.
+fn prose_lines(markdown: &str) -> impl Iterator<Item = &str> {
+    let mut fences = CodeFences::default();
+    markdown.lines().filter(move |l| !fences.code(l))
 }
 
 /// Length of the target in a `[[link]]`'s inner text: up to `|` or `#`. In a table cell the
@@ -840,22 +862,11 @@ pub fn daily_title_date(title: &str) -> Option<NaiveDate> {
 /// Code (fenced blocks and inline spans) stays as written, as it is no link ([`wiki_links`]).
 pub fn replace_link_target(content: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(content.len());
-    let mut fence: Option<&str> = None;
+    let mut fences = CodeFences::default();
     for line in content.split_inclusive('\n') {
-        match (fence, fence_marker(line)) {
-            (Some(f), m) => {
-                if m == Some(f) {
-                    fence = None;
-                }
-                out.push_str(line);
-                continue;
-            }
-            (None, Some(m)) => {
-                fence = Some(m);
-                out.push_str(line);
-                continue;
-            }
-            (None, None) => {}
+        if fences.code(line) {
+            out.push_str(line);
+            continue;
         }
         // Between backticks is inline code (an unclosed one runs to the end of the line).
         for (i, part) in line.split('`').enumerate() {

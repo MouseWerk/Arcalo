@@ -18,6 +18,10 @@ const fake = {
   hold: null as null | { release: () => void },
   /** Chats whose reading waits until their promise resolves. */
   slowGets: new Map<number, Promise<void>>(),
+  /** Stop ends a held answer as the provider does: cancelled, with what came so far (nothing). */
+  cancelable: false,
+  cancelled: new Set<string>(),
+  deleted: new Set<number>(),
 };
 const conv = (id: number, title: string): ChatConversation => ({
   id,
@@ -47,6 +51,7 @@ vi.mock("../lib/api", () => ({
     chatCreate: async (title: string) => (fake.saving ? conv(fake.nextId++, title) : null),
     chatAppend: async (id: number, messages: ChatRecord[]) => {
       if (!fake.saving) return null;
+      if (fake.deleted.has(id)) throw new Error(`chat ${id} not found`);
       fake.appends.push({ id, messages });
       const start = fake.seqs.get(id) ?? 0;
       fake.seqs.set(id, start + messages.length);
@@ -61,19 +66,31 @@ vi.mock("../lib/api", () => ({
       await fake.slowGets.get(id);
       return chatDoc(id);
     },
-    chat: async (a: { messages: ChatMessage[]; conversationId: number | null; notes?: boolean; useTools?: boolean; pageId?: number | null }) => {
+    chat: async (a: { requestId: string; messages: ChatMessage[]; conversationId: number | null; notes?: boolean; useTools?: boolean; pageId?: number | null }) => {
       fake.requests.push({ messages: structuredClone(a.messages), conversationId: a.conversationId, notes: a.notes, useTools: a.useTools, pageId: a.pageId });
       if (fake.hold) await new Promise<void>((r) => (fake.hold!.release = r));
       const last = [...a.messages].reverse().find((m) => m.role === "user")?.content;
+      const cancelled = fake.cancelled.has(a.requestId);
       return {
-        completion: { content: `Antwort auf ${last}`, tool_calls: [], finish_reason: "stop", usage: { model: "firma-standard", prompt_tokens: 10, completion_tokens: 5, cost_usd: 0.001, ttft_ms: 100, tokens_per_second: 50 }, exact_usage: true },
+        completion: { content: cancelled ? "" : `Antwort auf ${last}`, tool_calls: [], finish_reason: cancelled ? "cancelled" : "stop", usage: { model: "firma-standard", prompt_tokens: 10, completion_tokens: 5, cost_usd: 0.001, ttft_ms: 100, tokens_per_second: 50 }, exact_usage: true },
         route: { tier: "standard", provider: "litellm", model: "firma-standard", score: 0, reasons: [] },
         context: [],
         meter: {},
         private: false,
       };
     },
-    cancelChat: async () => {},
+    cancelChat: async (rid: string) => {
+      if (!fake.cancelable) return;
+      fake.cancelled.add(rid);
+      fake.hold?.release();
+    },
+    chatDelete: async (id: number) => {
+      fake.deleted.add(id);
+    },
+    chatRestore: async (id: number) => {
+      fake.deleted.delete(id);
+      return conv(id, "x");
+    },
     routePreview: async () => null,
   },
   errorText: (e: unknown) => String(e),
@@ -93,6 +110,9 @@ beforeEach(() => {
   fake.requests = [];
   fake.hold = null;
   fake.slowGets.clear();
+  fake.cancelable = false;
+  fake.cancelled.clear();
+  fake.deleted.clear();
   useApp.setState({ settings: { settings: { providers: [{ id: "litellm", name: "LiteLLM" }], router: { standard_provider: "litellm", standard_model: "firma-standard" }, ai: { chat_history: "all" } } } as never });
 });
 
@@ -280,5 +300,60 @@ describe("chat view session", () => {
     expect(chat.viewChat.history().map((m) => m.content)).toEqual(["Nur hier", "Antwort auf Nur hier"]);
     expect(chat.useChat.getState().turns).toEqual([]);
     expect(useApp.getState().tabs.some((t) => t.kind === "chat")).toBe(true);
+  });
+
+  // q124 r7c
+  it("a question stopped before the first word leaves no empty answer in the model's history (R7C-5)", async () => {
+    fake.cancelable = true;
+    fake.hold = { release: () => {} };
+    const pending = chat.sendChat("Abgebrochene Frage");
+    await new Promise((r) => setTimeout(r, 10));
+    chat.stopChat();
+    await pending;
+    fake.hold = null;
+    await chat.sendChat("Nächste Frage");
+    await settle();
+    // An assistant message without content and without tool calls is refused by strict
+    // providers (every later question of the chat failed); the unanswered question goes, too.
+    expect(fake.requests.at(-1)!.messages).toEqual([{ role: "user", content: "Nächste Frage" }]);
+    expect(chat.useChat.getState().turns.map((t) => (t.kind === "assistant" ? `assistant${t.cancelled ? ":cancelled" : ""}` : t.kind === "user" ? t.text : t.kind))).toEqual(["Abgebrochene Frage", "assistant:cancelled", "Nächste Frage", "assistant"]);
+    // Reopened: the same history.
+    const saved = fake.appends.flatMap((c) => c.messages);
+    expect(saved.filter((m) => m.in_context !== false).map((m) => `${m.role}:${m.content}`)).toEqual(["user:Nächste Frage", "assistant:Antwort auf Nächste Frage"]);
+  });
+
+  it("a chat deleted while it answers keeps its question for „Rückgängig“ (R7C-3)", async () => {
+    fake.cancelable = true;
+    await chat.sendChat("Erste Frage");
+    fake.hold = { release: () => {} };
+    const pending = chat.sendChat("Zweite Frage");
+    await new Promise((r) => setTimeout(r, 10));
+    const conv = chat.useChat.getState().conversation!;
+    await chat.deleteChat(conv);
+    await pending;
+    await settle();
+    const saved = fake.appends.filter((c) => c.id === conv.id).flatMap((c) => c.messages.map((m) => `${m.role}:${m.content}`));
+    expect(saved).toEqual(["user:Erste Frage", "assistant:Antwort auf Erste Frage", "user:Zweite Frage", "assistant:"]);
+    expect(fake.deleted.has(conv.id)).toBe(true);
+    expect(chat.useChat.getState().turns).toEqual([]);
+  });
+
+  it("an unsaved chat moved to the chat view while it answers does not stream there for ever (R7C-4)", async () => {
+    fake.saving = false;
+    fake.cancelable = true;
+    fake.hold = { release: () => {} };
+    const pending = chat.sendChat("Lange Antwort");
+    await new Promise((r) => setTimeout(r, 10));
+    await chat.openChatView({ from: chat.panelChat });
+    await pending;
+    await settle();
+    const turns = chat.viewChat.use.getState().turns;
+    expect(turns.map((t) => t.kind)).toEqual(["user", "assistant"]);
+    expect(turns.some((t) => t.kind === "assistant" && t.streaming)).toBe(false);
+    expect(chat.viewChat.use.getState().busy).toBe(false);
+    // The view can go on: its history holds no question without an answer.
+    fake.hold = null;
+    await chat.viewChat.send("Weiter");
+    expect(fake.requests.at(-1)!.messages).toEqual([{ role: "user", content: "Weiter" }]);
   });
 });

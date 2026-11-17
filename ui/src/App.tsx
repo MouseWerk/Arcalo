@@ -5,7 +5,7 @@ import { writeSettings } from "./lib/settingsWrite";
 import { requestWeekProposal } from "./lib/weekplan";
 import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { AI_SHORTCUTS, aiEnabled } from "./lib/aiswitch";
-import { useApp, savePref, activeTab } from "./store/app";
+import { useApp, savePref, activeNoteId } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { REVEAL_EVENT, Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
@@ -628,14 +628,15 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   chat_view: () => void openChatView(),
   toggle_sidebar: toggleSidebar,
   toggle_panel: togglePanel,
-  add_property: () => requestAddProperty(),
-  toggle_source: () => requestPageCommand("source"),
-  full_width: () => requestPageCommand("full"),
+  // The editor's commands: a canvas has none of them (its board would not answer).
+  add_property: () => activeNoteId() != null && requestAddProperty(),
+  toggle_source: () => activeNoteId() != null && requestPageCommand("source"),
+  full_width: () => activeNoteId() != null && requestPageCommand("full"),
   focus_mode: () => useApp.getState().set({ focusMode: !useApp.getState().focusMode }),
   settings: () => useApp.getState().openTab({ kind: "settings" }),
   help: () => void openDocs(),
   present: () => {
-    const tab = activeTab();
-    if (tab?.kind === "page" && tab.pageId != null) void startPresentation(tab.pageId);
+    const id = activeNoteId();
+    if (id != null) void startPresentation(id);
   },
 };

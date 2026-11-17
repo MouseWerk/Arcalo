@@ -634,3 +634,10 @@ export const activeTab = () => {
   const s = useApp.getState();
   return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
 };
+
+/** The page of the active tab when it is a note (not a canvas): what the editor's commands act on. */
+export const activeNoteId = (): number | null => {
+  const tab = activeTab();
+  if (tab?.kind !== "page" || tab.pageId == null) return null;
+  return useApp.getState().pages.get(tab.pageId)?.kind === "canvas" ? null : tab.pageId;
+};

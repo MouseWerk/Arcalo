@@ -8,7 +8,7 @@ import { api, errorText, on } from "../lib/api";
 import { applyTheme } from "../lib/actions";
 import { fmtMinutes } from "../lib/format";
 import { exactOnlyPref } from "../lib/meaningSearch";
-import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem } from "../lib/quicksearch";
+import { followSelection, isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem } from "../lib/quicksearch";
 import { timeTrackingOn } from "../lib/timetracking";
 import type { Page, SearchHit } from "../lib/types";
 import { PageIcon } from "./icons";
@@ -127,7 +127,14 @@ export function SearchApp() {
   }, [query, timeOn]);
 
   const items = useMemo(() => quickItems(query, { hits, recent, timerRunning, lastRef, time: timeOn, jira: jiraOn }), [query, hits, recent, timerRunning, lastRef, timeOn, jiraOn]);
-  useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
+  // The selected item stays selected when the list changes under it (meaning hits arrive later).
+  const shownItems = useRef({ items, query });
+  useEffect(() => {
+    const prev = shownItems.current;
+    shownItems.current = { items, query };
+    setSel((v) => followSelection(prev.query === query ? prev.items : [], v, items));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
   useEffect(() => {
     list.current?.querySelector(".pal-item.sel")?.scrollIntoView({ block: "nearest" });
   }, [sel]);

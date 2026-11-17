@@ -214,12 +214,17 @@ pub fn plain(md: &str) -> String {
         let text = inner.split_once('|').map_or(inner, |(_, t)| t).to_owned();
         s.replace_range(open..close + 2, &text);
     }
-    // [Text](url).
-    while let Some(open) = s.find('[') {
-        let Some(mid) = s[open..].find("](").map(|m| open + m) else { break };
+    // [Text](url): the `[` right before its `](` (an earlier `[` is text of its own).
+    let mut from = 0;
+    while let Some(mid) = s[from..].find("](").map(|m| from + m) {
         let Some(close) = s[mid..].find(')').map(|c| mid + c) else { break };
+        let Some(open) = s[from..mid].rfind('[').map(|o| from + o) else {
+            from = mid + 2;
+            continue;
+        };
         let text = s[open + 1..mid].to_owned();
         s.replace_range(open..close + 1, &text);
+        from = open + text.len();
     }
     for mark in ["**", "__", "~~", "`"] {
         s = s.replace(mark, "");
@@ -289,8 +294,12 @@ pub fn extract(
     let (_, body) = split_front_matter(content);
     let lang = note_lang(body).unwrap_or(if ui_lang == "en" { "en" } else { "de" }).to_owned();
     let w = words(&lang);
-    let mut results: Vec<String> = items_under(body, RESULT_HEADINGS).iter().map(|i| plain(i)).collect();
-    results.retain(|r| !r.starts_with("[ ]") && !r.starts_with("[x]"));
+    // Task items under the results heading are actions (below), not results.
+    let mut results: Vec<String> = items_under(body, RESULT_HEADINGS)
+        .iter()
+        .filter(|i| !["[ ]", "[x]", "[X]"].iter().any(|b| i.starts_with(b)))
+        .map(|i| plain(i))
+        .collect();
     let mut decisions: Vec<String> = items_under(body, DECISION_HEADINGS).iter().map(|i| plain(i)).collect();
     // „- Entscheidung: …“ anywhere else.
     for (h, items) in list_sections(body) {
@@ -309,18 +318,20 @@ pub fn extract(
     let mut actions = vec![];
     for t in crate::tasks::parse_tasks(body) {
         let parsed = crate::voice::actions::parse_item(&t.text, today);
-        let (text, owner) = match parsed {
-            Some(a) => (a.text, a.assignee),
-            None => (t.text.clone(), None),
+        // „bis 20.11.“ is taken out of the text as the due date: it is the action's due date then.
+        let (text, owner, due) = match parsed {
+            Some(a) => (a.text, a.assignee, t.due.clone().or(a.due)),
+            None => (t.text.clone(), None, t.due.clone()),
         };
         let text = plain(&text);
         if text.is_empty() {
             continue;
         }
-        actions.push(FollowAction { text, owner: owner.map(|o| display_name(&o)), due: t.due, done: t.done });
+        actions.push(FollowAction { text, owner: owner.map(|o| display_name(&o)), due, done: t.done });
     }
     results.truncate(MAX_ITEMS);
-    decisions.dedup();
+    let mut seen = std::collections::HashSet::new();
+    decisions.retain(|d| seen.insert(d.clone()));
     decisions.truncate(MAX_ITEMS);
     actions.truncate(MAX_ITEMS);
     let meeting = meeting.trim().to_owned();

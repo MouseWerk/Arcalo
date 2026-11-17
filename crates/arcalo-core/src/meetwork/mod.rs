@@ -20,17 +20,21 @@ mod tests;
 
 /// The items of the list sections of a note, by heading: `(heading in lower case, items)`.
 /// Items are the text of `- …`, `* …` and `1. …` lines (task boxes kept as written), up to
-/// the next heading of the same or a higher level. Code blocks are skipped.
+/// the next heading. Code blocks are skipped.
 pub fn list_sections(markdown: &str) -> Vec<(String, Vec<String>)> {
-    let mut out: Vec<(String, usize, Vec<String>)> = vec![];
-    let mut fence = false;
-    for line in markdown.lines() {
+    sections(markdown).into_iter().map(|(h, _, items)| (h, items.into_iter().map(|(_, i)| i).collect())).collect()
+}
+
+/// A list section: its heading (lower case), the heading's level, and its items with their lines.
+type Section = (String, usize, Vec<(usize, String)>);
+
+/// [`list_sections`] with each heading's level and each item's line.
+fn sections(markdown: &str) -> Vec<Section> {
+    let mut out: Vec<Section> = vec![];
+    let mut fences = crate::notes::CodeFences::default();
+    for (no, line) in markdown.lines().enumerate() {
         let t = line.trim_start();
-        if t.starts_with("```") || t.starts_with("~~~") {
-            fence = !fence;
-            continue;
-        }
-        if fence {
+        if fences.code(line) {
             continue;
         }
         if let Some(level) = heading_level(t) {
@@ -43,14 +47,14 @@ pub fn list_sections(markdown: &str) -> Vec<(String, Vec<String>)> {
         {
             // Only top-level items; nested ones belong to their parent.
             if line.len() - t.len() <= 1 {
-                last.2.push(item.to_owned());
-            } else if let Some(prev) = last.2.last_mut() {
+                last.2.push((no, item.to_owned()));
+            } else if let Some((_, prev)) = last.2.last_mut() {
                 prev.push_str(" – ");
                 prev.push_str(item);
             }
         }
     }
-    out.into_iter().map(|(h, _, items)| (h, items)).collect()
+    out
 }
 
 /// The level of a Markdown heading line (`## x` → 2).
@@ -99,12 +103,26 @@ pub const OPEN_HEADINGS: &[&str] = &[
 /// Items of the sections whose heading is one of `headings`; empty placeholder items („-“,
 /// „keine“) are left out.
 pub fn items_under(markdown: &str, headings: &[&str]) -> Vec<String> {
-    list_sections(markdown)
+    items_under_at(markdown, headings).into_iter().map(|(_, i)| i).collect()
+}
+
+/// [`items_under`] with the line of each item.
+pub(crate) fn items_under_at(markdown: &str, headings: &[&str]) -> Vec<(usize, String)> {
+    // A section runs up to the next heading of its level or a higher one: the items of its
+    // sub-headings („## Entscheidungen“, „### Backend“) belong to it.
+    let mut inside: Option<usize> = None;
+    sections(markdown)
         .into_iter()
-        .filter(|(h, _)| headings.contains(&h.as_str()))
-        .flat_map(|(_, items)| items)
-        .map(|i| i.trim().to_owned())
-        .filter(|i| {
+        .filter(|(h, level, _)| {
+            if inside.is_some_and(|l| *level > l) {
+                return true;
+            }
+            inside = headings.contains(&h.as_str()).then_some(*level);
+            inside.is_some()
+        })
+        .flat_map(|(_, _, items)| items)
+        .map(|(no, i)| (no, i.trim().to_owned()))
+        .filter(|(_, i)| {
             !matches!(i.to_lowercase().as_str(), "" | "-" | "—" | "keine" | "keine." | "none" | "none." | "n/a")
         })
         .collect()

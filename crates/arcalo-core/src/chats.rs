@@ -475,7 +475,8 @@ impl Database {
     /// is older than the limit (pinned ones stay) and those deleted before `now`. Returns how
     /// many conversations went.
     pub fn chat_prune(&self, retention: ChatRetention, now: DateTime<Utc>) -> Result<usize> {
-        let mut n = self.chat_purge_deleted(now)?;
+        // A chat deleted in the last minute can still be taken back (its toast).
+        let mut n = self.chat_purge_deleted(now - Duration::seconds(UNDO_SECS))?;
         if let Some(days) = retention.days() {
             n += self.conn().execute(
                 "DELETE FROM chat_conversations WHERE pinned = 0 AND updated_at < ?1",
@@ -689,6 +690,14 @@ mod tests {
         assert!(!left.contains(&old.id));
         assert_eq!(db.chat_prune(ChatRetention::Days30, now).unwrap(), 0, "the recent chat is 20 days old");
         assert_eq!(db.chat_prune(ChatRetention::Days30, now + Duration::days(11)).unwrap(), 1);
+
+        // A chat deleted just now keeps its „Rückgängig“ through a cleanup (q124 r7c).
+        let later = now + Duration::days(12);
+        db.chat_delete(pinned.id, later).unwrap();
+        assert_eq!(db.chat_prune(ChatRetention::All, later + Duration::seconds(5)).unwrap(), 0);
+        db.chat_restore(pinned.id).unwrap();
+        db.chat_delete(pinned.id, later).unwrap();
+        assert_eq!(db.chat_prune(ChatRetention::All, later + Duration::seconds(UNDO_SECS + 1)).unwrap(), 1);
     }
 
     #[test]
