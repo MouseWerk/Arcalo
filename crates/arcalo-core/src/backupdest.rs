@@ -709,6 +709,12 @@ pub fn deliver(job: &Job, act: &Activity) -> std::result::Result<Delivered, Fail
     })
 }
 
+/// Hidden names (`.…`) are not copied, except the Markdown copy's titles file
+/// ([`crate::vault::TITLES_FILE`]): without it the copy in a destination names „Q3: Ziele“ „Q3- Ziele“.
+fn hidden_name(name: &str) -> bool {
+    name.starts_with('.') && name != crate::vault::TITLES_FILE
+}
+
 /// Copies the regular, visible files of `src` that are missing in `dst` or differ in size or
 /// are newer (a drawing saved again). Each file is written as `.<name>.partial` and renamed.
 /// Nothing in `dst` is deleted. Returns the number of files copied.
@@ -720,7 +726,7 @@ pub fn sync_files(src: &Path, dst: &Path, act: &Activity) -> Result<usize> {
         let name = entry.file_name();
         let Some(name_str) = name.to_str() else { continue };
         let Ok(ft) = entry.file_type() else { continue };
-        if name_str.starts_with('.') || !ft.is_file() {
+        if hidden_name(name_str) || !ft.is_file() {
             continue;
         }
         let from = entry.path();
@@ -759,7 +765,7 @@ pub fn sync_tree(src: &Path, dst: &Path, act: &Activity) -> Result<()> {
     let mut keep = std::collections::HashSet::new();
     for entry in fs::read_dir(src).at(src)?.flatten() {
         let name = entry.file_name();
-        if name.to_string_lossy().starts_with('.') {
+        if hidden_name(&name.to_string_lossy()) {
             continue;
         }
         keep.insert(name.clone());
@@ -769,7 +775,7 @@ pub fn sync_tree(src: &Path, dst: &Path, act: &Activity) -> Result<()> {
     }
     for entry in fs::read_dir(os_path(dst)).at(dst)?.flatten() {
         let name = entry.file_name();
-        if keep.contains(&name) || name.to_string_lossy().starts_with('.') {
+        if keep.contains(&name) || hidden_name(&name.to_string_lossy()) {
             continue;
         }
         act.step(&entry.path())?;
@@ -1050,7 +1056,44 @@ pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Opti
     fs::rename(&pending, &db_file).at(&db_file)?;
     let _ = fs::remove_file(&from_file);
     restored_for_sync(data_dir, &from, now);
+    note_restored_files(data_dir, &from);
     Ok(Some(Restored { from, encrypt: keep_encrypted(data_dir, was_encrypted, now) }))
+}
+
+/// File in the data folder naming the backup a restore put in place, until the first start that
+/// opens it has brought back the files its pages embed ([`bring_back_files`]).
+pub const RESTORED_FILES: &str = "restore-files.pending";
+
+fn note_restored_files(data_dir: &Path, from: &str) {
+    if let Err(e) = crate::drawings::write_atomic(&data_dir.join(RESTORED_FILES), from.as_bytes()) {
+        eprintln!("arcalo: restore not noted for its files: {e}");
+    }
+}
+
+/// After a restore (once, on the start that opens the restored database, before the file trash is
+/// emptied): the files the pages embed that were deleted since the backup come back, from the
+/// file trash or else from the attachments copied next to the backup (`<folder>/attachments`).
+/// Without this a restored page showed a broken image for a file that lay in the file trash.
+/// Returns the names brought back.
+pub fn bring_back_files(db: &crate::db::Database, data_dir: &Path) -> Result<Vec<String>> {
+    let marker = data_dir.join(RESTORED_FILES);
+    let Ok(from) = fs::read_to_string(&marker) else { return Ok(vec![]) };
+    let copy = Path::new(from.trim())
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| p.join(crate::attachments::DIR_NAME));
+    let contents: Vec<String> = db
+        .conn()
+        .prepare("SELECT content FROM pages WHERE deleted_at IS NULL AND content <> ''")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let back = crate::attachment_manager::bring_back(
+        data_dir,
+        contents.iter().map(String::as_str),
+        copy.as_deref().map(os_path).as_deref(),
+    )?;
+    let _ = fs::remove_file(&marker);
+    Ok(back)
 }
 
 /// The Git sync compares with the server before it uploads anything after a restore
@@ -1076,7 +1119,8 @@ fn keep_encrypted(data_dir: &Path, was_encrypted: bool, now: DateTime<Utc>) -> b
 #[derive(Debug, Clone, PartialEq)]
 pub struct Source {
     pub path: PathBuf,
-    /// Destination folder (listed per computer) or a plain local backup folder.
+    /// This computer's subfolder of a destination (its `.sha256` files are checked) or a plain
+    /// local backup folder.
     pub remote: bool,
 }
 
@@ -1089,7 +1133,11 @@ pub fn gather(sources: &[Source], timeout: Duration) -> Vec<BackupInfo> {
             std::thread::spawn(move || {
                 with_timeout(timeout, move || {
                     if remote {
-                        list_remote(&path).map(|l| l.into_iter().map(|r| r.info).collect()).unwrap_or_default()
+                        let mut own = list_own(&path);
+                        for info in &mut own {
+                            info.path = path.join(&info.file_name).display().to_string();
+                        }
+                        own
                     } else {
                         backup::list_backups(&path).unwrap_or_default()
                     }
@@ -1131,6 +1179,7 @@ pub fn restore_newest(db_file: &Path, backups: &[BackupInfo], now: DateTime<Utc>
                 if let Some(dir) = db_file.parent() {
                     keep_encrypted(dir, was_encrypted, now);
                     restored_for_sync(dir, &b.file_name, now);
+                    note_restored_files(dir, &b.path);
                 }
                 return Ok(b.clone());
             }
@@ -1281,8 +1330,15 @@ pub fn write_registry(data_dir: &Path, reg: &Registry) -> Result<()> {
     fs::write(&tmp, serde_json::to_string_pretty(reg)?).and_then(|()| fs::rename(&tmp, &file)).at(&file)
 }
 
-/// Where the start-up recovery looks for backups: the local folder, then every destination.
+/// Where the start-up recovery looks for backups: the local folder, then this computer's
+/// subfolder of every destination. Never another computer's: a destination shared with a second
+/// computer or a colleague holds their workspaces, and the newest of those is not this one.
 pub fn recovery_sources(data_dir: &Path) -> Vec<Source> {
+    recovery_sources_for(data_dir, &crate::gitsync::hostname())
+}
+
+/// [`recovery_sources`] for the computer named `host`.
+pub fn recovery_sources_for(data_dir: &Path, host: &str) -> Vec<Source> {
     let reg = read_registry(data_dir);
     let local = reg.local_dir.filter(|d| !d.trim().is_empty()).map(PathBuf::from);
     let mut out = vec![Source { path: data_dir.join("backups"), remote: false }];
@@ -1290,7 +1346,7 @@ pub fn recovery_sources(data_dir: &Path) -> Vec<Source> {
         out.push(Source { path: l, remote: false });
     }
     for d in reg.destinations.iter().filter(|d| d.enabled) {
-        out.push(Source { path: PathBuf::from(&d.path), remote: true });
+        out.push(Source { path: PathBuf::from(&d.path).join(host_folder(host)), remote: true });
     }
     out
 }
@@ -1609,9 +1665,16 @@ mod tests {
         fs::create_dir_all(md.join("Projekte")).unwrap();
         fs::write(md.join("Projekte/Übersicht.md"), b"# x").unwrap();
         fs::write(md.join("README.txt"), b"r").unwrap();
+        fs::write(md.join(crate::vault::TITLES_FILE), b"{}").unwrap();
+        fs::write(md.join(".markdown.old"), b"x").unwrap();
         let out = root.join("dest-md");
         sync_tree(&md, &out, &act).unwrap();
         assert!(out.join("Projekte/Übersicht.md").is_file());
+        assert!(out.join(crate::vault::TITLES_FILE).is_file(), "the titles file goes along");
+        assert!(!out.join(".markdown.old").exists(), "other hidden names do not");
+        fs::remove_file(md.join(crate::vault::TITLES_FILE)).unwrap();
+        sync_tree(&md, &out, &act).unwrap();
+        assert!(!out.join(crate::vault::TITLES_FILE).exists(), "a titles file no longer needed goes");
         fs::remove_dir_all(md.join("Projekte")).unwrap();
         sync_tree(&md, &out, &act).unwrap();
         assert!(!out.join("Projekte").exists(), "removed pages leave the mirror copy");
@@ -1754,6 +1817,13 @@ mod tests {
         fs::create_dir_all(&share).unwrap();
         deliver(&job(Path::new(&local.path), &share, "pc", 3), &Activity::new(None)).unwrap();
         let remote = list_remote(&share).unwrap().remove(0);
+        // Another computer's backup in the same share, newer: never taken by the recovery.
+        let other = root.join("other.db");
+        fs::copy(&local.path, &other).unwrap();
+        let later = (Utc::now() + TimeDelta::hours(2)).format(STAMP);
+        let other_named = root.join(format!("arcalo-{later}.db"));
+        fs::rename(&other, &other_named).unwrap();
+        deliver(&job(&other_named, &share, "laptop", 3), &Activity::new(None)).unwrap();
 
         // A damaged copy is refused (checksum), and nothing is staged.
         let damaged = root.join("nas-kaputt");
@@ -1799,10 +1869,11 @@ mod tests {
             status: BTreeMap::new(),
         };
         write_registry(&data, &reg).unwrap();
-        let sources = recovery_sources(&data);
+        let sources = recovery_sources_for(&data, "PC");
         assert_eq!(sources.len(), 2);
         let mut found = gather(&sources, Duration::from_secs(5));
-        assert_eq!(found.len(), 2, "local and on the share");
+        assert_eq!(found.len(), 2, "local and this computer's on the share, not the laptop's");
+        assert!(found.iter().all(|b| !b.path.contains("laptop")), "{found:?}");
         found.insert(0, newest);
         let used = restore_newest(&db_file, &found, now).unwrap();
         assert_ne!(used.path, bad.display().to_string(), "the damaged newest one was skipped");

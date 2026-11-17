@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use arcalo_core::db::EntryFilter;
 use arcalo_core::export::{self, ExportFormat, ExportOptions};
 use arcalo_core::external::Change;
-use arcalo_core::model::{StatusFlag, TimeEntry};
+use arcalo_core::model::{StatusFlag, TimeEntry, TimeEntryRow};
 use arcalo_core::tracking::{self, AlertLevel, BudgetStatus};
 use arcalo_core::worktime::{self, Absence, AbsenceKind, Holiday};
 use arcalo_core::{Database, Error, Result, i18n, tr, trf, zeit};
@@ -215,30 +215,69 @@ pub fn export(ctx: &Ctx, a: ExportArgs) -> Outcome<()> {
         cats_decimal_point: settings.time.cats_decimal.point(&settings.locale),
     };
     let res = export::export(&rows, format, &opts)?;
-    let marked = if a.mark {
-        let ids = res.exported_ids.clone();
-        Some(ctx.ws.commit(|db| Ok((db.set_entry_status(&ids, StatusFlag::Exported)?, entries_changed(None))))?)
-    } else {
-        None
-    };
+    // The file first, then the marks (as the app does): an output that could not be written (a
+    // full disk, a closed pipe) marks nothing, so its bookings are in the next export.
+    let marking = a.mark.then_some(res.exported_ids.len());
     if ctx.out.json {
         let skipped: Vec<_> =
             res.skipped.iter().map(|(id, why)| serde_json::json!({ "id": id, "reason": why })).collect();
         let v = serde_json::json!({
-            "content": res.content, "exported_ids": res.exported_ids, "skipped": skipped, "marked": marked,
+            "content": res.content, "exported_ids": res.exported_ids, "skipped": skipped, "marked": marking,
         });
-        return ctx.out.show(&v, |_| String::new());
+        write_out(&format!("{}\n", serde_json::to_string_pretty(&v)?), a.mark)?;
+    } else {
+        write_out(&res.content, a.mark)?;
+        for (id, why) in &res.skipped {
+            eprintln!("{}", trf!("übersprungen #{id}: {why}", "skipped #{id}: {why}"));
+        }
     }
-    print!("{}", res.content);
-    for (id, why) in &res.skipped {
-        eprintln!("{}", trf!("übersprungen #{id}: {why}", "skipped #{id}: {why}"));
+    if !a.mark {
+        return Ok(());
     }
-    match marked {
-        Some(1) => eprintln!("{}", tr!("Ein Eintrag als exportiert markiert", "One entry marked as exported")),
-        Some(n) => eprintln!("{}", trf!("{n} Einträge als exportiert markiert", "{n} entries marked as exported")),
-        None => {}
+    // Only what was written: an entry changed or deleted since it was read (in the app, meanwhile)
+    // stays unmarked and goes into the next export with its new values.
+    let written: HashMap<i64, &TimeEntryRow> = rows.iter().map(|r| (r.entry.id, r)).collect();
+    let (marked, changed) = ctx.ws.commit(|db| {
+        let now: HashMap<i64, TimeEntryRow> =
+            db.list_time_entries(&filter)?.into_iter().map(|r| (r.entry.id, r)).collect();
+        let (same, changed): (Vec<i64>, Vec<i64>) =
+            res.exported_ids.iter().copied().partition(|id| now.get(id).is_some_and(|r| Some(&r) == written.get(id)));
+        let marked = db.set_entry_status(&same, StatusFlag::Exported)?;
+        Ok(((marked, changed), entries_changed(None)))
+    })?;
+    for id in &changed {
+        eprintln!(
+            "{}",
+            trf!(
+                "#{id} wurde während des Exports geändert und nicht als exportiert markiert",
+                "#{id} changed during the export and was not marked as exported"
+            )
+        );
+    }
+    if !ctx.out.json {
+        match marked {
+            1 => eprintln!("{}", tr!("Ein Eintrag als exportiert markiert", "One entry marked as exported")),
+            n => eprintln!("{}", trf!("{n} Einträge als exportiert markiert", "{n} entries marked as exported")),
+        }
     }
     Ok(())
+}
+
+/// Writes `text` to standard output and flushes it; a write that fails is an error (`mark`: the
+/// message says that nothing was marked).
+fn write_out(text: &str, mark: bool) -> Outcome<()> {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    out.write_all(text.as_bytes()).and_then(|_| out.flush()).map_err(|e| {
+        Failure::Other(if mark {
+            trf!(
+                "Die Ausgabe ließ sich nicht schreiben, nichts als exportiert markiert: {e}",
+                "The output could not be written, nothing marked as exported: {e}"
+            )
+        } else {
+            trf!("Die Ausgabe ließ sich nicht schreiben: {e}", "The output could not be written: {e}")
+        })
+    })
 }
 
 /// Monday to Sunday of the week of `d`.

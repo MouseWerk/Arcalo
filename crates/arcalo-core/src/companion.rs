@@ -151,6 +151,8 @@ pub fn chip_markdown<Tz: TimeZone>(db: &Database, e: &TimeEntry, tz: &Tz) -> Res
         ("target", v.target),
         ("la", v.leistungsart.unwrap_or_default()),
         ("date", v.date.format("%Y-%m-%d").to_string()),
+        // The phone's bookings are never taken for the desktop's ([`crate::chips`]).
+        ("ws", db.chip_workspace()?),
     ]
     .map(|(k, v)| (k.to_owned(), v));
     Ok(crate::chips::render(&attrs, &v.text))
@@ -480,7 +482,10 @@ mod tests {
         assert_eq!(chips[0].text, "Abstimmung");
         // The desktop's editor sees it as the booking of this note.
         let states = db
-            .chip_states(day.id, &[crate::chips::ChipQuery { id: out.entry.id, target: "NP-8801/1020".into() }])
+            .chip_states(
+                day.id,
+                &[crate::chips::ChipQuery { id: out.entry.id, target: "NP-8801/1020".into(), ws: None }],
+            )
             .unwrap();
         assert_eq!(states[0].link, crate::chips::ChipLink::Linked);
 
@@ -655,7 +660,10 @@ mod tests {
         let day = db.daily_note(NaiveDate::from_ymd_opt(2026, 10, 8).unwrap()).unwrap();
         let content = db.page_doc(day.id).unwrap().content;
         assert!(
-            content.contains(r#"hours="0,75" target="NP-8801/1020" la="DEV" date="2026-10-08">Workshop</time-entry>"#),
+            content.contains(&format!(
+                r#"hours="0,75" target="NP-8801/1020" la="DEV" date="2026-10-08" ws="{}">Workshop</time-entry>"#,
+                db.chip_workspace().unwrap()
+            )),
             "{content}"
         );
         assert_eq!(db.time_entry(entries[0].id).unwrap().page_id, Some(day.id));
@@ -709,7 +717,11 @@ mod tests {
             chip_markdown(&phone, &p1, &tz()).unwrap()
         );
         desk.save_page_content(desk_day.id, &synced).unwrap();
-        let q = crate::chips::ChipQuery { id: p1.id, target: chip.attr("target").unwrap().to_owned() };
+        let q = crate::chips::ChipQuery {
+            id: p1.id,
+            target: chip.attr("target").unwrap().to_owned(),
+            ws: chip.attr("ws").map(Into::into),
+        };
         assert_eq!(desk.chip_states(desk_day.id, &[q]).unwrap()[0].link, crate::chips::ChipLink::Missing);
         // The desktop keeps numbering its own bookings as before.
         let d3 = book(&desk, "/zeit NP-8801 1h Desktop drei", now, &tz(), &t).unwrap().entry;

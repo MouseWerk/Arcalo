@@ -429,7 +429,9 @@ fn dispatch(
             let repo = open(cwd)?;
             let mut index = repo.index()?;
             if p.has("-A") {
-                index.add_all(["*"], IndexAddOption::DEFAULT, None)?;
+                // `--force`: ignore rules (a `.gitignore` from the server) keep no file of the mirror off.
+                let opt = if p.has("--force") { IndexAddOption::FORCE } else { IndexAddOption::DEFAULT };
+                index.add_all(["*"], opt, None)?;
                 index.update_all(["*"], None)?;
             } else {
                 for path in &p.paths {

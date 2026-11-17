@@ -44,7 +44,7 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { isReplaceKey, keys, replaceHint } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
-import { chipsParked } from "./timeChip";
+import { chipsParked, chipWorkspace } from "./timeChip";
 import { flushAllEditors, keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
 import { SaveFailed } from "./SaveFailed";
 import { linkKey, titleSet } from "../lib/links";
@@ -412,7 +412,7 @@ export function NoteEditor({
             s.alerts(out.alerts);
             const target = out.reference || (line.trim().split(/\s+/)[1] ?? "");
             s.toast({ tone: "success", title: tr("ne.booked", { h: fmtMinutes(out.entry.duration_minutes) }), detail: `${target}${out.entry.description ? " · " + out.entry.description : ""}` });
-            return { entryId: out.entry.id, hours: hoursFromMinutes(out.entry.duration_minutes), target, text: out.entry.description, la: out.entry.leistungsart ?? "", date: isoDay(new Date(out.entry.start_time)) };
+            return { entryId: out.entry.id, hours: hoursFromMinutes(out.entry.duration_minutes), target, text: out.entry.description, la: out.entry.leistungsart ?? "", date: isoDay(new Date(out.entry.start_time)), ws: chipWorkspace() };
           } catch (e) {
             useApp.getState().error(tr("ne.bookFailed"), e);
             return null;

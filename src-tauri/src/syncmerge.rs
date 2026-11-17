@@ -43,9 +43,22 @@ fn store(db: &Database, list: &[Conflict]) -> Result<()> {
     db.meta_set(CONFLICTS, &serde_json::to_string(list)?)
 }
 
-/// Repository paths the sync keeps at the server's version until merged.
-pub fn hold_paths(db: &Database) -> Vec<String> {
-    load(db).into_iter().map(|c| c.path).collect()
+/// Notes the sync keeps at the server's version until merged: at the page's current path (it may
+/// have been renamed or moved since the conflict), with the server's version from the path the
+/// conflict was recorded at.
+pub fn hold_paths(db: &Database) -> Vec<gitsync::Held> {
+    let list = load(db);
+    let now: HashMap<i64, String> = if list.is_empty() {
+        HashMap::new()
+    } else {
+        vault::page_paths(db).unwrap_or_default().into_iter().filter_map(|p| Some((p.page_id, p.file?))).collect()
+    };
+    list.into_iter()
+        .map(|c| gitsync::Held {
+            path: now.get(&c.page_id).cloned().unwrap_or_else(|| c.path.clone()),
+            committed: c.path,
+        })
+        .collect()
 }
 
 /// What a sync took over from the server.
@@ -929,7 +942,7 @@ mod tests {
         let list = load(&db);
         assert_eq!(list.len(), 2);
         assert_eq!((list[0].base.as_deref(), list[0].theirs.as_str()), (Some("basis"), "deren"));
-        assert_eq!(hold_paths(&db), ["Notiz.md", "Bearbeitet.md"]);
+        assert_eq!(hold_paths(&db), [gitsync::Held::at("Notiz.md"), gitsync::Held::at("Bearbeitet.md")]);
         assert!(db.page_by_title("README").unwrap().is_none());
 
         // A newer server version updates the open conflict and keeps its base.
@@ -940,7 +953,7 @@ mod tests {
         // A trashed page's conflict disappears.
         db.trash_page(edited.id).unwrap();
         assert_eq!(live(&db).unwrap().len(), 1);
-        assert_eq!(hold_paths(&db), ["Notiz.md"]);
+        assert_eq!(hold_paths(&db), [gitsync::Held::at("Notiz.md")]);
     }
 
     /// Notes a 1.18.1 computer on Windows committed with CRLF: they are stored with LF, and line
@@ -1171,7 +1184,7 @@ mod tests {
         }
 
         /// Syncs the mirror folder `source` as computer `pc`; the server's changes.
-        fn push(&self, pc: &str, source: &std::path::Path, hold: &[String]) -> Vec<RemoteChange> {
+        fn push(&self, pc: &str, source: &std::path::Path, hold: &[gitsync::Held]) -> Vec<RemoteChange> {
             let dir = self.base.join(pc);
             let out = gitsync::sync(
                 &gitsync::Git::new(None, &self.settings.remote_url),
@@ -2641,5 +2654,45 @@ mod tests {
         let again = r.run(&b, "b");
         assert!(!again.committed && again.renamed_files.is_empty(), "{again:?}");
         assert!(!r.run(&a, "a").committed);
+    }
+
+    /// q124 R7B: a page renamed here while its conflict is open. The conflict holds the note's old
+    /// path at the server's version (`hold_paths` takes the path stored with the conflict), while
+    /// the mirror writes the page under its new name: the sync uploads both. The other computer
+    /// gets the undecided text as a new page beside its own, which keeps the old name, instead of
+    /// its page following the rename.
+    #[test]
+    fn a_page_renamed_while_its_conflict_is_open_stays_one_page_on_the_other_computer() {
+        let Some(pcs) = Pcs::new("conflict-rename") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..6 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let notiz = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(notiz.id, "v1").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Notiz").unwrap().unwrap().id;
+        b.save_page_content(on_b, "von B").unwrap();
+        pcs.sync(&b, "b");
+        a.save_page_content(notiz.id, "von A").unwrap();
+        let out = pcs.sync(&a, "a");
+        assert_eq!(out.conflicts, [notiz.id], "{out:?}");
+
+        // Renamed on A before the conflict is decided.
+        a.rename_page(notiz.id, "Notiz neu").unwrap();
+        pcs.sync(&a, "a");
+        pcs.sync(&b, "b");
+        let titles: Vec<String> = b
+            .list_pages()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.title.starts_with("Notiz"))
+            .map(|p| format!("{} ({}): {:?}", p.title, p.id, b.page_doc(p.id).unwrap().content))
+            .collect();
+        assert_eq!(titles.len(), 1, "B has {titles:?}");
+        assert_eq!(b.page(on_b).unwrap().title, "Notiz neu", "B's page follows the rename: {titles:?}");
     }
 }

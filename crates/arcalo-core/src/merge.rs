@@ -91,11 +91,17 @@ fn is_rule(line: &str) -> bool {
 
 /// Splits Markdown into blocks of whole lines (see the module docs). `blocks(s).concat() == s`.
 pub fn blocks(markdown: &str) -> Vec<String> {
+    split(markdown, true)
+}
+
+/// [`blocks`]; `front`: the text may start with front matter (not the text after it).
+fn split(markdown: &str, front: bool) -> Vec<String> {
     let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
     // Front matter: `---` on the first line up to the closing `---`.
-    if lines.first().is_some_and(|l| l.trim_end() == "---")
+    if front
+        && lines.first().is_some_and(|l| l.trim_end() == "---")
         && let Some(end) = lines.iter().skip(1).position(|l| l.trim_end() == "---")
     {
         out.push(lines[..end + 2].concat());
@@ -331,19 +337,135 @@ pub fn lf(text: &str) -> std::borrow::Cow<'_, str> {
 pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
     let base = base.map(lf);
     let (mine, theirs) = (lf(mine), lf(theirs));
-    let (m, t) = (blocks(&mine), blocks(&theirs));
+    let mut chunks: Vec<Chunk> = Vec::new();
+    // The front matter key by key, the text after it block by block.
+    let b = base.as_deref().map(front);
+    let (m, t) = (front(&mine), front(&theirs));
+    if m.0.is_some() || t.0.is_some() {
+        merge_front(b.as_ref().map(|b| b.0.as_ref()), m.0.as_ref(), t.0.as_ref(), &mut chunks);
+    }
+    merge_blocks(b.map(|b| b.1), m.1, t.1, &mut chunks);
+    finish(chunks)
+}
+
+/// Adds `c`; neighbouring pieces of the same kind read as one.
+fn push(chunks: &mut Vec<Chunk>, c: Chunk) {
+    match (chunks.last_mut(), &c) {
+        (Some(Chunk::Stable { text }), Chunk::Stable { text: more }) => text.push_str(more),
+        _ => chunks.push(c),
+    }
+}
+
+/// A note's front matter: the opening line, the entries (a key at the start of a line with the
+/// lines below it that belong to it: indented ones, list items, blank lines) and the closing
+/// line with the blank lines after it.
+struct Front<'a> {
+    open: &'a str,
+    entries: Vec<(String, String)>,
+    close: String,
+}
+
+/// The front matter of `text` (as [`blocks`] finds it) and the text after it.
+fn front(text: &str) -> (Option<Front<'_>>, &str) {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let Some(end) = lines
+        .first()
+        .filter(|l| l.trim_end() == "---")
+        .and_then(|_| lines.iter().skip(1).position(|l| l.trim_end() == "---"))
+        .map(|e| e + 1)
+    else {
+        return (None, text);
+    };
+    let mut entries: Vec<(String, String)> = Vec::new();
+    for line in &lines[1..end] {
+        let starts = !line.starts_with([' ', '\t', '-']) && !line.trim().is_empty();
+        match entries.last_mut() {
+            Some((_, text)) if !starts => text.push_str(line),
+            _ => {
+                let name = line.split(':').next().unwrap_or_default().trim().to_owned();
+                // A key written twice: each occurrence is an entry of its own.
+                let n = entries.iter().filter(|(k, _)| k.split('\0').next() == Some(name.as_str())).count();
+                let key = if n == 0 { name } else { format!("{name}\0{n}") };
+                entries.push((key, (*line).to_owned()));
+            }
+        }
+    }
+    let mut after = end + 1;
+    while after < lines.len() && lines[after].trim().is_empty() {
+        after += 1;
+    }
+    let close = lines[end..after].concat();
+    let rest_at: usize = lines[..after].iter().map(|l| l.len()).sum();
+    (Some(Front { open: lines[0], entries, close }), &text[rest_at..])
+}
+
+/// Merges the front matter entry by entry: a key changed, added or removed on one side is taken
+/// from that side, different values of the same key are a conflict of that entry (so „Beide“
+/// keeps both lines in the front matter). `base`: `None` without a base (every difference is a
+/// conflict), `Some(None)` when the base had no front matter.
+fn merge_front(base: Option<Option<&Front>>, mine: Option<&Front>, theirs: Option<&Front>, chunks: &mut Vec<Chunk>) {
+    let known = base.is_some();
+    let get = |f: Option<&Front>, k: &str| -> Option<String> {
+        f.and_then(|f| f.entries.iter().find(|(n, _)| n == k)).map(|(_, t)| t.clone())
+    };
+    let same = |a: &Option<String>, b: &Option<String>| a.as_deref().map(key) == b.as_deref().map(key);
+    // This side's order; keys only the other side has follow the key before them there.
+    let mut order: Vec<String> = mine.map(|f| f.entries.iter().map(|(k, _)| k.clone()).collect()).unwrap_or_default();
+    if let Some(t) = theirs {
+        for (i, (k, _)) in t.entries.iter().enumerate() {
+            if order.contains(k) {
+                continue;
+            }
+            let at = t.entries[..i].iter().rev().find_map(|(p, _)| order.iter().position(|o| o == p));
+            order.insert(at.map_or(0, |a| a + 1), k.clone());
+        }
+    }
+    let mut pieces = Vec::new();
+    for k in &order {
+        let (b, m, t) = (get(base.flatten(), k), get(mine, k), get(theirs, k));
+        let piece = if same(&m, &t) {
+            match m {
+                None => continue,
+                Some(m) if known && same(&Some(m.clone()), &b) => Chunk::Stable { text: m },
+                Some(m) if known => Chunk::Merged { text: m, from: Side::Both },
+                Some(m) => Chunk::Stable { text: m },
+            }
+        } else if known && same(&m, &b) {
+            let Some(t) = t else { continue };
+            Chunk::Merged { text: t, from: Side::Theirs }
+        } else if known && same(&t, &b) {
+            let Some(m) = m else { continue };
+            Chunk::Merged { text: m, from: Side::Mine }
+        } else {
+            Chunk::Conflict { base: b, mine: m.unwrap_or_default(), theirs: t.unwrap_or_default() }
+        };
+        pieces.push(piece);
+    }
+    // Removed on both sides (or emptied where the other side has none): no front matter.
+    if pieces.is_empty() && (mine.is_none() || theirs.is_none()) {
+        return;
+    }
+    let open = mine.or(theirs).map_or("---\n", |f| f.open);
+    let close = match (mine, theirs) {
+        (Some(m), Some(t)) if t.close.len() > m.close.len() => t.close.clone(),
+        (Some(f), _) | (None, Some(f)) => f.close.clone(),
+        (None, None) => "---\n".to_owned(),
+    };
+    push(chunks, Chunk::Stable { text: open.to_owned() });
+    for p in pieces {
+        push(chunks, p);
+    }
+    push(chunks, Chunk::Stable { text: close });
+}
+
+/// The block merge of the text after the front matter (see the module docs).
+fn merge_blocks(base: Option<&str>, mine: &str, theirs: &str, chunks: &mut Vec<Chunk>) {
+    let (m, t) = (split(mine, false), split(theirs, false));
     let mk: Vec<&str> = m.iter().map(|b| key(b)).collect();
     let tk: Vec<&str> = t.iter().map(|b| key(b)).collect();
-    let mut chunks: Vec<Chunk> = Vec::new();
-    let mut push = |c: Chunk| {
-        // Neighbouring pieces of the same kind read as one.
-        match (chunks.last_mut(), &c) {
-            (Some(Chunk::Stable { text }), Chunk::Stable { text: more }) => text.push_str(more),
-            _ => chunks.push(c),
-        }
-    };
+    let mut push = |c: Chunk| push(chunks, c);
 
-    let Some(base) = base.as_deref() else {
+    let Some(base) = base else {
         // Two-way: blocks both have are kept, every other difference is a conflict.
         let pairs = lcs(&mk, &tk);
         let (mut mi, mut ti) = (0, 0);
@@ -357,10 +479,10 @@ pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
             }
             (mi, ti) = (a + 1, b + 1);
         }
-        return finish(chunks);
+        return;
     };
 
-    let b = blocks(base);
+    let b = split(base, false);
     let bk: Vec<&str> = b.iter().map(|x| key(x)).collect();
     // Base blocks unchanged on both sides are the anchors; the regions between are merged.
     let to_mine: std::collections::HashMap<usize, usize> = lcs(&bk, &mk).into_iter().collect();
@@ -402,7 +524,6 @@ pub fn merge3(base: Option<&str>, mine: &str, theirs: &str) -> MergeResult {
         }
         (bi, mi, ti) = (ab + 1, am + 1, at + 1);
     }
-    finish(chunks)
 }
 
 /// A region both sides changed, merged block by block when neither side added or removed a block
@@ -569,6 +690,40 @@ mod tests {
         assert_eq!(merge3(Some(base), mine, theirs).conflicts, 1);
         let theirs = "## Woche\n\n- [ ] Bericht\n- [ ] Anruf\n- [x] Angebot\n- [ ] Neu\n\nText unten\n";
         assert_eq!(merge3(Some(base), mine, theirs).conflicts, 1);
+    }
+
+    /// q124 R7B-3: the front matter merges key by key. Different keys changed, added or removed
+    /// on the two sides merge; the same key changed differently is a conflict of that entry only,
+    /// so „Beide“ keeps both lines inside the front matter, never a second one in the text.
+    #[test]
+    fn front_matter_merges_key_by_key() {
+        let base = "---\nstatus: Offen\naufwand: 1\nthemen:\n  - UI\nalt: x\n---\n# Karte\n\nText\n";
+        let mine = "---\nstatus: In Arbeit\naufwand: 1\nthemen:\n  - UI\n  - API\n---\n# Karte\n\nText\n";
+        let theirs =
+            "---\nstatus: Offen\naufwand: 3\nthemen:\n  - UI\nalt: x\nneu: ja\n---\n# Karte\n\nText, ergänzt\n";
+        let r = merge3(Some(base), mine, theirs);
+        assert_eq!(
+            r.merged().as_deref(),
+            Some(
+                "---\nstatus: In Arbeit\naufwand: 3\nthemen:\n  - UI\n  - API\nneu: ja\n---\n# Karte\n\nText, ergänzt\n"
+            )
+        );
+        // The same key on both sides: one conflict, both lines inside the front matter.
+        let theirs = base.replace("status: Offen", "status: Fertig");
+        let r = merge3(Some(base), mine, &theirs);
+        assert_eq!(r.conflicts, 1, "{:#?}", r.chunks);
+        let both = r.resolve(|_, m, t| format!("{m}{t}"));
+        assert!(both.starts_with("---\nstatus: In Arbeit\nstatus: Fertig\naufwand: 1\n"), "{both}");
+        assert_eq!(both.matches("---\n").count(), 2, "{both}");
+        assert_eq!(r.resolve(|_, m, _| m.to_owned()), mine);
+        // Front matter added on one side only, and without a base.
+        let plain = "# Karte\n\nText\n";
+        assert_eq!(merge3(Some(plain), mine, plain).merged().as_deref(), Some(mine));
+        assert_eq!(merge3(None, mine, mine).merged().as_deref(), Some(mine));
+        assert_eq!(merge3(None, mine, &theirs).conflicts, 3, "status, themen, alt");
+        // A note that starts with a rule and no front matter stays as it was.
+        let rule = "---\n\nText\n";
+        assert_eq!(merge3(Some(rule), rule, "---\n\nText 2\n").merged().as_deref(), Some("---\n\nText 2\n"));
     }
 
     #[test]

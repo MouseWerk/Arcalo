@@ -892,3 +892,19 @@ fn text_written_on_windows_is_stored_as_the_app_stores_it() {
     assert!(!content.contains('\r') && !content.contains('\u{feff}'), "{content:?}");
     assert!(content.ends_with("Zeile eins\nZeile zwei\n"), "{content:?}");
 }
+
+/// q124 R7B: `export --mark` marks the entries only once the file is written, as the app does
+/// (the file first, then the marks). An output that cannot be written (a full disk, a closed
+/// pipe) leaves the entries for the next export instead of marking bookings nobody received.
+#[test]
+fn an_export_that_could_not_be_written_marks_nothing() {
+    let ws = Ws::new("export-full");
+    ws.json(&["project", "add", "PRJ-1", "Rollout"]);
+    ws.json(&["project", "add-netzplan", "PRJ-1", "NP-1", "NP-1-WBS"]);
+    ws.json(&["zeit", "NP-1", "1.5h", "Workshop", "@2026-10-05"]);
+    let full = std::fs::OpenOptions::new().write(true).open("/dev/full").unwrap();
+    let out = ws.cmd(&["export", "--format", "cats", "--mark"]).stdout(full).stderr(Stdio::piped()).output().unwrap();
+    assert!(!out.status.success(), "the export could not be written: {}", String::from_utf8_lossy(&out.stderr));
+    let again = ws.json(&["export", "--format", "cats"]);
+    assert_eq!(again["exported_ids"].as_array().unwrap().len(), 1, "the booking was marked as exported: {again}");
+}

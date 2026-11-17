@@ -1482,6 +1482,13 @@ fn time_chip_states(
     state.db().chip_states(page_id, &chips)
 }
 
+/// This workspace's identity in its chips (`ws`): the editor writes it into new chips and treats
+/// chips of another workspace (a computer or phone that synced the note) as from another device.
+#[tauri::command(async)]
+fn time_chip_workspace(state: State<AppState>) -> Result<String> {
+    state.db().chip_workspace()
+}
+
 /// The user removed a booked chip from its note: its booking goes too (after the undo toast).
 /// Returns the deleted booking, to put back when the chip comes back.
 #[tauri::command(async)]
@@ -5014,6 +5021,13 @@ pub fn run() {
                 Ok(None) => {}
                 Err(e) => devlog::warn("import", format!("unfinished vault import not removed: {e}")),
             }
+            // A restored backup: the files its pages embed that were deleted since come back
+            // (before the file trash below is emptied).
+            match arcalo_core::backupdest::bring_back_files(&db, &dir) {
+                Ok(back) if !back.is_empty() => devlog::info("backup", format!("{} files of the restored backup brought back", back.len())),
+                Ok(_) => {}
+                Err(e) => devlog::warn("backup", format!("files of the restored backup not brought back: {e}")),
+            }
             if let Err(e) = db.purge_expired_trash(Utc::now()) {
                 devlog::warn("core", format!("trash cleanup failed: {e}"));
             }
@@ -5338,6 +5352,7 @@ pub(crate) fn commands() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Se
         set_entry_status,
         delete_time_entry,
         time_chip_states,
+        time_chip_workspace,
         time_chip_delete,
         time_chip_restore,
         time_chip_book,

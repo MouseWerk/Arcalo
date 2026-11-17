@@ -59,7 +59,7 @@ test("a /zeit chip shows its booking's values and follows edits made elsewhere",
   await app.keys(["Enter"]);
   await app.waitFor(`${SHOWN} .ProseMirror .time-chip`);
   pageId = (await app.invoke("page_resolve", { title: "Zeitnotiz", create: false })).id;
-  await until(async () => /la="TEST" date="\d{4}-\d{2}-\d{2}">Chiptest<\/time-entry>/.test(await content()), "chip saved with Leistungsart and day");
+  await until(async () => /la="TEST" date="\d{4}-\d{2}-\d{2}" ws="[0-9a-f]{16}">Chiptest<\/time-entry>/.test(await content()), "chip saved with Leistungsart, day and its workspace");
   const id = await chipId();
   const [chip] = await chips();
   assert.match(chip.text, /^1 hNP-8801\/1040TEST\d\d\.\d\d\.Chiptest$/);
@@ -76,7 +76,7 @@ test("a /zeit chip shows its booking's values and follows edits made elsewhere",
 
   // Deleted in the timesheet: the chip says so and offers to book again.
   await app.invoke("delete_time_entry", { id });
-  await until(async () => /state="deleted">Chiptest lang<\/time-entry>/.test(await content()), "chip marked deleted");
+  await until(async () => /state="deleted" ws="[0-9a-f]{16}">Chiptest lang<\/time-entry>/.test(await content()), "chip marked deleted");
   await until(async () => (await chips())[0].cls.includes("time-chip--deleted"), "chip shows deleted");
   assert.match((await chips())[0].text, /Buchung gelöscht/);
   await app.shot("220-chip-deleted");

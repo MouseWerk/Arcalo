@@ -214,6 +214,32 @@ describe("<Select>", () => {
     expect(list()).toBeNull();
   });
 
+  // q124 r7b (e2e 681 on a busy CI runner): the person scrolls before the list was placed again
+  // for a scroll the page made. That placement then records where the person's scroll left the
+  // trigger, and the person's scroll, reported after it, looked like one that did not move it:
+  // the list stayed open.
+  it("closes on the person's scroll that comes before the list was placed again for the page's", async () => {
+    const trigger = mount("h2", () => {});
+    const frame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    const at = (top: number) => (trigger.getBoundingClientRect = () => ({ top, bottom: top + 30, left: 100, right: 300, width: 200, height: 30, x: 100, y: top, toJSON: () => ({}) }) as DOMRect);
+    at(400);
+    act(() => trigger.click());
+    await frame();
+    // One task: the page's scroll is reported (its placement renders later), the person scrolls.
+    act(() => {
+      at(469);
+      host!.dispatchEvent(new Event("scroll"));
+      host!.dispatchEvent(new WheelEvent("wheel", { deltaY: 60, bubbles: true }));
+      at(409);
+    });
+    expect(list()).not.toBeNull();
+    // The person's scroll is reported in the next frame.
+    act(() => {
+      host!.dispatchEvent(new Event("scroll"));
+    });
+    expect(list()).toBeNull();
+  });
+
   it("chooses with the mouse and closes on a click outside", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));

@@ -6,6 +6,10 @@
 // or into another note) show as not booked and can be booked on their own. Removing a booked
 // chip removes its booking after an undo toast; the chip coming back (undo, paste after cut)
 // keeps or restores it. Time is never deleted without the toast.
+//
+// A chip names the workspace that booked it (`ws`): booking ids are row ids of each computer's
+// and phone's own database, so a chip of another workspace (synced into the note) is a booking
+// from another device, whatever its id. Chips without `ws` (before 1.23) count as this one's.
 
 import { Node, mergeAttributes, type Editor } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, type EditorState, type Transaction } from "@tiptap/pm/state";
@@ -30,7 +34,32 @@ export interface ChipAttrs {
   la: string;
   date: string;
   state: string;
+  /** The workspace that booked it (empty: this one, written before 1.23). */
+  ws: string;
 }
+
+// This workspace's identity (`null` until known, or with a backend without it: every chip is ours).
+let ownWs: string | null = null;
+let wsReady: Promise<void> | null = null;
+let wsAsked = false;
+
+/** Asks the backend once for this workspace's identity (the start, before the first note opens). */
+export function loadChipWorkspace(): Promise<void> {
+  wsReady ??= api
+    .chipWorkspace()
+    .then(
+      (ws) => void (ownWs = ws || null),
+      () => undefined,
+    )
+    .finally(() => void (wsAsked = true));
+  return wsReady;
+}
+
+/** This workspace's identity for new chips (`""` while unknown). */
+export const chipWorkspace = () => ownWs ?? "";
+
+/** A chip booked in another workspace: its id names no booking here. */
+export const foreignChip = (ws: unknown) => !!ws && ownWs != null && String(ws) !== ownWs;
 
 /** Booked hours as stored in a chip („1,50“ or „1.5“) in the regional number format. */
 export const chipHours = (h: unknown) => {
@@ -62,6 +91,7 @@ export function chipMarkdown(a: Partial<ChipAttrs>): string {
   if (a.la) s += ` la="${escapeAttr(a.la)}"`;
   if (a.date) s += ` date="${escapeAttr(a.date)}"`;
   if (a.state) s += ` state="${escapeAttr(a.state)}"`;
+  if (a.ws) s += ` ws="${escapeAttr(a.ws)}"`;
   return `${s}>${escapeHtml(a.text ?? "")}</time-entry>`;
 }
 
@@ -82,6 +112,7 @@ export function staleAttrs(a: Partial<ChipAttrs>, row: TimeEntryRow): Partial<Ch
 }
 
 const idOf = (node: PMNode): number | null => {
+  if (foreignChip(node.attrs.ws)) return null;
   const n = Number(node.attrs.entryId);
   return Number.isInteger(n) && n > 0 ? n : null;
 };
@@ -351,6 +382,11 @@ export function chipLinkPlugin(pageId: number) {
       const refresh = (force = false, flush = false) => {
         skipped = !timeTrackingEnabled();
         if (skipped) return;
+        // Which chips are this workspace's is known first (a chip of another one is not asked about).
+        if (!wsAsked) {
+          void loadChipWorkspace().then(() => alive && refresh(force, flush));
+          return;
+        }
         const chips = query();
         const key = JSON.stringify(chips);
         if (!force && key === asked) return;
@@ -534,6 +570,7 @@ export const TimeEntryChip = Node.create<{ pageId: number | null }>({
       la: attr("la", "data-la"),
       date: attr("date", "data-date"),
       state: attr("state", "data-state"),
+      ws: attr("ws", "data-ws"),
     };
   },
   parseHTML() {
@@ -644,6 +681,7 @@ export const TimeEntryChip = Node.create<{ pageId: number | null }>({
       la: token.attrs.la ?? "",
       date: token.attrs.date ?? "",
       state: token.attrs.state ?? "",
+      ws: token.attrs.ws ?? "",
     },
   }),
   renderMarkdown: (node) => chipMarkdown((node.attrs ?? {}) as Partial<ChipAttrs>),
@@ -659,7 +697,8 @@ async function bookChip(editor: Editor, getPos: () => number | undefined, pageId
   const s = useApp.getState();
   try {
     // The chip's earlier booking: a deleted one gives the new booking its Jira worklog back.
-    const previous = Number(a.entryId) > 0 ? Number(a.entryId) : null;
+    // (A chip of another workspace names no booking here.)
+    const previous = Number(a.entryId) > 0 && !foreignChip(a.ws) ? Number(a.entryId) : null;
     const out = await api.chipBook({ pageId, target: a.target, minutes: chipMinutes(a.hours), leistungsart: a.la || null, date: a.date || null, text: a.text, previous });
     s.bumpEntries();
     s.alerts(out.alerts);
@@ -680,6 +719,7 @@ async function bookChip(editor: Editor, getPos: () => number | undefined, pageId
       date: isoDay(new Date(out.entry.start_time)),
       text: out.entry.description,
       state: "",
+      ws: chipWorkspace(),
     };
     editor.view.dispatch(editor.state.tr.setNodeMarkup(at.pos, undefined, attrs).setMeta("addToHistory", false).setMeta(OWN, true));
   } catch (e) {

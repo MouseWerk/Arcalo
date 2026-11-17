@@ -136,7 +136,11 @@ page, on a blocking thread).
   renames the database to `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it. When the
   replaced database was encrypted and the backup is plain (from before the encryption), the encryption is requested again
   (`backupdest::keep_encrypted`), so the same start encrypts it before opening; the start-up recovery does the same when this
-  computer has a database key (and skips backups of a newer schema). Both, and the return to the version before an
+  computer has a database key (and skips backups of a newer schema; it takes only this computer's backups, the local ones
+  and its own folder of each destination, never another computer's). Both restores leave `restore-files.pending`: the
+  start that opens the restored database brings back, before the file trash is emptied, the files its pages embed that
+  were deleted since (`backupdest::bring_back_files`: from the file trash, else from the backup folder's `attachments`).
+  Both, and the return to the version before an
   update (`rollback::restore`), write `sync-after-restore.json`: the next Git sync compares the restored mirror with the
   server's newest state (`gitsync::check_restore`, nothing committed) and, when notes
   differ, stops with a question (Settings → Sicherung): `pull_restored` returns the differences as remote changes
@@ -147,7 +151,8 @@ page, on a blocking thread).
   with a password, as `db-key.wrapped.next.json`) next to the current one; the start runs the same switch as
   encrypting (`cipher::Direction::Rekey`: export with the new key, verify, two renames) and `cipher::next_key_fate`
   decides afterwards, also after a crash, whether the new key becomes the key (it opens the database) or is dropped.
-- **Vault import**: the files are read without the database, then the pages are written in transactions of 200
+- **Vault import**: an Arcalo Markdown copy's `.arcalo-titles.json` gives its pages their titles back, and links
+  written with a path (`[[Projekte/Plan]]`) are rewritten to the imported page's title. The files are read without the database, then the pages are written in transactions of 200
   (`vault::apply_import_batched`), the lock taken per batch; the meta key `vault.import_root` names the top page
   until the import is complete, so a cancelled import removes its pages at once and one cut off by a crash at the
   next start (`vault::discard_unfinished_import`).
@@ -260,7 +265,8 @@ page, on a blocking thread).
   at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
   The mirror reserves the sync's own top-level names (`README`, `Zeiterfassung`, `attachments`, as file and folder:
   `vault::Planner`), so no page lands where the pull skips files. A title its file name cannot hold (`Q3: Ziele` in
-  `Q3- Ziele.md`, a cut long title, a trailing dot) is listed in the mirror's `.arcalo-titles.json` (path → title, written
+  `Q3- Ziele.md`, a cut long title, a trailing dot, a leading dot written as `_.NET.md` so no tool takes it for a hidden
+  file) is listed in the mirror's `.arcalo-titles.json` (path → title, written
   only while a page needs it, kept in the working tree when the mirror has none, merged path by path when both sides
   changed it): a pulled page takes that title, and `syncmerge::take_over_titles` gives it after every sync to pages that
   carry the file name's version (taken over before 1.23 had the file) or were renamed there without a new file name

@@ -6,6 +6,11 @@
 //! dialog) the chip is rewritten with the new values, and when it is deleted the chip keeps its
 //! values with `state="deleted"`. A chip belongs to its entry only on the entry's page and only
 //! once (the first in the note): copies show as not booked instead of sharing the booking.
+//!
+//! Booking ids are row ids of each workspace's own database, so a chip also names the workspace
+//! that booked it (`ws`, [`Database::chip_workspace`]): a chip of another computer or phone that
+//! reaches a note through the Git sync is a booking from another device, also when its id is the
+//! id of a booking here. Chips written before 1.23 have no `ws` and count as this workspace's.
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use rusqlite::{OptionalExtension, params};
@@ -33,7 +38,15 @@ impl Chip {
     pub fn entry_id(&self) -> Option<i64> {
         self.attr("id").and_then(|v| v.trim().parse().ok())
     }
+
+    /// Whether the chip was booked in the workspace `ws` (a chip without `ws` counts as its).
+    pub fn booked_in(&self, ws: &str) -> bool {
+        self.attr("ws").is_none_or(|w| w.is_empty() || w == ws)
+    }
 }
+
+/// Meta key: this workspace's identity in its chips ([`Database::chip_workspace`]).
+const WORKSPACE_KEY: &str = "chips.workspace";
 
 /// What a chip shows of its booking.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,9 +124,9 @@ pub fn chip_hours(minutes: i64, point: bool) -> String {
 }
 
 /// The chip's Markdown: the attributes in a fixed order (`id`, `hours`, `target`, `la`, `date`,
-/// `state`; the editor writes the same), so a rewrite changes only what changed.
+/// `state`, `ws`; the editor writes the same), so a rewrite changes only what changed.
 pub fn render(attrs: &[(String, String)], text: &str) -> String {
-    const ORDER: [&str; 6] = ["id", "hours", "target", "la", "date", "state"];
+    const ORDER: [&str; 7] = ["id", "hours", "target", "la", "date", "state", "ws"];
     let mut s = String::from("<time-entry");
     let get = |k: &str| attrs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
     for k in ORDER {
@@ -136,13 +149,15 @@ pub fn render(attrs: &[(String, String)], text: &str) -> String {
     s
 }
 
-/// Rewrites the chip of `entry_id` (the first one not marked deleted; copies stay as they are) with the booking's
-/// current `values`, or marks it deleted (`None`). `None` when nothing changed.
-pub fn rewrite(content: &str, entry_id: i64, values: Option<&ChipValues>) -> Option<String> {
+/// Rewrites the chip of `entry_id` booked in workspace `ws` (the first one not marked deleted;
+/// copies and chips of other workspaces stay as they are) with the booking's current `values`,
+/// or marks it deleted (`None`). `None` when nothing changed.
+pub fn rewrite(content: &str, ws: &str, entry_id: i64, values: Option<&ChipValues>) -> Option<String> {
     // A chip already marked deleted is history: an entry that got its id later (SQLite reuses
     // the highest id) belongs to a newer chip.
-    let chip =
-        chips(content).into_iter().find(|c| c.entry_id() == Some(entry_id) && c.attr("state") != Some("deleted"))?;
+    let chip = chips(content)
+        .into_iter()
+        .find(|c| c.entry_id() == Some(entry_id) && c.attr("state") != Some("deleted") && c.booked_in(ws))?;
     let mut attrs = chip.attrs.clone();
     let mut set = |k: &str, v: String| match attrs.iter_mut().find(|(n, _)| n == k) {
         Some(a) => a.1 = v,
@@ -188,6 +203,9 @@ pub struct ChipQuery {
     pub id: i64,
     #[serde(default)]
     pub target: String,
+    /// The workspace that booked the chip (`ws`; none for chips written before 1.23).
+    #[serde(default)]
+    pub ws: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -199,6 +217,19 @@ pub struct ChipState {
 }
 
 impl Database {
+    /// This workspace's identity in its chips (`ws`): made once, 16 hex digits. Another computer
+    /// or phone has its own, so its chips are never taken for bookings here.
+    pub fn chip_workspace(&self) -> Result<String> {
+        if let Some(ws) = self.meta_get(WORKSPACE_KEY)?.filter(|w| !w.is_empty()) {
+            return Ok(ws);
+        }
+        let mut b = [0u8; 8];
+        getrandom::fill(&mut b).map_err(|e| crate::error::Error::State(e.to_string()))?;
+        let ws: String = b.iter().map(|x| format!("{x:02x}")).collect();
+        self.meta_set(WORKSPACE_KEY, &ws)?;
+        Ok(ws)
+    }
+
     /// The entry with its WBS context (Netzplan number, WBS element, project).
     pub fn time_entry_row(&self, id: i64) -> Result<Option<TimeEntryRow>> {
         Ok(self
@@ -248,7 +279,7 @@ impl Database {
     /// marks it deleted. Returns whether the page changed.
     pub(crate) fn sync_chip(&self, page_id: i64, entry_id: i64, values: Option<&ChipValues>) -> Result<bool> {
         let Some(content) = self.live_page_content(page_id)? else { return Ok(false) };
-        let Some(next) = rewrite(&content, entry_id, values) else { return Ok(false) };
+        let Some(next) = rewrite(&content, &self.chip_workspace()?, entry_id, values) else { return Ok(false) };
         self.save_page_content_at(page_id, &next, Utc::now())?;
         Ok(true)
     }
@@ -263,9 +294,13 @@ impl Database {
     /// How the chips `queries` of page `page_id` relate to their bookings. A chip that was moved
     /// to this note (cut and pasted; its old note no longer has it) takes its booking along.
     pub fn chip_states(&self, page_id: i64, queries: &[ChipQuery]) -> Result<Vec<ChipState>> {
+        let ws = self.chip_workspace()?;
         let mut out = vec![];
         for q in queries {
-            let Some(row) = self.time_entry_row(q.id)? else {
+            // Booked on another computer or phone: its id names nothing here.
+            let foreign = q.ws.as_deref().is_some_and(|w| !w.is_empty() && w != ws);
+            let row = if foreign { None } else { self.time_entry_row(q.id)? };
+            let Some(row) = row else {
                 out.push(ChipState { id: q.id, link: ChipLink::Missing, row: None });
                 continue;
             };
@@ -274,7 +309,9 @@ impl Database {
                 Some(other) => {
                     let target = crate::desktop::timer_label(&row.netzplan_nr, row.entry.vorgang_nr.as_deref());
                     let still_there = self.live_page_content(other)?.is_some_and(|c| {
-                        chips(&c).iter().any(|c| c.entry_id() == Some(q.id) && c.attr("state") != Some("deleted"))
+                        chips(&c).iter().any(|c| {
+                            c.entry_id() == Some(q.id) && c.attr("state") != Some("deleted") && c.booked_in(&ws)
+                        })
                     });
                     // Only the same booking moves along (an id from another device's note
                     // names some other entry here).
@@ -373,7 +410,7 @@ mod tests {
             text: "Planung".into(),
         };
         let copy = format!("{NOTE}\n\n{}", &NOTE[chips(NOTE)[0].range.clone()]);
-        let next = rewrite(&copy, 7, Some(&v)).unwrap();
+        let next = rewrite(&copy, "ws", 7, Some(&v)).unwrap();
         let c = chips(&next);
         assert_eq!(
             &next[c[0].range.clone()],
@@ -381,21 +418,21 @@ mod tests {
         );
         assert_eq!(c[1].attr("hours"), Some("1,50"), "a copy is not rewritten");
         assert!(next.starts_with("Vormittag\n\n") && next.contains("\n\nmehr"), "the rest stays");
-        assert_eq!(rewrite(&next, 7, Some(&v)), None, "nothing changed: no rewrite");
-        assert_eq!(rewrite(&next, 8, Some(&v)), None, "no chip of that entry");
+        assert_eq!(rewrite(&next, "ws", 7, Some(&v)), None, "nothing changed: no rewrite");
+        assert_eq!(rewrite(&next, "ws", 8, Some(&v)), None, "no chip of that entry");
         // Deleted: values kept, marked.
-        let gone = rewrite(&next, 7, None).unwrap();
+        let gone = rewrite(&next, "ws", 7, None).unwrap();
         assert!(gone.contains("date=\"2026-10-02\" state=\"deleted\">Planung</time-entry>"), "{gone}");
         // A marked chip stays as it is; a newer chip of the same id (SQLite reused it) is the
         // one rewritten.
-        let marked = rewrite(NOTE, 7, None).unwrap();
-        assert_eq!(rewrite(&marked, 7, None), None);
+        let marked = rewrite(NOTE, "ws", 7, None).unwrap();
+        assert_eq!(rewrite(&marked, "ws", 7, None), None);
         let newer = format!("{marked}\n\n<time-entry id=\"7\" hours=\"0,50\" target=\"NP-8801/1030\">Neu</time-entry>");
-        let c = chips(&rewrite(&newer, 7, Some(&v)).unwrap());
+        let c = chips(&rewrite(&newer, "ws", 7, Some(&v)).unwrap());
         assert_eq!((c[0].attr("hours"), c[1].attr("hours")), (Some("1,50"), Some("2,25")));
         // A chip written with a decimal point keeps it.
         let en = NOTE.replace("1,50", "1.50");
-        assert!(rewrite(&en, 7, Some(&v)).unwrap().contains("hours=\"2.25\""));
+        assert!(rewrite(&en, "ws", 7, Some(&v)).unwrap().contains("hours=\"2.25\""));
         assert_eq!(chip_hours(20, false), "0,33");
     }
 
@@ -423,7 +460,9 @@ mod tests {
         db.save_page_content(page.id, &format!("A {chip}\n\nB {chip}")).unwrap();
         db.save_page_content(other.id, &format!("Kopie {chip}")).unwrap();
 
-        let q = |page: i64| db.chip_states(page, &[ChipQuery { id: e.id, target: "NP-8801/1020".into() }]).unwrap();
+        let q = |page: i64| {
+            db.chip_states(page, &[ChipQuery { id: e.id, target: "NP-8801/1020".into(), ws: None }]).unwrap()
+        };
         assert_eq!(q(page.id)[0].link, ChipLink::Linked);
         assert_eq!(q(page.id)[0].row.as_ref().unwrap().netzplan_nr, "NP-8801");
         assert_eq!(q(other.id)[0].link, ChipLink::Elsewhere, "a copy in another note");
@@ -446,7 +485,7 @@ mod tests {
         assert_eq!(db.time_entry(e.id).unwrap().page_id, Some(other.id));
         // An id that names another booking (a note from another device) does not take it.
         assert_eq!(
-            db.chip_states(page.id, &[ChipQuery { id: e.id, target: "NP-1/1".into() }]).unwrap()[0].link,
+            db.chip_states(page.id, &[ChipQuery { id: e.id, target: "NP-1/1".into(), ws: None }]).unwrap()[0].link,
             ChipLink::Elsewhere
         );
 
