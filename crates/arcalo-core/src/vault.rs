@@ -373,22 +373,11 @@ fn retarget_wiki_links(content: &str, new_target: impl Fn(&str) -> Option<String
         return content.to_owned();
     }
     let mut out = String::with_capacity(content.len());
-    let mut fence: Option<&str> = None;
+    let mut fences = crate::notes::CodeFences::default();
     for line in content.split_inclusive('\n') {
-        match (fence, crate::notes::fence_marker(line)) {
-            (Some(f), m) => {
-                if m == Some(f) {
-                    fence = None;
-                }
-                out.push_str(line);
-                continue;
-            }
-            (None, Some(m)) => {
-                fence = Some(m);
-                out.push_str(line);
-                continue;
-            }
-            (None, None) => {}
+        if fences.code(line) {
+            out.push_str(line);
+            continue;
         }
         let alias_sep = if line.trim_start().starts_with('|') { "\\|" } else { "|" };
         let mut at = 0;
