@@ -752,3 +752,151 @@ fn huge_workspace() {
     });
     time("search 'nicht' (in every booking text)", 3, || arcalo_core::search::search(&db, "nicht", 30).unwrap());
 }
+
+/// A vault of `notes` notes like e2e 230 (20 folders, a link and a tag each); with `images`, every
+/// note sits in a folder of its own next to an `image.png` it embeds (as Notion's export writes
+/// them), so all but one of the images are stored under another name.
+fn import_vault_dir(dir: &std::path::Path, notes: usize, images: bool) {
+    let _ = std::fs::remove_dir_all(dir);
+    for i in 0..notes {
+        let folder = if images {
+            dir.join(format!("Bereich {}", i % 20)).join(format!("Notiz {i}"))
+        } else {
+            dir.join(format!("Bereich {}", i % 20))
+        };
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut body = format!("# Notiz {i}\n\nText mit [[Notiz {}]] und #tag{}\n", (i + 1) % notes, i % 7);
+        if images {
+            body.push_str("\n![[image.png]]\n");
+            std::fs::write(folder.join("image.png"), format!("png {i}").repeat(1 + i % 50)).unwrap();
+        }
+        std::fs::write(folder.join(format!("Notiz {i}.md")), body).unwrap();
+    }
+}
+
+/// q124 r7 H8: a large vault import. The longest time one batch holds the database (the app waits
+/// that long for it), the batches' times from first to last, and the whole import.
+/// `ARCALO_IMPORT_NOTES` (default 10,000), `ARCALO_IMPORT_IMAGES=1` for a note folder each with
+/// its `image.png`, `ARCALO_IMPORT_BASE` a workspace to import into (default an empty one).
+#[test]
+#[ignore = "writes a large vault; run explicitly"]
+fn vault_import_large() {
+    let notes: usize = std::env::var("ARCALO_IMPORT_NOTES").ok().and_then(|n| n.parse().ok()).unwrap_or(10_000);
+    let images = std::env::var("ARCALO_IMPORT_IMAGES").is_ok_and(|v| v == "1");
+    let tmp = std::env::temp_dir().join(format!("arcalo-import-perf-{}", std::process::id()));
+    let vault = tmp.join("vault");
+    let att = tmp.join("attachments");
+    let t = Instant::now();
+    import_vault_dir(&vault, notes, images);
+    println!("vault of {notes} notes written in {:.1?}", t.elapsed());
+    let db = match std::env::var("ARCALO_IMPORT_BASE") {
+        Ok(base) => {
+            std::fs::copy(PathBuf::from(base).join(arcalo_core::datadir::DB_FILE), tmp.join("base.db")).unwrap();
+            Database::open(tmp.join("base.db")).unwrap()
+        }
+        Err(_) => Database::open(tmp.join("empty.db")).unwrap(),
+    };
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let t = Instant::now();
+    let plan = arcalo_core::vault::plan_import(&vault, &att, &mut |_| {}, &stop).unwrap();
+    println!("core import: read in {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
+    // Each batch takes the lock once: the time between two takes is how long the previous held it.
+    let held = std::cell::RefCell::new(Vec::<f64>::new());
+    let last = std::cell::Cell::new(None::<Instant>);
+    let t = Instant::now();
+    let report = arcalo_core::vault::apply_import_batched(
+        || {
+            if let Some(at) = last.get() {
+                held.borrow_mut().push(at.elapsed().as_secs_f64() * 1000.0);
+            }
+            last.set(Some(Instant::now()));
+            &db
+        },
+        plan,
+        &mut |_| {},
+        &stop,
+    )
+    .unwrap();
+    let total = t.elapsed().as_secs_f64() * 1000.0;
+    let held = held.into_inner();
+    let max = held.iter().cloned().fold(0.0, f64::max);
+    println!(
+        "core import: {} pages written in {total:.0} ms, {} batches, first {:.0} ms, last {:.0} ms, longest {max:.0} ms",
+        report.pages,
+        held.len(),
+        held.first().copied().unwrap_or_default(),
+        held.last().copied().unwrap_or_default()
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// q124 r7 H8: on the very large workspace (`ARCALO_HUGE_DIR`, see [`huge_workspace`]): the
+/// Markdown mirror, a Git sync into a local bare repository (first and after one changed note),
+/// a backup and the issue view's backlinks.
+#[test]
+#[ignore = "needs ARCALO_HUGE_DIR; run explicitly"]
+fn huge_sync_and_backup() {
+    use arcalo_core::gitsync::{Git, GitSyncSettings, SyncRequest};
+    let dir = PathBuf::from(std::env::var("ARCALO_HUGE_DIR").expect("ARCALO_HUGE_DIR"));
+    if !dir.join(arcalo_core::datadir::DB_FILE).exists() {
+        generate(&dir);
+        extend_huge(&dir);
+    }
+    let db = Database::open(dir.join(arcalo_core::datadir::DB_FILE)).unwrap();
+    let work = std::env::temp_dir().join(format!("arcalo-huge-sync-{}", std::process::id()));
+    let (mirror, repo, bare, backups) =
+        (work.join("mirror"), work.join("git-sync"), work.join("remote.git"), work.join("backups"));
+    std::fs::create_dir_all(&work).unwrap();
+    let ok = std::process::Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap();
+    assert!(ok.success());
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
+    let mirror_once = || {
+        let t = Instant::now();
+        let snap = arcalo_core::mirror::MirrorSnapshot::read(&db).unwrap();
+        let read = ms(t);
+        let t = Instant::now();
+        let r = arcalo_core::mirror::write_snapshot(&snap, &mirror, &dir.join("attachments"), &chrono::Local).unwrap();
+        println!("core huge mirror: read {read:.0} ms, {} pages written in {:.0} ms", r.pages, ms(t));
+    };
+    let settings =
+        GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
+    let git = Git::new(None, &settings.remote_url);
+    let sync = |label: &str| {
+        let t = Instant::now();
+        let out = arcalo_core::gitsync::sync(
+            &git,
+            &SyncRequest {
+                repo: &repo,
+                source: &mirror,
+                database: None,
+                settings: &settings,
+                host: "pc",
+                now: chrono::Local::now(),
+                hold: &[],
+                allow_deletions: false,
+                settings_file: None,
+                companion: false,
+            },
+        )
+        .unwrap();
+        println!("core huge git sync {label}: {:.0} ms ({} files changed)", ms(t), out.changed_files);
+    };
+    mirror_once();
+    sync("first");
+    let page: i64 =
+        db.conn().query_row("SELECT id FROM pages WHERE title = 'Archivseite 050-10'", [], |r| r.get(0)).unwrap();
+    let content = db.page_doc(page).unwrap().content;
+    db.save_page(page, &format!("{content}\nEine neue Zeile\n")).unwrap();
+    mirror_once();
+    sync("one note changed");
+    sync("nothing changed");
+    let t = Instant::now();
+    let b = arcalo_core::backup::backup_to(&db, &backups, 5).unwrap();
+    println!("core huge backup: {:.0} ms, {} bytes", ms(t), b.size_bytes);
+    let key: String = db.conn().query_row("SELECT key FROM issues ORDER BY key LIMIT 1", [], |r| r.get(0)).unwrap();
+    time(&format!("issue_backlinks {key}"), 3, || db.issue_backlinks(&key).unwrap());
+    time("issues_list all", 3, || {
+        db.issues_list(&arcalo_core::issues::IssueFilter { all: true, ..Default::default() }).unwrap()
+    });
+    let _ = std::fs::remove_dir_all(&work);
+}

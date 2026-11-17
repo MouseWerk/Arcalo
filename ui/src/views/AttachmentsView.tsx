@@ -24,6 +24,7 @@ import { t, useT, withLabel, type TKey } from "../lib/i18n";
 import { isKey } from "../lib/ime";
 import { caps } from "../lib/capabilities";
 import { copyText } from "../lib/clipboard";
+import { useGroupWindow } from "../lib/groupWindow";
 
 const KINDS: { value: KindFilter; readonly label: string }[] = [
   withLabel({ value: "all" as KindFilter }, "att.kind.all"),
@@ -32,6 +33,11 @@ const KINDS: { value: KindFilter; readonly label: string }[] = [
   withLabel({ value: "pdf" as KindFilter }, "att.kind.pdf"),
   withLabel({ value: "other" as KindFilter }, "att.kind.other"),
 ];
+/** From this many files only the rows in view are drawn (a vault import may leave thousands). */
+const VIRTUAL_FILES = 300;
+/** A row's height before it was measured (`.att-row`: 56 px and its border). */
+const ROW_ESTIMATE = 57;
+const fileKey = (el: HTMLElement) => el.dataset.file ?? "";
 const KIND_LABEL: Record<AttachmentInfo["kind"], TKey> = { image: "feed.kind.image", drawing: "feed.kind.drawing", pdf: "att.pdf", other: "feed.kind.file" };
 const SORTS: { value: SortKey; label: TKey }[] = [
   { value: "name", label: "att.sort.name" },
@@ -117,6 +123,7 @@ export function AttachmentsView() {
   useEffect(() => void load(), [tree, load]);
 
   const shown = useMemo(() => (list ? filterAttachments(list.files, filter) : []), [list, filter]);
+  const { scroller, listRef, windowOf } = useGroupWindow(shown.length > VIRTUAL_FILES, ".att-row[data-file]", fileKey, ROW_ESTIMATE);
   // A page created elsewhere (an import, the assistant) may not be in the tree yet.
   const openUse = async (id: number, newTab: boolean) => {
     if (!s().pages.has(id)) await s().refreshTree();
@@ -194,8 +201,9 @@ export function AttachmentsView() {
   ];
 
   const empty = list && list.files.length === 0;
+  const w = windowOf("files", shown.map((f) => f.name), true);
   return (
-    <div className="view-scroll">
+    <div className="view-scroll" ref={scroller}>
       <div className="view att-view">
         <header className="view-header">
           <div>
@@ -250,8 +258,8 @@ export function AttachmentsView() {
             {shown.length === 0 ? (
               <div className="att-none">{t("att.noMatch")}</div>
             ) : (
-              <div className="att-table" role="table" aria-label={t("mail.attachments")}>
-                <div className="att-row att-head" role="row">
+              <div className="att-table" role="table" aria-label={t("mail.attachments")} aria-rowcount={shown.length + 1} ref={listRef("files")}>
+                <div className="att-row att-head" role="row" aria-rowindex={1}>
                   <span role="columnheader" className="att-c-name">{t("att.sort.name")}</span>
                   <span role="columnheader" className="att-c-kind">{t("att.type")}</span>
                   <span role="columnheader" className="att-c-size">{t("att.sort.size")}</span>
@@ -259,13 +267,15 @@ export function AttachmentsView() {
                   <span role="columnheader" className="att-c-used">{t("att.usedIn")}</span>
                   <span role="columnheader" className="att-c-act" aria-label={t("ribbon.actions")} />
                 </div>
-                {shown.map((f) => {
+                {w.before > 0 && <div className="att-spacer" aria-hidden style={{ height: w.before }} />}
+                {shown.slice(w.from, w.to).map((f, i) => {
                   const live = f.used_in.filter((u) => !u.trashed);
                   return (
                     <div
                       key={f.name}
                       className="att-row"
                       role="row"
+                      aria-rowindex={w.from + i + 2}
                       data-file={f.name}
                       onContextMenu={(e) => openMenu(e, rowMenu(f))}
                       onDoubleClick={(e) => !(e.target as HTMLElement).closest("button") && openAttachmentFile(f)}
@@ -312,6 +322,7 @@ export function AttachmentsView() {
                     </div>
                   );
                 })}
+                {w.after > 0 && <div className="att-spacer" aria-hidden style={{ height: w.after }} />}
               </div>
             )}
           </>

@@ -1448,7 +1448,8 @@ body.search-mode { background: transparent; }
 @keyframes provider-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .provider-dot.checking { animation: none; } }
 .provider-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.provider-meta { flex-wrap: nowrap; min-width: 0; }
+/* One line whatever the status says (`.set-row-desc` wraps): the row keeps its height while a check answers. */
+.set-row-desc.provider-meta { flex-wrap: nowrap; min-width: 0; }
 .provider-meta > span:not(.provider-url) { flex: none; white-space: nowrap; }
 .provider-meta > .conn { font-size: inherit; }
 .provider-meta > span + span::before { content: "·"; margin-right: 6px; color: var(--text-3); font-family: var(--font-ui); }

@@ -225,6 +225,18 @@ fn encode_segment(name: &str) -> String {
     out
 }
 
+/// The files `markdown` refers to, as [`replace_file_refs_where`] sees them: the name (lower case)
+/// and the folders written before it (`None` for a bare name).
+pub fn file_refs(markdown: &str) -> std::collections::HashSet<(String, Option<String>)> {
+    let dir = |d: &str| (!d.is_empty()).then(|| d.to_owned());
+    let embeds = embed_refs(markdown).into_iter().map(|r| {
+        let target = &markdown[r.target.clone()];
+        let prefix = &target[..target.len() - r.base.len()];
+        (r.base.to_lowercase(), dir(prefix.trim_end_matches(['/', '\\'])))
+    });
+    embeds.chain(link_refs(markdown).into_iter().map(|r| (r.name.to_lowercase(), dir(&r.dir)))).collect()
+}
+
 /// Rewrites every reference to the file `old` (case-insensitive) to `new`: embeds keep their
 /// folder prefix, anchor and alias, image links their path.
 pub fn replace_file_refs(markdown: &str, old: &str, new: &str) -> String {

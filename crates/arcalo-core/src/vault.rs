@@ -8,6 +8,7 @@
 //! `![[bild.png]]` embeds keep working; export writes them to `attachments/`.
 
 use crate::{tr, trf};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,6 +47,8 @@ pub struct ImportProgress {
 
 /// Pages written per transaction: the database is free for the app between two batches.
 pub const WRITE_BATCH: usize = 200;
+/// How long an import leaves the database to the app after each batch (a waiting command's turn).
+const BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(5);
 /// Meta key holding the top page of an import still being written; an import cut off by a
 /// crash is removed at the next start ([`discard_unfinished_import`]).
 pub const PENDING_IMPORT: &str = "vault.import_root";
@@ -162,6 +165,7 @@ pub fn plan_import(
         progress: ImportProgress { done: 0, total: count_files(dir), writing: false },
         on_progress: progress,
         cancel,
+        names: attachments::ImportNames::default(),
     };
     let pages = walk.dir(dir)?;
     (walk.on_progress)(walk.progress);
@@ -200,6 +204,7 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
     cancel: &AtomicBool,
 ) -> Result<ImportReport> {
     let ImportPlan { name, pages, mut report, renamed, files } = plan;
+    let renamed = RenamedFiles::new(renamed);
     let names = Names { renamed: &renamed, files: &files };
     let mut items = Vec::new();
     flatten(pages, None, &mut items);
@@ -243,6 +248,11 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
             }
         }
         progress(ImportProgress { done: ids.len(), total, writing: true });
+        // A mutex is not fair: taken again at once, the next batch got the database before a
+        // command waiting for it, and the app waited for the whole import. The pause lets it in.
+        if rest.peek().is_some() {
+            std::thread::sleep(BATCH_PAUSE);
+        }
     }
     lock().meta_set(PENDING_IMPORT, "")?;
     Ok(report)
@@ -251,7 +261,7 @@ pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
 /// What the notes of a vault name: the files stored under another name, and every file with its
 /// folder.
 struct Names<'a> {
-    renamed: &'a [Renamed],
+    renamed: &'a RenamedFiles,
     files: &'a [(String, PathBuf)],
 }
 
@@ -273,12 +283,14 @@ fn create_planned(db: &Database, parent: i64, p: Planned, names: &Names, note_pa
         // The notes refer to renamed files by their old names.
         // A bare name means the file next to the note (its folder or one above); a path names
         // its file, which Obsidian writes when two files share the name.
-        for (old, new, scope, file) in names.renamed {
-            if p.canvas {
+        if p.canvas {
+            for (old, new, scope, _) in &names.renamed.all {
                 if names.bare_means(&p.dir, old, scope) {
                     content = crate::canvas::rename_file(&content, old, new);
                 }
-            } else {
+            }
+        } else {
+            for (old, new, scope, file) in names.renamed.named_in(&p.dir, &content) {
                 content = crate::attachment_manager::replace_file_refs_where(&content, old, new, |dir| match dir {
                     None => names.bare_means(&p.dir, old, scope),
                     Some(dir) => names_folder(&p.dir, dir, file.parent().unwrap_or(Path::new(""))),
@@ -416,37 +428,91 @@ fn retarget_wiki_links(content: &str, new_target: impl Fn(&str) -> Option<String
     out
 }
 
-/// The lower-cased, composed folder names of a relative path.
-fn path_parts(dir: &Path) -> Vec<String> {
-    dir.components().map(|c| crate::nfc::nfc(&c.as_os_str().to_string_lossy()).to_lowercase()).collect()
-}
-
 /// A file stored under another name: its name in the vault, the stored name, the folder whose
 /// notes mean it by its bare name, and its path in the vault.
 type Renamed = (String, String, PathBuf, PathBuf);
 
+/// The renamed files of an import, found by their old name (lower case) and the folder their
+/// references must come from: a note is checked against the files it can mean, not against every
+/// renamed file of the vault (thousands when each note has its own `image.png`).
+struct RenamedFiles {
+    all: Vec<Renamed>,
+    /// Bare names: by the folder whose notes (and those below it) mean the file.
+    by_scope: HashMap<String, HashMap<PathBuf, Vec<usize>>>,
+    /// Names with folders: by the file's folder ([`folder_parts`]).
+    by_folder: HashMap<String, HashMap<Vec<String>, Vec<usize>>>,
+}
+
+impl RenamedFiles {
+    fn new(all: Vec<Renamed>) -> Self {
+        let (mut by_scope, mut by_folder): (HashMap<_, HashMap<_, Vec<_>>>, HashMap<_, HashMap<_, Vec<_>>>) =
+            (HashMap::new(), HashMap::new());
+        for (i, (old, _, scope, file)) in all.iter().enumerate() {
+            let name = old.to_lowercase();
+            by_scope.entry(name.clone()).or_default().entry(scope.clone()).or_default().push(i);
+            let folder = path_parts(file.parent().unwrap_or(Path::new("")));
+            by_folder.entry(name).or_default().entry(folder).or_default().push(i);
+        }
+        RenamedFiles { all, by_scope, by_folder }
+    }
+
+    /// The renamed files a note in `note_dir` may refer to in `markdown`, in the order they were
+    /// stored ([`replace_file_refs_where`] then checks each reference).
+    ///
+    /// [`replace_file_refs_where`]: crate::attachment_manager::replace_file_refs_where
+    fn named_in(&self, note_dir: &Path, markdown: &str) -> Vec<&Renamed> {
+        if self.all.is_empty() {
+            return vec![];
+        }
+        let mut hits: Vec<usize> = vec![];
+        for (name, dir) in crate::attachment_manager::file_refs(markdown) {
+            match dir {
+                None => {
+                    let Some(scopes) = self.by_scope.get(&name) else { continue };
+                    for folder in note_dir.ancestors() {
+                        hits.extend(scopes.get(folder).into_iter().flatten());
+                    }
+                }
+                Some(dir) => {
+                    let Some(folders) = self.by_folder.get(&name) else { continue };
+                    for folder in [folder_parts(&[], &dir), folder_parts(&path_parts(note_dir), &dir)] {
+                        hits.extend(folders.get(&folder).into_iter().flatten());
+                    }
+                }
+            }
+        }
+        hits.sort_unstable();
+        hits.dedup();
+        hits.into_iter().map(|i| &self.all[i]).collect()
+    }
+}
+
+/// The folders of a path in the vault, composed and in lower case (as notes may write them).
+fn path_parts(p: &Path) -> Vec<String> {
+    p.components().map(|c| crate::nfc::nfc(&c.as_os_str().to_string_lossy()).to_lowercase()).collect()
+}
+
+/// The folder `dir` (written before a file name, `/` or `\` separated, `..` allowed) names
+/// when read from the folder `base` (its [`path_parts`]).
+fn folder_parts(base: &[String], dir: &str) -> Vec<String> {
+    let mut out = base.to_vec();
+    for part in dir.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            p => out.push(crate::nfc::nfc(p).to_lowercase()),
+        }
+    }
+    out
+}
+
 /// Whether the folders `dir` written before a file name in a note in `note_dir` are `folder`
 /// (paths relative to the vault, or to the note as Markdown links write them).
 fn names_folder(note_dir: &Path, dir: &str, folder: &Path) -> bool {
-    fn parts<'a>(base: impl Iterator<Item = String>, rel: impl Iterator<Item = &'a str>) -> Vec<String> {
-        let mut out: Vec<String> = base.collect();
-        for part in rel {
-            match part {
-                "" | "." => {}
-                ".." => {
-                    out.pop();
-                }
-                p => out.push(crate::nfc::nfc(p).to_lowercase()),
-            }
-        }
-        out
-    }
-    let comps = |p: &Path| {
-        p.components().map(|c| crate::nfc::nfc(&c.as_os_str().to_string_lossy()).to_lowercase()).collect::<Vec<_>>()
-    };
-    let want = comps(folder);
-    let split = || dir.split(['/', '\\']);
-    parts(std::iter::empty(), split()) == want || parts(comps(note_dir).into_iter(), split()) == want
+    let want = path_parts(folder);
+    folder_parts(&[], dir) == want || folder_parts(&path_parts(note_dir), dir) == want
 }
 
 /// Removes the pages of an import that did not finish (trashed and purged at once: they were
@@ -484,6 +550,8 @@ struct Walk<'a> {
     progress: ImportProgress,
     on_progress: &'a mut dyn FnMut(ImportProgress),
     cancel: &'a AtomicBool,
+    /// The attachment names found taken so far (each name is searched once per import).
+    names: attachments::ImportNames,
 }
 
 impl Walk<'_> {
@@ -622,7 +690,7 @@ impl Walk<'_> {
             self.report.skipped += 1;
             return Ok(());
         }
-        match attachments::import_file(self.attachments_dir, path) {
+        match attachments::import_file_named(self.attachments_dir, path, &mut self.names) {
             Ok(saved) => {
                 self.files.push((name.to_owned(), scope.to_path_buf()));
                 if saved.name != name {
@@ -1162,6 +1230,35 @@ mod tests {
         assert_eq!(fs::read_to_string(att.join("bild 2.png")).unwrap(), "b");
     }
 
+    /// q124 R7D-2: an `image.png` next to each note (Notion's export): every note keeps its own
+    /// image, a file with the bytes of an earlier one is stored once, and one already in the
+    /// attachments folder before the import is found again.
+    #[test]
+    fn many_same_named_files_each_keep_their_note() {
+        let vault = tmp("in-many");
+        let att = tmp("att-many");
+        fs::write(att.join("image.png"), "vorher").unwrap();
+        for (i, bytes) in ["a", "b", "a", "c", "vorher", "b"].iter().enumerate() {
+            let dir = vault.join(format!("Bereich {}", i % 2)).join(format!("Seite {i}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("image.png"), bytes).unwrap();
+            fs::write(dir.join(format!("Notiz {i}.md")), "![[image.png]] ![b](image.png)").unwrap();
+        }
+        let db = Database::open_in_memory().unwrap();
+        import_vault(&db, &vault, &att).unwrap();
+        let stored = ["image 2.png", "image 3.png", "image 2.png", "image 4.png", "image.png", "image 3.png"];
+        for (i, name) in stored.iter().enumerate() {
+            let content = db.page_doc(db.page_by_title(&format!("Notiz {i}")).unwrap().unwrap().id).unwrap().content;
+            let link = name.replace(' ', "%20");
+            assert_eq!(content, format!("![[{name}]] ![b]({link})"), "Notiz {i}");
+        }
+        assert_eq!(fs::read_to_string(att.join("image 4.png")).unwrap(), "c");
+        assert!(!att.join("image 5.png").exists(), "equal bytes are stored once");
+        for d in [vault, att] {
+            let _ = fs::remove_dir_all(d);
+        }
+    }
+
     /// q124 R6A: with two files of one name Obsidian writes the path (`![[Projekt B/assets/bild.png]]`);
     /// such a reference follows the file its path names, wherever the note is.
     #[test]
@@ -1292,6 +1389,59 @@ mod tests {
         assert_eq!(apply_import(&db, plan).unwrap().pages, 60);
         let err = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(true)).err().unwrap();
         assert_eq!(err.to_string(), "Import abgebrochen");
+    }
+
+    /// q124 R7D-3: a command waiting for the database while an import writes gets it at the end
+    /// of the batch it waited for; the import took the lock straight back (a mutex is not fair)
+    /// and the app waited for several batches (e2e 230 in the soak: 2.2 s).
+    #[test]
+    fn the_app_gets_the_database_between_two_batches() {
+        let vault = tmp("in-fair");
+        for i in 0..WRITE_BATCH * 6 {
+            let dir = vault.join(format!("Ordner {}", i % 5));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("Notiz {i}.md")), format!("Text {i} mit [[Notiz {}]] #tag{}", i + 1, i % 9))
+                .unwrap();
+        }
+        let att = tmp("att-fair");
+        let path = std::env::temp_dir().join(format!("arcalo-vault-fair-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = std::sync::Mutex::new(Database::open(&path).unwrap());
+        let plan = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+        let batches = std::sync::atomic::AtomicUsize::new(0);
+        let done = AtomicBool::new(false);
+        let mut waits = vec![];
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                apply_import_batched(
+                    || db.lock().unwrap(),
+                    plan,
+                    &mut |_| {
+                        batches.fetch_add(1, Ordering::SeqCst);
+                    },
+                    &AtomicBool::new(false),
+                )
+                .unwrap();
+                done.store(true, Ordering::SeqCst);
+            });
+            while batches.load(Ordering::SeqCst) < 2 {
+                std::thread::yield_now();
+            }
+            while !done.load(Ordering::SeqCst) {
+                let before = batches.load(Ordering::SeqCst);
+                let g = db.lock().unwrap();
+                waits.push(batches.load(Ordering::SeqCst) - before);
+                drop(g);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+        assert!(waits.len() >= 3, "{waits:?}");
+        assert!(waits.iter().all(|w| *w <= 2), "batches written while the app waited for the database: {waits:?}");
+        drop(db);
+        for p in [vault, att, path] {
+            let _ = fs::remove_dir_all(&p);
+            let _ = fs::remove_file(&p);
+        }
     }
 
     #[test]
